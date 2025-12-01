@@ -4,15 +4,19 @@
     if (!refs.length) return;
 
     // 터치/모바일 환경 판별 함수
-    function isTouchLike() {
-      return (
-        ('ontouchstart' in window) ||                           // 옛 브라우저
-        (navigator.maxTouchPoints && navigator.maxTouchPoints > 0) || // 대부분의 모바일
-        (window.matchMedia && window.matchMedia('(pointer: coarse)').matches)
-      );
-    }
-
-    var touchMode = isTouchLike();
+	// 터치/모바일 + 좁은 화면이면 모바일처럼 취급
+	function isTouchLike() {
+	  var realTouch =
+	    ('ontouchstart' in window) ||
+	    (navigator.maxTouchPoints && navigator.maxTouchPoints > 0) ||
+	    (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+	
+	  var narrowViewport = window.innerWidth <= 900; // 폭이 좁으면 모바일 취급
+	
+	  return realTouch || narrowViewport;
+	}
+	
+	var touchMode = isTouchLike();
 
     /* ───── 공통: 모바일 모달 요소 만들기 ───── */
     var modal = document.createElement('div');
