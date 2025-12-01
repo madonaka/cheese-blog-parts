@@ -5,6 +5,18 @@
 
 ## CDN
 ```html
+<!--
+==================================================
+&#9733; Cheese 라이트박스 모달 부품
+- GitHub cheese-blog-parts/lightbox 모듈을 로드한다.
+- 게시글 화면(pageType == "item")에서만 적용된다.
+- .cheese-img-wrapper / .cheese-view-button 구조의 이미지를
+  전체 화면 라이트박스로 확대해서 보여준다.
+- 테마 내부 라이트박스 CSS/JS를 외부 부품으로 분리해
+  유지보수와 재사용성을 높이기 위한 설정이다.
+- HTML은 별도 포스팅에 사용할 것, 테마 내에 없음
+==================================================
+-->
 <!-- CSS -->
 <link rel="stylesheet"
       href="https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/lightbox/cheese-lightbox.css">
@@ -15,10 +27,22 @@
 ```
 
 
-## Blogger
-data:blog.pageType == "item" 조건으로 감싸서,
+## 구글블로그(Blogger) 사용시 
+테마에서 data:blog.pageType == "item" 조건으로 감싸서,
 게시글 화면에서만 로드하도록 설정합니다.
 ```html
+<!--
+==================================================
+&#9733; Cheese 라이트박스 모달 부품
+- GitHub cheese-blog-parts/lightbox 모듈을 로드한다.
+- 게시글 화면(pageType == "item")에서만 적용된다.
+- .cheese-img-wrapper / .cheese-view-button 구조의 이미지를
+  전체 화면 라이트박스로 확대해서 보여준다.
+- 테마 내부 라이트박스 CSS/JS를 외부 부품으로 분리해
+  유지보수와 재사용성을 높이기 위한 설정이다.
+- HTML은 별도 포스팅에 사용할 것, 테마 내에 없음
+==================================================
+-->
 <b:if cond='data:blog.pageType == "item"'>
   <link rel='stylesheet'
         href='https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/lightbox/cheese-lightbox.css'/>
