@@ -8,6 +8,7 @@
 <!--
 ==================================================
 &#9733; Cheese 라이트박스 모달 부품
+- 버전정보 : Ver.20251202
 - GitHub cheese-blog-parts/lightbox 모듈을 로드한다.
 - 게시글 화면(pageType == "item")에서만 적용된다.
 - .cheese-img-wrapper / .cheese-view-button 구조의 이미지를
@@ -34,6 +35,7 @@
 <!--
 ==================================================
 &#9733; Cheese 라이트박스 모달 부품
+- 버전정보 : Ver.20251202
 - GitHub cheese-blog-parts/lightbox 모듈을 로드한다.
 - 게시글 화면(pageType == "item")에서만 적용된다.
 - .cheese-img-wrapper / .cheese-view-button 구조의 이미지를
