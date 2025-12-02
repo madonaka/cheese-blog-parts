@@ -108,3 +108,87 @@
 체크 아이콘 느낌의 글머리
 
 
+
+## 2️⃣ `core/example.html`
+
+**버튼 + 글머리 예제 한 번에 보는 용도**
+
+```html
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>Cheese Core UI Test</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- 전역 코어 CSS -->
+  <link rel="stylesheet" href="./cheese-core.css">
+
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont,
+                   "Segoe UI", sans-serif;
+      background: #f5f5f5;
+      padding: 40px 0;
+    }
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 0 16px 80px;
+    }
+    h1, h2 {
+      margin: 1.5rem 0 1rem;
+    }
+    section {
+      margin-bottom: 2.5rem;
+      padding: 1.5rem 1.25rem;
+      border-radius: 10px;
+      background: #fff;
+      box-shadow: 0 4px 16px rgba(0,0,0,.05);
+    }
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Cheese Core UI Test</h1>
+
+    <!-- Buttons -->
+    <section>
+      <h2>Buttons</h2>
+      <div class="btn-row">
+        <button type="button" class="cheese-btn">기본 버튼</button>
+        <button type="button" class="cheese-btn cheese-btn-primary">Primary 버튼</button>
+        <button type="button" class="cheese-btn cheese-btn-ghost">Ghost 버튼</button>
+        <a href="#" class="cheese-btn cheese-btn-primary">링크 버튼</a>
+      </div>
+    </section>
+
+    <!-- Lists -->
+    <section>
+      <h2>Lists</h2>
+      <h3>Bullet List</h3>
+      <ul class="cheese-list cheese-list--bullet">
+        <li>1905년 러시아 1차 혁명</li>
+        <li>1917년 2월 혁명</li>
+        <li>1917년 10월 혁명</li>
+      </ul>
+
+      <h3 style="margin-top:1.5rem;">Check List</h3>
+      <ul class="cheese-list cheese-list--check">
+        <li>AWS 기초 개념 정리</li>
+        <li>덤프 복습 1회 완료</li>
+        <li>오답노트 업데이트</li>
+      </ul>
+    </section>
+  </div>
+</body>
+</html>
+```
+
+
