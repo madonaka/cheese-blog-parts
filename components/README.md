@@ -15,8 +15,7 @@
 ### 일반 HTML 페이지에서 사용
 
 ```html
-<!--
-==================================================
+/* ==================================================
 ★ Cheese Components(인포박스·배지·공지박스) 부품
 - 버전정보 : Ver.20251202
 - GitHub cheese-blog-parts/components 모듈(cheese-components.css)을 로드한다.
@@ -26,10 +25,10 @@
   2) .cheese-badge        : 정당·단체·인물 등 분류를 표시하는 배지 스타일
   3) .cheese-notice-box   : 글 상단·중간에 사용하는 공지/안내 박스 스타일
   * 버튼 자체는 core(cheese-core.css)의 .cheese-fancy-button / .cheese-btn 계열과 함께 사용한다.
-==================================================
+================================================== */
 -->
-<link rel="stylesheet"
-      href="https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/components/cheese-components.css"/>
+@import url('https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/components/cheese-components.css');
+
 ```
 
 ### Blogger에서 사용 (게시글에서만 로드)
