@@ -15,8 +15,7 @@
 ### 일반 HTML 페이지에서 사용
 
 ```html
-<!--
-==================================================
+/* ==================================================
 ★ Cheese Core UI 부품
 - 버전정보 : Ver.20251202
 - GitHub cheese-blog-parts/core 모듈(cheese-core.css)을 로드한다.
@@ -26,10 +25,10 @@
   2) .post-body ol > li > p 글머리 기호 줄바꿈 오류 수정
   3) .cheese-main-nav / .cheese-main-wrapper 기본 레이아웃 래퍼
   4) .cheese-notice-box / .cheese-fancy-button 연습문제 안내 박스 및 버튼 스타일
-==================================================
--->
-<link rel="stylesheet"
-      href="https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/core/cheese-core.css"/>
+================================================== */
+<link rel='stylesheet'
+      href='https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/core/cheese-core.css'/>
+
 ```
 
 ### Blogger에서 사용 (모든 페이지 공통 로드)
@@ -38,8 +37,8 @@
 
 
 ```html
-<!--
-==================================================
+
+/* ==================================================
 ★ Cheese Core UI 부품
 - 버전정보 : Ver.20251202
 - GitHub cheese-blog-parts/core 모듈(cheese-core.css)을 로드한다.
@@ -49,11 +48,9 @@
   2) .post-body ol > li > p 글머리 기호 줄바꿈 오류 수정
   3) .cheese-main-nav / .cheese-main-wrapper 기본 레이아웃 래퍼
   4) .cheese-notice-box / .cheese-fancy-button 연습문제 안내 박스 및 버튼 스타일
-==================================================
--->
+================================================== */
 <!-- Cheese 전역 UI 코어 (버튼 / 리스트 / 공통 유틸) -->
-<link rel='stylesheet'
-      href='https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/core/cheese-core.css'/>
+@import url('https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/core/cheese-core.css');
 ```
 
 필요하다면, 특정 페이지 타입에만 제한해서 사용할 수도 있습니다.
