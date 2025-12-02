@@ -15,6 +15,19 @@
 ### 일반 HTML 페이지에서 사용
 
 ```html
+<!--
+==================================================
+★ Cheese Core UI 부품
+- 버전정보 : Ver.20251202
+- GitHub cheese-blog-parts/core 모듈(cheese-core.css)을 로드한다.
+- 블로그 전역에서 공통으로 사용하는 UI 스타일을 모아둔 코어 레이어이다.
+- 주요 기능:
+  1) .CSS_LIGHTBOX / .post-body .separator 이미지 드래그·선택 방지
+  2) .post-body ol > li > p 글머리 기호 줄바꿈 오류 수정
+  3) .cheese-main-nav / .cheese-main-wrapper 기본 레이아웃 래퍼
+  4) .cheese-notice-box / .cheese-fancy-button 연습문제 안내 박스 및 버튼 스타일
+==================================================
+-->
 <link rel="stylesheet"
       href="https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/core/cheese-core.css"/>
 ```
