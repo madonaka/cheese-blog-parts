@@ -1,3 +1,4 @@
+
 # Cheese Components (Infobox / Badge / Notice Box)
 
 블로그 본문에서 자주 사용하는 **도메인 특화 컴포넌트**입니다.
@@ -14,12 +15,38 @@
 ### 일반 HTML 페이지에서 사용
 
 ```html
+<!--
+==================================================
+★ Cheese Components(인포박스·배지·공지박스) 부품
+- 버전정보 : Ver.20251202
+- GitHub cheese-blog-parts/components 모듈(cheese-components.css)을 로드한다.
+- 게시글 화면(pageType == "item")에서만 적용되는 포스트 전용 UI 컴포넌트 레이어이다.
+- 주요 기능:
+  1) .cheese-infobox      : 인물·사건·타임라인 등을 정리하는 인포박스 레이아웃
+  2) .cheese-badge        : 정당·단체·인물 등 분류를 표시하는 배지 스타일
+  3) .cheese-notice-box   : 글 상단·중간에 사용하는 공지/안내 박스 스타일
+  * 버튼 자체는 core(cheese-core.css)의 .cheese-fancy-button / .cheese-btn 계열과 함께 사용한다.
+==================================================
+-->
 <link rel="stylesheet"
       href="https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/components/cheese-components.css">
 ```
 
 ### Blogger에서 사용 (게시글에서만 로드)
 ```html
+<!--
+==================================================
+★ Cheese Components(인포박스·배지·공지박스) 부품
+- 버전정보 : Ver.20251202
+- GitHub cheese-blog-parts/components 모듈(cheese-components.css)을 로드한다.
+- 게시글 화면(pageType == "item")에서만 적용되는 포스트 전용 UI 컴포넌트 레이어이다.
+- 주요 기능:
+  1) .cheese-infobox      : 인물·사건·타임라인 등을 정리하는 인포박스 레이아웃
+  2) .cheese-badge        : 정당·단체·인물 등 분류를 표시하는 배지 스타일
+  3) .cheese-notice-box   : 글 상단·중간에 사용하는 공지/안내 박스 스타일
+  * 버튼 자체는 core(cheese-core.css)의 .cheese-fancy-button / .cheese-btn 계열과 함께 사용한다.
+==================================================
+-->
 <b:if cond='data:blog.pageType == "item"'>
   <link rel='stylesheet'
         href='https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/components/cheese-components.css'/>
