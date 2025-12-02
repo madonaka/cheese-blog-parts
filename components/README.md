@@ -29,7 +29,7 @@
 ==================================================
 -->
 <link rel="stylesheet"
-      href="https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/components/cheese-components.css">
+      href="https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/components/cheese-components.css"/>
 ```
 
 ### Blogger에서 사용 (게시글에서만 로드)
