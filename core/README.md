@@ -16,7 +16,7 @@
 
 ```html
 <link rel="stylesheet"
-      href="https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/core/cheese-core.css">
+      href="https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/core/cheese-core.css"/>
 ```
 
 ### Blogger에서 사용 (모든 페이지 공통 로드)
