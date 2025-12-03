@@ -571,3 +571,64 @@
       }
     });
   });
+  // 점수 모달 버튼(채점결과 확인하기 / 처음부터 다시풀기) 연결
+  document.addEventListener('DOMContentLoaded', function () {
+    const modal = document.getElementById('cheese-quiz-modal');
+    if (!modal) return;
+
+    const closeBtn   = modal.querySelector('.cheese-quiz-modal-close');
+    const backdrop   = modal.querySelector('.cheese-quiz-modal-backdrop');
+    const gotoBtn    = modal.querySelector('.cheese-quiz-modal-goto');
+    const restartBtn = modal.querySelector('.cheese-quiz-modal-restart');
+
+    function closeModal() {
+      modal.classList.remove('is-open');
+      document.documentElement.classList.remove('quiz-modal-open');
+      if (document.body) {
+        document.body.classList.remove('quiz-modal-open');
+      }
+    }
+
+    // 1번 문제(또는 첫 문제) 위치로 스크롤
+    function scrollToFirstQuestion() {
+      const first =
+        document.querySelector('.cheese-quiz li[data-qid="1"]') ||
+        document.querySelector('.cheese-quiz li[data-answer]');
+      if (first) {
+        first.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    }
+
+    if (gotoBtn) {
+      gotoBtn.addEventListener('click', function () {
+        closeModal();
+        scrollToFirstQuestion();
+      });
+    }
+
+    if (restartBtn) {
+      restartBtn.addEventListener('click', function () {
+        closeModal();
+        // 페이지 안의 모든 퀴즈를 초기화
+        document.querySelectorAll('.cheese-quiz').forEach(wrapper => {
+          resetCheeseQuiz(wrapper);
+        });
+        scrollToFirstQuestion();
+      });
+    }
+
+    if (closeBtn) {
+      closeBtn.addEventListener('click', closeModal);
+    }
+    if (backdrop) {
+      backdrop.addEventListener('click', closeModal);
+    }
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') {
+        closeModal();
+      }
+    });
+  });
+
