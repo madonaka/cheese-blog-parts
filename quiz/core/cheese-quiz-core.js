@@ -159,7 +159,7 @@
     // 포스트에서 data-api를 지정하면 그걸 쓰고,
     // 없으면 전역 기본 URL 사용 (필요시 바꿔쓰기)
     const defaultApi =
-      'https://script.google.com/macros/s/AKfycbwuvooqtlk6c_Nv2_VgforohP5twqTLWGu5j8uf56D3qvKsUnioAhfbkNdTKIsQaaQF/exec';
+      'https://script.google.com/macros/s/AKfycbxfb22DOuNHel6Jluiynull8cVWkc_-MxRXFcXahwJgUzpx-HhkLJEZGPR-k8JS9Rtg2Q/exec';
     const apiUrl = wrapper.dataset.api || defaultApi;
 
     const limit      = wrapper.dataset.limit || '5';
