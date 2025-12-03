@@ -184,7 +184,7 @@ resetCheeseQuiz(wrapper)
    - .cheese-quiz / .quiz-choice / .quiz-accordion / .cheese-quiz-buttons 구조로
      시트(Apps Script) 기반 연습문제를 표시·선택·채점·다시풀기 한다.
    ================================================== */
-@import url('https://cdn.jsdelivr.net/gh/USERNAME/cheese-blog-parts@main/quiz/core/cheese-quiz-core.css');
+@import url('https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/quiz/core/cheese-quiz-core.css');
 
 /* ==================================================
    ★ Cheese Quiz Score Modal(채점 결과 모달) 부품
@@ -194,7 +194,7 @@ resetCheeseQuiz(wrapper)
    - #cheese-quiz-modal / .cheese-quiz-modal-dialog / .cheese-quiz-modal-score 구조로
      퀴즈 채점 결과(점수·정답 개수)를 카드형 모달로 표시한다.
    ================================================== */
-@import url('https://cdn.jsdelivr.net/gh/USERNAME/cheese-blog-parts@main/quiz/core/cheese-quiz-score-modal.css');
+@import url('https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/quiz/core/cheese-quiz-score-modal.css');
 
 /* ==================================================
    ★ Cheese Page Loading Modal(페이지/퀴즈 로딩 모달) 부품
@@ -205,7 +205,7 @@ resetCheeseQuiz(wrapper)
      퀴즈 데이터 로딩 중 전체 화면에 로딩 모달과 진행률을 표시한다.
    ================================================== */
 /* (옵션) 페이지 로딩 모달 */
-@import url('https://cdn.jsdelivr.net/gh/USERNAME/cheese-blog-parts@main/components/modal/cheese-page-loading-modal.css');
+@import url('https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/components/modal/cheese-page-loading-modal.css');
 ```
 
 <body> 끝부분에 JS 로드
@@ -215,7 +215,7 @@ resetCheeseQuiz(wrapper)
   const CHEESE_QUIZ_SESSION_ID =
     'quiz-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
 </script>
-<script src="https://cdn.jsdelivr.net/gh/USERNAME/cheese-blog-parts@main/quiz/core/cheese-quiz-core.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/quiz/core/cheese-quiz-core.js" defer></script>
 ```
 
 본문 HTML에 퀴즈 wrapper + 모달들 추가
@@ -232,15 +232,15 @@ resetCheeseQuiz(wrapper)
 
   <!-- 퀴즈 코어 스타일 -->
   <link rel="stylesheet"
-        href="https://cdn.jsdelivr.net/gh/USERNAME/cheese-blog-parts@main/quiz/core/cheese-quiz-core.css">
+        href="https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/quiz/core/cheese-quiz-core.css">
 
   <!-- 채점 결과 모달 스타일 -->
   <link rel="stylesheet"
-        href="https://cdn.jsdelivr.net/gh/USERNAME/cheese-blog-parts@main/quiz/core/cheese-quiz-score-modal.css">
+        href="https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/quiz/core/cheese-quiz-score-modal.css">
 
   <!-- (옵션) 페이지 로딩 모달 스타일 -->
   <link rel="stylesheet"
-        href="https://cdn.jsdelivr.net/gh/USERNAME/cheese-blog-parts@main/components/modal/cheese-page-loading-modal.css">
+        href="https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/components/modal/cheese-page-loading-modal.css">
 </head>
 <body>
 
