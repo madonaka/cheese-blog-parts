@@ -119,8 +119,9 @@
       }
 
   /******************************************************************
-   * 전역 퀴즈 유틸: 점수 모달 열기
-   *  - 테마에 이미 있는 #cheese-quiz-modal 구조를 활용
+   * 전역 퀴즈 유틸: 점수 모달 열기 + 버튼 이벤트 연결
+   *  - 여기에서 모달 버튼(닫기 / 결과 보기 / 다시풀기)에
+   *    직접 이벤트를 한 번만 묶어준다.
    ******************************************************************/
   function openCheeseQuizModal(percent, correctCount, totalCount) {
     var modal = document.getElementById('cheese-quiz-modal');
@@ -137,12 +138,32 @@
         correctCount + ' / ' + totalCount + '개 정답입니다.';
     }
 
+    // ▼ 모달 열기
     modal.classList.add('is-open');
     document.documentElement.classList.add('quiz-modal-open');
     if (document.body) {
       document.body.classList.add('quiz-modal-open');
     }
-  }
+
+    // 이미 한 번 바인딩했다면 다시 묶지 않음
+    if (modal.dataset.quizModalBound === '1') {
+      return;
+    }
+    modal.dataset.quizModalBound = '1';
+
+    // ▼ 여기서부터 버튼 이벤트 한 번만 연결
+    var closeBtn   = modal.querySelector('.cheese-quiz-modal-close');
+    var backdrop   = modal.querySelector('.cheese-quiz-modal-backdrop');
+    var gotoBtn    = modal.querySelector('.cheese-quiz-modal-goto');
+    var restartBtn = modal.querySelector('.cheese-quiz-modal-restart');
+
+    function closeModal() {
+      modal.classList.remove('is-open');
+      document.documentElement.classList.remove('quiz-modal-open');
+      if (document.body) {
+        document.body.classList.remove('quiz-modal-open');
+      }
+    }
 
   /******************************************************************
    * 1. 시트 → 문제 로딩 (wrapper 단위)
@@ -571,81 +592,3 @@
       }
     });
   });
-  /******************************************************************
-   * 점수 모달 버튼(닫기 / 결과 보기 / 다시풀기) 제어
-   ******************************************************************/
-  document.addEventListener('DOMContentLoaded', function () {
-    const modal = document.getElementById('cheese-quiz-modal');
-    if (!modal) return;
-
-    const closeBtn   = modal.querySelector('.cheese-quiz-modal-close');
-    const backdrop   = modal.querySelector('.cheese-quiz-modal-backdrop');
-    const gotoBtn    = modal.querySelector('.cheese-quiz-modal-goto');
-    const restartBtn = modal.querySelector('.cheese-quiz-modal-restart');
-
-    function closeModal() {
-      modal.classList.remove('is-open');
-      document.documentElement.classList.remove('quiz-modal-open');
-      if (document.body) {
-        document.body.classList.remove('quiz-modal-open');
-      }
-    }
-
-    // 1번 문제(또는 첫 문제) 위치로 스크롤
-    function scrollToFirstQuestion() {
-      const first =
-        document.querySelector('.cheese-quiz li[data-qid="1"]') ||
-        document.querySelector('.cheese-quiz li[data-answer]');
-      if (first) {
-        first.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      } else {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      }
-    }
-
-    // 채점결과 확인하기 버튼
-    if (gotoBtn) {
-      gotoBtn.addEventListener('click', function (e) {
-        e.preventDefault();
-        closeModal();
-        scrollToFirstQuestion();
-      });
-    }
-
-    // 처음부터 다시풀기 버튼
-    if (restartBtn) {
-      restartBtn.addEventListener('click', function (e) {
-        e.preventDefault();
-        closeModal();
-        // 페이지 안의 모든 퀴즈를 초기화
-        document.querySelectorAll('.cheese-quiz').forEach(wrapper => {
-          resetCheeseQuiz(wrapper);
-        });
-        scrollToFirstQuestion();
-      });
-    }
-
-    // 닫기(X) 버튼
-    if (closeBtn) {
-      closeBtn.addEventListener('click', function (e) {
-        e.preventDefault();
-        closeModal();
-      });
-    }
-
-    // 배경 클릭 시 닫기
-    if (backdrop) {
-      backdrop.addEventListener('click', function (e) {
-        e.preventDefault();
-        closeModal();
-      });
-    }
-
-    // ESC 키로 닫기
-    document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') {
-        closeModal();
-      }
-    });
-  });
-
