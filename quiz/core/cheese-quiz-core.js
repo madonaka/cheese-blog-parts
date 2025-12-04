@@ -167,37 +167,6 @@
       // ─────────────────────────────────────
 
 
-      function openQuizModal(percent, correctCount, totalCount) {
-        if (!quizModal || !quizModalScore || !quizModalDetail) return;
-
-        quizModalScore.textContent = percent + '점';
-        quizModalDetail.textContent = correctCount + ' / ' + totalCount + '개 정답입니다.';
-
-        quizModal.classList.add('is-open');
-        document.documentElement.classList.add('quiz-modal-open');
-        if (document.body) document.body.classList.add('quiz-modal-open');
-      }
-
-      function closeQuizModal() {
-        if (!quizModal) return;
-        quizModal.classList.remove('is-open');
-        document.documentElement.classList.remove('quiz-modal-open');
-        if (document.body) document.body.classList.remove('quiz-modal-open');
-      }
-
-      if (quizModalClose) {
-        quizModalClose.addEventListener('click', closeQuizModal);
-      }
-      if (quizModalBackdrop) {
-        quizModalBackdrop.addEventListener('click', closeQuizModal);
-      }
-      document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape') {
-          closeQuizModal();
-        }
-      });
-
-
       // ──────────
       // 1번 문제 있는 곳으로 이동하는 helper
       // ──────────
