@@ -571,7 +571,9 @@
       }
     });
   });
-  // 점수 모달 버튼(채점결과 확인하기 / 처음부터 다시풀기) 연결
+  /******************************************************************
+   * 점수 모달 버튼(닫기 / 결과 보기 / 다시풀기) 제어
+   ******************************************************************/
   document.addEventListener('DOMContentLoaded', function () {
     const modal = document.getElementById('cheese-quiz-modal');
     if (!modal) return;
@@ -601,48 +603,49 @@
       }
     }
 
-      if (gotoBtn) {
-    gotoBtn.addEventListener('click', function (e) {
-      e.preventDefault();
-      e.stopImmediatePropagation(); // 테마 쪽 전역 핸들러보다 먼저 먹이기
-      closeModal();
-      scrollToFirstQuestion();
-    }, true); // ★ 캡처 단계
-  }
-
-  if (restartBtn) {
-    restartBtn.addEventListener('click', function (e) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      closeModal();
-      // 페이지 안의 모든 퀴즈를 초기화
-      document.querySelectorAll('.cheese-quiz').forEach(wrapper => {
-        resetCheeseQuiz(wrapper);
+    // 채점결과 확인하기 버튼
+    if (gotoBtn) {
+      gotoBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        closeModal();
+        scrollToFirstQuestion();
       });
-      scrollToFirstQuestion();
-    }, true); // ★ 캡처 단계
-  }
-
-  if (closeBtn) {
-    closeBtn.addEventListener('click', function (e) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      closeModal();
-    }, true); // ★ 캡처 단계
-  }
-
-  if (backdrop) {
-    backdrop.addEventListener('click', function (e) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      closeModal();
-    }, true); // ★ 캡처 단계
-  }
-
-  document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') {
-      closeModal();
     }
-  });
 
+    // 처음부터 다시풀기 버튼
+    if (restartBtn) {
+      restartBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        closeModal();
+        // 페이지 안의 모든 퀴즈를 초기화
+        document.querySelectorAll('.cheese-quiz').forEach(wrapper => {
+          resetCheeseQuiz(wrapper);
+        });
+        scrollToFirstQuestion();
+      });
+    }
+
+    // 닫기(X) 버튼
+    if (closeBtn) {
+      closeBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        closeModal();
+      });
+    }
+
+    // 배경 클릭 시 닫기
+    if (backdrop) {
+      backdrop.addEventListener('click', function (e) {
+        e.preventDefault();
+        closeModal();
+      });
+    }
+
+    // ESC 키로 닫기
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') {
+        closeModal();
+      }
+    });
+  });
 
