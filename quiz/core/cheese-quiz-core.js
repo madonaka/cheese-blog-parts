@@ -1,4 +1,895 @@
   /******************************************************************
+   * 1. 상수 / 공통 유틸 (엔드포인트, 세션 ID 등)
+   ******************************************************************/
+  const CHEESE_QUIZ_SESSION_ID =
+    'sess-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+
+
+    document.addEventListener('DOMContentLoaded', function () {
+      var quizzes = document.querySelectorAll('.cheese-quiz');
+      if (!quizzes.length) return;
+
+      // ★ 퀴즈 채점 결과를 구글 시트로 보내는 설정
+      const CHEESE_QUIZ_LOG_ENDPOINT =
+        'https://script.google.com/macros/s/AKfycbzSvZgdAmEhY9xxO0c2AOM13BtKE-XAP7O7zQ3RTitLvIMAfHryKNzW6K0PNMRb-D4t/exec';
+
+      function sendQuizResultToSheet(examKey, correctCount, totalCount) {
+        if (!CHEESE_QUIZ_LOG_ENDPOINT) return;
+
+        const payload = {
+          examKey: examKey,
+          pageUrl: window.location.href,
+          correct: correctCount,
+          total: totalCount
+        };
+
+        console.log('[quiz-log] send', payload);  // ★ 콘솔 확인용
+
+        fetch(CHEESE_QUIZ_LOG_ENDPOINT, {
+          method: 'POST',
+          mode: 'no-cors',              // CORS 우회 모드
+          body: JSON.stringify(payload) // Apps Script 쪽에서 JSON.parse 로 읽음
+        }).catch(function (err) {
+          console.warn('[quiz-log] error', err);
+        });
+      }
+
+      // ★★★ 여기부터 2-2. examKey별 통계 요청 코드 추가 ★★★
+
+      // 통계 조회용 GET 엔드포인트 (POST와 같은 웹앱 주소 + mode=stats 파라미터로 구분)
+      const CHEESE_QUIZ_STATS_ENDPOINT =
+        'https://script.google.com/macros/s/AKfycbzSvZgdAmEhY9xxO0c2AOM13BtKE-XAP7O7zQ3RTitLvIMAfHryKNzW6K0PNMRb-D4t/exec';
+
+      // 페이지 로딩 후, 통계가 필요한 examKey들 한 번씩만 조회
+      function fetchExamStatsOnPage() {
+        // 예: <div class="cheese-quiz-stats" data-exam-key-stats="khs-51"></div>
+        var statBoxes = document.querySelectorAll('.cheese-quiz-stats[data-exam-key-stats]');
+        if (!statBoxes.length) return;
+
+        // examKey 목록 중복 제거
+        var keyMap = {};
+        statBoxes.forEach(function (box) {
+          var key = box.getAttribute('data-exam-key-stats');
+          if (key) keyMap[key] = true;
+        });
+
+        Object.keys(keyMap).forEach(function (examKey) {
+          var url = CHEESE_QUIZ_STATS_ENDPOINT +
+            '?mode=stats&examKey=' + encodeURIComponent(examKey);
+
+          fetch(url)
+            .then(function (res) {
+              return res.json();  // doGet에서 JSON으로 돌려줄 예정
+            })
+            .then(function (data) {
+              // 같은 examKey를 쓰는 박스들 전부 업데이트
+              var boxes = document.querySelectorAll(
+                '.cheese-quiz-stats[data-exam-key-stats="' + examKey + '"]'
+              );
+
+              boxes.forEach(function (box) {
+                if (!data || !data.count) {
+                  box.textContent = '아직 통계 데이터가 없습니다.';
+                  return;
+                }
+
+                // Apps Script 에서 내려주는 필드 사용
+                var avgScore   = data.avgCorrect;   // 평균 맞춘 개수
+                var avgTotal   = data.avgTotal;     // 총 문항 수 평균
+                var avgPercent = data.avgPercent;   // 평균 정답률(%) - 선택사항
+
+                // 필요에 따라 표기 방식은 원하는 대로 바꿔도 됨
+                box.textContent =
+                  '평균 ' + avgScore.toFixed(1) + ' / ' + avgTotal.toFixed(1) +
+                  ' (약 ' + avgPercent + '점)';
+              });
+            })
+            .catch(function (err) {
+              console.warn('[quiz-stats] error', err);
+            });
+        });
+      }
+
+      // DOM 로딩 후 바로 한 번 호출
+      fetchExamStatsOnPage();
+
+  /******************************************************************
+   * 2. 공통 코어(정적+랜덤 둘 다 쓰는 것)  ← "정적 코어 느낌"이 여기
+      - 채점, 모달, 통계, localStorage, goToExamFirstQuestion 등
+   ******************************************************************/
+
+      // ──────────  
+      // ── 모달 요소  ──
+      // ──────────
+      var quizModal = document.getElementById('cheese-quiz-modal');
+      var quizModalScore = document.getElementById('cheese-quiz-modal-score');
+      var quizModalDetail = document.getElementById('cheese-quiz-modal-detail');
+      var quizModalClose = quizModal ? quizModal.querySelector('.cheese-quiz-modal-close') : null;
+      var quizModalBackdrop = quizModal ? quizModal.querySelector('.cheese-quiz-modal-backdrop') : null;
+      var quizModalGoto = quizModal ? quizModal.querySelector('.cheese-quiz-modal-goto') : null;
+      var quizModalRestart = quizModal ? quizModal.querySelector('.cheese-quiz-modal-restart') : null;
+
+      // ─────────────────────────────────────
+      // 진입 경로가 "홈피드/검색/라벨/외부"인 경우
+      // 이 페이지에 있는 시험(exam-key)들의 상태를 먼저 초기화
+      // ─────────────────────────────────────
+      (function () {
+        var ref = document.referrer;
+        var shouldReset = false;
+
+        try {
+          if (!ref) {
+            // referrer가 없으면: 새 탭에서 직접 열었거나, 홈피드/외부에서 바로 접근한 케이스로 보고 리셋
+            shouldReset = true;
+          } else {
+            var refUrl = new URL(ref);
+            var here = window.location;
+
+            if (refUrl.origin !== here.origin) {
+              // 외부 사이트에서 넘어온 경우 → 리셋
+              shouldReset = true;
+            } else {
+              // 같은 블로그 안에서 넘어온 경우
+              var path = refUrl.pathname || '/';
+
+              // 블로그 홈, 검색, 라벨 목록 같은 "피드 계열"에서 넘어온 경우만 리셋
+              if (
+                path === '/' ||
+                path.indexOf('/search') === 0 ||
+                path.indexOf('/label/') === 0
+              ) {
+                shouldReset = true;
+              }
+            }
+          }
+        } catch (e) {
+          // referrer 파싱에 실패하면 그냥 리셋 쪽으로
+          shouldReset = true;
+        }
+
+        if (!shouldReset) return;
+
+        // 이 페이지에 존재하는 시험(exam-key) 목록을 모아서 해당 상태만 삭제
+        var examIds = {};
+        quizzes.forEach(function (q) {
+          var examId = q.getAttribute('data-exam-key');
+          if (examId) {
+            examIds[examId] = true;
+          }
+        });
+
+        Object.keys(examIds).forEach(function (examId) {
+          try {
+            localStorage.removeItem('cheeseQuizExam_' + examId);
+          } catch (e) {}
+        });
+      })();
+      // ─────────────────────────────────────
+
+
+      function openQuizModal(percent, correctCount, totalCount) {
+        if (!quizModal || !quizModalScore || !quizModalDetail) return;
+
+        quizModalScore.textContent = percent + '점';
+        quizModalDetail.textContent = correctCount + ' / ' + totalCount + '개 정답입니다.';
+
+        quizModal.classList.add('is-open');
+        document.documentElement.classList.add('quiz-modal-open');
+        if (document.body) document.body.classList.add('quiz-modal-open');
+      }
+
+      function closeQuizModal() {
+        if (!quizModal) return;
+        quizModal.classList.remove('is-open');
+        document.documentElement.classList.remove('quiz-modal-open');
+        if (document.body) document.body.classList.remove('quiz-modal-open');
+      }
+
+      if (quizModalClose) {
+        quizModalClose.addEventListener('click', closeQuizModal);
+      }
+      if (quizModalBackdrop) {
+        quizModalBackdrop.addEventListener('click', closeQuizModal);
+      }
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') {
+          closeQuizModal();
+        }
+      });
+
+
+      // ──────────
+      // 1번 문제 있는 곳으로 이동하는 helper
+      // ──────────
+      function goToExamFirstQuestion() {
+        // 이 페이지에 exam-root가 달린 퀴즈가 있으면 "멀티페이지 시험 모드"
+        var examRootQuiz = document.querySelector('.cheese-quiz[data-exam-root]');
+        var hasMultiPageExam = !!examRootQuiz;
+
+        if (hasMultiPageExam) {
+          // 1) 현재 페이지에 1번 문항이 있으면 → 그 위치로 스크롤
+          var q1 = document.querySelector('.cheese-quiz li[data-qid="1"]');
+          if (q1) {
+            q1.scrollIntoView({
+              behavior: 'smooth',
+              block: 'start'
+            });
+            return;
+          }
+
+          // 2) 1번 문항이 없으면 → exam-root URL(보통 1페이지)로 이동
+          var rootUrl = examRootQuiz.getAttribute('data-exam-root');
+          if (rootUrl) {
+            window.location.href = rootUrl;
+            return;
+          }
+
+          // 예외: exam-root도 이상하면 그냥 맨 위로
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          return;
+        }
+
+        // ─ 여기까지 왔으면: 한 페이지짜리 퀴즈 모드 ─
+        var firstQuestion =
+          document.querySelector('.cheese-quiz li[data-qid="1"]') ||
+          document.querySelector('.cheese-quiz li[data-answer]');
+
+        if (firstQuestion) {
+          firstQuestion.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start'
+          });
+        } else {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      }
+
+      // 채점결과 확인하기 → 첫 번째 연습문제로 스크롤 / 1페이지 이동
+      if (quizModalGoto) {
+        quizModalGoto.addEventListener('click', function () {
+          closeQuizModal();
+          goToExamFirstQuestion();
+        });
+      }
+
+      // 처음부터 다시풀기 → 모든 퀴즈 리셋 + 시험 상태 삭제 + 1페이지 이동
+      if (quizModalRestart) {
+        quizModalRestart.addEventListener('click', function () {
+          closeQuizModal();
+
+          // 페이지 안의 리셋 버튼들 눌러주기
+          var resetButtons = document.querySelectorAll('.cheese-quiz-reset');
+          resetButtons.forEach(function (btn) { btn.click(); });
+
+          // localStorage에 저장된 시험 상태 삭제
+          try {
+            for (var i = localStorage.length - 1; i >= 0; i--) {
+              var key = localStorage.key(i);
+              if (key && key.indexOf('cheeseQuizExam_') === 0) {
+                localStorage.removeItem(key);
+              }
+
+              // 추가: "1페이지 방문" 플래그도 같이 삭제
+              if (key.indexOf('cheeseQuizExamStarted_') === 0) {
+                localStorage.removeItem(key);
+              }
+            }
+          } catch (e) {}
+
+          // 1페이지 / 첫 문제 위치로 이동
+          goToExamFirstQuestion();
+        });
+      }
+
+
+      // ──────────
+      // ── exam 상태 저장용 helper ──
+      // ──────────
+      function examStorageKey(examId) {
+        return 'cheeseQuizExam_' + examId;
+      }
+
+      function loadExamState(examId) {
+        var def = { checked: false, questions: {} };
+        if (!examId) return def;
+        try {
+          var raw = localStorage.getItem(examStorageKey(examId));
+          if (!raw) return def;
+          var obj = JSON.parse(raw);
+          if (!obj || typeof obj !== 'object') return def;
+          if (typeof obj.checked !== 'boolean') obj.checked = false;
+          if (!obj.questions || typeof obj.questions !== 'object') obj.questions = {};
+          return obj;
+        } catch (e) {
+          return def;
+        }
+      }
+
+      function saveExamState(examId, state) {
+        if (!examId || !state) return;
+        try {
+          localStorage.setItem(examStorageKey(examId), JSON.stringify(state));
+        } catch (e) {}
+      }
+
+
+
+      // ──────────
+      // 한 문항을 "채점된 모양"으로 그려주는 함수
+      // ──────────
+      function paintGradedQuestion(q, selectedValue) {
+        var correct = q.getAttribute('data-answer');
+        var choices = q.querySelectorAll('.quiz-choice');
+        var feedback = q.querySelector('.quiz-feedback');
+        var hintBox = q.querySelector('.quiz-accordion.quiz-hint');
+        var explainBox = q.querySelector('.quiz-accordion.quiz-explain');
+
+        // 초기화
+        choices.forEach(function (c) {
+          c.classList.remove('selected', 'correct', 'wrong-selected');
+        });
+        q.classList.remove('question-correct', 'question-wrong');
+        
+        // ★ 예전 문구/스타일 제거
+        if (feedback) feedback.textContent = '';
+        if (hintBox) {
+          hintBox.classList.remove('is-hidden', 'is-open');
+        }
+        if (explainBox) {
+          explainBox.classList.add('is-hidden');
+          explainBox.classList.remove('is-open');
+        }
+
+  		// ★ 선택 안 한 상태(미응답) 복원
+        if (!selectedValue) {
+          if (feedback) {
+            feedback.textContent = '문제를 안 풀었어요😢';
+            feedback.classList.add('quiz-feedback-unanswered');
+          }
+          if (hintBox) hintBox.classList.add('is-hidden');
+          if (explainBox) explainBox.classList.remove('is-hidden');
+          return false;
+        }
+
+        // ★ 여기부터는 보기 하나라도 선택했을 때
+        var selected = q.querySelector('.quiz-choice[data-value="' + selectedValue + '"]');
+        if (selected) selected.classList.add('selected');
+
+        var correctChoice = q.querySelector('.quiz-choice[data-value="' + correct + '"]');
+        var isCorrect = false;
+
+        if (selectedValue === correct) {
+          if (correctChoice) correctChoice.classList.add('correct');
+          q.classList.add('question-correct');
+          isCorrect = true;
+        } else {
+          if (correctChoice) correctChoice.classList.add('correct');
+          if (selected) selected.classList.add('wrong-selected');
+          q.classList.add('question-wrong');
+        }
+
+        if (hintBox) hintBox.classList.add('is-hidden');
+        if (explainBox) explainBox.classList.remove('is-hidden');
+
+        return isCorrect;
+      }
+
+
+       // ─ 시험 '시작 여부' 플래그용 helper (1페이지를 거쳤는지 체크)
+        function examStartedKey(examId) {
+          return 'cheeseQuizExamStarted_' + examId;
+        }
+
+        function hasExamStarted(examId) {
+          if (!examId) return false;
+          try {
+            return localStorage.getItem(examStartedKey(examId)) === '1';
+          } catch (e) {
+            return false;
+          }
+        }
+
+        function markExamStarted(examId) {
+          if (!examId) return;
+          try {
+            localStorage.setItem(examStartedKey(examId), '1');
+          } catch (e) {}
+        }
+
+
+      // ──────────
+      // ── 각 퀴즈별 로직 ──
+      // ──────────
+      quizzes.forEach(function (quiz) {
+        var questions = quiz.querySelectorAll('li[data-answer]');
+        if (!questions.length) return;
+
+        // ★ 전역 문항 번호 찍기 (data-qid 기준)
+        questions.forEach(function (q, index) {
+          var numSpan = q.querySelector('.quiz-qnum');
+          if (!numSpan) return;
+
+          // data-qid가 있으면 그걸 우선 사용, 없으면 이 페이지 내 index+1 사용
+          var qid = q.getAttribute('data-qid');
+          var num = qid ? parseInt(qid, 10) : (index + 1);
+
+          // 뒤에 점(.) 붙이고 싶으면 이렇게
+          numSpan.textContent = num + '.';
+        });
+
+        var examId = quiz.getAttribute('data-exam-key') || null;
+        var examTotalAttr = quiz.getAttribute('data-exam-total');
+        var examTotal = examTotalAttr ? parseInt(examTotalAttr, 10) : null;
+
+        var examState = examId ? loadExamState(examId) : { checked: false, questions: {} };
+        var examAlreadyChecked = !!examState.checked;
+
+
+        // ─────────────────────────────────────
+        // ① 2페이지부터 바로 접근하는 사용자는 1페이지로 돌려보내기
+        //    (멀티페이지 시험 + part !== 1 + 아직 아무 문제도 안 풀었을 때)
+        // ─────────────────────────────────────
+        var examPart   = quiz.getAttribute('data-exam-part');
+        var examRootUrl = quiz.getAttribute('data-exam-root'); // 1페이지 주소
+
+        // ★ 숫자 형태로도 보관해두기
+        var examPagesAttr = quiz.getAttribute('data-exam-pages');
+        var examPartNum   = examPart ? parseInt(examPart, 10) : 1;
+        var examPagesNum  = examPagesAttr ? parseInt(examPagesAttr, 10) : 1;
+
+        // ─────────────────────────────────────
+        // ⓪ 같은 exam-key 를 가진 시험 설정 일관성 체크
+        //    - exam-total / exam-pages / exam-root 가 다르면 오류 처리
+        // ─────────────────────────────────────
+        if (examId) {
+          try {
+            // exam-total 원본 문자열(속성값)이 필요하다면 위쪽에서 이렇게 가져온 게 있을 거야:
+            // var examTotalAttr = quiz.getAttribute('data-exam-total');
+            var examTotalAttr = quiz.getAttribute('data-exam-total');
+
+            var metaKey = 'cheeseQuizExamMeta_' + examId;
+            var currentMeta = {
+              total: examTotalAttr || '',
+              pages: examPagesAttr || '',
+              root:  examRootUrl   || ''
+            };
+
+            var savedStr = localStorage.getItem(metaKey);
+
+            if (!savedStr) {
+              // 처음 보는 exam-key → 이 페이지 값을 기준값으로 저장
+              localStorage.setItem(metaKey, JSON.stringify(currentMeta));
+            } else {
+              var savedMeta = JSON.parse(savedStr);
+
+              var mismatch =
+                savedMeta.total !== currentMeta.total ||
+                savedMeta.pages !== currentMeta.pages ||
+                savedMeta.root  !== currentMeta.root;
+
+              if (mismatch) {
+                alert(
+                  '연습문제 세트 설정이 서로 맞지 않습니다.\n' +
+                  '(exam-key: ' + examId + ')\n' +
+                  '모든 페이지의 data-exam-total / data-exam-pages / data-exam-root 값을 확인해 주세요.'
+                );
+                // ★ 원하는 이동 위치로 변경 가능: 홈피드 / 오류 안내 글 등
+                window.location.href = 'https://www.cheesehistory.com/';
+                return; // 이 페이지 나머지 초기화는 중단
+              }
+            }
+          } catch (e) {
+            // 메타 체크 중 에러가 나면 그냥 넘어가되, 필요하면 여기서도 막을 수 있음
+          }
+        }
+
+
+        if (examId && examRootUrl && examPart && examPart !== '1') {
+          var shouldBlock = false;
+          var ref = document.referrer;
+
+          try {
+            if (!ref) {
+              // referrer 가 없으면: 주소 직접 입력, 새 탭 등 → 막기
+              shouldBlock = true;
+            } else {
+              var here   = window.location;
+              var refUrl = new URL(ref);
+
+              if (refUrl.origin !== here.origin) {
+                // 다른 사이트에서 넘어온 경우 → 막기
+                shouldBlock = true;
+              } else {
+                // 같은 블로그 안이라면, "이 시험의 페이지들"에서 넘어온 경우만 통과
+                var allowed = false;
+
+                // 1) 1페이지(루트)에서 넘어온 경우 허용
+                var rootAbs = new URL(examRootUrl, here.origin).href;
+                if (ref.indexOf(rootAbs) === 0) {
+                  allowed = true;
+                }
+
+                // 2) 이 페이지에 보이는 이전/다음 연습문제 링크에서 넘어온 경우 허용
+                if (!allowed) {
+                  var seriesLinks = document.querySelectorAll(
+                    '.quiz-series-btn.quiz-series-prev, ' +
+                    '.quiz-series-btn.quiz-series-next, ' +
+                    '.cheese-quiz-next'
+                  );
+                  seriesLinks.forEach(function (link) {
+                    var href = link.getAttribute('href');
+                    if (!href || href === '#') return;
+
+                    // 상대경로를 절대경로로 변환
+                    var a = document.createElement('a');
+                    a.href = href;
+                    var absHref = a.href;
+
+                    if (ref.indexOf(absHref) === 0) {
+                      allowed = true;
+                    }
+                  });
+                }
+
+                // allowed 가 아니면 → 홈피드/검색/라벨/기타 페이지에서 직접 들어온 것 → 막기
+                if (!allowed) {
+                  shouldBlock = true;
+                }
+              }
+            }
+          } catch (e) {
+            // referrer 파싱 실패 같은 예외가 나면 안전하게 막기
+            shouldBlock = true;
+          }
+
+          if (shouldBlock) {
+            try {
+              // 이 시험 상태 및 시작 플래그 정리 (있으면)
+              localStorage.removeItem(examStorageKey(examId));
+            } catch (e) {}
+            try {
+              localStorage.removeItem(examStartedKey(examId));
+            } catch (e) {}
+
+            alert('이 연습문제는 1번 문제부터 풀 수 있어요.\n1페이지로 먼저 이동합니다.');
+            window.location.href = examRootUrl;
+            return; // 이 페이지 나머지 초기화는 하지 않고 종료
+          }
+        }
+        // ─────────────────────────────────────
+
+        // ─ 시험 전체 상태에서 이 페이지 문항 연결 + 복원 ─
+        questions.forEach(function (q) {
+          var qid = q.getAttribute('data-qid');
+          if (!qid) return;
+
+          // 이 문항에 대한 상태 객체를 항상 만들어 둠
+          var stored = examState.questions[qid];
+          if (!stored || typeof stored !== 'object') {
+            stored = { selected: null };
+            examState.questions[qid] = stored;
+          }
+          // 정답 저장
+          stored.answer = q.getAttribute('data-answer');
+
+          if (examAlreadyChecked) {
+            // 이미 시험 전체가 채점된 상태라면, 채점된 모양을 복원
+            quiz.dataset.checked = 'true';
+            paintGradedQuestion(q, stored.selected);
+          } else if (stored.selected) {
+            // 아직 채점 전이라면, 선택만 복원
+            var choice = q.querySelector('.quiz-choice[data-value="' + stored.selected + '"]');
+            if (choice) choice.classList.add('selected');
+          }
+        });
+
+        if (examId) {
+          saveExamState(examId, examState);
+        }
+
+        // 아코디언 토글
+        questions.forEach(function (q) {
+          var accordions = q.querySelectorAll('.quiz-accordion');
+          accordions.forEach(function (acc) {
+            var toggle = acc.querySelector('.quiz-accordion-toggle');
+            if (!toggle) return;
+            toggle.addEventListener('click', function () {
+              acc.classList.toggle('is-open');
+            });
+          });
+        });
+
+        // 보기 선택 / 해제 (채점 전)
+        questions.forEach(function (q) {
+          var choices = q.querySelectorAll('.quiz-choice');
+          var qid = q.getAttribute('data-qid');
+
+          choices.forEach(function (choice) {
+            choice.addEventListener('click', function () {
+              // 이미 채점된 후라면 선택 변경 불가
+              if (quiz.dataset.checked === 'true') return;
+
+              // ★ 보기 하나라도 누르면 "시험 시작" 플래그 ON
+              if (examId) {
+                markExamStarted(examId);
+              }
+
+              var value = choice.getAttribute('data-value');
+
+              // 이미 선택된 보기 → 해제
+              if (choice.classList.contains('selected')) {
+                choice.classList.remove('selected');
+
+                if (examId && qid) {
+                  var qs = examState.questions[qid];
+                  if (!qs || typeof qs !== 'object') {
+                    qs = { selected: null, answer: q.getAttribute('data-answer') };
+                    examState.questions[qid] = qs;
+                  }
+                  qs.selected = null;
+                  examState.checked = false;
+                  saveExamState(examId, examState);
+                }
+                return;
+              }
+
+              // 새 선택
+              choices.forEach(function (c) {
+                c.classList.remove('selected');
+              });
+              choice.classList.add('selected');
+
+              if (examId && qid) {
+                var qs2 = examState.questions[qid];
+                if (!qs2 || typeof qs2 !== 'object') {
+                  qs2 = { selected: null, answer: q.getAttribute('data-answer') };
+                  examState.questions[qid] = qs2;
+                }
+                qs2.selected = value;
+                examState.checked = false;
+                saveExamState(examId, examState);
+              }
+            });
+          });
+        });
+
+        var checkButton = quiz.querySelector('.cheese-quiz-check');
+        var resetButton = quiz.querySelector('.cheese-quiz-reset');
+
+        // ★ 처음 로드 시, 이미 채점이 끝난 시험이면 다시풀기 버튼 보이기
+        if (resetButton) {
+          if (examAlreadyChecked) {
+            resetButton.classList.add('is-visible');
+          } else {
+            resetButton.classList.remove('is-visible');
+          }
+        }
+        // ★ 마지막 페이지가 아니면 채점 버튼 숨기기
+        if (checkButton) {
+          // examPagesNum > 1 이면 "멀티 페이지 시험"
+          // examPartNum < examPagesNum 이면 "마지막 페이지가 아님"
+          if (examPagesNum > 1 && examPartNum < examPagesNum) {
+            checkButton.style.display = 'none';
+          }
+        }  
+
+        // ──────────
+        // ─ 채점하기 ─
+        // ──────────
+        if (checkButton) {
+          checkButton.addEventListener('click', function () {
+            quiz.dataset.checked = 'true';
+
+            // ★ 채점이 끝났으니 다시풀기 버튼 노출
+            if (resetButton) {
+              resetButton.classList.add('is-visible');
+            }
+
+            var pageScore = 0;
+            var pageTotal = questions.length;
+
+            questions.forEach(function (q) {
+              var correct = q.getAttribute('data-answer');
+              var qid = q.getAttribute('data-qid');
+              var choices = q.querySelectorAll('.quiz-choice');
+              var selected = q.querySelector('.quiz-choice.selected');
+              var feedback = q.querySelector('.quiz-feedback');
+              var hintBox = q.querySelector('.quiz-accordion.quiz-hint');
+              var explainBox = q.querySelector('.quiz-accordion.quiz-explain');
+
+              // 초기화
+              choices.forEach(function (c) {
+                c.classList.remove('correct', 'wrong-selected');
+              });
+              q.classList.remove('question-correct', 'question-wrong');
+
+              if (feedback) {
+                feedback.textContent = '';
+                feedback.classList.remove('quiz-feedback-unanswered');
+              }
+              if (hintBox) {
+                hintBox.classList.remove('is-hidden', 'is-open');
+              }
+              if (explainBox) {
+                explainBox.classList.add('is-hidden');
+                explainBox.classList.remove('is-open');
+              }
+
+              var value = null;
+
+              // ★ 선택 안 한 문제(미응답)
+              if (!selected) {
+                if (feedback) {
+                  feedback.textContent = '문제를 안 풀었어요😢';
+                  feedback.classList.add('quiz-feedback-unanswered');
+                }
+                if (hintBox) hintBox.classList.add('is-hidden');
+                if (explainBox) explainBox.classList.remove('is-hidden');
+
+                if (examId && qid) {
+                  var qs0 = examState.questions[qid] || {};
+                  qs0.selected = null;
+                  qs0.answer = correct;
+                  examState.questions[qid] = qs0;
+                }
+                return;
+              }
+
+              // ★ 보기 선택한 문제
+              value = selected.getAttribute('data-value');
+              var correctChoice = q.querySelector('.quiz-choice[data-value="' + correct + '"]');
+
+              if (value === correct) {
+                if (correctChoice) correctChoice.classList.add('correct');
+                q.classList.add('question-correct');
+                pageScore++;
+              } else {
+                if (correctChoice) correctChoice.classList.add('correct');
+                selected.classList.add('wrong-selected');
+                q.classList.add('question-wrong');
+              }
+
+              if (hintBox) hintBox.classList.add('is-hidden');
+              if (explainBox) explainBox.classList.remove('is-hidden');
+
+              if (examId && qid) {
+                var qState = examState.questions[qid] || {};
+                qState.selected = value;
+                qState.answer = correct;
+                examState.questions[qid] = qState;
+              }
+            });
+
+            if (examId) {
+              examState.checked = true;
+              saveExamState(examId, examState);
+            }
+
+            // 이 페이지 하단 텍스트
+            var resultBox = quiz.querySelector('.cheese-quiz-result');
+            if (resultBox) {
+              resultBox.textContent = pageScore + ' / ' + pageTotal + ' 개 정답입니다.';
+            }
+
+            // ─ 시험 전체 기준 점수 계산 ─
+            var finalScore = pageScore;
+            var finalTotal = pageTotal;
+
+            if (examId) {
+              finalScore = 0;
+              finalTotal = 0;
+
+              Object.keys(examState.questions).forEach(function (qid) {
+                var qInfo = examState.questions[qid];
+                if (!qInfo || !qInfo.answer) return;
+                finalTotal++;
+                if (qInfo.selected && qInfo.selected === qInfo.answer) {
+                  finalScore++;
+                }
+              });
+
+              // data-exam-total 지정되어 있으면 그 값을 전체 문항 수로 사용
+              if (examTotal && examTotal > 0) {
+                finalTotal = examTotal;
+              }
+            }
+
+            // 이 페이지 하단 텍스트(시험 전체 기준)
+            if (resultBox) {
+              resultBox.textContent = finalScore + ' / ' + finalTotal + ' 개 정답입니다.';
+            }
+
+            // ★ 여기서 한 번만 시트로 전송
+            if (examId) {
+              sendQuizResultToSheet(examId, finalScore, finalTotal);
+            }
+
+            var percent = finalTotal > 0 ? Math.round((finalScore / finalTotal) * 100) : 0;
+            openQuizModal(percent, finalScore, finalTotal);
+          });
+        }
+
+
+        // ──────────
+        // ─ 다시풀기 (이 페이지만 리셋) ─
+        // ──────────
+        if (resetButton) {
+          resetButton.addEventListener('click', function () {
+
+            // ★ 다시풀기 눌렀으면 버튼은 다시 숨김 (채점 전 상태로 되돌리기)
+            resetButton.classList.remove('is-visible');
+
+
+            // 1) 이 페이지 퀴즈 상태 리셋 (기존 동작)
+            delete quiz.dataset.checked;
+
+            questions.forEach(function (q) {
+              var choices = q.querySelectorAll('.quiz-choice');
+              var feedback = q.querySelector('.quiz-feedback');
+              var hintBox = q.querySelector('.quiz-accordion.quiz-hint');
+              var explainBox = q.querySelector('.quiz-accordion.quiz-explain');
+
+              choices.forEach(function (c) {
+                c.classList.remove('selected', 'correct', 'wrong-selected');
+              });
+              q.classList.remove('question-correct', 'question-wrong');
+
+              if (feedback) {
+                feedback.textContent = '';
+                feedback.classList.remove('quiz-feedback-unanswered');
+              }
+
+              if (hintBox) {
+                hintBox.classList.remove('is-hidden', 'is-open');
+              }
+              if (explainBox) {
+                explainBox.classList.add('is-hidden');
+                explainBox.classList.remove('is-open');
+              }
+
+              var qid = q.getAttribute('data-qid');
+              if (examId && qid && examState.questions[qid]) {
+                examState.questions[qid].selected = null;
+              }
+            });
+
+            var resultBox = quiz.querySelector('.cheese-quiz-result');
+            if (resultBox) {
+              resultBox.textContent = '';
+            }
+
+            if (examId) {
+              examState.checked = false;
+              saveExamState(examId, examState);
+            }
+
+            // 2) (추가) 시험 전체 상태 삭제 + 1페이지 / 첫 문제로 이동
+            try {
+              for (var i = localStorage.length - 1; i >= 0; i--) {
+                var key = localStorage.key(i);
+
+                // 모든 시험 상태 삭제
+                if (key && key.indexOf('cheeseQuizExam_') === 0) {
+                  localStorage.removeItem(key);
+                }
+
+                // "1페이지 방문" 플래그도 같이 삭제
+                if (key && key.indexOf('cheeseQuizExamStarted_') === 0) {
+                  localStorage.removeItem(key);
+                }
+              }
+            } catch (e) {}
+
+            // 모달의 "처음부터 다시풀기"와 동일하게 1번 문제/1페이지로 이동
+            goToExamFirstQuestion();
+          });
+        }
+      });
+    });
+
+
+  /******************************************************************
+   * 3 랜덤 전용 로더 (sheet/DB에서 문제 가져오기)
    * 전역 퀴즈 유틸: 로딩 모달 ON/OFF
    *  - showQuizLoading(message)
    *  - hideQuizLoading()
@@ -656,3 +1547,56 @@
       }
     });
   });
+
+
+      // ──────────  
+      // 연습문제 페이지 이동 네비게이션 바, 상황별 숨김 로직
+      // ──────────
+      document.addEventListener('DOMContentLoaded', function () {
+        var quiz = document.querySelector('.cheese-quiz');
+        if (!quiz) return;
+
+        var nav = quiz.querySelector('.cheese-quiz-series-nav');
+        if (!nav) return;
+
+        var examPart  = parseInt(quiz.getAttribute('data-exam-part') || '1', 10);
+        var examPages = parseInt(quiz.getAttribute('data-exam-pages') || '1', 10);
+
+        var prevBtn = nav.querySelector('.quiz-series-prev');
+        var nextBtn = nav.querySelector('.quiz-series-next');
+        var listBtn = nav.querySelector('.quiz-series-list');
+
+        // ★ 페이지 인디케이터 처리
+        var indicator = quiz.querySelector('.cheese-quiz-page-indicator');
+        if (indicator) {
+          // 페이지 수가 1이면 굳이 안 보여줘도 된다 싶으면 여기서 display:none 도 가능
+          indicator.textContent = examPart + ' / ' + examPages + ' 페이지';
+        }
+
+        // ★ 이 페이지 퀴즈의 examId
+        var navExamId = quiz.getAttribute('data-exam-key') || null;
+
+        function attachStartFlag(link) {
+          if (!link || !navExamId) return;
+          link.addEventListener('click', function () {
+            // 네비로 페이지 이동하는 것도 "시험을 시작했다"로 간주
+            markExamStarted(navExamId);
+          });
+        }
+
+        // 이전/다음/목록 버튼에 “시험 시작” 플래그 연결
+        attachStartFlag(prevBtn);
+        attachStartFlag(nextBtn);
+        attachStartFlag(listBtn);
+
+
+        // 1페이지면 이전 버튼 숨김
+        if (prevBtn && examPart <= 1) {
+          prevBtn.style.display = 'none';
+        }
+
+        // 마지막 페이지면 다음 버튼 숨김
+        if (nextBtn && examPart >= examPages) {
+          nextBtn.style.display = 'none';
+        }
+      });
