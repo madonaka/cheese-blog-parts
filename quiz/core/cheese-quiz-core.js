@@ -213,42 +213,9 @@
         }
       }
 
-      // 채점결과 확인하기 → 첫 번째 연습문제로 스크롤 / 1페이지 이동
-      if (quizModalGoto) {
-        quizModalGoto.addEventListener('click', function () {
-          closeQuizModal();
-          goToExamFirstQuestion();
-        });
-      }
 
-      // 처음부터 다시풀기 → 모든 퀴즈 리셋 + 시험 상태 삭제 + 1페이지 이동
-      if (quizModalRestart) {
-        quizModalRestart.addEventListener('click', function () {
-          closeQuizModal();
 
-          // 페이지 안의 리셋 버튼들 눌러주기
-          var resetButtons = document.querySelectorAll('.cheese-quiz-reset');
-          resetButtons.forEach(function (btn) { btn.click(); });
 
-          // localStorage에 저장된 시험 상태 삭제
-          try {
-            for (var i = localStorage.length - 1; i >= 0; i--) {
-              var key = localStorage.key(i);
-              if (key && key.indexOf('cheeseQuizExam_') === 0) {
-                localStorage.removeItem(key);
-              }
-
-              // 추가: "1페이지 방문" 플래그도 같이 삭제
-              if (key.indexOf('cheeseQuizExamStarted_') === 0) {
-                localStorage.removeItem(key);
-              }
-            }
-          } catch (e) {}
-
-          // 1페이지 / 첫 문제 위치로 이동
-          goToExamFirstQuestion();
-        });
-      }
 
 
       // ──────────
