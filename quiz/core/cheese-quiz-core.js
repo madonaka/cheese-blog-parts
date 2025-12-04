@@ -741,7 +741,9 @@
             }
 
             var percent = finalTotal > 0 ? Math.round((finalScore / finalTotal) * 100) : 0;
-            openQuizModal(percent, finalScore, finalTotal);
+            if (typeof openCheeseQuizModal === 'function') {
+              openCheeseQuizModal(percent, finalScore, finalTotal);
+            }
           });
         }
 
