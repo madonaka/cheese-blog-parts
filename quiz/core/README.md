@@ -208,14 +208,19 @@ resetCheeseQuiz(wrapper)
 @import url('https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/components/modal/cheese-page-loading-modal.css');
 ```
 
-<body> 끝부분에 JS 로드
-
 ```html
-<script>
-  const CHEESE_QUIZ_SESSION_ID =
-    'quiz-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
-</script>
-<script src="https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/quiz/core/cheese-quiz-core.js" defer></script>
+<b:if cond='data:blog.pageType == &quot;item&quot;'>
+  <!-- ==================================================
+ &#9733; Cheese Quiz Core (연습문제 코어 스크립트) 부품
+ - Ver.20251204-2
+ - GitHub cheese-blog-parts/quiz/core/cheese-quiz-core.js 를 로드한다.
+ - .cheese-quiz 컨테이너를 찾아 퀴즈 데이터를 불러오고,
+   문제/보기/정답/해설을 렌더링한다.
+ - 채점하기 / 다시 풀기 버튼, 점수 모달, 로딩 모달, 통계 표시 등
+   연습문제 전반 동작을 제어하는 공통 엔진이다.
+ ==================================================  -->
+  <script src='https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/quiz/core/cheese-quiz-core.js?v=20251204-2'/>
+</b:if>
 ```
 
 본문 HTML에 퀴즈 wrapper + 모달들 추가
