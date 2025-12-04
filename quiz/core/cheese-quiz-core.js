@@ -601,34 +601,48 @@
       }
     }
 
-    if (gotoBtn) {
-      gotoBtn.addEventListener('click', function () {
-        closeModal();
-        scrollToFirstQuestion();
-      });
-    }
+      if (gotoBtn) {
+    gotoBtn.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopImmediatePropagation(); // 테마 쪽 전역 핸들러보다 먼저 먹이기
+      closeModal();
+      scrollToFirstQuestion();
+    }, true); // ★ 캡처 단계
+  }
 
-    if (restartBtn) {
-      restartBtn.addEventListener('click', function () {
-        closeModal();
-        // 페이지 안의 모든 퀴즈를 초기화
-        document.querySelectorAll('.cheese-quiz').forEach(wrapper => {
-          resetCheeseQuiz(wrapper);
-        });
-        scrollToFirstQuestion();
+  if (restartBtn) {
+    restartBtn.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      closeModal();
+      // 페이지 안의 모든 퀴즈를 초기화
+      document.querySelectorAll('.cheese-quiz').forEach(wrapper => {
+        resetCheeseQuiz(wrapper);
       });
-    }
+      scrollToFirstQuestion();
+    }, true); // ★ 캡처 단계
+  }
 
-    if (closeBtn) {
-      closeBtn.addEventListener('click', closeModal);
+  if (closeBtn) {
+    closeBtn.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      closeModal();
+    }, true); // ★ 캡처 단계
+  }
+
+  if (backdrop) {
+    backdrop.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      closeModal();
+    }, true); // ★ 캡처 단계
+  }
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') {
+      closeModal();
     }
-    if (backdrop) {
-      backdrop.addEventListener('click', closeModal);
-    }
-    document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') {
-        closeModal();
-      }
-    });
   });
+
 
