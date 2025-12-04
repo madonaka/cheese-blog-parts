@@ -167,6 +167,36 @@
       // ─────────────────────────────────────
 
 
+      function openQuizModal(percent, correctCount, totalCount) {
+        if (!quizModal || !quizModalScore || !quizModalDetail) return;
+
+        quizModalScore.textContent = percent + '점';
+        quizModalDetail.textContent = correctCount + ' / ' + totalCount + '개 정답입니다.';
+
+        quizModal.classList.add('is-open');
+        document.documentElement.classList.add('quiz-modal-open');
+        if (document.body) document.body.classList.add('quiz-modal-open');
+      }
+
+      function closeQuizModal() {
+        if (!quizModal) return;
+        quizModal.classList.remove('is-open');
+        document.documentElement.classList.remove('quiz-modal-open');
+        if (document.body) document.body.classList.remove('quiz-modal-open');
+      }
+
+      if (quizModalClose) {
+        quizModalClose.addEventListener('click', closeQuizModal);
+      }
+      if (quizModalBackdrop) {
+        quizModalBackdrop.addEventListener('click', closeQuizModal);
+      }
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') {
+          closeQuizModal();
+        }
+      });
+
       // ──────────
       // 1번 문제 있는 곳으로 이동하는 helper
       // ──────────
@@ -213,7 +243,42 @@
         }
       }
 
+      // 채점결과 확인하기 → 첫 번째 연습문제로 스크롤 / 1페이지 이동
+      if (quizModalGoto) {
+        quizModalGoto.addEventListener('click', function () {
+          closeQuizModal();
+          goToExamFirstQuestion();
+        });
+      }
 
+      // 처음부터 다시풀기 → 모든 퀴즈 리셋 + 시험 상태 삭제 + 1페이지 이동
+      if (quizModalRestart) {
+        quizModalRestart.addEventListener('click', function () {
+          closeQuizModal();
+
+          // 페이지 안의 리셋 버튼들 눌러주기
+          var resetButtons = document.querySelectorAll('.cheese-quiz-reset');
+          resetButtons.forEach(function (btn) { btn.click(); });
+
+          // localStorage에 저장된 시험 상태 삭제
+          try {
+            for (var i = localStorage.length - 1; i >= 0; i--) {
+              var key = localStorage.key(i);
+              if (key && key.indexOf('cheeseQuizExam_') === 0) {
+                localStorage.removeItem(key);
+              }
+
+              // 추가: "1페이지 방문" 플래그도 같이 삭제
+              if (key.indexOf('cheeseQuizExamStarted_') === 0) {
+                localStorage.removeItem(key);
+              }
+            }
+          } catch (e) {}
+
+          // 1페이지 / 첫 문제 위치로 이동
+          goToExamFirstQuestion();
+        });
+      }
 
 
 
@@ -825,6 +890,59 @@
       });
     });
 
+  // ──────────  
+  // 연습문제 페이지 이동 네비게이션 바, 상황별 숨김 로직
+  // ──────────
+  document.addEventListener('DOMContentLoaded', function () {
+	var quiz = document.querySelector('.cheese-quiz');
+	if (!quiz) return;
+
+	var nav = quiz.querySelector('.cheese-quiz-series-nav');
+	if (!nav) return;
+
+	var examPart  = parseInt(quiz.getAttribute('data-exam-part') || '1', 10);
+	var examPages = parseInt(quiz.getAttribute('data-exam-pages') || '1', 10);
+
+	var prevBtn = nav.querySelector('.quiz-series-prev');
+	var nextBtn = nav.querySelector('.quiz-series-next');
+	var listBtn = nav.querySelector('.quiz-series-list');
+
+	// ★ 페이지 인디케이터 처리
+	var indicator = quiz.querySelector('.cheese-quiz-page-indicator');
+	if (indicator) {
+	  // 페이지 수가 1이면 굳이 안 보여줘도 된다 싶으면 여기서 display:none 도 가능
+	  indicator.textContent = examPart + ' / ' + examPages + ' 페이지';
+	}
+
+	// ★ 이 페이지 퀴즈의 examId
+	var navExamId = quiz.getAttribute('data-exam-key') || null;
+
+	function attachStartFlag(link) {
+	  if (!link || !navExamId) return;
+	  link.addEventListener('click', function () {
+		// 네비로 페이지 이동하는 것도 "시험을 시작했다"로 간주
+		markExamStarted(navExamId);
+	  });
+	}
+
+	// 이전/다음/목록 버튼에 “시험 시작” 플래그 연결
+	attachStartFlag(prevBtn);
+	attachStartFlag(nextBtn);
+	attachStartFlag(listBtn);
+
+
+	// 1페이지면 이전 버튼 숨김
+	if (prevBtn && examPart <= 1) {
+	  prevBtn.style.display = 'none';
+	}
+
+	// 마지막 페이지면 다음 버튼 숨김
+	if (nextBtn && examPart >= examPages) {
+	  nextBtn.style.display = 'none';
+	}
+  });
+
+
 
   /******************************************************************
    * 3 랜덤 전용 로더 (sheet/DB에서 문제 가져오기)
@@ -948,114 +1066,30 @@
       }
 
 	/******************************************************************
-	 * 전역 퀴즈 유틸: 점수 모달 열기 + 버튼 이벤트 연결
-	 *  - 여기에서 모달 버튼(닫기 / 결과 보기 / 다시풀기)에
-	 *    직접 이벤트를 한 번만 묶어준다.
+   * 전역 퀴즈 유틸: 점수 모달 열기
+   *  - 테마에 이미 있는 #cheese-quiz-modal 구조를 활용
 	 ******************************************************************/
-	function openCheeseQuizModal(percent, correctCount, totalCount) {
-	  var modal = document.getElementById('cheese-quiz-modal');
-	  if (!modal) return; // 모달이 없으면 아무 것도 안 함
-	
-	  var scoreEl  = modal.querySelector('.cheese-quiz-modal-score');
-	  var detailEl = modal.querySelector('.cheese-quiz-modal-detail');
-	
-	  // 점수 / 정답 텍스트 세팅
-	  if (scoreEl) {
-	    scoreEl.textContent = percent + '점';
-	  }
-	  if (detailEl) {
-	    detailEl.textContent =
-	      correctCount + ' / ' + totalCount + '개 정답입니다.';
-	  }
-	
-	  // ▼ 모달 열기
-	  modal.classList.add('is-open');
-	  document.documentElement.classList.add('quiz-modal-open');
-	  if (document.body) {
-	    document.body.classList.add('quiz-modal-open');
-	  }
-	
-	  // 이미 한 번 바인딩했다면 다시 묶지 않음
-	  if (modal.dataset.quizModalBound === '1') {
-	    return;
-	  }
-	  modal.dataset.quizModalBound = '1';
-	
-	  // ▼ 버튼 / 배경 요소 찾기
-	  var closeBtn   = modal.querySelector('.cheese-quiz-modal-close');
-	  var backdrop   = modal.querySelector('.cheese-quiz-modal-backdrop');
-	  var gotoBtn    = modal.querySelector('.cheese-quiz-modal-goto');
-	  var restartBtn = modal.querySelector('.cheese-quiz-modal-restart');
-	
-	  function closeModal() {
-	    modal.classList.remove('is-open');
-	    document.documentElement.classList.remove('quiz-modal-open');
-	    if (document.body) {
-	      document.body.classList.remove('quiz-modal-open');
-	    }
-	  }
-	
-	  // 첫 번째 문제(혹은 첫 문항) 위치로 스크롤
-	  function scrollToFirstQuestion() {
-	    var first =
-	      document.querySelector('.cheese-quiz li[data-qid="1"]') ||
-	      document.querySelector('.cheese-quiz li[data-answer]');
-	    if (first) {
-	      first.scrollIntoView({ behavior: 'smooth', block: 'start' });
-	    } else {
-	      window.scrollTo({ top: 0, behavior: 'smooth' });
-	    }
-	  }
-	
-	  // 채점결과 확인하기 버튼 → 모달 닫고 첫 문제로 스크롤
-	  if (gotoBtn) {
-	    gotoBtn.addEventListener('click', function (e) {
-	      e.preventDefault();
-	      closeModal();
-	      scrollToFirstQuestion();
-	    });
-	  }
-	
-	  // 처음부터 다시풀기 버튼 → 전체 퀴즈 리셋 후 첫 문제로
-	  if (restartBtn) {
-	    restartBtn.addEventListener('click', function (e) {
-	      e.preventDefault();
-	      closeModal();
-	
-	      // 페이지 안의 모든 퀴즈 리셋
-	      document.querySelectorAll('.cheese-quiz').forEach(function (wrapper) {
-	        if (typeof resetCheeseQuiz === 'function') {
-	          resetCheeseQuiz(wrapper);
-	        }
-	      });
-	
-	      scrollToFirstQuestion();
-	    });
-	  }
-	
-	  // 닫기(X) 버튼
-	  if (closeBtn) {
-	    closeBtn.addEventListener('click', function (e) {
-	      e.preventDefault();
-	      closeModal();
-	    });
-	  }
-	
-	  // 배경 클릭 시 닫기
-	  if (backdrop) {
-	    backdrop.addEventListener('click', function (e) {
-	      e.preventDefault();
-	      closeModal();
-	    });
-	  }
-	
-	  // ESC 키로 닫기
-	  document.addEventListener('keydown', function (e) {
-	    if (e.key === 'Escape') {
-	      closeModal();
-	    }
-	  });
-	}
+  function openCheeseQuizModal(percent, correctCount, totalCount) {
+    var modal = document.getElementById('cheese-quiz-modal');
+    if (!modal) return; // 모달 없는 테마면 그냥 무시
+
+    var scoreEl  = modal.querySelector('.cheese-quiz-modal-score');
+    var detailEl = modal.querySelector('.cheese-quiz-modal-detail');
+
+    if (scoreEl) {
+      scoreEl.textContent = percent + '점';
+    }
+    if (detailEl) {
+      detailEl.textContent =
+        correctCount + ' / ' + totalCount + '개 정답입니다.';
+    }
+
+    modal.classList.add('is-open');
+    document.documentElement.classList.add('quiz-modal-open');
+    if (document.body) {
+      document.body.classList.add('quiz-modal-open');
+    }
+  }
 
 
   /******************************************************************
@@ -1485,56 +1519,3 @@
       }
     });
   });
-
-
-      // ──────────  
-      // 연습문제 페이지 이동 네비게이션 바, 상황별 숨김 로직
-      // ──────────
-      document.addEventListener('DOMContentLoaded', function () {
-        var quiz = document.querySelector('.cheese-quiz');
-        if (!quiz) return;
-
-        var nav = quiz.querySelector('.cheese-quiz-series-nav');
-        if (!nav) return;
-
-        var examPart  = parseInt(quiz.getAttribute('data-exam-part') || '1', 10);
-        var examPages = parseInt(quiz.getAttribute('data-exam-pages') || '1', 10);
-
-        var prevBtn = nav.querySelector('.quiz-series-prev');
-        var nextBtn = nav.querySelector('.quiz-series-next');
-        var listBtn = nav.querySelector('.quiz-series-list');
-
-        // ★ 페이지 인디케이터 처리
-        var indicator = quiz.querySelector('.cheese-quiz-page-indicator');
-        if (indicator) {
-          // 페이지 수가 1이면 굳이 안 보여줘도 된다 싶으면 여기서 display:none 도 가능
-          indicator.textContent = examPart + ' / ' + examPages + ' 페이지';
-        }
-
-        // ★ 이 페이지 퀴즈의 examId
-        var navExamId = quiz.getAttribute('data-exam-key') || null;
-
-        function attachStartFlag(link) {
-          if (!link || !navExamId) return;
-          link.addEventListener('click', function () {
-            // 네비로 페이지 이동하는 것도 "시험을 시작했다"로 간주
-            markExamStarted(navExamId);
-          });
-        }
-
-        // 이전/다음/목록 버튼에 “시험 시작” 플래그 연결
-        attachStartFlag(prevBtn);
-        attachStartFlag(nextBtn);
-        attachStartFlag(listBtn);
-
-
-        // 1페이지면 이전 버튼 숨김
-        if (prevBtn && examPart <= 1) {
-          prevBtn.style.display = 'none';
-        }
-
-        // 마지막 페이지면 다음 버튼 숨김
-        if (nextBtn && examPart >= examPages) {
-          nextBtn.style.display = 'none';
-        }
-      });
