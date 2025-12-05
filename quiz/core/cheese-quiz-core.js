@@ -131,11 +131,11 @@
       // ──────────  
       // ── 모달 요소  ──
       // ──────────
-      var quizModal = document.getElementById('cheese-quiz-modal');
+      // var quizModal = document.getElementById('cheese-quiz-modal');
       var quizModalScore = document.getElementById('cheese-quiz-modal-score');
       var quizModalDetail = document.getElementById('cheese-quiz-modal-detail');
       var quizModalClose = quizModal ? quizModal.querySelector('.cheese-quiz-modal-close') : null;
-      var quizModalBackdrop = quizModal ? quizModal.querySelector('.cheese-quiz-modal-backdrop') : null;
+      // var quizModalBackdrop = quizModal ? quizModal.querySelector('.cheese-quiz-modal-backdrop') : null;
       var quizModalGoto = quizModal ? quizModal.querySelector('.cheese-quiz-modal-goto') : null;
       var quizModalRestart = quizModal ? quizModal.querySelector('.cheese-quiz-modal-restart') : null;
 
@@ -204,17 +204,6 @@
         if (document.body) document.body.classList.remove('quiz-modal-open');
       }
 
-      if (quizModalClose) {
-        quizModalClose.addEventListener('click', closeQuizModal);
-      }
-      if (quizModalBackdrop) {
-        quizModalBackdrop.addEventListener('click', closeQuizModal);
-      }
-      document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape') {
-          closeQuizModal();
-        }
-      });
 
       // ──────────
       // 1번 문제 있는 곳으로 이동하는 helper
@@ -261,44 +250,6 @@
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }
       }
-
-      // 채점결과 확인하기 → 첫 번째 연습문제로 스크롤 / 1페이지 이동
-      if (quizModalGoto) {
-        quizModalGoto.addEventListener('click', function () {
-          closeQuizModal();
-          goToExamFirstQuestion();
-        });
-      }
-
-      // 처음부터 다시풀기 → 모든 퀴즈 리셋 + 시험 상태 삭제 + 1페이지 이동
-      if (quizModalRestart) {
-        quizModalRestart.addEventListener('click', function () {
-          closeQuizModal();
-
-          // 페이지 안의 리셋 버튼들 눌러주기
-          var resetButtons = document.querySelectorAll('.cheese-quiz-reset');
-          resetButtons.forEach(function (btn) { btn.click(); });
-
-          // localStorage에 저장된 시험 상태 삭제
-          try {
-            for (var i = localStorage.length - 1; i >= 0; i--) {
-              var key = localStorage.key(i);
-              if (key && key.indexOf('cheeseQuizExam_') === 0) {
-                localStorage.removeItem(key);
-              }
-
-              // 추가: "1페이지 방문" 플래그도 같이 삭제
-              if (key.indexOf('cheeseQuizExamStarted_') === 0) {
-                localStorage.removeItem(key);
-              }
-            }
-          } catch (e) {}
-
-          // 1페이지 / 첫 문제 위치로 이동
-          goToExamFirstQuestion();
-        });
-      }
-
 
 
 
@@ -892,7 +843,59 @@
   // 연습문제 페이지 이동 네비게이션 바, 상황별 숨김 로직
   // ──────────
   document.addEventListener('DOMContentLoaded', function () {
-	var quiz = document.querySelector('.cheese-quiz');
+// ─────────────────────────────────────
+// ★★★ 모달 버튼 이벤트를 위한 이벤트 위임 로직 추가 ★★★
+// (모달이 나중에 렌더링되더라도 이벤트 처리가 가능하도록 함)
+// ─────────────────────────────────────
+
+// `document`에 클릭 이벤트를 걸어 모달 내부 버튼 클릭을 위임 처리
+document.addEventListener('click', function (e) {
+  const modal = document.getElementById('cheese-quiz-modal');
+  if (!modal || !modal.classList.contains('is-open')) return;
+
+  // 1. 닫기 버튼 (.cheese-quiz-modal-close) 또는 배경 (.cheese-quiz-modal-backdrop)
+  if (e.target.closest('.cheese-quiz-modal-close') || e.target.closest('.cheese-quiz-modal-backdrop')) {
+    closeQuizModal();
+    return;
+  }
+  
+  // 2. '채점결과 확인하기' 버튼 (.cheese-quiz-modal-goto)
+  const gotoBtn = e.target.closest('.cheese-quiz-modal-goto');
+  if (gotoBtn) {
+    closeQuizModal();
+    goToExamFirstQuestion();
+    return;
+  }
+
+  // 3. '처음부터 다시풀기' 버튼 (.cheese-quiz-modal-restart)
+  const restartBtn = e.target.closest('.cheese-quiz-modal-restart');
+  if (restartBtn) {
+    closeQuizModal();
+    
+    // 페이지 안의 리셋 버튼들 눌러주기
+    var resetButtons = document.querySelectorAll('.cheese-quiz-reset');
+    resetButtons.forEach(function (btn) { btn.click(); });
+    
+    // localStorage에 저장된 시험 상태 삭제
+    try {
+      for (var i = localStorage.length - 1; i >= 0; i--) {
+        var key = localStorage.key(i);
+        if (key && key.indexOf('cheeseQuizExam_') === 0) {
+          localStorage.removeItem(key);
+        }
+        if (key && key.indexOf('cheeseQuizExamStarted_') === 0) {
+          localStorage.removeItem(key);
+        }
+      }
+    } catch (e) {}
+
+    goToExamFirstQuestion();
+  }
+});
+// ─────────────────────────────────────
+	  
+	  
+	  var quiz = document.querySelector('.cheese-quiz');
 	if (!quiz) return;
 
 	var nav = quiz.querySelector('.cheese-quiz-series-nav');
