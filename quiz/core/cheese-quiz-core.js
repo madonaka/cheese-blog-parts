@@ -1,8 +1,13 @@
   /******************************************************************
    * 1. 상수 / 공통 유틸 (엔드포인트, 세션 ID 등)
    ******************************************************************/
-  const CHEESE_QUIZ_SESSION_ID =
-    'sess-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+	const CHEESE_QUIZ_SESSION_ID =
+	  (typeof window !== 'undefined' && window.CHEESE_QUIZ_SESSION_ID) ||
+	  ('sess-' + Math.random().toString(36).slice(2) + Date.now().toString(36));
+	
+	if (typeof window !== 'undefined') {
+	  window.CHEESE_QUIZ_SESSION_ID = CHEESE_QUIZ_SESSION_ID;
+	}
 
 	/**
 	 * 시험 '시작 여부' 플래그 helper (1페이지 방문 여부)
@@ -1451,13 +1456,18 @@
 
       const logUrl = wrapper.dataset.logApi || defaultLogApi;
 
-      // 서버에 보낼 payload
-      const payload = {
-        quizKey:   wrapper.dataset.examKey || wrapper.getAttribute('data-exam-key') || '',
-        pageUrl:   window.location.href,
-        sessionId: CHEESE_QUIZ_SESSION_ID,
-        items:     logItems
-      };
+	// sendCheeseQuizLog 함수 안, payload 만들기 바로 위에 한 줄 추가
+	const sessionId =
+	  (typeof CHEESE_QUIZ_SESSION_ID !== 'undefined')
+		? CHEESE_QUIZ_SESSION_ID
+		: 'anon';   // 혹시라도 없으면 'anon' 으로 기록
+	
+	const payload = {
+	  quizKey:   wrapper.dataset.examKey || wrapper.getAttribute('data-exam-key') || '',
+	  pageUrl:   window.location.href,
+	  sessionId: sessionId,
+	  items:     logItems
+	};
 
       // ★ CORS 에러 때문에 화면 깨지지 않도록
       //   - mode: 'no-cors'      → 응답은 못 읽어도 요청은 전송
