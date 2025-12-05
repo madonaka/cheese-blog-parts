@@ -4,6 +4,29 @@
   const CHEESE_QUIZ_SESSION_ID =
     'sess-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
 
+	/**
+	 * 시험 '시작 여부' 플래그 helper (1페이지 방문 여부)
+	 */
+	function examStartedKey(examId) {
+	  return 'cheeseQuizExamStarted_' + examId;
+	}
+	
+	function hasExamStarted(examId) {
+	  if (!examId) return false;
+	  try {
+		return localStorage.getItem(examStartedKey(examId)) === '1';
+	  } catch (e) {
+		return false;
+	  }
+	}
+	
+	function markExamStarted(examId) {
+	  if (!examId) return;
+	  try {
+		localStorage.setItem(examStartedKey(examId), '1');
+	  } catch (e) {}
+	}
+
 
     document.addEventListener('DOMContentLoaded', function () {
       var quizzes = document.querySelectorAll('.cheese-quiz');
@@ -13,6 +36,8 @@
       const CHEESE_QUIZ_LOG_ENDPOINT =
         'https://script.google.com/macros/s/AKfycbzSvZgdAmEhY9xxO0c2AOM13BtKE-XAP7O7zQ3RTitLvIMAfHryKNzW6K0PNMRb-D4t/exec';
 
+	// 시험(멀티페이지) 단위 요약 점수 로그
+	//  - examKey 기준으로 "이번 시험에서 몇 개 맞았는지" 기록
       function sendQuizResultToSheet(examKey, correctCount, totalCount) {
         if (!CHEESE_QUIZ_LOG_ENDPOINT) return;
 
@@ -166,17 +191,6 @@
       })();
       // ─────────────────────────────────────
 
-
-      function openQuizModal(percent, correctCount, totalCount) {
-        if (!quizModal || !quizModalScore || !quizModalDetail) return;
-
-        quizModalScore.textContent = percent + '점';
-        quizModalDetail.textContent = correctCount + ' / ' + totalCount + '개 정답입니다.';
-
-        quizModal.classList.add('is-open');
-        document.documentElement.classList.add('quiz-modal-open');
-        if (document.body) document.body.classList.add('quiz-modal-open');
-      }
 
       function closeQuizModal() {
         if (!quizModal) return;
@@ -375,27 +389,6 @@
         return isCorrect;
       }
 
-
-       // ─ 시험 '시작 여부' 플래그용 helper (1페이지를 거쳤는지 체크)
-        function examStartedKey(examId) {
-          return 'cheeseQuizExamStarted_' + examId;
-        }
-
-        function hasExamStarted(examId) {
-          if (!examId) return false;
-          try {
-            return localStorage.getItem(examStartedKey(examId)) === '1';
-          } catch (e) {
-            return false;
-          }
-        }
-
-        function markExamStarted(examId) {
-          if (!examId) return;
-          try {
-            localStorage.setItem(examStartedKey(examId), '1');
-          } catch (e) {}
-        }
 
 
       // ──────────
@@ -953,6 +946,7 @@
 
     // 로딩 애니메이션용 타이머(전역 변수)
     let cheeseQuizLoadingTimer = null;
+ 	let cheeseQuizLoadingProgress = 0;
 
     /******************************************************************
      * 로딩 모달 표시
@@ -1446,6 +1440,7 @@
      *  - data-log-api 가 있으면 그걸 사용, 없으면 기본 URL 사용
      *  - 실패해도 퀴즈 UI에는 영향을 주지 않도록 설계
      ************************************************************/
+   // 개별 문항 단위 상세 로그 (연습문제/랜덤 퀴즈용)
     function sendCheeseQuizLog(wrapper, logItems) {
       // 기록할 게 없으면 그냥 종료
       if (!logItems || !logItems.length) return;
@@ -1498,24 +1493,22 @@
       // 보기 선택 처리
       setupChoiceClick(wrapper);
 
-      // 채점 버튼
-      const checkBtn = wrapper.querySelector('.cheese-quiz-check');
-      if (checkBtn) {
-        checkBtn.addEventListener('click', function (e) {
-          e.preventDefault();
-          e.stopImmediatePropagation(); // 기존 시험용 핸들러와 충돌 방지
-          gradeCheeseQuiz(wrapper);
-        }, true); // 캡처 단계
-      }
+       // 채점 버튼
+       const checkBtn = wrapper.querySelector('.cheese-quiz-check');
+       if (checkBtn) {
+         checkBtn.addEventListener('click', function (e) {
+           e.preventDefault();
+           gradeCheeseQuiz(wrapper);
+         });
+       }
 
       // 다시풀기 버튼
       const resetBtn = wrapper.querySelector('.cheese-quiz-reset');
       if (resetBtn) {
         resetBtn.addEventListener('click', function (e) {
           e.preventDefault();
-          e.stopImmediatePropagation();
           resetCheeseQuiz(wrapper);
-        }, true);
+        });
       }
     });
   });
