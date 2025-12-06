@@ -225,55 +225,112 @@
       wrap.innerHTML = html;
     }
 
-    document.addEventListener('DOMContentLoaded', () => {
-      // 필터 변화 → 1페이지부터 다시 로드
-      document.getElementById('q-period').addEventListener('change', () => loadQuestions(1));
-      document.getElementById('q-diff').addEventListener('change', () => loadQuestions(1));
-      document.getElementById('q-topic').addEventListener('input', () => loadQuestions(1));
-      document.getElementById('q-search').addEventListener('input', () => loadQuestions(1));
+  document.addEventListener('DOMContentLoaded', () => {
+    const examKeySelect   = document.getElementById('questions-exam-key');
+    const filterExamKey   = document.getElementById('questions-filter-examKey');
+    const filterPeriod    = document.getElementById('questions-filter-period');
+    const filterActive    = document.getElementById('questions-filter-active');
+    const filterSearch    = document.getElementById('questions-filter-search');
+    const prevBtn         = document.getElementById('questions-prev-page');
+    const nextBtn         = document.getElementById('questions-next-page');
+    const resetBtn        = document.getElementById('questions-reset-filters');
 
-      // 테이블 클릭 → 상세 페이지로 이동
-      document.getElementById('question-table').addEventListener('click', (e) => {
-        const tr = e.target.closest('tr[data-idx]');
-        if (!tr) return;
-      
-        const idx = parseInt(tr.dataset.idx, 10);
-        const q = qItems[idx];
-        if (!q) return;
-      
-        // 1) 선택한 문제를 sessionStorage에 저장
-        try {
-          sessionStorage.setItem(
-            'cheese_admin_question_detail',
-            JSON.stringify(q)
-          );
-        } catch (err) {
-          console.error('sessionStorage 저장 실패', err);
-          return;
-        }
-      
-        // 2) 상세 페이지로 이동
-        window.location.href = './question-detail.html';
+    // 🔁 examKey 선택 → 필터 입력에도 반영
+    if (examKeySelect && filterExamKey) {
+      examKeySelect.addEventListener('change', () => {
+        filterExamKey.value = examKeySelect.value;
+        syncFiltersToState();
+        loadQuestions(1);
       });
+    }
 
+    // 필터 입력 변경 시 재검색
+    if (filterExamKey) {
+      filterExamKey.addEventListener('change', () => {
+        syncFiltersToState();
+        loadQuestions(1);
+      });
+    }
+    if (filterPeriod) {
+      filterPeriod.addEventListener('change', () => {
+        syncFiltersToState();
+        loadQuestions(1);
+      });
+    }
+    if (filterActive) {
+      filterActive.addEventListener('change', () => {
+        syncFiltersToState();
+        loadQuestions(1);
+      });
+    }
+    if (filterSearch) {
+      filterSearch.addEventListener('input', () => {
+        syncFiltersToState();
+        // 너무 자주 호출되면 부담스러우니, 필요하면 디바운스 고려
+        loadQuestions(1);
+      });
+    }
 
-      // 페이지네이션 클릭
-      document.getElementById('question-pagination').addEventListener('click', (e) => {
-        const btn = e.target.closest('button[data-page]');
-        if (!btn) return;
-
-        const totalPages = Math.max(Math.ceil(qTotal / PAGE_SIZE), 1);
-
-        if (btn.dataset.page === 'prev' && qCurrentPage > 1) {
+    // 페이지 이동
+    if (prevBtn) {
+      prevBtn.addEventListener('click', () => {
+        if (qCurrentPage > 1) {
           loadQuestions(qCurrentPage - 1);
-        } else if (btn.dataset.page === 'next' && qCurrentPage < totalPages) {
+        }
+      });
+    }
+    if (nextBtn) {
+      nextBtn.addEventListener('click', () => {
+        const maxPage = Math.ceil(qTotal / qPageSize);
+        if (qCurrentPage < maxPage) {
           loadQuestions(qCurrentPage + 1);
         }
       });
+    }
 
-      // 초기 로드
-      loadQuestions(1);
-    });
-  </script>
+    // 필터 리셋
+    if (resetBtn) {
+      resetBtn.addEventListener('click', () => {
+        if (filterExamKey) filterExamKey.value = '';
+        if (filterPeriod)  filterPeriod.value  = '';
+        if (filterActive)  filterActive.value  = '';
+        if (filterSearch)  filterSearch.value  = '';
+        syncFiltersToState();
+        loadQuestions(1);
+      });
+    }
+
+    // ✅ 여기서 "행 클릭 → 상세 페이지로" 이벤트 추가
+    const tableBody = document.querySelector('#questions-table tbody');
+    if (tableBody) {
+      tableBody.addEventListener('click', (event) => {
+        const tr = event.target.closest('tr[data-idx]');
+        if (!tr) return;
+
+        const idx = parseInt(tr.getAttribute('data-idx'), 10);
+        if (isNaN(idx) || !qItems || !qItems[idx]) return;
+
+        const q = qItems[idx];
+
+        try {
+          // 선택한 문제 전체를 세션 스토리지에 저장
+          sessionStorage.setItem(
+            'cheese-admin-question-detail',
+            JSON.stringify(q)
+          );
+        } catch (err) {
+          console.error('세부 정보 저장 실패:', err);
+        }
+
+        // 상세 페이지로 이동
+        window.location.href = './question-detail.html';
+      });
+    }
+
+    // 초기 로딩
+    loadQuestions(1);
+  });
+</script>
+
 </body>
 </html>
