@@ -247,9 +247,9 @@
   /******************************************************************
    * 2-3. 시트/DB에서 랜덤 문제 가져오기 (sheet 모드)
    *
-   *  - config.apiMethod 에 따라 GET / POST 지원
-   *    · GET  : 기존 쿼리스트링 방식 (doGet)
-   *    · POST : JSON body 방식 (doPost) - Apps Script 구현에 맞게 키 조정 가능
+   *  - Apps Script doGet(e) 구조에 맞춰서 파싱:
+   *    · 정상: [ { id, period, topic, difficulty, question, choices, answer, explanation, hint }, ... ]
+   *    · 에러: { error: { message, ... } }
    ******************************************************************/
   async function fetchSheetQuestions(config) {
     if (!config.api) {
@@ -266,29 +266,32 @@
     let res;
 
     if (method === 'POST') {
-      // Apps Script가 JSON POST를 받을 수 있다는 가정
+      // (지금은 doGet만 쓰지만, 나중을 위해 구조만 남겨둠)
       const payload = {
-        mode: 'getQuestions',        // 필요하다면 Apps Script에서 구분용으로 활용
-        examKey: config.examKey || '',
+        mode: 'getQuestions',
         period:  config.period  || '',
-        topic:   config.topic   || ''
+        topic:   config.topic   || '',
+        difficulty: '', // 필요하면 config.difficulty 추가
+        limit:   config.limit   || ''
       };
 
       res = await fetch(config.api, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
     } else {
-      // 기본: GET (기존 방식)
+      // ★ 현재 Apps Script doGet(e) 기준: period / topic / difficulty / limit 만 사용
       const params = new URLSearchParams();
-      if (config.examKey) params.set('examKey', config.examKey);
       if (config.period)  params.set('period', config.period);
-      if (config.topic)   params.set('topic', config.topic);
+      if (config.topic)   params.set('topic',  config.topic);
+      // if (config.difficulty) params.set('difficulty', config.difficulty);
+      if (config.limit && Number(config.limit) > 0) {
+        params.set('limit', String(config.limit));
+      }
 
-      const url = config.api + (config.api.indexOf('?') >= 0 ? '&' : '?') + params.toString();
+      const url =
+        config.api + (config.api.indexOf('?') >= 0 ? '&' : '?') + params.toString();
 
       res = await fetch(url, { method: 'GET' });
     }
@@ -302,17 +305,36 @@
 
     if (typeof hideQuizLoading === 'function') hideQuizLoading();
 
-    // 응답 형식을 추측해서 매핑
-    const records = Array.isArray(data.records)
-      ? data.records
-      : Array.isArray(data.questions)
-      ? data.questions
-      : [];
+    // 1) Apps Script 에러 형식: { error: { message, ... } }
+    if (data && data.error) {
+      console.warn('[cheese-quiz] API returned error:', data.error);
+
+      // 여기서 바로 화면에도 표시해 주고 싶으면:
+      // (root를 알 수 없으니, setupQuizInstance 쪽에서 처리)
+      return [];
+    }
+
+    // 2) 루트가 배열인 정상 응답
+    let records;
+    if (Array.isArray(data)) {
+      records = data;
+    } else if (Array.isArray(data.records)) {
+      records = data.records;
+    } else if (Array.isArray(data.questions)) {
+      records = data.questions;
+    } else {
+      records = [];
+    }
+
+    if (!records.length) {
+      console.warn('[cheese-quiz] empty records from API:', data);
+      return [];
+    }
 
     const questions = records.map(function (r, idx) {
       const choices = Array.isArray(r.choices) ? r.choices : [];
-      let correctArr;
 
+      let correctArr;
       if (Array.isArray(r.answer)) {
         correctArr = r.answer;
       } else if (typeof r.answer === 'number') {
