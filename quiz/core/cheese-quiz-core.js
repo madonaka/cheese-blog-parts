@@ -1184,8 +1184,12 @@ document.addEventListener('click', function (e) {
       data.forEach((q, index) => {
         const li = document.createElement('li');
 		  
-		// ★ 문제와 문제 사이 여백 한 줄
-		li.style.marginBottom = '5rem';   // 숫자는 취향대로 조절 (1.0~1.5rem 정도)
+	  // ★ 문제와 문제 사이 여백 (랜덤 퀴즈용)
+	  //    - 마지막 문제(index === data.length - 1)에는 굳이 안 넣고 싶으면 if로 감싸도 됨
+	  if (index < data.length - 1) {
+		li.style.marginBottom = '1.8rem';   // 원하는 만큼 키워도 됨 (예: 24px, 2rem 등)
+	  }
+		  
         li.setAttribute('data-qid', q.id || String(index + 1));
         li.setAttribute('data-answer', String(q.answer)); // "1"~"4"
 
@@ -1275,15 +1279,6 @@ document.addEventListener('click', function (e) {
         const feedback = document.createElement('div');
         feedback.className = 'quiz-feedback';
         li.appendChild(feedback);
-
-        // ★ 문제와 문제 사이 "빈 줄" 추가
-        //   - <br> 두 개를 넣어서 실제 줄바꿈을 만들어 줌
-        //   - 마지막 문제(index === data.length - 1) 에는 굳이 안 넣고 싶으면 if 로 감싸도 됨
-        // 마지막 문제 빼고만 빈 줄 추가
-        if (index < data.length - 1) {
-          li.appendChild(document.createElement('br'));
-          li.appendChild(document.createElement('br'));
-        }
 
         ol.appendChild(li);
 
