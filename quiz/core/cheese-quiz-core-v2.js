@@ -24,6 +24,43 @@
   // 마지막으로 채점한 퀴즈 root (결과 모달에서 "다시 풀기"용)
   let lastQuizRoot = null;
 
+    /******************************************************************
+   * 공통: 퀴즈 영역에 에러 메시지 표시
+   *  - 사용자용 짧은 문구 + (선택) 디버그용 상세 정보
+   ******************************************************************/
+  function showQuizError(root, userMessage, debugDetail) {
+    if (!root) return;
+
+    // 기존 내용 싹 지우고
+    root.innerHTML = '';
+
+    const box = document.createElement('div');
+    box.className = 'cheese-quiz-error';
+    box.style.padding = '1rem';
+    box.style.border = '1px solid #eee';
+    box.style.borderRadius = '8px';
+    box.style.background = '#fff8f8';
+    box.style.fontSize = '0.9rem';
+    box.style.color = '#444';
+
+    const p = document.createElement('p');
+    p.textContent = userMessage || '문제를 불러오는 중 오류가 발생했습니다.';
+    box.appendChild(p);
+
+    // 디버그용 상세 정보(관리자만 보는 느낌)
+    if (debugDetail) {
+      const small = document.createElement('div');
+      small.className = 'cheese-quiz-error-detail';
+      small.style.marginTop = '0.4rem';
+      small.style.fontSize = '0.8rem';
+      small.style.color = '#999';
+      small.textContent = '[관리자용] ' + debugDetail;
+      box.appendChild(small);
+    }
+
+    root.appendChild(box);
+  }
+
   /******************************************************************
    * DOMContentLoaded 이후 초기화 시작
    ******************************************************************/
