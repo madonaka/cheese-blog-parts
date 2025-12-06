@@ -2,8 +2,10 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <title>Cheese Quiz Admin · 문제 관리</title>
+  <title>문제 관리 · Cheese Quiz Admin</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- 같은 CSS 재사용 -->
   <link rel="stylesheet" href="./admin.css" />
 </head>
 <body>
@@ -11,39 +13,284 @@
     <header class="admin-header">
       <div class="admin-logo">
         Cheese Quiz Admin
-        <span>문제 관리 페이지</span>
+        <span>문제 관리</span>
       </div>
       <div class="admin-badge">
-        v0.1 · frontend only
+        questions
       </div>
     </header>
 
     <div class="admin-main">
+      <!-- 좌측 네비 (간단 버전) -->
       <aside class="admin-nav">
         <div class="admin-nav-group-title">메뉴</div>
         <ul class="admin-nav-list">
           <li class="admin-nav-item">
             <a class="admin-nav-button" href="../index.html">
-              <span class="icon">📊</span>
-              <span>대시보드 / 세트</span>
+              <span class="icon">🏠</span>
+              <span>대시보드</span>
             </a>
           </li>
           <li class="admin-nav-item">
-            <a class="admin-nav-button active" href="./questions.html">
+            <button class="admin-nav-button active">
               <span class="icon">📚</span>
               <span>문제 관리</span>
-            </a>
+            </button>
           </li>
         </ul>
       </aside>
 
       <main>
-        <!-- 여기 안에 문제 목록/필터/페이지네이션/상세/입력 카드 넣기 -->
+        <!-- 필터 + 목록 -->
+        <section class="admin-section active" data-section="questions">
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">문제 목록</div>
+                <div class="card-subtitle">
+                  questions 시트의 활성( active=1 ) 문제를 게시판처럼 조회
+                </div>
+              </div>
+            </div>
+
+            <!-- 필터 영역 -->
+            <div class="field-row">
+              <div class="field">
+                <label for="q-period">시대 / 카테고리</label>
+                <select id="q-period">
+                  <option value="">전체</option>
+                  <option value="한국사-통사">한국사 통사</option>
+                  <option value="한국사-근현대">한국사 근현대</option>
+                  <option value="일본사-통사">일본사 통사</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="q-topic">토픽</label>
+                <input id="q-topic" type="text" placeholder="예: 시대순서" />
+              </div>
+              <div class="field">
+                <label for="q-diff">난이도</label>
+                <select id="q-diff">
+                  <option value="">전체</option>
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="q-search">검색어 (질문/해설/힌트)</label>
+                <input id="q-search" type="text" placeholder="키워드 검색" />
+              </div>
+            </div>
+
+            <!-- 목록 테이블 -->
+            <div class="table-wrapper">
+              <table class="admin-table" id="question-table">
+                <thead>
+                  <tr>
+                    <th style="min-width:60px;">ID</th>
+                    <th style="min-width:180px;">질문</th>
+                    <th style="min-width:120px;">시대</th>
+                    <th style="min-width:90px;">토픽</th>
+                    <th style="min-width:70px;">난이도</th>
+                    <th style="min-width:80px;">정답</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <!-- JS에서 채움 -->
+                </tbody>
+              </table>
+            </div>
+
+            <!-- 페이지네이션 -->
+            <div class="cheese-pagination" id="question-pagination">
+              <!-- JS에서 채움 -->
+            </div>
+          </div>
+
+          <!-- 상세 보기 카드 -->
+          <div class="card" id="question-detail-card" style="display:none;">
+            <div class="card-header">
+              <div>
+                <div class="card-title">문제 상세</div>
+                <div class="card-subtitle" id="detail-meta"></div>
+              </div>
+            </div>
+            <div id="detail-body" class="small-help">
+              <!-- JS에서 채움 -->
+            </div>
+          </div>
+        </section>
       </main>
     </div>
   </div>
 
   <script src="./admin-common.js"></script>
-  <script src="./question-admin.js"></script>
+  <script>
+    // ====== 클라이언트 JS ======
+    const PAGE_SIZE = 15;
+
+    let qCurrentPage = 1;
+    let qTotal = 0;
+    let qItems = []; // 현재 페이지 데이터 캐시
+
+    function getFilters() {
+      return {
+        period: document.getElementById('q-period').value,
+        topic: document.getElementById('q-topic').value.trim(),
+        difficulty: document.getElementById('q-diff').value,
+        search: document.getElementById('q-search').value.trim()
+      };
+    }
+
+    async function loadQuestions(page = 1) {
+      qCurrentPage = page;
+
+      const filters = getFilters();
+      const params = new URLSearchParams({
+        mode: 'questionList',
+        page: String(page),
+        pageSize: String(PAGE_SIZE)
+      });
+
+      if (filters.period)     params.append('period', filters.period);
+      if (filters.topic)      params.append('topic', filters.topic);
+      if (filters.difficulty) params.append('difficulty', filters.difficulty);
+      if (filters.search)     params.append('search', filters.search);
+
+      const url = CHEESE_ADMIN_API_BASE + '?' + params.toString();
+
+      const res = await fetch(url);
+      const json = await res.json();
+
+      if (json.error) {
+        console.error(json.error);
+        return;
+      }
+
+      qTotal = json.total || 0;
+      qItems = json.items || [];
+
+      renderQuestionTable();
+      renderPagination();
+      clearDetail();
+    }
+
+    function renderQuestionTable() {
+      const tbody = document.querySelector('#question-table tbody');
+      if (!tbody) return;
+
+      if (!qItems.length) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="6" class="text-muted">조건에 맞는 문제가 없습니다.</td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = qItems.map((q, idx) => {
+        const shortQuestion =
+          String(q.question || '').length > 40
+            ? String(q.question).slice(0, 40) + '…'
+            : q.question || '';
+        return `
+          <tr data-idx="${idx}">
+            <td>${q.id || ''}</td>
+            <td>${shortQuestion}</td>
+            <td>${q.period || ''}</td>
+            <td>${q.topic || ''}</td>
+            <td>${q.difficulty || ''}</td>
+            <td>${q.answer || ''}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderPagination() {
+      const wrap = document.getElementById('question-pagination');
+      if (!wrap) return;
+
+      const totalPages = Math.max(Math.ceil(qTotal / PAGE_SIZE), 1);
+
+      let html = '';
+      html += `<span class="text-muted">총 ${qTotal}문제 / ${qCurrentPage}/${totalPages}페이지</span>`;
+
+      html += `<div style="margin-top:0.3rem; display:flex; gap:0.3rem; flex-wrap:wrap;">`;
+      html += `<button class="btn" data-page="prev" ${qCurrentPage === 1 ? 'disabled' : ''}>◀ 이전</button>`;
+      html += `<button class="btn" data-page="next" ${qCurrentPage >= totalPages ? 'disabled' : ''}>다음 ▶</button>`;
+      html += `</div>`;
+
+      wrap.innerHTML = html;
+    }
+
+    function clearDetail() {
+      const card = document.getElementById('question-detail-card');
+      if (card) card.style.display = 'none';
+    }
+
+    function showDetail(idx) {
+      const q = qItems[idx];
+      if (!q) return;
+
+      const card = document.getElementById('question-detail-card');
+      const meta = document.getElementById('detail-meta');
+      const body = document.getElementById('detail-body');
+
+      if (!card || !meta || !body) return;
+
+      meta.textContent = `ID: ${q.id || ''} · ${q.period || ''} · ${q.topic || ''} · 난이도 ${q.difficulty || ''}`;
+
+      const [c1, c2, c3, c4] = q.choices || [];
+
+      body.innerHTML = `
+        <p><strong>질문</strong><br>${(q.question || '').replace(/\n/g, '<br>')}</p>
+        <p><strong>보기</strong><br/>
+          ① ${c1 || ''}<br/>
+          ② ${c2 || ''}<br/>
+          ③ ${c3 || ''}<br/>
+          ④ ${c4 || ''}
+        </p>
+        <p><strong>정답</strong> ${q.answer || ''}</p>
+        <p><strong>해설</strong><br>${(q.explanation || '').replace(/\n/g, '<br>')}</p>
+        <p><strong>힌트</strong><br>${(q.hint || '').replace(/\n/g, '<br>')}</p>
+      `;
+
+      card.style.display = 'block';
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      // 필터 변화 → 1페이지부터 다시 로드
+      document.getElementById('q-period').addEventListener('change', () => loadQuestions(1));
+      document.getElementById('q-diff').addEventListener('change', () => loadQuestions(1));
+      document.getElementById('q-topic').addEventListener('input', () => loadQuestions(1));
+      document.getElementById('q-search').addEventListener('input', () => loadQuestions(1));
+
+      // 테이블 클릭 → 상세
+      document.getElementById('question-table').addEventListener('click', (e) => {
+        const tr = e.target.closest('tr[data-idx]');
+        if (!tr) return;
+        const idx = parseInt(tr.dataset.idx, 10);
+        showDetail(idx);
+      });
+
+      // 페이지네이션 클릭
+      document.getElementById('question-pagination').addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-page]');
+        if (!btn) return;
+
+        const totalPages = Math.max(Math.ceil(qTotal / PAGE_SIZE), 1);
+
+        if (btn.dataset.page === 'prev' && qCurrentPage > 1) {
+          loadQuestions(qCurrentPage - 1);
+        } else if (btn.dataset.page === 'next' && qCurrentPage < totalPages) {
+          loadQuestions(qCurrentPage + 1);
+        }
+      });
+
+      // 초기 로드
+      loadQuestions(1);
+    });
+  </script>
 </body>
 </html>
