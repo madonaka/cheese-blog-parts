@@ -1,9 +1,3 @@
-/*!
- * Cheese Quiz Core v2 (from Blogger inline script)
- * - Google Apps Script에서 문제를 가져와 랜덤 퀴즈를 렌더링
- * - .cheese-quiz 컨테이너를 1개 기대
- */
-
 document.addEventListener('DOMContentLoaded', async function() {
   const quizBox = document.querySelector('.cheese-quiz');
   if (!quizBox) return;
@@ -63,3 +57,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     quizBox.innerHTML = '<p>문제를 불러오는 중 오류 발생.</p>';
   }
 });
+
+
+</b:if>
