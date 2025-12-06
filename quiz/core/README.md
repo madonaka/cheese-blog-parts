@@ -58,6 +58,14 @@ cheese-quiz-core
 채점 결과 모달
 
 ```html
+<!-- ==================================================
+   ★ Cheese Quiz Score Modal(채점 결과 모달) 부품
+   - Ver.20251203
+   - GitHub cheese-blog-parts/quiz/core 모듈
+     (cheese-quiz-score-modal.css)을 로드한다.
+   - #cheese-quiz-modal / .cheese-quiz-modal-dialog / .cheese-quiz-modal-score 구조로
+     퀴즈 채점 결과(점수·정답 개수)를 카드형 모달로 표시한다.
+   ================================================== -->
 <div id="cheese-quiz-modal" class="cheese-quiz-modal" aria-hidden="true">
   <div class="cheese-quiz-modal-backdrop"></div>
 
@@ -88,6 +96,14 @@ cheese-quiz-core
 
 
 ```html
+<!-- ==================================================
+   ★ Cheese Page Loading Modal(페이지/퀴즈 로딩 모달) 부품
+   - Ver.20251203
+   - GitHub cheese-blog-parts/components/modal 모듈
+     (cheese-page-loading-modal.css)을 로드한다.
+   - #cheese-quiz-loading / .cheese-quiz-loading-dialog / .cheese-quiz-loading-ring 구조로
+     퀴즈 데이터 로딩 중 전체 화면에 로딩 모달과 진행률을 표시한다.
+   ================================================== -->
 <div id="cheese-quiz-loading" class="cheese-quiz-loading" aria-hidden="true">
   <div class="cheese-quiz-loading-backdrop"></div>
   <div class="cheese-quiz-loading-dialog">
