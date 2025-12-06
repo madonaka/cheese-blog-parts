@@ -128,157 +128,152 @@
 
   <script src="./admin-common.js"></script>
   <script>
+    // ====== 클라이언트 JS ======
+    const PAGE_SIZE = 15;
+
+    let qCurrentPage = 1;
+    let qTotal = 0;
+    let qItems = []; // 현재 페이지 데이터 캐시
+
+    function getFilters() {
+      return {
+        period: document.getElementById('q-period').value,
+        topic: document.getElementById('q-topic').value.trim(),
+        difficulty: document.getElementById('q-diff').value,
+        search: document.getElementById('q-search').value.trim()
+      };
+    }
+
+    async function loadQuestions(page = 1) {
+      qCurrentPage = page;
+
+      const filters = getFilters();
+      const params = new URLSearchParams({
+        mode: 'questionList',
+        page: String(page),
+        pageSize: String(PAGE_SIZE)
+      });
+
+      if (filters.period)     params.append('period', filters.period);
+      if (filters.topic)      params.append('topic', filters.topic);
+      if (filters.difficulty) params.append('difficulty', filters.difficulty);
+      if (filters.search)     params.append('search', filters.search);
+
+      const url = CHEESE_ADMIN_API_BASE + '?' + params.toString();
+
+      const res = await fetch(url);
+      const json = await res.json();
+
+      if (json.error) {
+        console.error(json.error);
+        return;
+      }
+
+      qTotal = json.total || 0;
+      qItems = json.items || [];
+
+      renderQuestionTable();
+      renderPagination();
+      clearDetail();
+    }
+
+    function renderQuestionTable() {
+      const tbody = document.querySelector('#question-table tbody');
+      if (!tbody) return;
+
+      if (!qItems.length) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="6" class="text-muted">조건에 맞는 문제가 없습니다.</td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = qItems.map((q, idx) => {
+        const shortQuestion =
+          String(q.question || '').length > 40
+            ? String(q.question).slice(0, 40) + '…'
+            : q.question || '';
+        return `
+          <tr data-idx="${idx}">
+            <td>${q.id || ''}</td>
+            <td>${shortQuestion}</td>
+            <td>${q.period || ''}</td>
+            <td>${q.topic || ''}</td>
+            <td>${q.difficulty || ''}</td>
+            <td>${q.answer || ''}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderPagination() {
+      const wrap = document.getElementById('question-pagination');
+      if (!wrap) return;
+
+      const totalPages = Math.max(Math.ceil(qTotal / PAGE_SIZE), 1);
+
+      let html = '';
+      html += `<span class="text-muted">총 ${qTotal}문제 / ${qCurrentPage}/${totalPages}페이지</span>`;
+
+      html += `<div style="margin-top:0.3rem; display:flex; gap:0.3rem; flex-wrap:wrap;">`;
+      html += `<button class="btn" data-page="prev" ${qCurrentPage === 1 ? 'disabled' : ''}>◀ 이전</button>`;
+      html += `<button class="btn" data-page="next" ${qCurrentPage >= totalPages ? 'disabled' : ''}>다음 ▶</button>`;
+      html += `</div>`;
+
+      wrap.innerHTML = html;
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
-      // ---------- 0. 엘리먼트 모아두기 ----------
-      const spanQId      = document.getElementById('detail-qid');
-  
-      const fId          = document.getElementById('q-id');
-      const fPeriod      = document.getElementById('q-period');
-      const fTopic       = document.getElementById('q-topic');
-      const fDifficulty  = document.getElementById('q-difficulty');
-      const fQuestion    = document.getElementById('q-question');
-      const fChoice1     = document.getElementById('q-choice1');
-      const fChoice2     = document.getElementById('q-choice2');
-      const fChoice3     = document.getElementById('q-choice3');
-      const fChoice4     = document.getElementById('q-choice4');
-      const fAnswer      = document.getElementById('q-answer');
-      const fActive      = document.getElementById('q-active');
-      const fExplanation = document.getElementById('q-explanation');
-      const fHint        = document.getElementById('q-hint');
-  
-      const btnBack   = document.getElementById('btn-back-list');
-      const btnSave   = document.getElementById('btn-save');
-      const btnReset  = document.getElementById('btn-reset');
-      const msgEl     = document.getElementById('save-message');
-  
-      let originalData = null; // 되돌리기용 원본
-  
-      function showError(message) {
-        if (!msgEl) return;
-        msgEl.textContent = message;
-        msgEl.classList.add('danger-text');
-      }
-  
-      function clearMessage() {
-        if (!msgEl) return;
-        msgEl.textContent = '';
-        msgEl.classList.remove('danger-text');
-      }
-  
-      // ---------- 1. 세션에서 데이터 꺼내기 ----------
-      let raw = null;
-      try {
-        raw = sessionStorage.getItem('cheese_admin_question_detail');
-      } catch (e) {
-        console.error(e);
-      }
-  
-      if (!raw) {
-        showError('목록 화면에서 문제를 선택한 뒤 들어와 주세요. (저장된 데이터가 없습니다)');
-        return;
-      }
-  
-      let data;
-      try {
-        data = JSON.parse(raw);
-      } catch (e) {
-        console.error(e);
-        showError('저장된 문제 정보를 해석할 수 없습니다.');
-        return;
-      }
-  
-      originalData = data;
-  
-      // ---------- 2. 폼에 값 채우기 ----------
-      function fillForm(q) {
+      // 필터 변화 → 1페이지부터 다시 로드
+      document.getElementById('q-period').addEventListener('change', () => loadQuestions(1));
+      document.getElementById('q-diff').addEventListener('change', () => loadQuestions(1));
+      document.getElementById('q-topic').addEventListener('input', () => loadQuestions(1));
+      document.getElementById('q-search').addEventListener('input', () => loadQuestions(1));
+
+      // 테이블 클릭 → 상세 페이지로 이동
+      document.getElementById('question-table').addEventListener('click', (e) => {
+        const tr = e.target.closest('tr[data-idx]');
+        if (!tr) return;
+      
+        const idx = parseInt(tr.dataset.idx, 10);
+        const q = qItems[idx];
         if (!q) return;
-  
-        if (spanQId)      spanQId.textContent      = q.id || '-';
-        if (fId)          fId.value                = q.id || '';
-        if (fPeriod)      fPeriod.value            = q.period || '';
-        if (fTopic)       fTopic.value             = q.topic || '';
-        if (fDifficulty)  fDifficulty.value        = q.difficulty || '';
-        if (fQuestion)    fQuestion.value          = q.question || '';
-        if (fChoice1)     fChoice1.value           = q.choice1 || '';
-        if (fChoice2)     fChoice2.value           = q.choice2 || '';
-        if (fChoice3)     fChoice3.value           = q.choice3 || '';
-        if (fChoice4)     fChoice4.value           = q.choice4 || '';
-        if (fAnswer)      fAnswer.value            = q.answer || '';
-        if (fActive)      fActive.value            = q.active || '';
-        if (fExplanation) fExplanation.value       = q.explanation || '';
-        if (fHint)        fHint.value              = q.hint || '';
-      }
-  
-      function collectForm() {
-        return {
-          id:          fId?.value.trim()          ?? '',
-          period:      fPeriod?.value.trim()      ?? '',
-          topic:       fTopic?.value.trim()       ?? '',
-          difficulty:  fDifficulty?.value.trim()  ?? '',
-          question:    fQuestion?.value.trim()    ?? '',
-          choice1:     fChoice1?.value.trim()     ?? '',
-          choice2:     fChoice2?.value.trim()     ?? '',
-          choice3:     fChoice3?.value.trim()     ?? '',
-          choice4:     fChoice4?.value.trim()     ?? '',
-          answer:      fAnswer?.value.trim()      ?? '',
-          active:      fActive?.value.trim()      ?? '',
-          explanation: fExplanation?.value.trim() ?? '',
-          hint:        fHint?.value.trim()        ?? '',
-        };
-      }
-  
-      fillForm(data);
-      clearMessage();
-      if (msgEl) {
-        msgEl.textContent = '불러오기 완료. 수정 후 [수정 내용 저장] 버튼을 눌러주세요.';
-      }
-  
-      // ---------- 3. 버튼 이벤트 ----------
-  
-      // 목록으로 돌아가기
-      if (btnBack) {
-        btnBack.addEventListener('click', (e) => {
-          e.preventDefault();
-          window.location.href = './questions.html';
-        });
-      }
-  
-      // 원래 값으로 되돌리기
-      if (btnReset) {
-        btnReset.addEventListener('click', (e) => {
-          e.preventDefault();
-          fillForm(originalData);
-          clearMessage();
-          if (msgEl) {
-            msgEl.textContent = '불러온 원래 값으로 되돌렸습니다.';
-          }
-        });
-      }
-  
-      // 저장 버튼 (지금은 프론트엔드 테스트용)
-      if (btnSave) {
-        btnSave.addEventListener('click', async (e) => {
-          e.preventDefault();
-          clearMessage();
-  
-          const payload = collectForm();
-          if (!payload.id) {
-            showError('ID가 없습니다. 저장할 수 없습니다.');
-            return;
-          }
-  
-          // 지금은 실제 Apps Script와 연동 전이라, 콘솔에만 찍고 안내만 띄움
-          console.log('[question-detail] 저장 요청 payload', payload);
-  
-          if (msgEl) {
-            msgEl.textContent =
-              '지금은 화면에서만 수정됩니다. 나중에 Apps Script와 연동하면 이 버튼에서 실제 저장을 호출하면 됩니다.';
-          }
-  
-          // 나중에 연동할 때는 여기서 fetch로 POST 호출만 추가하면 됨.
-          // const base = window.CHEESE_ADMIN_API_BASE;
-          // await fetch(base + '?mode=updateQuestion', { ... });
-        });
-      }
+      
+        // 1) 선택한 문제를 sessionStorage에 저장
+        try {
+          sessionStorage.setItem(
+            'cheese_admin_question_detail',
+            JSON.stringify(q)
+          );
+        } catch (err) {
+          console.error('sessionStorage 저장 실패', err);
+          return;
+        }
+      
+        // 2) 상세 페이지로 이동
+        window.location.href = './question-detail.html';
+      });
+
+
+      // 페이지네이션 클릭
+      document.getElementById('question-pagination').addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-page]');
+        if (!btn) return;
+
+        const totalPages = Math.max(Math.ceil(qTotal / PAGE_SIZE), 1);
+
+        if (btn.dataset.page === 'prev' && qCurrentPage > 1) {
+          loadQuestions(qCurrentPage - 1);
+        } else if (btn.dataset.page === 'next' && qCurrentPage < totalPages) {
+          loadQuestions(qCurrentPage + 1);
+        }
+      });
+
+      // 초기 로드
+      loadQuestions(1);
     });
   </script>
+</body>
+</html>
