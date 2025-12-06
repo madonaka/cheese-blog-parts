@@ -1278,6 +1278,15 @@ document.addEventListener('click', function (e) {
         li.appendChild(feedback);
 
         ol.appendChild(li);
+
+		// ★★★ 문제와 문제 사이 “빈 줄”용 li 삽입 ★★★
+ 		if (index < data.length - 1) {          // 마지막 문제 뒤에는 안 넣기
+		    const spacer = document.createElement('li');
+		    spacer.className = 'quiz-question-gap';
+		    spacer.setAttribute('aria-hidden', 'true');
+		    spacer.innerHTML = '&nbsp;';          // 눈에 안 보이는 내용 하나
+		    ol.appendChild(spacer);
+		  }
       });
     } catch (err) {
       console.error(err);
