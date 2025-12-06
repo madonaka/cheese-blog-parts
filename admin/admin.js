@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const params = new URLSearchParams();
-    const limit  = (limitInput.value || '').trim() || '10';
+    const limit  = (limitInput.value || '').trim() || '5';
     params.set('limit', limit);
 
     const period = (periodInput.value || '').trim();
