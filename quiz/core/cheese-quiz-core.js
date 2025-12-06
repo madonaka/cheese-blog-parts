@@ -32,6 +32,10 @@
 	  } catch (e) {}
 	}
 
+	/******************************************************************
+	 * 공통: 점수 모달 닫기 / 1번 문제로 이동
+	 ******************************************************************/
+	
 
     document.addEventListener('DOMContentLoaded', function () {
       var quizzes = document.querySelectorAll('.cheese-quiz');
@@ -128,16 +132,7 @@
       - 채점, 모달, 통계, localStorage, goToExamFirstQuestion 등
    ******************************************************************/
 
-      // ──────────  
-      // ── 모달 요소  ──
-      // ──────────
-      // var quizModal = document.getElementById('cheese-quiz-modal');
-      var quizModalScore = document.getElementById('cheese-quiz-modal-score');
-      var quizModalDetail = document.getElementById('cheese-quiz-modal-detail');
-      var quizModalClose = quizModal ? quizModal.querySelector('.cheese-quiz-modal-close') : null;
-      // var quizModalBackdrop = quizModal ? quizModal.querySelector('.cheese-quiz-modal-backdrop') : null;
-      var quizModalGoto = quizModal ? quizModal.querySelector('.cheese-quiz-modal-goto') : null;
-      var quizModalRestart = quizModal ? quizModal.querySelector('.cheese-quiz-modal-restart') : null;
+ 
 
       // ─────────────────────────────────────
       // 진입 경로가 "홈피드/검색/라벨/외부"인 경우
