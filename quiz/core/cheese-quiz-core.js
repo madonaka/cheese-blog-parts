@@ -1167,7 +1167,7 @@ document.addEventListener('click', function (e) {
 
     // 리스트 영역에는 간단한 로딩 문구,
     // 전체 화면에는 동글동글 스피너 모달
-    ol.innerHTML = '<li>불러오는 중ㅋㅋㅋ...</li>';
+    ol.innerHTML = '<li>불러오는 중...</li>';
     showQuizLoading('문제를 구성중입니다...');
 
     try {
@@ -1187,7 +1187,7 @@ document.addEventListener('click', function (e) {
 	  // ★ 문제와 문제 사이 여백 (랜덤 퀴즈용)
 	  //    - 마지막 문제(index === data.length - 1)에는 굳이 안 넣고 싶으면 if로 감싸도 됨
 	  if (index < data.length - 1) {
-		li.style.marginBottom = '1.8rem';   // 원하는 만큼 키워도 됨 (예: 24px, 2rem 등)
+		li.style.marginBottom = '5rem';   // 원하는 만큼 키워도 됨 (예: 24px, 2rem 등)
 	  }
 		  
         li.setAttribute('data-qid', q.id || String(index + 1));
