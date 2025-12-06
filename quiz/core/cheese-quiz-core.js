@@ -1185,7 +1185,7 @@ document.addEventListener('click', function (e) {
         const li = document.createElement('li');
 		  
 		// ★ 문제와 문제 사이 여백 한 줄
-		li.style.marginBottom = '1.2rem';   // 숫자는 취향대로 조절 (1.0~1.5rem 정도)
+		li.style.marginBottom = '5rem';   // 숫자는 취향대로 조절 (1.0~1.5rem 정도)
         li.setAttribute('data-qid', q.id || String(index + 1));
         li.setAttribute('data-answer', String(q.answer)); // "1"~"4"
 
