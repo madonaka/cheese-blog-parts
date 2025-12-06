@@ -464,7 +464,7 @@ function goToExamFirstQuestion() {
                   '모든 페이지의 data-exam-total / data-exam-pages / data-exam-root 값을 확인해 주세요.'
                 );
                 // ★ 원하는 이동 위치로 변경 가능: 홈피드 / 오류 안내 글 등
-                window.location.href = 'https://www.cheesehistory.com/';
+                window.location.href = examRootUrl;
                 return; // 이 페이지 나머지 초기화는 중단
               }
             }
