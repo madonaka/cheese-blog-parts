@@ -1183,8 +1183,9 @@ document.addEventListener('click', function (e) {
 
       data.forEach((q, index) => {
         const li = document.createElement('li');
-		
-		li.classList.add('cheese-quiz-item');   // ★ 문제 하나당 공통 클래스
+		  
+		// ★ 문제와 문제 사이 여백 한 줄
+		li.style.marginBottom = '1.2rem';   // 숫자는 취향대로 조절 (1.0~1.5rem 정도)
         li.setAttribute('data-qid', q.id || String(index + 1));
         li.setAttribute('data-answer', String(q.answer)); // "1"~"4"
 
