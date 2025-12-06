@@ -1183,7 +1183,8 @@ document.addEventListener('click', function (e) {
 
       data.forEach((q, index) => {
         const li = document.createElement('li');
-
+		
+		li.classList.add('cheese-quiz-item');   // ★ 문제 하나당 공통 클래스
         li.setAttribute('data-qid', q.id || String(index + 1));
         li.setAttribute('data-answer', String(q.answer)); // "1"~"4"
 
