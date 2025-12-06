@@ -57,6 +57,3 @@ document.addEventListener('DOMContentLoaded', async function() {
     quizBox.innerHTML = '<p>문제를 불러오는 중 오류 발생.</p>';
   }
 });
-
-
-</b:if>
