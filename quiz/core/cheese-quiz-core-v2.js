@@ -19,7 +19,7 @@
 
   // ★ 퀴즈 채점 결과를 구글 시트로 보내는 Apps Script URL
   const CHEESE_QUIZ_LOG_ENDPOINT =
-    'https://script.google.com/macros/s/AKfycbzSvZgdAmEhY9xxO0c2AOM13BtKE-XAP7O7zQ3RTitLvIMAfHryKNzW6K0PNMRb-D4t/exec';
+    'https://script.google.com/macros/s/AKfycbxfb22DOuNHel6Jluiynull8cVWkc_-MxRXFcXahwJgUzpx-HhkLJEZGPR-k8JS9Rtg2Q/exec';
 
   // 마지막으로 채점한 퀴즈 root (결과 모달에서 "다시 풀기"용)
   let lastQuizRoot = null;
