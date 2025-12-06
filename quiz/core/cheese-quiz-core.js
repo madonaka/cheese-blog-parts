@@ -1167,7 +1167,7 @@ document.addEventListener('click', function (e) {
 
     // 리스트 영역에는 간단한 로딩 문구,
     // 전체 화면에는 동글동글 스피너 모달
-    ol.innerHTML = '<li>불러오는 중...</li>';
+    ol.innerHTML = '<li>불러오는 중ㅋㅋㅋ...</li>';
     showQuizLoading('문제를 구성중입니다...');
 
     try {
