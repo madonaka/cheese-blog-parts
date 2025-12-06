@@ -246,10 +246,9 @@
 
   /******************************************************************
    * 2-3. 시트/DB에서 랜덤 문제 가져오기 (sheet 모드)
-   *
-   *  - Apps Script doGet(e) 구조에 맞춰서 파싱:
-   *    · 정상: [ { id, period, topic, difficulty, question, choices, answer, explanation, hint }, ... ]
-   *    · 에러: { error: { message, ... } }
+   *   - Apps Script doGet(e)의 반환 형식에 완전 맞춘 초간단 버전
+   *   - 정상: [ { id, period, topic, difficulty, question, choices, answer, explanation, hint }, ... ]
+   *   - 에러: { error: { message, ... } }
    ******************************************************************/
   async function fetchSheetQuestions(config) {
     if (!config.api) {
@@ -257,44 +256,24 @@
       return [];
     }
 
-    // 로딩 모달 ON (있을 때만)
     if (typeof showQuizLoading === 'function') {
       showQuizLoading('문제를 불러오는 중입니다...');
     }
 
-    const method = (config.apiMethod || 'GET').toUpperCase();
-    let res;
-
-    if (method === 'POST') {
-      // (지금은 doGet만 쓰지만, 나중을 위해 구조만 남겨둠)
-      const payload = {
-        mode: 'getQuestions',
-        period:  config.period  || '',
-        topic:   config.topic   || '',
-        difficulty: '', // 필요하면 config.difficulty 추가
-        limit:   config.limit   || ''
-      };
-
-      res = await fetch(config.api, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-    } else {
-      // ★ 현재 Apps Script doGet(e) 기준: period / topic / difficulty / limit 만 사용
-      const params = new URLSearchParams();
-      if (config.period)  params.set('period', config.period);
-      if (config.topic)   params.set('topic',  config.topic);
-      // if (config.difficulty) params.set('difficulty', config.difficulty);
-      if (config.limit && Number(config.limit) > 0) {
-        params.set('limit', String(config.limit));
-      }
-
-      const url =
-        config.api + (config.api.indexOf('?') >= 0 ? '&' : '?') + params.toString();
-
-      res = await fetch(url, { method: 'GET' });
+    // ─ 1) GET 쿼리스트링 구성 (Apps Script doGet 기준) ─
+    const params = new URLSearchParams();
+    if (config.period)     params.set('period',     config.period);
+    if (config.topic)      params.set('topic',      config.topic);
+    if (config.difficulty) params.set('difficulty', config.difficulty);
+    if (config.limit && Number(config.limit) > 0) {
+      params.set('limit', String(config.limit));
     }
+
+    const url =
+      config.api + (config.api.indexOf('?') >= 0 ? '&' : '?') + params.toString();
+
+    // ─ 2) fetch 호출 ─
+    const res = await fetch(url, { method: 'GET' });
 
     if (!res.ok) {
       if (typeof hideQuizLoading === 'function') hideQuizLoading();
@@ -305,59 +284,48 @@
 
     if (typeof hideQuizLoading === 'function') hideQuizLoading();
 
-    // 1) Apps Script 에러 형식: { error: { message, ... } }
+    // ─ 3) 에러 응답 처리: { error: {...} } ─
     if (data && data.error) {
       console.warn('[cheese-quiz] API returned error:', data.error);
-
-      // 여기서 바로 화면에도 표시해 주고 싶으면:
-      // (root를 알 수 없으니, setupQuizInstance 쪽에서 처리)
       return [];
     }
 
-    // 2) 루트가 배열인 정상 응답
-    let records;
-    if (Array.isArray(data)) {
-      records = data;
-    } else if (Array.isArray(data.records)) {
-      records = data.records;
-    } else if (Array.isArray(data.questions)) {
-      records = data.questions;
-    } else {
-      records = [];
-    }
-
-    if (!records.length) {
-      console.warn('[cheese-quiz] empty records from API:', data);
+    // ─ 4) 정상 응답: 반드시 "배열"이어야 함 ─
+    if (!Array.isArray(data)) {
+      console.warn('[cheese-quiz] unexpected API response (not array):', data);
       return [];
     }
 
-    const questions = records.map(function (r, idx) {
+    // ─ 5) 배열 → 내부 공용 question 객체로 맵핑 ─
+    const questions = data.map(function (r, idx) {
       const choices = Array.isArray(r.choices) ? r.choices : [];
 
-      let correctArr;
-      if (Array.isArray(r.answer)) {
-        correctArr = r.answer;
-      } else if (typeof r.answer === 'number') {
-        correctArr = [r.answer];
+      // answer = 1~4 → 0 기반 인덱스로 바꾸기
+      let correctIndex = 0;
+      if (typeof r.answer === 'number') {
+        correctIndex = r.answer - 1;
       } else if (typeof r.answer === 'string') {
         const num = Number(r.answer);
-        correctArr = Number.isFinite(num) ? [num] : [0];
-      } else {
-        correctArr = [0];
+        if (Number.isFinite(num)) correctIndex = num - 1;
       }
+
+      if (correctIndex < 0) correctIndex = 0;
 
       return {
         id: r.id || ('sheet-' + idx),
-        text: r.question || r.text || '',
+        text: r.question || '',
         choices: choices,
-        correct: correctArr,
+        // 내부 포맷은 [인덱스 배열] 사용
+        correct: [correctIndex],
         explanation: r.explanation || '',
-        multi: !!r.multi
+        multi: false
       };
     });
 
+    console.log('[cheese-quiz] loaded questions:', questions.length);
     return questions;
   }
+
 
   /******************************************************************
    * 2-4. 랜덤 섞기 + limit 적용
