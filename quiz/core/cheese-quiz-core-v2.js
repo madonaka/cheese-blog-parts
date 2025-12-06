@@ -102,15 +102,35 @@
       }
     } catch (err) {
       console.error('[cheese-quiz] setupQuizInstance error:', err);
-      // 혹시 로딩이 남아 있으면 닫아주기
+
       if (typeof hideQuizLoading === 'function') {
         hideQuizLoading();
       }
+
+      // ★ 화면에도 에러 표시
+      showQuizError(
+        root,
+        '문제를 불러오는 중 오류가 발생했습니다.',
+        err && err.message ? err.message : String(err)
+      );
       return;
     }
 
+    // ★ 문제 배열이 비어 있는 경우: 콘솔 + 화면 둘 다 표시
     if (!questions || !questions.length) {
       console.warn('[cheese-quiz] no questions for', config);
+
+      const debugText =
+        'source=' + config.source +
+        ', examKey=' + (config.examKey || '(없음)') +
+        ', period=' + (config.period || '(없음)') +
+        ', topic=' + (config.topic || '(없음)');
+
+      showQuizError(
+        root,
+        '현재 이 연습문제에 등록된 문항이 없습니다.',
+        debugText
+      );
       return;
     }
 
