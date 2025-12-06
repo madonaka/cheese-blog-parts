@@ -91,6 +91,7 @@ function showSection(name) {
   document
     .querySelectorAll(".admin-nav-button")
     .forEach((btn) => {
+      if (!btn.dataset.target) return;
       btn.classList.toggle("active", btn.dataset.target === name);
     });
 }
@@ -234,6 +235,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document
     .querySelectorAll(".admin-nav-button")
     .forEach((btn) => {
+      if (!btn.dataset.target) return; 
       btn.addEventListener("click", () =>
         showSection(btn.dataset.target)
       );
