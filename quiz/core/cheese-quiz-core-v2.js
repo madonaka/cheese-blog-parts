@@ -150,7 +150,7 @@
   function readQuizConfig(root) {
     const ds = root.dataset || {};
 
-    // source 판단
+    // source 판단 (v1과 동일하게 sheet를 기본으로)
     let source = ds.source;
     if (!source) {
       if (ds.api || CHEESE_QUIZ_DEFAULT_API) {
@@ -162,23 +162,24 @@
       }
     }
 
-    // limit
+    // limit: 숫자로 변환, 실패하면 0(제한 없음)
     let limit = Number(ds.limit || '0');
     if (!Number.isFinite(limit) || limit < 1) {
-      limit = 0; // 0이면 모든 문제 사용
+      limit = 0;
     }
 
-    // API 메서드 (GET / POST)
-    const apiMethod = (ds.apiMethod || 'GET').toUpperCase(); // data-api-method
+    // API 메서드 (GET / POST) – 지금은 GET만 사용
+    const apiMethod = (ds.apiMethod || 'GET').toUpperCase();
 
     return {
       source: source,
       examKey: ds.examKey || '',
-      api: ds.api || CHEESE_QUIZ_DEFAULT_API,   // ★ data-api 없으면 기본 API 사용
+      api: ds.api || CHEESE_QUIZ_DEFAULT_API,   // data-api 없으면 기본 API
       apiMethod: apiMethod,
       limit: limit,
       period: ds.period || '',
       topic: ds.topic || '',
+      difficulty: ds.difficulty || '',          // ★ v1과 동일하게 difficulty 읽기
       quizId: ds.quizId || ''
     };
   }
@@ -251,52 +252,74 @@
    *   - 에러: { error: { message, ... } }
    ******************************************************************/
   async function fetchSheetQuestions(config) {
+    // API URL 없으면 아예 진행 불가
     if (!config.api) {
       console.warn('[cheese-quiz] no API url for sheet mode');
       return [];
     }
 
+    // 로딩 모달 ON
     if (typeof showQuizLoading === 'function') {
       showQuizLoading('문제를 불러오는 중입니다...');
     }
 
-    // ─ 1) GET 쿼리스트링 구성 (Apps Script doGet 기준) ─
+    // ─ 1) v1과 동일한 방식으로 쿼리스트링 구성 ─
+    //   - limit는 무조건 한 번은 붙여줌
     const params = new URLSearchParams();
+
+    // limit: 0이면 붙이지 않아도 되지만, v1과 동일하게 기본 5 사용
+    const limitValue =
+      (config.limit && Number(config.limit) > 0)
+        ? String(config.limit)
+        : '5';
+    params.set('limit', limitValue);
+
     if (config.period)     params.set('period',     config.period);
-    if (config.topic)      params.set('topic',      config.topic);
     if (config.difficulty) params.set('difficulty', config.difficulty);
-    if (config.limit && Number(config.limit) > 0) {
-      params.set('limit', String(config.limit));
-    }
+    if (config.topic)      params.set('topic',      config.topic);
 
-    const url =
-      config.api + (config.api.indexOf('?') >= 0 ? '&' : '?') + params.toString();
+    const url = config.api + '?' + params.toString();
 
-    // ─ 2) fetch 호출 ─
-    const res = await fetch(url, { method: 'GET' });
+    // 디버그용 – 실제 어떤 URL을 호출하는지 확인
+    console.log('[cheese-quiz] sheet API url =', url);
 
-    if (!res.ok) {
+    // ─ 2) fetch 호출 (v1도 GET) ─
+    let data;
+    try {
+      const res = await fetch(url, { method: 'GET' });
+
+      if (!res.ok) {
+        if (typeof hideQuizLoading === 'function') hideQuizLoading();
+        throw new Error('API error: ' + res.status);
+      }
+
+      data = await res.json();
+    } catch (err) {
       if (typeof hideQuizLoading === 'function') hideQuizLoading();
-      throw new Error('API error: ' + res.status);
+      console.error('[cheese-quiz] fetchSheetQuestions error:', err);
+      throw err; // setupQuizInstance 쪽에서 에러 처리
     }
 
-    const data = await res.json();
-
-    if (typeof hideQuizLoading === 'function') hideQuizLoading();
+    // 로딩 모달 OFF
+    if (typeof hideQuizLoading === 'function') {
+      hideQuizLoading();
+    }
 
     // ─ 3) 에러 응답 처리: { error: {...} } ─
     if (data && data.error) {
       console.warn('[cheese-quiz] API returned error:', data.error);
+      return [];  // setupQuizInstance에서 "문항 없음"으로 처리
+    }
+
+    // ─ 4) 정상 응답: 반드시 "배열"이어야 함 (v1도 이 전제였음) ─
+    if (!Array.isArray(data) || !data.length) {
+      console.warn('[cheese-quiz] empty or non-array response:', data);
       return [];
     }
 
-    // ─ 4) 정상 응답: 반드시 "배열"이어야 함 ─
-    if (!Array.isArray(data)) {
-      console.warn('[cheese-quiz] unexpected API response (not array):', data);
-      return [];
-    }
+    console.log('[cheese-quiz] raw records from API:', data.length);
 
-    // ─ 5) 배열 → 내부 공용 question 객체로 맵핑 ─
+    // ─ 5) v1의 데이터 포맷 → v2 내부 포맷(question 객체)로 변환 ─
     const questions = data.map(function (r, idx) {
       const choices = Array.isArray(r.choices) ? r.choices : [];
 
@@ -308,7 +331,6 @@
         const num = Number(r.answer);
         if (Number.isFinite(num)) correctIndex = num - 1;
       }
-
       if (correctIndex < 0) correctIndex = 0;
 
       return {
