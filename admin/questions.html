@@ -127,209 +127,188 @@
   </div>
 
   <script src="./admin-common.js"></script>
-  <script>
-    // ====== 클라이언트 JS ======
-    const PAGE_SIZE = 15;
+<script src="./admin-common.js"></script>
+<script>
+  // ====== 클라이언트 JS ======
+  const PAGE_SIZE = 15;
 
-    let qCurrentPage = 1;
-    let qTotal = 0;
-    let qItems = []; // 현재 페이지 데이터 캐시
+  let qCurrentPage = 1;
+  let qTotal = 0;
+  let qItems = []; // 현재 페이지 데이터 캐시
 
-    function getFilters() {
-      return {
-        period: document.getElementById('q-period').value,
-        topic: document.getElementById('q-topic').value.trim(),
-        difficulty: document.getElementById('q-diff').value,
-        search: document.getElementById('q-search').value.trim()
-      };
+  // 필터값 읽기 (HTML의 q-XXX 아이디 기준)
+  function getFilters() {
+    return {
+      period: document.getElementById('q-period')?.value || '',
+      topic: (document.getElementById('q-topic')?.value || '').trim(),
+      difficulty: document.getElementById('q-diff')?.value || '',
+      search: (document.getElementById('q-search')?.value || '').trim()
+    };
+  }
+
+  // 상세 카드 초기화 (지금은 안 쓰지만 에러 안 나게 정의)
+  function clearDetail() {
+    const detailCard = document.getElementById('question-detail-card');
+    const metaEl     = document.getElementById('detail-meta');
+    const bodyEl     = document.getElementById('detail-body');
+
+    if (detailCard) detailCard.style.display = 'none';
+    if (metaEl)     metaEl.textContent = '';
+    if (bodyEl)     bodyEl.innerHTML = '';
+  }
+
+  // 문제 목록 로딩
+  async function loadQuestions(page = 1) {
+    qCurrentPage = page;
+
+    const filters = getFilters();
+    const params = new URLSearchParams({
+      mode: 'questionList',
+      page: String(page),
+      pageSize: String(PAGE_SIZE)
+    });
+
+    if (filters.period)     params.append('period', filters.period);
+    if (filters.topic)      params.append('topic', filters.topic);
+    if (filters.difficulty) params.append('difficulty', filters.difficulty);
+    if (filters.search)     params.append('search', filters.search);
+
+    const url = CHEESE_ADMIN_API_BASE + '?' + params.toString();
+
+    const res  = await fetch(url);
+    const json = await res.json();
+
+    if (json.error) {
+      console.error(json.error);
+      return;
     }
 
-    async function loadQuestions(page = 1) {
-      qCurrentPage = page;
+    qTotal = json.total || 0;
+    qItems = json.items || [];
 
-      const filters = getFilters();
-      const params = new URLSearchParams({
-        mode: 'questionList',
-        page: String(page),
-        pageSize: String(PAGE_SIZE)
-      });
+    renderQuestionTable();
+    renderPagination();
+    clearDetail();
+  }
 
-      if (filters.period)     params.append('period', filters.period);
-      if (filters.topic)      params.append('topic', filters.topic);
-      if (filters.difficulty) params.append('difficulty', filters.difficulty);
-      if (filters.search)     params.append('search', filters.search);
+  // 테이블 렌더링
+  function renderQuestionTable() {
+    const tbody = document.querySelector('#question-table tbody');
+    if (!tbody) return;
 
-      const url = CHEESE_ADMIN_API_BASE + '?' + params.toString();
-
-      const res = await fetch(url);
-      const json = await res.json();
-
-      if (json.error) {
-        console.error(json.error);
-        return;
-      }
-
-      qTotal = json.total || 0;
-      qItems = json.items || [];
-
-      renderQuestionTable();
-      renderPagination();
-      clearDetail();
+    if (!qItems.length) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="6" class="text-muted">조건에 맞는 문제가 없습니다.</td>
+        </tr>
+      `;
+      return;
     }
 
-    function renderQuestionTable() {
-      const tbody = document.querySelector('#question-table tbody');
-      if (!tbody) return;
+    tbody.innerHTML = qItems.map((q, idx) => {
+      const shortQuestion =
+        String(q.question || '').length > 40
+          ? String(q.question).slice(0, 40) + '…'
+          : q.question || '';
+      return `
+        <tr data-idx="${idx}">
+          <td>${q.id || ''}</td>
+          <td>${shortQuestion}</td>
+          <td>${q.period || ''}</td>
+          <td>${q.topic || ''}</td>
+          <td>${q.difficulty || ''}</td>
+          <td>${q.answer || ''}</td>
+        </tr>
+      `;
+    }).join('');
+  }
 
-      if (!qItems.length) {
-        tbody.innerHTML = `
-          <tr>
-            <td colspan="6" class="text-muted">조건에 맞는 문제가 없습니다.</td>
-          </tr>
-        `;
-        return;
-      }
+  // 페이지네이션 렌더링
+  function renderPagination() {
+    const wrap = document.getElementById('question-pagination');
+    if (!wrap) return;
 
-      tbody.innerHTML = qItems.map((q, idx) => {
-        const shortQuestion =
-          String(q.question || '').length > 40
-            ? String(q.question).slice(0, 40) + '…'
-            : q.question || '';
-        return `
-          <tr data-idx="${idx}">
-            <td>${q.id || ''}</td>
-            <td>${shortQuestion}</td>
-            <td>${q.period || ''}</td>
-            <td>${q.topic || ''}</td>
-            <td>${q.difficulty || ''}</td>
-            <td>${q.answer || ''}</td>
-          </tr>
-        `;
-      }).join('');
-    }
+    const totalPages = Math.max(Math.ceil(qTotal / PAGE_SIZE), 1);
 
-    function renderPagination() {
-      const wrap = document.getElementById('question-pagination');
-      if (!wrap) return;
+    let html = '';
+    html += `<span class="text-muted">총 ${qTotal}문제 / ${qCurrentPage}/${totalPages}페이지</span>`;
 
-      const totalPages = Math.max(Math.ceil(qTotal / PAGE_SIZE), 1);
+    html += `<div style="margin-top:0.3rem; display:flex; gap:0.3rem; flex-wrap:wrap;">`;
+    html += `<button class="btn" data-page="prev" ${qCurrentPage === 1 ? 'disabled' : ''}>◀ 이전</button>`;
+    html += `<button class="btn" data-page="next" ${qCurrentPage >= totalPages ? 'disabled' : ''}>다음 ▶</button>`;
+    html += `</div>`;
 
-      let html = '';
-      html += `<span class="text-muted">총 ${qTotal}문제 / ${qCurrentPage}/${totalPages}페이지</span>`;
-
-      html += `<div style="margin-top:0.3rem; display:flex; gap:0.3rem; flex-wrap:wrap;">`;
-      html += `<button class="btn" data-page="prev" ${qCurrentPage === 1 ? 'disabled' : ''}>◀ 이전</button>`;
-      html += `<button class="btn" data-page="next" ${qCurrentPage >= totalPages ? 'disabled' : ''}>다음 ▶</button>`;
-      html += `</div>`;
-
-      wrap.innerHTML = html;
-    }
+    wrap.innerHTML = html;
+  }
 
   document.addEventListener('DOMContentLoaded', () => {
-    const examKeySelect   = document.getElementById('questions-exam-key');
-    const filterExamKey   = document.getElementById('questions-filter-examKey');
-    const filterPeriod    = document.getElementById('questions-filter-period');
-    const filterActive    = document.getElementById('questions-filter-active');
-    const filterSearch    = document.getElementById('questions-filter-search');
-    const prevBtn         = document.getElementById('questions-prev-page');
-    const nextBtn         = document.getElementById('questions-next-page');
-    const resetBtn        = document.getElementById('questions-reset-filters');
+    // 필터 이벤트 연결 (현재 화면에 있는 필터만)
+    const periodEl = document.getElementById('q-period');
+    const topicEl  = document.getElementById('q-topic');
+    const diffEl   = document.getElementById('q-diff');
+    const searchEl = document.getElementById('q-search');
 
-    // 🔁 examKey 선택 → 필터 입력에도 반영
-    if (examKeySelect && filterExamKey) {
-      examKeySelect.addEventListener('change', () => {
-        filterExamKey.value = examKeySelect.value;
-        syncFiltersToState();
-        loadQuestions(1);
-      });
+    if (periodEl) {
+      periodEl.addEventListener('change', () => loadQuestions(1));
     }
-
-    // 필터 입력 변경 시 재검색
-    if (filterExamKey) {
-      filterExamKey.addEventListener('change', () => {
-        syncFiltersToState();
-        loadQuestions(1);
-      });
+    if (diffEl) {
+      diffEl.addEventListener('change', () => loadQuestions(1));
     }
-    if (filterPeriod) {
-      filterPeriod.addEventListener('change', () => {
-        syncFiltersToState();
-        loadQuestions(1);
-      });
+    if (topicEl) {
+      topicEl.addEventListener('input', () => loadQuestions(1));
     }
-    if (filterActive) {
-      filterActive.addEventListener('change', () => {
-        syncFiltersToState();
-        loadQuestions(1);
-      });
-    }
-    if (filterSearch) {
-      filterSearch.addEventListener('input', () => {
-        syncFiltersToState();
-        // 너무 자주 호출되면 부담스러우니, 필요하면 디바운스 고려
-        loadQuestions(1);
-      });
+    if (searchEl) {
+      searchEl.addEventListener('input', () => loadQuestions(1));
     }
 
-    // 페이지 이동
-    if (prevBtn) {
-      prevBtn.addEventListener('click', () => {
-        if (qCurrentPage > 1) {
-          loadQuestions(qCurrentPage - 1);
-        }
-      });
-    }
-    if (nextBtn) {
-      nextBtn.addEventListener('click', () => {
-        const maxPage = Math.ceil(qTotal / qPageSize);
-        if (qCurrentPage < maxPage) {
-          loadQuestions(qCurrentPage + 1);
-        }
-      });
-    }
-
-    // 필터 리셋
-    if (resetBtn) {
-      resetBtn.addEventListener('click', () => {
-        if (filterExamKey) filterExamKey.value = '';
-        if (filterPeriod)  filterPeriod.value  = '';
-        if (filterActive)  filterActive.value  = '';
-        if (filterSearch)  filterSearch.value  = '';
-        syncFiltersToState();
-        loadQuestions(1);
-      });
-    }
-
-    // ✅ 여기서 "행 클릭 → 상세 페이지로" 이벤트 추가
-    const tableBody = document.querySelector('#questions-table tbody');
+    // ✅ 행 클릭 → 상세 페이지 이동
+    const tableBody = document.querySelector('#question-table tbody');
     if (tableBody) {
       tableBody.addEventListener('click', (event) => {
         const tr = event.target.closest('tr[data-idx]');
         if (!tr) return;
 
-        const idx = parseInt(tr.getAttribute('data-idx'), 10);
-        if (isNaN(idx) || !qItems || !qItems[idx]) return;
+        const idx = Number(tr.dataset.idx);
+        if (Number.isNaN(idx) || !qItems[idx]) return;
 
         const q = qItems[idx];
 
+        // 필요하다면 전체 데이터도 저장
         try {
-          // 선택한 문제 전체를 세션 스토리지에 저장
           sessionStorage.setItem(
-            'cheese-admin-question-detail',
+            'cheese_admin_question_detail',
             JSON.stringify(q)
           );
         } catch (err) {
-          console.error('세부 정보 저장 실패:', err);
+          console.error('세션 스토리지 저장 실패:', err);
         }
 
-        // 상세 페이지로 이동
+        // id 기준으로 상세 페이지 이동
         if (q.id) {
           window.location.href =
             './question-detail.html?id=' + encodeURIComponent(q.id);
         } else {
           console.error('선택한 문제에 id가 없습니다.', q);
         }
+      });
+    }
 
+    // 페이지네이션 버튼 클릭
+    const pagination = document.getElementById('question-pagination');
+    if (pagination) {
+      pagination.addEventListener('click', (event) => {
+        const btn = event.target.closest('button[data-page]');
+        if (!btn) return;
+
+        const totalPages = Math.max(Math.ceil(qTotal / PAGE_SIZE), 1);
+
+        if (btn.dataset.page === 'prev' && qCurrentPage > 1) {
+          loadQuestions(qCurrentPage - 1);
+        }
+        if (btn.dataset.page === 'next' && qCurrentPage < totalPages) {
+          loadQuestions(qCurrentPage + 1);
+        }
+      });
     }
 
     // 초기 로딩
