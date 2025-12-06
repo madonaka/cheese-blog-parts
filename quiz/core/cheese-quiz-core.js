@@ -1263,7 +1263,6 @@ document.addEventListener('click', function (e) {
           explainBox.appendChild(content);
           li.appendChild(explainBox);
 
-
           // 해설 토글
 		  //s-hidden은 채점 로직에서만 관리
 		  // 여기서는 "열고 닫기"용 is-open만 조작
@@ -1284,7 +1283,7 @@ document.addEventListener('click', function (e) {
 		    const spacer = document.createElement('li');
 		    spacer.className = 'quiz-question-gap';
 		    spacer.setAttribute('aria-hidden', 'true');
-		    spacer.innerHTML = '&nbsp;';          // 눈에 안 보이는 내용 하나
+		    spacer.innerHTML = 'ㅁㅁㅁㅁㅁ';          // 눈에 안 보이는 내용 하나
 		    ol.appendChild(spacer);
 		  }
       });
