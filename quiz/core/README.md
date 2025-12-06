@@ -219,7 +219,7 @@ resetCheeseQuiz(wrapper)
  - 채점하기 / 다시 풀기 버튼, 점수 모달, 로딩 모달, 통계 표시 등
    연습문제 전반 동작을 제어하는 공통 엔진이다.
  ==================================================  -->
-  <script src='https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/quiz/core/cheese-quiz-core.js?v=20251204-2'/>
+  <script  defer='defer' src='https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/quiz/core/cheese-quiz-core.js'/>
 </b:if>
 ```
 
