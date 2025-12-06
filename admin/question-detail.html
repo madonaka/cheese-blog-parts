@@ -5,110 +5,292 @@
   <title>문제 상세 · Cheese Quiz Admin</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
+  <!-- 메인 관리자 CSS 재사용 -->
   <link rel="stylesheet" href="./admin.css" />
 </head>
 <body>
   <div class="admin-shell">
+    <!-- 상단 헤더 -->
     <header class="admin-header">
       <div class="admin-logo">
         Cheese Quiz Admin
-        <span>문제 상세</span>
+        <span>문제 상세 보기 / 수정</span>
       </div>
       <div class="admin-badge">
-        detail
+        v0.1 · questions detail
       </div>
     </header>
 
-    <div class="admin-main">
-      <!-- 좌측 네비 -->
-      <aside class="admin-nav">
-        <div class="admin-nav-group-title">메뉴</div>
-        <ul class="admin-nav-list">
-          <li class="admin-nav-item">
-            <a class="admin-nav-button" href="../index.html">
-              <span class="icon">🏠</span>
-              <span>대시보드</span>
-            </a>
-          </li>
-          <li class="admin-nav-item">
-            <a class="admin-nav-button" href="./questions.html">
-              <span class="icon">📚</span>
-              <span>문제 목록</span>
-            </a>
-          </li>
-        </ul>
-      </aside>
-
-      <main>
-        <section class="admin-section active" data-section="detail">
-          <div class="card">
-            <div class="card-header">
-              <div>
-                <div class="card-title" id="detail-title">문제 상세</div>
-                <div class="card-subtitle" id="detail-meta"></div>
-              </div>
-              <button class="btn btn-ghost" type="button" onclick="history.back()">
-                ◀ 목록으로
-              </button>
-            </div>
-
-            <div id="detail-body" class="small-help">
-              로딩 중...
+    <!-- 단일 컬럼 레이아웃 -->
+    <main class="admin-main" style="grid-template-columns: minmax(0, 1fr);">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">문제 상세</div>
+            <div class="card-subtitle">
+              ID: <span id="detail-qid">-</span>
             </div>
           </div>
-        </section>
-      </main>
-    </div>
+          <button type="button" class="btn btn-ghost" id="btn-back-list">
+            ← 목록으로 돌아가기
+          </button>
+        </div>
+
+        <!-- ✅ 실제 입력 폼 -->
+        <form id="question-form">
+          <!-- 1) 메타 정보 -->
+          <div class="field-row">
+            <div class="field">
+              <label for="q-id">내부 ID (읽기 전용)</label>
+              <input id="q-id" name="id" type="text" readonly />
+            </div>
+            <div class="field">
+              <label for="q-period">시대 (period)</label>
+              <input id="q-period" name="period" type="text" />
+            </div>
+            <div class="field">
+              <label for="q-topic">주제 (topic)</label>
+              <input id="q-topic" name="topic" type="text" />
+            </div>
+            <div class="field">
+              <label for="q-difficulty">난이도 (difficulty)</label>
+              <input id="q-difficulty" name="difficulty" type="number" min="1" max="5" />
+            </div>
+          </div>
+
+          <!-- 2) 본문/선택지 -->
+          <div class="field">
+            <label for="q-question">문제 문장 (question)</label>
+            <textarea id="q-question" name="question"></textarea>
+          </div>
+
+          <div class="field-row">
+            <div class="field">
+              <label for="q-choice1">보기 1</label>
+              <input id="q-choice1" name="choice1" type="text" />
+            </div>
+            <div class="field">
+              <label for="q-choice2">보기 2</label>
+              <input id="q-choice2" name="choice2" type="text" />
+            </div>
+          </div>
+
+          <div class="field-row">
+            <div class="field">
+              <label for="q-choice3">보기 3</label>
+              <input id="q-choice3" name="choice3" type="text" />
+            </div>
+            <div class="field">
+              <label for="q-choice4">보기 4</label>
+              <input id="q-choice4" name="choice4" type="text" />
+            </div>
+          </div>
+
+          <div class="field-row">
+            <div class="field">
+              <label for="q-answer">정답 (answer)</label>
+              <input id="q-answer" name="answer" type="text" />
+            </div>
+            <div class="field">
+              <label for="q-active">활성 여부 (active, 1/0)</label>
+              <input id="q-active" name="active" type="number" min="0" max="1" />
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="q-explanation">해설 (explanation)</label>
+            <textarea id="q-explanation" name="explanation"></textarea>
+          </div>
+
+          <div class="field">
+            <label for="q-hint">힌트 (hint)</label>
+            <textarea id="q-hint" name="hint"></textarea>
+          </div>
+
+          <!-- 버튼 영역 -->
+          <div class="field-row" style="margin-top: 1rem;">
+            <button type="button" class="btn btn-primary" id="btn-save">
+              💾 수정 내용 저장
+            </button>
+            <button type="button" class="btn" id="btn-reset">
+              ↩ 불러온 값으로 되돌리기
+            </button>
+          </div>
+
+          <p class="small-help" id="save-message"></p>
+        </form>
+      </div>
+    </main>
   </div>
 
+  <!-- 공통 JS (API 베이스 URL 등이 여기 있다고 가정) -->
   <script src="./admin-common.js"></script>
+
   <script>
-    function renderDetail() {
-      const raw = sessionStorage.getItem('cheese_admin_question_detail');
-      const body = document.getElementById('detail-body');
-      const meta = document.getElementById('detail-meta');
-      const titleEl = document.getElementById('detail-title');
-
-      if (!raw) {
-        body.innerHTML = '<p class="danger-text">상세 정보가 없습니다. 목록에서 다시 선택해주세요.</p>';
-        meta.textContent = '';
-        return;
-      }
-
-      let q;
-      try {
-        q = JSON.parse(raw);
-      } catch (err) {
-        console.error('파싱 오류', err);
-        body.innerHTML = '<p class="danger-text">데이터를 읽을 수 없습니다.</p>';
-        meta.textContent = '';
-        return;
-      }
-
-      const [c1, c2, c3, c4] = q.choices || [];
-
-      titleEl.textContent = q.question
-        ? '문제 상세 · ' + String(q.question).slice(0, 20) + (q.question.length > 20 ? '…' : '')
-        : '문제 상세';
-
-      meta.textContent =
-        `ID: ${q.id || ''} · ${q.period || ''} · ${q.topic || ''} · 난이도 ${q.difficulty || ''}`;
-
-      body.innerHTML = `
-        <p><strong>질문</strong><br>${(q.question || '').replace(/\n/g, '<br>')}</p>
-        <p><strong>보기</strong><br/>
-          ① ${c1 || ''}<br/>
-          ② ${c2 || ''}<br/>
-          ③ ${c3 || ''}<br/>
-          ④ ${c4 || ''}
-        </p>
-        <p><strong>정답</strong> ${q.answer || ''}</p>
-        <p><strong>해설</strong><br>${(q.explanation || '').replace(/\n/g, '<br>')}</p>
-        <p><strong>힌트</strong><br>${(q.hint || '').replace(/\n/g, '<br>')}</p>
-      `;
+    /**********************************************************
+     * 1. 쿼리스트링에서 id 읽기
+     **********************************************************/
+    function getQueryParam(name) {
+      const params = new URLSearchParams(window.location.search);
+      return params.get(name);
     }
 
-    document.addEventListener('DOMContentLoaded', renderDetail);
+    const qid = getQueryParam("id");
+    let originalData = null; // reset용
+
+    /**********************************************************
+     * 2. 폼에 값 채워 넣기 / 원래대로 되돌리기
+     **********************************************************/
+    function fillForm(data) {
+      if (!data) return;
+
+      document.getElementById("detail-qid").textContent = data.id || "";
+      document.getElementById("q-id").value          = data.id || "";
+      document.getElementById("q-period").value      = data.period || "";
+      document.getElementById("q-topic").value       = data.topic || "";
+      document.getElementById("q-difficulty").value  = data.difficulty || "";
+      document.getElementById("q-question").value    = data.question || "";
+      document.getElementById("q-choice1").value     = data.choice1 || "";
+      document.getElementById("q-choice2").value     = data.choice2 || "";
+      document.getElementById("q-choice3").value     = data.choice3 || "";
+      document.getElementById("q-choice4").value     = data.choice4 || "";
+      document.getElementById("q-answer").value      = data.answer || "";
+      document.getElementById("q-active").value      = data.active || "";
+      document.getElementById("q-explanation").value = data.explanation || "";
+      document.getElementById("q-hint").value        = data.hint || "";
+    }
+
+    function collectForm() {
+      return {
+        id:          document.getElementById("q-id").value.trim(),
+        period:      document.getElementById("q-period").value.trim(),
+        topic:       document.getElementById("q-topic").value.trim(),
+        difficulty:  document.getElementById("q-difficulty").value.trim(),
+        question:    document.getElementById("q-question").value.trim(),
+        choice1:     document.getElementById("q-choice1").value.trim(),
+        choice2:     document.getElementById("q-choice2").value.trim(),
+        choice3:     document.getElementById("q-choice3").value.trim(),
+        choice4:     document.getElementById("q-choice4").value.trim(),
+        answer:      document.getElementById("q-answer").value.trim(),
+        active:      document.getElementById("q-active").value.trim(),
+        explanation: document.getElementById("q-explanation").value.trim(),
+        hint:        document.getElementById("q-hint").value.trim(),
+      };
+    }
+
+    /**********************************************************
+     * 3. 문제 1건 불러오기 (GET)
+     *    - Apps Script: ?mode=getQuestion&id=xxx 형태로 구현한다고 가정
+     **********************************************************/
+    async function loadQuestionDetail() {
+      const msgEl = document.getElementById("save-message");
+
+      if (!qid) {
+        msgEl.textContent = "URL에 id 파라미터가 없습니다.";
+        msgEl.classList.add("danger-text");
+        return;
+      }
+
+      try {
+        // ⚠️ CHEESE_ADMIN_API_BASE는 admin-common.js 안에 있다고 가정
+        const base = window.CHEESE_ADMIN_API_BASE || "";
+        const url = base + "?mode=getQuestion&id=" + encodeURIComponent(qid);
+
+        const res = await fetch(url);
+        const json = await res.json();
+
+        if (json.error) {
+          msgEl.textContent = "불러오기 에러: " + (json.error.message || "알 수 없는 에러");
+          msgEl.classList.add("danger-text");
+          return;
+        }
+
+        // 응답 형식 예:
+        // { question: { id, period, ... } } 또는 { id, period, ... }
+        const data = json.question || json;
+        originalData = data;
+        fillForm(data);
+        msgEl.textContent = "불러오기 완료. 수정 후 [수정 내용 저장] 버튼을 눌러주세요.";
+        msgEl.classList.remove("danger-text");
+      } catch (err) {
+        msgEl.textContent = "불러오기 실패: " + err;
+        msgEl.classList.add("danger-text");
+      }
+    }
+
+    /**********************************************************
+     * 4. 수정 내용 저장 (POST)
+     *    - Apps Script: doPost(e)에서 mode=updateQuestion 처리한다고 가정
+     **********************************************************/
+    async function saveQuestion() {
+      const msgEl = document.getElementById("save-message");
+      msgEl.textContent = "저장 중...";
+      msgEl.classList.remove("danger-text");
+
+      const payload = collectForm();
+      if (!payload.id) {
+        msgEl.textContent = "ID가 없습니다. 저장할 수 없습니다.";
+        msgEl.classList.add("danger-text");
+        return;
+      }
+
+      try {
+        const base = window.CHEESE_ADMIN_API_BASE || "";
+        const url = base + "?mode=updateQuestion";
+
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        const json = await res.json();
+        if (json.error) {
+          msgEl.textContent = "저장 실패: " + (json.error.message || "알 수 없는 에러");
+          msgEl.classList.add("danger-text");
+          return;
+        }
+
+        msgEl.textContent = "저장 완료!";
+        msgEl.classList.remove("danger-text");
+        // 최신 상태를 원본으로 다시 저장
+        originalData = payload;
+      } catch (err) {
+        msgEl.textContent = "저장 중 에러: " + err;
+        msgEl.classList.add("danger-text");
+      }
+    }
+
+    /**********************************************************
+     * 5. 이벤트 바인딩
+     **********************************************************/
+    document.addEventListener("DOMContentLoaded", () => {
+      // 목록으로
+      const backBtn = document.getElementById("btn-back-list");
+      if (backBtn) {
+        backBtn.addEventListener("click", () => {
+          // 돌아갈 목록 경로는 네 구조에 맞게 조정
+          window.location.href = "./questions.html";
+        });
+      }
+
+      // 저장 버튼
+      const saveBtn = document.getElementById("btn-save");
+      if (saveBtn) {
+        saveBtn.addEventListener("click", saveQuestion);
+      }
+
+      // 리셋 버튼
+      const resetBtn = document.getElementById("btn-reset");
+      if (resetBtn) {
+        resetBtn.addEventListener("click", () => {
+          fillForm(originalData);
+        });
+      }
+
+      // 처음 진입 시 데이터 로드
+      loadQuestionDetail();
+    });
   </script>
 </body>
 </html>
