@@ -1,10 +1,25 @@
 // cheese-quiz-core-v2.js
 // ------------------------------------------------------
 // Cheese Quiz 공통 코어 (정적 + 랜덤)
-// - 로딩 모달은 외부의 showQuizLoading/hideQuizLoading에 의존
+//  - 문제는 구글 시트(Apps Script)에서 가져옴
+//  - 채점 결과는 별도 Apps Script로 로그 전송
+//  - 로딩 모달은 외부의 showQuizLoading/hideQuizLoading 함수에 의존
 // ------------------------------------------------------
 (function () {
   'use strict';
+
+  /******************************************************************
+   * 0. 전역 설정
+   ******************************************************************/
+
+  // ★ 기본 문제 불러오기용 Apps Script URL
+  //   - 개별 포스트에 data-api가 없으면 이 URL을 사용한다.
+  const CHEESE_QUIZ_DEFAULT_API =
+    'https://script.google.com/macros/s/AKfycbwuvooqtlk6c_Nv2_VgforohP5twqTLWGu5j8uf56D3qvKsUnioAhfbkNdTKIsQaaQF/exec';
+
+  // ★ 퀴즈 채점 결과를 구글 시트로 보내는 Apps Script URL
+  const CHEESE_QUIZ_LOG_ENDPOINT =
+    'https://script.google.com/macros/s/AKfycbzSvZgdAmEhY9xxO0c2AOM13BtKE-XAP7O7zQ3RTitLvIMAfHryKNzW6K0PNMRb-D4t/exec';
 
   // 마지막으로 채점한 퀴즈 root (결과 모달에서 "다시 풀기"용)
   let lastQuizRoot = null;
@@ -71,30 +86,39 @@
 
   /******************************************************************
    * 2-1. data-* 속성에서 설정값 읽어오기
+   *   - data-source: sheet / inline
+   *   - data-api:    문제 가져오기용 Apps Script URL
+   *   - data-api-method: GET / POST (기본 GET)
    ******************************************************************/
   function readQuizConfig(root) {
     const ds = root.dataset || {};
 
+    // source 판단
     let source = ds.source;
     if (!source) {
-      if (ds.api) {
+      if (ds.api || CHEESE_QUIZ_DEFAULT_API) {
         source = 'sheet';
       } else if (root.querySelector('.cheese-quiz-inline-questions')) {
         source = 'inline';
       } else {
-        source = 'sheet'; // 기본값: sheet 모드
+        source = 'sheet'; // 기본값
       }
     }
 
+    // limit
     let limit = Number(ds.limit || '0');
     if (!Number.isFinite(limit) || limit < 1) {
-      limit = 0; // 0이면 전부 사용
+      limit = 0; // 0이면 모든 문제 사용
     }
+
+    // API 메서드 (GET / POST)
+    const apiMethod = (ds.apiMethod || 'GET').toUpperCase(); // data-api-method
 
     return {
       source: source,
       examKey: ds.examKey || '',
-      api: ds.api || '',
+      api: ds.api || CHEESE_QUIZ_DEFAULT_API,   // ★ data-api 없으면 기본 API 사용
+      apiMethod: apiMethod,
       limit: limit,
       period: ds.period || '',
       topic: ds.topic || '',
@@ -166,8 +190,9 @@
   /******************************************************************
    * 2-3. 시트/DB에서 랜덤 문제 가져오기 (sheet 모드)
    *
-   *  ⚠️ 이 부분은 "API 응답 형식 추측" 기반이니까,
-   *  실제 Apps Script 응답 JSON 예시를 기준으로 나중에 맞춤 튜닝 필요.
+   *  - config.apiMethod 에 따라 GET / POST 지원
+   *    · GET  : 기존 쿼리스트링 방식 (doGet)
+   *    · POST : JSON body 방식 (doPost) - Apps Script 구현에 맞게 키 조정 가능
    ******************************************************************/
   async function fetchSheetQuestions(config) {
     if (!config.api) {
@@ -175,19 +200,42 @@
       return [];
     }
 
-    // 로딩 모달 ON (함수가 존재할 때만)
+    // 로딩 모달 ON (있을 때만)
     if (typeof showQuizLoading === 'function') {
       showQuizLoading('문제를 불러오는 중입니다...');
     }
 
-    const params = new URLSearchParams();
-    if (config.examKey) params.set('examKey', config.examKey);
-    if (config.period)  params.set('period', config.period);
-    if (config.topic)   params.set('topic', config.topic);
+    const method = (config.apiMethod || 'GET').toUpperCase();
+    let res;
 
-    const url = config.api + (config.api.indexOf('?') >= 0 ? '&' : '?') + params.toString();
+    if (method === 'POST') {
+      // Apps Script가 JSON POST를 받을 수 있다는 가정
+      const payload = {
+        mode: 'getQuestions',        // 필요하다면 Apps Script에서 구분용으로 활용
+        examKey: config.examKey || '',
+        period:  config.period  || '',
+        topic:   config.topic   || ''
+      };
 
-    const res = await fetch(url, { method: 'GET' });
+      res = await fetch(config.api, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+    } else {
+      // 기본: GET (기존 방식)
+      const params = new URLSearchParams();
+      if (config.examKey) params.set('examKey', config.examKey);
+      if (config.period)  params.set('period', config.period);
+      if (config.topic)   params.set('topic', config.topic);
+
+      const url = config.api + (config.api.indexOf('?') >= 0 ? '&' : '?') + params.toString();
+
+      res = await fetch(url, { method: 'GET' });
+    }
+
     if (!res.ok) {
       if (typeof hideQuizLoading === 'function') hideQuizLoading();
       throw new Error('API error: ' + res.status);
@@ -197,7 +245,7 @@
 
     if (typeof hideQuizLoading === 'function') hideQuizLoading();
 
-    // 여기부터는 API 형식을 "추측"해서 매핑하는 부분
+    // 응답 형식을 추측해서 매핑
     const records = Array.isArray(data.records)
       ? data.records
       : Array.isArray(data.questions)
@@ -266,7 +314,7 @@
       buttonsParent.removeChild(oldButtons);
     }
 
-    // 기존 내용 삭제
+    // 기존 내용 삭제 (제목 같은 것만 남기고 싶으면 이 부분 조정 가능)
     root.innerHTML = '';
 
     const listEl = document.createElement('ol');
@@ -372,7 +420,7 @@
         return;
       }
 
-      // 결과 모달 닫기
+      // 결과 모달 닫기 버튼
       const closeBtn = e.target.closest(
         '.cheese-quiz-modal-close, .cheese-quiz-modal-btn-close'
       );
@@ -399,6 +447,9 @@
   function handleCheckQuiz(root) {
     const questionEls = root.querySelectorAll('.cheese-quiz-question');
     if (!questionEls.length) return;
+
+    // 설정 다시 읽기 (examKey, topic 등 로그용)
+    const config = readQuizConfig(root);
 
     const total = questionEls.length;
     let correctCount = 0;
@@ -432,6 +483,14 @@
     const percent = Math.round((correctCount / total) * 100);
     lastQuizRoot = root;
 
+    // 채점 결과 로그 전송
+    sendQuizResultLog(config, {
+      correctCount: correctCount,
+      totalCount: total,
+      percent: percent
+    });
+
+    // 결과 모달 표시
     showQuizResultModal(percent, correctCount, total);
   }
 
@@ -477,21 +536,11 @@
     const msgEl   = document.getElementById('cheese-quiz-modal-message');
 
     if (scoreEl) {
-      scoreEl.textContent = percent + '점 (' + correctCount + '/' + totalCount + ')';
+      scoreEl.textContent = percent + '점';
     }
 
     if (msgEl) {
-      let msg;
-      if (percent === 100) {
-        msg = '완벽합니다! 👏';
-      } else if (percent >= 80) {
-        msg = '아주 좋습니다. 조금만 더 복습하면 완벽해요!';
-      } else if (percent >= 50) {
-        msg = '절반 이상 맞추셨어요. 한 번 더 풀어보면 훨씬 좋아질 거예요.';
-      } else {
-        msg = '이번에는 연습이다 생각하고, 한 번 더 풀면서 익혀봐요.';
-      }
-      msgEl.textContent = msg;
+      msgEl.textContent = correctCount + ' / ' + totalCount + '개 정답입니다.';
     }
 
     modal.classList.add('is-visible');
@@ -504,5 +553,43 @@
 
     modal.classList.remove('is-visible');
     modal.setAttribute('aria-hidden', 'true');
+  }
+
+  /******************************************************************
+   * 6. 채점 결과를 구글 시트로 전송
+   *   - config : readQuizConfig(root) 결과
+   *   - stats  : { correctCount, totalCount, percent }
+   ******************************************************************/
+  function sendQuizResultLog(config, stats) {
+    if (!CHEESE_QUIZ_LOG_ENDPOINT) return;
+
+    try {
+      const payload = {
+        examKey:   config.examKey || '',
+        quizId:    config.quizId  || '',
+        period:    config.period  || '',
+        topic:     config.topic   || '',
+        source:    config.source  || '',
+        correct:   stats.correctCount,
+        total:     stats.totalCount,
+        percent:   stats.percent,
+        pageUrl:   window.location.href,
+        userAgent: navigator.userAgent,
+        timestamp: new Date().toISOString()
+      };
+
+      fetch(CHEESE_QUIZ_LOG_ENDPOINT, {
+        method: 'POST',
+        mode: 'no-cors', // 응답을 쓰지 않을 때 CORS 경고 피하기용
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      }).catch(function (err) {
+        console.warn('[cheese-quiz] sendQuizResultLog error:', err);
+      });
+    } catch (e) {
+      console.warn('[cheese-quiz] sendQuizResultLog exception:', e);
+    }
   }
 })();
