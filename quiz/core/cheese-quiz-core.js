@@ -31,7 +31,63 @@
 		localStorage.setItem(examStartedKey(examId), '1');
 	  } catch (e) {}
 	}
+/******************************************************************
+ * 공통: 점수 모달 닫기 / 1번 문제로 이동 (전역 helper)
+ ******************************************************************/
 
+function closeQuizModal() {
+  const modal = document.getElementById('cheese-quiz-modal');
+  if (!modal) return;
+
+  modal.classList.remove('is-open');
+  document.documentElement.classList.remove('quiz-modal-open');
+  if (document.body) {
+    document.body.classList.remove('quiz-modal-open');
+  }
+}
+
+function goToExamFirstQuestion() {
+  // 이 페이지에 exam-root가 달린 퀴즈가 있으면 "멀티페이지 시험 모드"
+  const examRootQuiz = document.querySelector('.cheese-quiz[data-exam-root]');
+  const hasMultiPageExam = !!examRootQuiz;
+
+  if (hasMultiPageExam) {
+    // 1) 현재 페이지에 1번 문항이 있으면 → 그 위치로 스크롤
+    const q1 = document.querySelector('.cheese-quiz li[data-qid="1"]');
+    if (q1) {
+      q1.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start'
+      });
+      return;
+    }
+
+    // 2) 1번 문항이 없으면 → exam-root URL(보통 1페이지)로 이동
+    const rootUrl = examRootQuiz.getAttribute('data-exam-root');
+    if (rootUrl) {
+      window.location.href = rootUrl;
+      return;
+    }
+
+    // 예외: exam-root도 이상하면 그냥 맨 위로
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+
+  // ─ 여기까지 왔으면: 한 페이지짜리 퀴즈 모드 ─
+  const firstQuestion =
+    document.querySelector('.cheese-quiz li[data-qid="1"]') ||
+    document.querySelector('.cheese-quiz li[data-answer]');
+
+  if (firstQuestion) {
+    firstQuestion.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start'
+    });
+  } else {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+}
 	/******************************************************************
 	 * 공통: 점수 모달 닫기 / 1번 문제로 이동
 	 ******************************************************************/
@@ -190,17 +246,6 @@
         });
       })();
       // ─────────────────────────────────────
-
-
-      function closeQuizModal() {
-        if (!quizModal) return;
-        quizModal.classList.remove('is-open');
-        document.documentElement.classList.remove('quiz-modal-open');
-        if (document.body) document.body.classList.remove('quiz-modal-open');
-      }
-
-
-      // ──────────
       // 1번 문제 있는 곳으로 이동하는 helper
       // ──────────
       function goToExamFirstQuestion() {
