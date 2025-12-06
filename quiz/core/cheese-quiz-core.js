@@ -1275,15 +1275,7 @@ document.addEventListener('click', function (e) {
         const feedback = document.createElement('div');
         feedback.className = 'quiz-feedback';
         li.appendChild(feedback);
-
-        // ★ 문제와 문제 사이 여백용 '빈 줄'
-        //   - 화면에 아무것도 안 보이고, 그냥 공간만 차지함
-        const spacer = document.createElement('div');
-        spacer.className = 'quiz-question-spacer';
-        spacer.style.display = 'block';
-        spacer.style.height = '16px';   // 여기 숫자로 간격 조절 (px 대신 '1.5rem'도 가능)
-        li.appendChild(spacer);
-		  
+	  
         ol.appendChild(li);
 
       });
