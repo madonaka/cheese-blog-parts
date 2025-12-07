@@ -1,5 +1,23 @@
-  <!-- 관리자 페이지 전용 JS -->
+<!-- 관리자 페이지 전용 JS -->
+// admin/admin-common.js
 
+(function () {
+  // 1) 로그인 토큰 가져오기 (로그인 성공 시 index.html에서 저장했던 값)
+  var token = sessionStorage.getItem("cheese_admin_token") || "";
+
+  // 2) 토큰이 없으면 → 로그인 페이지로 강제 이동
+  if (!token) {
+    // admin.cheesehistory.com 루트(index.html)로 보내기
+    window.location.href = "/";
+    return; // 아래 코드들은 실행 안 되도록 종료
+  }
+
+  // 3) 토큰이 있으면 전역으로 보관 (다른 스크립트에서 사용)
+  window.CHEESE_ADMIN_TOKEN = token;
+
+})();
+
+  
 /************************************************************
  * 1) 여기만 네 웹앱 주소로 바꿔주면 됨
  *    예) const CHEESE_ADMIN_API_BASE = 'https://script.google.com/macros/s/XXXX/exec';
