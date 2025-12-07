@@ -364,6 +364,29 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+// 헤더 표시
+  async function loadAdminHeader() {
+  const slot = document.getElementById('admin-header-slot');
+  if (!slot) return; // 이 페이지에 헤더 슬롯이 없으면 그냥 종료
+
+  try {
+    // ★ 경로 중요: 지금처럼 /admin/question-list.html, /admin/question-detail.html
+    // 이런 구조라면 둘 다 /admin 밑이니까 아래처럼 쓰면 됨
+    const res = await fetch('./admin-header.html');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+
+    const html = await res.text();
+    slot.innerHTML = html;
+  } catch (err) {
+    console.error('헤더 로딩 실패:', err);
+    slot.innerHTML = '<div class="admin-header">헤더 로딩 에러</div>';
+  }
+}
+
+// DOM 로드되면 자동으로 헤더 끼워 넣기
+document.addEventListener('DOMContentLoaded', () => {
+  loadAdminHeader();
+
   // 대시보드/테이블 초기 데이터 로드
   loadExamSetsFromSheet();
 });
