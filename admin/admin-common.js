@@ -6,10 +6,6 @@
  ************************************************************/
 const CHEESE_ADMIN_API_BASE = 'https://script.google.com/macros/s/AKfycbwuvooqtlk6c_Nv2_VgforohP5twqTLWGu5j8uf56D3qvKsUnioAhfbkNdTKIsQaaQF/exec'; 
 
-// 🔹 question-detail 등에서 window.CHEESE_ADMIN_API_BASE 를 쓰고 있으니까, 같이 연결해주기
-if (typeof window !== "undefined") {
-  window.CHEESE_ADMIN_API_BASE = CHEESE_ADMIN_API_BASE;
-}
 
 // exam_sets 시트에서 불러온 실제 데이터가 담길 배열
 let examSets = [];
