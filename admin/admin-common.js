@@ -36,6 +36,33 @@
     window.location.href = "/";
   };
 
+
+  // 4) DOM 로드 후 헤더 HTML fetch + 이벤트 연결
+  document.addEventListener("DOMContentLoaded", async function () {
+    // (1) 헤더 자리 찾기
+    const slot = document.getElementById("admin-header-slot");
+    if (slot) {
+      try {
+        // admin-common.js 와 같은 폴더 기준 ( /admin )
+        const res = await fetch("./admin-header.html");
+        const html = await res.text();
+        slot.innerHTML = html;
+      } catch (err) {
+        console.error("헤더 로드 실패:", err);
+      }
+    }
+
+    // (2) 페이지별 서브타이틀 / 뱃지 채우기
+    const subtitleEl = document.querySelector("[data-admin-page-subtitle]");
+    if (subtitleEl && window.CHEESE_ADMIN_PAGE_SUBTITLE) {
+      subtitleEl.textContent = window.CHEESE_ADMIN_PAGE_SUBTITLE;
+    }
+
+    const badgeEl = document.querySelector("[data-admin-page-badge]");
+    if (badgeEl && window.CHEESE_ADMIN_PAGE_BADGE) {
+      badgeEl.textContent = window.CHEESE_ADMIN_PAGE_BADGE;
+    }
+  
   // 5) 페이지에 #btn-logout 버튼이 있으면 클릭 이벤트 연결
   document.addEventListener("DOMContentLoaded", function () {
     const logoutBtn = document.getElementById("btn-logout");
