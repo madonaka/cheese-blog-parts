@@ -4,7 +4,7 @@
  * 1) 여기만 네 웹앱 주소로 바꿔주면 됨
  *    예) const CHEESE_ADMIN_API_BASE = 'https://script.google.com/macros/s/XXXX/exec';
  ************************************************************/
-const CHEESE_ADMIN_API_BASE = 'https://script.google.com/macros/s/AKfycbwuvooqtlk6c_Nv2_VgforohP5twqTLWGu5j8uf56D3qvKsUnioAhfbkNdTKIsQaaQF/exec'; 
+const CHEESE_ADMIN_API_BASE = window.CHEESE_ADMIN_API_BASE;
 
 
 // exam_sets 시트에서 불러온 실제 데이터가 담길 배열
