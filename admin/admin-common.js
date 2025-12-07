@@ -281,6 +281,9 @@ async function loadAdminHeader() {
 
     const html = await res.text();
     slot.innerHTML = html;
+
+    // 헤더 + 메뉴가 DOM에 들어온 뒤에 활성 메뉴 표시
+    highlightActiveMenu();
   } catch (err) {
     console.error("헤더 로딩 실패:", err);
     slot.innerHTML = '<div class="admin-header">헤더 로딩 에러</div>';
@@ -364,6 +367,19 @@ document.addEventListener("DOMContentLoaded", () => {
       }, 1200);
     });
   }
+  
+/***********************
+ * 활성 메뉴 표시 함수
+ ***********************/
+function highlightActiveMenu() {
+  const active = window.CHEESE_ADMIN_ACTIVE_PAGE;
+  if (!active) return;
+
+  document.querySelectorAll(".admin-nav-link").forEach((link) => {
+    const page = link.dataset.page;
+    link.classList.toggle("active", page === active);
+  });
+}
 
   // 9) 대시보드/테이블 초기 데이터 로드
   loadExamSetsFromSheet();
