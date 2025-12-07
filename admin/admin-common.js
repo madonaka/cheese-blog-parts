@@ -2,6 +2,12 @@
 // admin/admin-common.js
 
 (function () {
+  // 토큰/로그인 정보 키 이름(로그인할 때 세션에 저장했던 것들)
+  const TOKEN_KEY       = "cheese_admin_token";
+  const LOGIN_ID_KEY    = "cheese_admin_login_id";
+  const DISPLAY_NAME_KEY= "cheese_admin_display_name";
+  const ROLE_KEY        = "cheese_admin_role";
+  
   // 1) 로그인 토큰 가져오기 (로그인 성공 시 index.html에서 저장했던 값)
   var token = sessionStorage.getItem("cheese_admin_token") || "";
 
@@ -15,8 +21,33 @@
   // 3) 토큰이 있으면 전역으로 보관 (다른 스크립트에서 사용)
   window.CHEESE_ADMIN_TOKEN = token;
 
-})();
+ // 4) 로그아웃 유틸 함수 전역으로 노출
+  window.cheeseAdminLogout = function () {
+    try {
+      sessionStorage.removeItem(TOKEN_KEY);
+      sessionStorage.removeItem(LOGIN_ID_KEY);
+      sessionStorage.removeItem(DISPLAY_NAME_KEY);
+      sessionStorage.removeItem(ROLE_KEY);
+    } catch (err) {
+      console.error("세션스토리지 삭제 중 에러:", err);
+    }
 
+    // 로그아웃 후 로그인 페이지로
+    window.location.href = "/";
+  };
+
+  // 5) 페이지에 #btn-logout 버튼이 있으면 클릭 이벤트 연결
+  document.addEventListener("DOMContentLoaded", function () {
+    const logoutBtn = document.getElementById("btn-logout");
+    if (logoutBtn) {
+      logoutBtn.addEventListener("click", function () {
+        if (confirm("로그아웃 하시겠습니까?")) {
+          window.cheeseAdminLogout();
+        }
+      });
+    }
+  });
+})();
   
 /************************************************************
  * 1) 여기만 네 웹앱 주소로 바꿔주면 됨
