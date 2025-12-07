@@ -289,7 +289,40 @@ async function loadAdminHeader() {
     slot.innerHTML = '<div class="admin-header">헤더 로딩 에러</div>';
   }
 }
+/***********************
+ * 왼쪽 메뉴 HTML 로딩
+ ***********************/
+async function loadAdminMenu() {
+  const slot = document.getElementById("admin-menu-slot");
+  if (!slot) return; // 이 페이지에 메뉴 슬롯이 없으면 아무것도 안 함
 
+  try {
+    const res = await fetch("./admin-menu.html");
+    if (!res.ok) throw new Error("HTTP " + res.status);
+
+    const html = await res.text();
+    slot.innerHTML = html;
+
+    // 메뉴가 DOM에 들어온 뒤 활성 메뉴 표시
+    highlightActiveMenu();
+  } catch (err) {
+    console.error("메뉴 로딩 실패:", err);
+    slot.innerHTML = '<div class="admin-side-nav-error">메뉴 로딩 에러</div>';
+  }
+}
+
+/***********************
+ * 활성 메뉴 표시 함수
+ ***********************/
+function highlightActiveMenu() {
+  const active = window.CHEESE_ADMIN_ACTIVE_PAGE; // 각 페이지에서 세팅
+  if (!active) return;
+
+  document.querySelectorAll(".admin-side-link").forEach((link) => {
+    const page = link.dataset.page;
+    link.classList.toggle("active", page === active);
+  });
+}
 /***********************
  * 초기화
  ***********************/
@@ -368,18 +401,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
   
-/***********************
- * 활성 메뉴 표시 함수
- ***********************/
-function highlightActiveMenu() {
-  const active = window.CHEESE_ADMIN_ACTIVE_PAGE;
-  if (!active) return;
 
-  document.querySelectorAll(".admin-nav-link").forEach((link) => {
-    const page = link.dataset.page;
-    link.classList.toggle("active", page === active);
-  });
-}
 
   // 9) 대시보드/테이블 초기 데이터 로드
   loadExamSetsFromSheet();
