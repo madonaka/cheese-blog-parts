@@ -403,7 +403,65 @@ document.addEventListener("DOMContentLoaded", () => {
       }, 1200);
     });
   }
-  
+    
+  /************************************************************
+   * 관리자 공통 로딩 모달
+   *  - admin-common.js 내부에서만 사용하는 전용 모달
+   *  - showAdminLoading(message)
+   *  - hideAdminLoading()
+   ************************************************************/
+
+  // 모달 DOM을 필요할 때 한 번만 만들어 주는 함수
+  function ensureAdminLoadingContainer() {
+    let root = document.getElementById("cheese-admin-loading");
+    if (root) return root;
+
+    // body가 아직 없으면 그냥 null 리턴 (나중에 다시 시도)
+    if (!document.body) return null;
+
+    root = document.createElement("div");
+    root.id = "cheese-admin-loading";
+    root.className = "cheese-admin-loading";
+    root.innerHTML = [
+      '<div class="cheese-admin-loading-backdrop"></div>',
+      '<div class="cheese-admin-loading-dialog">',
+      '  <div class="cheese-admin-loading-spinner"></div>',
+      '  <div class="cheese-admin-loading-text">데이터를 불러오는 중입니다...</div>',
+      "</div>",
+    ].join("");
+
+    document.body.appendChild(root);
+    return root;
+  }
+
+  // 관리자 로딩 모달 ON
+  function showAdminLoading(message) {
+    const root = ensureAdminLoadingContainer();
+    if (!root) return;
+
+    const textEl = root.querySelector(".cheese-admin-loading-text");
+    if (textEl && message) {
+      textEl.textContent = message;
+    }
+
+    root.classList.add("is-visible");
+
+    // 스크롤 막고 싶으면 주석 해제
+    // document.documentElement.classList.add("admin-loading-open");
+    // document.body && document.body.classList.add("admin-loading-open");
+  }
+
+  // 관리자 로딩 모달 OFF
+  function hideAdminLoading() {
+    const root = document.getElementById("cheese-admin-loading");
+    if (!root) return;
+
+    root.classList.remove("is-visible");
+
+    // document.documentElement.classList.remove("admin-loading-open");
+    // document.body && document.body.classList.remove("admin-loading-open");
+  }
+
 
 
   // 9) 대시보드/테이블 초기 데이터 로드
