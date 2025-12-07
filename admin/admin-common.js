@@ -40,6 +40,9 @@
 // ─────────────────────────────────────────────
 // 관리자 공통 로딩 모달 (헤더에 있는 #cheese-quiz-loading 사용)
 // ─────────────────────────────────────────────
+let adminLoadingTimer = null;
+let adminLoadingProgress = 0;
+
 function showAdminLoading(message) {
   const loading = document.getElementById("cheese-quiz-loading");
   if (!loading) {
@@ -47,7 +50,11 @@ function showAdminLoading(message) {
     return;
   }
 
-  const textEl = loading.querySelector(".cheese-quiz-loading-text");
+  const textEl    = loading.querySelector(".cheese-quiz-loading-text");
+  const percentEl = loading.querySelector(".cheese-quiz-loading-percent");
+  const ringEl    = loading.querySelector(".cheese-quiz-loading-ring");
+
+  // 안내 문구 세팅
   if (textEl && message) {
     textEl.textContent = message;
   }
@@ -56,24 +63,70 @@ function showAdminLoading(message) {
   loading.classList.add("is-visible");
   loading.style.display = "flex";
 
-  // 스크롤 잠그기 (CSS에서 .quiz-loading-open 처리)
+  // 스크롤 잠금
   document.documentElement.classList.add("quiz-loading-open");
   if (document.body) {
     document.body.classList.add("quiz-loading-open");
   }
+
+  // 기존 타이머 정리
+  if (adminLoadingTimer) {
+    clearInterval(adminLoadingTimer);
+    adminLoadingTimer = null;
+  }
+
+  // 진행률 초기화
+  adminLoadingProgress = 0;
+  if (percentEl) percentEl.textContent = "0%";
+  if (ringEl)     ringEl.style.setProperty("--progress", "0%");
+
+  // 0 → 95%까지 연출
+  adminLoadingTimer = setInterval(() => {
+    if (adminLoadingProgress < 80) {
+      adminLoadingProgress += 4;
+    } else if (adminLoadingProgress < 95) {
+      adminLoadingProgress += 1;
+    } else {
+      adminLoadingProgress = 95;
+      clearInterval(adminLoadingTimer);
+      adminLoadingTimer = null;
+    }
+
+    const value = Math.min(adminLoadingProgress, 95);
+    if (percentEl) percentEl.textContent = value + "%";
+    if (ringEl)     ringEl.style.setProperty("--progress", value + "%");
+  }, 80);
 }
 
 function hideAdminLoading() {
-  const loading = document.getElementById("cheese-quiz-loading");
+  const loading   = document.getElementById("cheese-quiz-loading");
   if (!loading) return;
 
-  loading.classList.remove("is-visible");
-  loading.style.display = "none";
+  const percentEl = loading.querySelector(".cheese-quiz-loading-percent");
+  const ringEl    = loading.querySelector(".cheese-quiz-loading-ring");
 
-  document.documentElement.classList.remove("quiz-loading-open");
-  if (document.body) {
-    document.body.classList.remove("quiz-loading-open");
+  // 타이머 정리
+  if (adminLoadingTimer) {
+    clearInterval(adminLoadingTimer);
+    adminLoadingTimer = null;
   }
+
+  // 100% 한 번 찍고
+  if (percentEl) percentEl.textContent = "100%";
+  if (ringEl)     ringEl.style.setProperty("--progress", "100%");
+
+  // 살짝 있다가 닫기
+  setTimeout(() => {
+    loading.classList.remove("is-visible");
+    loading.style.display = "none";
+
+    document.documentElement.classList.remove("quiz-loading-open");
+    if (document.body) {
+      document.body.classList.remove("quiz-loading-open");
+    }
+
+    adminLoadingProgress = 0;
+  }, 150);
 }
 
 /************************************************************
@@ -130,7 +183,7 @@ async function loadExamSetsFromSheet() {
     renderDashboard();
     renderQuizTable();
 
-    // ⭐ 더미 데이터로라도 렌더 끝났으면 모달 끄기
+    // 베이스가 없을 때도 모달 닫기
     hideAdminLoading();
     return;
   }
@@ -157,6 +210,9 @@ async function loadExamSetsFromSheet() {
     examSets = fallbackExamSets;
     renderDashboard();
     renderQuizTable();
+  } finally {
+    // ⭐ 성공/실패/더미 상관없이 항상 모달 끄기
+    hideAdminLoading();
   }
 }
 
