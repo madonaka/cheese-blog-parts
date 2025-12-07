@@ -330,6 +330,9 @@ document.addEventListener("DOMContentLoaded", () => {
   // 1) 헤더 로딩
   loadAdminHeader();
 
+  // 2) 왼쪽 메뉴 로딩
+  loadAdminMenu();
+
   // 2) 페이지별 서브타이틀 / 뱃지 채우기
   const subtitleEl = document.querySelector("[data-admin-page-subtitle]");
   if (subtitleEl && window.CHEESE_ADMIN_PAGE_SUBTITLE) {
