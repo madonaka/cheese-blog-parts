@@ -143,6 +143,9 @@
     }
 
     const qid = getQueryParam("id");
+    // ⭐ id가 없거나 id=new 이면 "새 문제 입력 모드"
+    const isCreateMode = !qid || qid === "new";
+    
     let originalData = null; // reset & 변경감지용
 
     /**********************************************************
@@ -286,7 +289,9 @@
       msgEl.classList.remove("danger-text");
     
       const payload = collectForm();
-      if (!payload.id) {
+    
+      // ⭐ 수정 모드에서만 ID 필수 체크
+      if (!isCreateMode && !payload.id) {
         msgEl.textContent = "ID가 없습니다. 저장할 수 없습니다.";
         msgEl.classList.add("danger-text");
         return;
@@ -300,12 +305,14 @@
           return;
         }
     
-        const url = base + "?mode=updateQuestion";
-        console.log("updateQuestion 요청 URL:", url, payload);
+        // ⭐ 신규/수정 모드에 따라 Apps Script mode 분기
+        const mode = isCreateMode ? "addQuestion" : "updateQuestion";
+        const url = base + "?mode=" + mode;
     
         const res = await fetch(url, {
           method: "POST",
-          body: JSON.stringify(payload),   // ← 헤더 X
+          // CORS 때문에 Content-Type은 안 붙이는 방식 그대로 유지
+          body: JSON.stringify(payload),
         });
     
         if (!res.ok) {
@@ -313,13 +320,13 @@
         }
     
         const rawText = await res.text();
-        console.log("updateQuestion 응답:", rawText);
+        console.log("add/update Question 응답:", rawText);
     
         let json;
         try {
           json = JSON.parse(rawText);
         } catch (parseErr) {
-          console.error("updateQuestion 응답 JSON 파싱 실패:", parseErr);
+          console.error("응답 JSON 파싱 실패:", parseErr);
           msgEl.textContent =
             "저장 실패: 서버에서 JSON 대신 다른 형식이 반환되었습니다.";
           msgEl.classList.add("danger-text");
@@ -333,9 +340,19 @@
           return;
         }
     
-        msgEl.textContent = "저장 완료!";
-        msgEl.classList.remove("danger-text");
+        // ⭐ addQuestion일 때, 서버가 새 ID를 돌려줬다면 폼에 반영
+        if (isCreateMode && json.question && json.question.id) {
+          payload.id = json.question.id;
+    
+          const idInput = document.getElementById("q-id");
+          const idSpan = document.getElementById("detail-qid");
+          if (idInput) idInput.value = payload.id;
+          if (idSpan) idSpan.textContent = payload.id;
+        }
+    
         originalData = payload;
+        msgEl.textContent = isCreateMode ? "새 문제 등록 완료!" : "저장 완료!";
+        msgEl.classList.remove("danger-text");
       } catch (err) {
         console.error("저장 중 에러 발생", err);
         msgEl.textContent =
@@ -375,13 +392,46 @@
         });
       }
 
-      // 최초 로딩
-      if (!qid) {
-        msgEl.textContent = "URL에 id 파라미터가 없습니다.";
-        msgEl.classList.add("danger-text");
-        return;
+      // ⭐ 최초 로딩: 신규 모드 vs 수정 모드 분기
+      if (isCreateMode) {
+        // 새 문제 기본값
+        originalData = {
+          id: "",
+          period: "",
+          topic: "",
+          difficulty: "",
+          question: "",
+          choice1: "",
+          choice2: "",
+          choice3: "",
+          choice4: "",
+          answer: "",
+          explanation: "",
+          hint: "",
+          active: 1,
+        };
+        fillForm(originalData);
+    
+        // 화면 텍스트도 신규 입력용으로 바꿔주기
+        const titleEl = document.querySelector(".card-title");
+        const subtitleEl = document.querySelector(".card-subtitle");
+        if (titleEl) titleEl.textContent = "새 문제 입력";
+        if (subtitleEl) subtitleEl.textContent = "새 문제를 입력한 뒤 저장을 눌러주세요.";
+    
+        const idSpan = document.getElementById("detail-qid");
+        if (idSpan) idSpan.textContent = "새 문제";
+    
+        msgEl.textContent = "새 문제 입력 모드입니다.";
+        msgEl.classList.remove("danger-text");
+      } else {
+        // 기존 로직 (수정 모드)
+        if (!qid) {
+          msgEl.textContent = "URL에 id 파라미터가 없습니다.";
+          msgEl.classList.add("danger-text");
+          return;
+        }
+        loadQuestionDetail();
       }
-      loadQuestionDetail();
     });
   })();
 </script>
