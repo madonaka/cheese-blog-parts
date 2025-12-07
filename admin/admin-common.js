@@ -1,6 +1,3 @@
-<!-- 관리자 페이지 전용 JS -->
-// admin/admin-common.js
-
 (function () {
   // 토큰/로그인 정보 키 이름(로그인할 때 세션에 저장했던 것들)
   const TOKEN_KEY       = "cheese_admin_token";
