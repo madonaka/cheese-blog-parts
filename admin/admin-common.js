@@ -82,11 +82,17 @@ const fallbackExamSets = [
  *    (Apps Script: ?mode=examSets 로 JSON 내려주는 부분이랑 연결)
  ************************************************************/
 async function loadExamSetsFromSheet() {
+  // ⭐ 호출 시작할 때 로딩 모달 켜기
+  showAdminLoading("대시보드 데이터를 불러오는 중입니다...");
+
   if (!CHEESE_ADMIN_API_BASE) {
     console.warn("CHEESE_ADMIN_API_BASE가 비어 있어서 더미 데이터로 표시합니다.");
     examSets = fallbackExamSets;
     renderDashboard();
     renderQuizTable();
+
+    // ⭐ 더미 데이터로라도 렌더 끝났으면 모달 끄기
+    hideAdminLoading();
     return;
   }
 
