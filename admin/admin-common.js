@@ -37,6 +37,45 @@
   };
 })();
 
+// ─────────────────────────────────────────────
+// 관리자 공통 로딩 모달 (헤더에 있는 #cheese-quiz-loading 사용)
+// ─────────────────────────────────────────────
+function showAdminLoading(message) {
+  const loading = document.getElementById("cheese-quiz-loading");
+  if (!loading) {
+    console.warn("[admin] #cheese-quiz-loading 요소를 찾을 수 없습니다.");
+    return;
+  }
+
+  const textEl = loading.querySelector(".cheese-quiz-loading-text");
+  if (textEl && message) {
+    textEl.textContent = message;
+  }
+
+  // 모달 표시
+  loading.classList.add("is-visible");
+  loading.style.display = "flex";
+
+  // 스크롤 잠그기 (CSS에서 .quiz-loading-open 처리)
+  document.documentElement.classList.add("quiz-loading-open");
+  if (document.body) {
+    document.body.classList.add("quiz-loading-open");
+  }
+}
+
+function hideAdminLoading() {
+  const loading = document.getElementById("cheese-quiz-loading");
+  if (!loading) return;
+
+  loading.classList.remove("is-visible");
+  loading.style.display = "none";
+
+  document.documentElement.classList.remove("quiz-loading-open");
+  if (document.body) {
+    document.body.classList.remove("quiz-loading-open");
+  }
+}
+
 /************************************************************
  * 1) 여기만 네 웹앱 주소로 바꿔주면 됨
  *    예) window.CHEESE_ADMIN_API_BASE = 'https://script.google.com/macros/s/XXXX/exec';
@@ -332,14 +371,14 @@ function highlightActiveMenu() {
 /***********************
  * 초기화
  ***********************/
-document.addEventListener("DOMContentLoaded", () => {
-  // 1) 헤더 로딩
-  loadAdminHeader();
+document.addEventListener("DOMContentLoaded", async () => {
+  // 1) 헤더 로딩 (모달 HTML도 이 안에 포함됨)
+  await loadAdminHeader();
 
   // 2) 왼쪽 메뉴 로딩
-  loadAdminMenu();
+  await loadAdminMenu();
 
-  // 2) 페이지별 서브타이틀 / 뱃지 채우기
+  // 3) 페이지별 서브타이틀 / 뱃지 채우기
   const subtitleEl = document.querySelector("[data-admin-page-subtitle]");
   if (subtitleEl && window.CHEESE_ADMIN_PAGE_SUBTITLE) {
     subtitleEl.textContent = window.CHEESE_ADMIN_PAGE_SUBTITLE;
@@ -350,23 +389,23 @@ document.addEventListener("DOMContentLoaded", () => {
     badgeEl.textContent = window.CHEESE_ADMIN_PAGE_BADGE;
   }
 
-  // 3) 로그아웃 버튼
+  // 4) 로그아웃 버튼 (이벤트 위임)
   document.addEventListener("click", (e) => {
-  const logoutBtn = e.target.closest("#btn-logout");
-  if (!logoutBtn) return;
+    const logoutBtn = e.target.closest("#btn-logout");
+    if (!logoutBtn) return;
 
-  if (confirm("로그아웃 하시겠습니까?")) {
-    window.cheeseAdminLogout();
-  }
-});
+    if (confirm("로그아웃 하시겠습니까?")) {
+      window.cheeseAdminLogout();
+    }
+  });
 
-  // 4) 네비 버튼
+  // 5) 네비 버튼
   document.querySelectorAll(".admin-nav-button").forEach((btn) => {
     if (!btn.dataset.target) return;
     btn.addEventListener("click", () => showSection(btn.dataset.target));
   });
 
-  // 5) "퀴즈 세트 관리로 이동" 버튼
+  // 6) "퀴즈 세트 관리로 이동" 버튼
   document.querySelectorAll("[data-jump-nav]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const target = btn.getAttribute("data-target");
@@ -374,7 +413,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // 6) 필터 이벤트
+  // 7) 필터 이벤트
   const periodSel = document.getElementById("filter-period");
   const searchInput = document.getElementById("filter-search");
   if (periodSel) {
@@ -384,7 +423,7 @@ document.addEventListener("DOMContentLoaded", () => {
     searchInput.addEventListener("input", renderQuizTable);
   }
 
-  // 7) 테이블 행 클릭 → 코드 생성
+  // 8) 테이블 행 클릭 → 코드 생성
   const quizTable = document.getElementById("quiz-table");
   if (quizTable) {
     quizTable.addEventListener("click", (e) => {
@@ -395,81 +434,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // 8) 코드 복사 버튼
-  const copyBtn = document.getElementById("btn-copy-snippet");
-  if (copyBtn) {
-    copyBtn.addEventListener("click", () => {
-      const ta = document.getElementById("snippet-output");
-      if (!ta || !ta.value.trim()) return;
-      ta.select();
-      document.execCommand("copy");
-      copyBtn.textContent = "✅ 복사됨";
-      setTimeout(() => {
-        copyBtn.textContent = "📋 코드 복사";
-      }, 1200);
-    });
-  }
-    
-  /************************************************************
-   * 관리자 공통 로딩 모달
-   *  - admin-common.js 내부에서만 사용하는 전용 모달
-   *  - showAdminLoading(message)
-   *  - hideAdminLoading()
-   ************************************************************/
-
-  // 모달 DOM을 필요할 때 한 번만 만들어 주는 함수
-  function ensureAdminLoadingContainer() {
-    let root = document.getElementById("cheese-admin-loading");
-    if (root) return root;
-
-    // body가 아직 없으면 그냥 null 리턴 (나중에 다시 시도)
-    if (!document.body) return null;
-
-    root = document.createElement("div");
-    root.id = "cheese-admin-loading";
-    root.className = "cheese-admin-loading";
-    root.innerHTML = [
-      '<div class="cheese-admin-loading-backdrop"></div>',
-      '<div class="cheese-admin-loading-dialog">',
-      '  <div class="cheese-admin-loading-spinner"></div>',
-      '  <div class="cheese-admin-loading-text">데이터를 불러오는 중입니다...</div>',
-      "</div>",
-    ].join("");
-
-    document.body.appendChild(root);
-    return root;
-  }
-
-  // 관리자 로딩 모달 ON
-  function showAdminLoading(message) {
-    const root = ensureAdminLoadingContainer();
-    if (!root) return;
-
-    const textEl = root.querySelector(".cheese-admin-loading-text");
-    if (textEl && message) {
-      textEl.textContent = message;
-    }
-
-    root.classList.add("is-visible");
-
-    // 스크롤 막고 싶으면 주석 해제
-    // document.documentElement.classList.add("admin-loading-open");
-    // document.body && document.body.classList.add("admin-loading-open");
-  }
-
-  // 관리자 로딩 모달 OFF
-  function hideAdminLoading() {
-    const root = document.getElementById("cheese-admin-loading");
-    if (!root) return;
-
-    root.classList.remove("is-visible");
-
-    // document.documentElement.classList.remove("admin-loading-open");
-    // document.body && document.body.classList.remove("admin-loading-open");
-  }
-
-
-
   // 9) 대시보드/테이블 초기 데이터 로드
-  loadExamSetsFromSheet();
+  await loadExamSetsFromSheet();
 });
+  
