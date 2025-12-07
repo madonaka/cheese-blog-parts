@@ -306,14 +306,14 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // 3) 로그아웃 버튼
-  const logoutBtn = document.getElementById("btn-logout");
-  if (logoutBtn) {
-    logoutBtn.addEventListener("click", () => {
-      if (confirm("로그아웃 하시겠습니까?")) {
-        window.cheeseAdminLogout();
-      }
-    });
+  document.addEventListener("click", (e) => {
+  const logoutBtn = e.target.closest("#btn-logout");
+  if (!logoutBtn) return;
+
+  if (confirm("로그아웃 하시겠습니까?")) {
+    window.cheeseAdminLogout();
   }
+});
 
   // 4) 네비 버튼
   document.querySelectorAll(".admin-nav-button").forEach((btn) => {
