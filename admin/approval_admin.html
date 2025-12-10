@@ -156,6 +156,11 @@
       </div>
     </div>
 
+
+    <script>
+      // Apps Script Web App URL ( /exec 까지 복붙 )
+      const API_BASE = 'https://script.google.com/macros/s/여기에_네_URL/exec';
+    </script>
     <script>
       function switchTab(tab) {
         document.getElementById('view-req').style.display = (tab === 'req') ? '' : 'none';
@@ -166,47 +171,55 @@
       }
 
       // ===== 예산요청 목록 로딩 =====
-      function loadBudgetRequests() {
-        document.getElementById('req-status').textContent = '예산요청 목록을 불러오는 중...';
-      
-        google.script.run
-          .withSuccessHandler(function(rows) {
-            const tbody = document.getElementById('req-tbody');
-            tbody.innerHTML = '';
-      
-            if (!rows || rows.length === 0) {
-              document.getElementById('req-status').textContent = '결재 대기 중인 예산요청이 없습니다.';
-              return;
-            }
-            document.getElementById('req-status').textContent = '';
-      
-            rows.forEach(function(r) {
-              const tr = document.createElement('tr');
-      
-              tr.innerHTML = `
-                <td>${r.request_id}</td>
-                <td>${r.budget_id}</td>
-                <td>${r.title || ''}</td>
-                <td>${(r.amount || '').toLocaleString()}</td>
-                <td>${r.requester || ''}</td>
-                <td>${r.requested_at || ''}</td>
-                <td>
-                  <button class="btn btn-primary" onclick="approveRequest('${r.request_id}')">
-                    승인
-                  </button>
-                </td>
-              `;
-              tbody.appendChild(tr);
-            });
-          })
-          .withFailureHandler(function(err) {
-            console.error(err);
-            alert('예산요청 목록을 불러오다가 에러가 발생했습니다:\n' + err);
-            document.getElementById('req-status').textContent = '목록 로딩 중 에러';
-          })
-          .getSubmittedBudgetRequestsForWeb();
+ async function loadBudgetRequests() {
+    const statusEl = document.getElementById('req-status');
+    const tbody = document.getElementById('req-tbody');
+
+    statusEl.textContent = '예산요청 목록을 불러오는 중...';
+    tbody.innerHTML = '';
+
+    try {
+      const res = await fetch(API_BASE + '?mode=budgetList');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+
+      const json = await res.json();
+      if (!json.ok) {
+        throw new Error(json.error || 'API 에러');
       }
 
+      const rows = json.data || [];
+
+      if (!rows.length) {
+        statusEl.textContent = '결재 대기 중인 예산요청이 없습니다.';
+        return;
+      }
+
+      statusEl.textContent = '';
+
+      rows.forEach(r => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${r.request_id}</td>
+          <td>${r.budget_id}</td>
+          <td>${r.title}</td>
+          <td class="amount">${r.amount}</td>
+          <td>${r.requester}</td>
+          <td>${r.requested_at ? new Date(r.requested_at).toLocaleDateString() : ''}</td>
+          <td>
+            <button class="btn btn-primary" onclick="approveBudget('${r.request_id}')">
+              승인
+            </button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+    } catch (err) {
+      console.error('loadBudgetRequests ERROR:', err);
+      alert('예산요청 목록 로딩 실패:\n' + err.message);
+      statusEl.textContent = '목록 로딩 중 에러';
+    }
+  }
       function approveRequest(requestId) {
         if (!confirm('이 예산요청을 승인할까요?\nrequest_id: ' + requestId)) return;
 
@@ -223,46 +236,54 @@
       }
 
       // ===== 지출정산 목록 로딩 =====
-      function loadExpenses() {
-        document.getElementById('exp-status').textContent = '지출 정산 목록을 불러오는 중...';
-      
-        google.script.run
-          .withSuccessHandler(function(rows) {
-            const tbody = document.getElementById('exp-tbody');
-            tbody.innerHTML = '';
-      
-            if (!rows || rows.length === 0) {
-              document.getElementById('exp-status').textContent = '결재 대기 중인 지출 정산이 없습니다.';
-              return;
-            }
-            document.getElementById('exp-status').textContent = '';
-      
-            rows.forEach(function(r) {
-              const tr = document.createElement('tr');
-      
-              tr.innerHTML = `
-                <td>${r.expense_id}</td>
-                <td>${r.request_id}</td>
-                <td>${r.vendor || ''}</td>
-                <td>${(r.amount || '').toLocaleString()}</td>
-                <td>${r.requester || ''}</td>
-                <td>${r.requested_at || ''}</td>
-                <td>
-                  <button class="btn btn-primary" onclick="approveExpense('${r.expense_id}')">
-                    승인
-                  </button>
-                </td>
-              `;
-              tbody.appendChild(tr);
-            });
-          })
-          .withFailureHandler(function(err) {
-            console.error(err);
-            alert('지출 정산 목록을 불러오다가 에러가 발생했습니다:\n' + err);
-            document.getElementById('exp-status').textContent = '목록 로딩 중 에러';
-          })
-          .getSubmittedExpensesForWeb();
+   async function loadExpenses() {
+    const statusEl = document.getElementById('exp-status');
+    const tbody = document.getElementById('exp-tbody');
+
+    statusEl.textContent = '지출 정산 목록을 불러오는 중...';
+    tbody.innerHTML = '';
+
+    try {
+      const res = await fetch(API_BASE + '?mode=expenseList');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'API 에러');
+
+      const rows = json.data || [];
+
+      if (!rows.length) {
+        statusEl.textContent = '결재 대기 중인 지출 정산이 없습니다.';
+        return;
       }
+
+      statusEl.textContent = '';
+
+      rows.forEach(r => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${r.expense_id}</td>
+          <td>${r.request_id}</td>
+          <td>${r.date}</td>
+          <td>${r.vendor}</td>
+          <td class="amount">${r.amount}</td>
+          <td>${r.requester}</td>
+          <td>${r.requested_at ? new Date(r.requested_at).toLocaleDateString() : ''}</td>
+          <td>
+            <button class="btn btn-primary" onclick="approveExpense('${r.expense_id}')">
+              승인
+            </button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+    } catch (err) {
+      console.error('loadExpenses ERROR:', err);
+      alert('지출 정산 목록 로딩 실패:\n' + err.message);
+      statusEl.textContent = '목록 로딩 중 에러';
+    }
+  }
 
       function approveExpense(expenseId) {
         if (!confirm('이 지출 정산을 승인할까요?\nexpense_id: ' + expenseId)) return;
@@ -303,5 +324,51 @@ function jsonError_(message) {
 }
 
     </script>
+
+    <script>
+  async function approveBudget(requestId) {
+    if (!confirm(`예산요청 ${requestId} 를 승인하시겠습니까?`)) return;
+
+    try {
+      const res = await fetch(
+        API_BASE + '?mode=approveBudget&requestId=' + encodeURIComponent(requestId)
+      );
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'API 에러');
+
+      alert('승인 완료: ' + (json.data && json.data.message ? json.data.message : 'ok'));
+      await loadBudgetRequests();  // 목록 다시 로딩
+
+    } catch (err) {
+      console.error('approveBudget ERROR:', err);
+      alert('예산요청 승인 실패:\n' + err.message);
+    }
+  }
+
+  async function approveExpense(expenseId) {
+    if (!confirm(`지출 정산 ${expenseId} 를 승인하시겠습니까?`)) return;
+
+    try {
+      const res = await fetch(
+        API_BASE + '?mode=approveExpense&expenseId=' + encodeURIComponent(expenseId)
+      );
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'API 에러');
+
+      alert('승인 완료: ' + (json.data && json.data.message ? json.data.message : 'ok'));
+      await loadExpenses();
+
+    } catch (err) {
+      console.error('approveExpense ERROR:', err);
+      alert('지출 정산 승인 실패:\n' + err.message);
+    }
+  }
+
+  // 페이지 로드시 둘 다 호출
+  document.addEventListener('DOMContentLoaded', () => {
+    loadBudgetRequests();
+    loadExpenses();
+  });
+</script>
   </body>
 </html>
