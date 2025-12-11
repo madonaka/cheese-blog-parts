@@ -434,6 +434,36 @@ function filterAdminMenuByRole() {
 }
 
 /***********************
+ * 왼쪽 메뉴 HTML 로딩 + 역할별 필터
+ ***********************/
+async function loadAdminMenu() {
+  const slot = document.getElementById("admin-menu-slot");
+  if (!slot) {
+    // 이 페이지는 사이드 메뉴를 쓰지 않는 경우
+    return;
+  }
+
+  try {
+    // admin 폴더 안에 admin-menu.html 이 있다고 가정
+    const res = await fetch("./admin-menu.html");
+    if (!res.ok) throw new Error("HTTP " + res.status);
+
+    const html = await res.text();
+    slot.innerHTML = html;
+
+    // 메뉴가 DOM에 들어온 뒤에 권한 필터 적용
+    filterAdminMenuByRole();
+
+    // 그리고 현재 페이지에 맞게 활성 메뉴 표시
+    highlightActiveMenu();
+  } catch (err) {
+    console.error("왼쪽 메뉴 로딩 실패:", err);
+    slot.innerHTML =
+      '<div class="admin-sidebar">메뉴 로딩 에러가 발생했습니다.</div>';
+  }
+}
+
+/***********************
  * 활성 메뉴 표시 함수
  ***********************/
 function highlightActiveMenu() {
