@@ -544,4 +544,48 @@ document.addEventListener("DOMContentLoaded", async () => {
   // 9) 대시보드/테이블 초기 데이터 로드
   await loadExamSetsFromSheet();
 });
-  
+
+//  ----------------------------
+//  결재선 팝업 띄우기
+//  ----------------------------
+document.addEventListener('DOMContentLoaded', function () {
+  // data-approval-line-id 가 달려있는 버튼들을 전부 찾음
+  const btns = document.querySelectorAll('button[data-approval-line-id]');
+
+  btns.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      // 어느 input과 연결된 버튼인지 (나중에 사용할 예정)
+      const targetIdInput = this.getAttribute('data-approval-line-id');
+      const targetNameInput = this.getAttribute('data-approval-line-name');
+
+      // 나중에 팝업에서 쓸 수 있게 쿼리스트링으로 넘겨둠 (오늘은 그냥 넘겨놓기만)
+      const params = new URLSearchParams({
+        targetIdInput: targetIdInput || '',
+        targetNameInput: targetNameInput || ''
+      });
+
+      // 팝업 창 크기
+      const w = 720;
+      const h = 560;
+
+      // 화면 중앙정도에 위치
+      const left = window.screenX + (window.outerWidth - w) / 2;
+      const top = window.screenY + (window.outerHeight - h) / 2;
+
+      // ✅ 결재선 편집 전용 팝업 띄우기
+      window.open(
+        './approval-line-editor.html?' + params.toString(),
+        'approvalLineEditor', // 창 이름(같으면 같은 창 재사용)
+        [
+          'width=' + w,
+          'height=' + h,
+          'left=' + left,
+          'top=' + top,
+          'resizable=yes',
+          'scrollbars=yes'
+        ].join(',')
+      );
+    });
+  });
+});
+
