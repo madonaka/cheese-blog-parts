@@ -628,20 +628,24 @@ function initApprovalLineModal() {
  *  - data-approval-line-id / data-approval-line-name 로 대상 input ID 전달
  */
 function initApprovalLineOpenButtons() {
-  const modal = document.getElementById('approval-line-modal');
-
   document
     .querySelectorAll('.approval-line-open-btn')
     .forEach(function (btn) {
       btn.addEventListener('click', function () {
+        // 🔴 기존에는 여기 위쪽에 const modal = ... 이 있었음
+        // ⬇ 클릭 시점에 매번 모달을 다시 찾도록 변경
+        const modal = document.getElementById('approval-line-modal');
+
+        if (!modal) {
+          console.warn('결재선 모달을 찾을 수 없습니다. approval-line-editor.html이 제대로 로드됐는지 확인해주세요.');
+          return;
+        }
+
         const targetId = this.getAttribute('data-approval-line-id');
         const targetName = this.getAttribute('data-approval-line-name');
 
         currentApprovalLineTarget.idInputId = targetId;
         currentApprovalLineTarget.nameInputId = targetName;
-
-        // 모달이 아직 로드 안돼있으면 무시
-        if (!modal) return;
 
         const ctx = document.getElementById('approval-line-context');
         if (ctx) {
@@ -653,6 +657,7 @@ function initApprovalLineOpenButtons() {
       });
     });
 }
+
 
 // === 공통 초기화 진입점 ==========================================
 
