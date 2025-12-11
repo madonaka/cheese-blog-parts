@@ -1,27 +1,42 @@
 // 관리자 페이지 공통 스크립트
-// admin/admin-common.js
-
 (function () {
-  // 토큰/로그인 정보 키 이름(로그인할 때 세션에 저장했던 것들)
+  // 토큰/로그인 정보 키 이름
   const TOKEN_KEY        = "cheese_admin_token";
   const LOGIN_ID_KEY     = "cheese_admin_login_id";
   const DISPLAY_NAME_KEY = "cheese_admin_display_name";
   const ROLE_KEY         = "cheese_admin_role";
-  
-  // 1) 로그인 토큰 가져오기 (로그인 성공 시 index.html에서 저장했던 값)
+
+  // 1) 로그인 토큰 가져오기
   var token = sessionStorage.getItem(TOKEN_KEY) || "";
 
   // 2) 토큰이 없으면 → 로그인 페이지로 강제 이동
   if (!token) {
-    // admin.cheesehistory.com 루트(index.html)로 보내기
     window.location.href = "/";
-    return; // 아래 코드들은 실행 안 되도록 종료
+    return;
   }
 
-  // 3) 토큰이 있으면 전역으로 보관 (다른 스크립트에서 사용)
-  window.CHEESE_ADMIN_TOKEN = token;
+  // 3) 로그인 정보 읽기
+  const loginId     = sessionStorage.getItem(LOGIN_ID_KEY)     || "";
+  const displayName = sessionStorage.getItem(DISPLAY_NAME_KEY) || "";
+  const role        = sessionStorage.getItem(ROLE_KEY)         || "";
 
-  // 4) 로그아웃 유틸 함수 전역으로 노출
+  // 4) 전역으로 보관 (다른 스크립트/페이지에서 사용)
+  window.CHEESE_ADMIN_TOKEN        = token;
+  window.CHEESE_ADMIN_LOGIN_ID     = loginId;
+  window.CHEESE_ADMIN_DISPLAY_NAME = displayName;
+  window.CHEESE_ADMIN_ROLE         = role;
+
+  // 5) 권한 체크 (페이지 상단에서 REQUIRED_ROLES를 세팅해 둔 경우만)
+  const requiredRoles = window.CHEESE_ADMIN_REQUIRED_ROLES;
+  if (Array.isArray(requiredRoles) && requiredRoles.length > 0) {
+    if (!requiredRoles.includes(role)) {
+      alert("이 페이지에 접근할 권한이 없습니다.");
+      window.location.href = "/"; // 로그인 페이지로
+      return;
+    }
+  }
+
+  // 6) 로그아웃 유틸 함수 전역으로 노출
   window.cheeseAdminLogout = function () {
     try {
       sessionStorage.removeItem(TOKEN_KEY);
@@ -32,10 +47,10 @@
       console.error("세션스토리지 삭제 중 에러:", err);
     }
 
-    // 로그아웃 후 로그인 페이지로
     window.location.href = "/";
   };
 })();
+
 
 // ─────────────────────────────────────────────
 // 관리자 공통 로딩 모달 (헤더에 있는 #cheese-quiz-loading 사용)
