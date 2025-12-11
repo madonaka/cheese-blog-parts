@@ -546,46 +546,122 @@ document.addEventListener("DOMContentLoaded", async () => {
 });
 
 //  ----------------------------
-//  결재선 팝업 띄우기
-//  ----------------------------
-document.addEventListener('DOMContentLoaded', function () {
-  // data-approval-line-id 가 달려있는 버튼들을 전부 찾음
-  const btns = document.querySelectorAll('button[data-approval-line-id]');
+//  결재선 모달 띄우기
+// === 결재선 모달 관련 전역 상태 ==================================
+let currentApprovalLineTarget = {
+  idInputId: null,
+  nameInputId: null
+};
 
-  btns.forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      // 어느 input과 연결된 버튼인지 (나중에 사용할 예정)
-      const targetIdInput = this.getAttribute('data-approval-line-id');
-      const targetNameInput = this.getAttribute('data-approval-line-name');
+/**
+ * approval-line-editor.html 조각을 로드해서
+ * #approval-line-modal-root 안에 붙인다.
+ */
+function loadApprovalLineModal(rootId = 'approval-line-modal-root') {
+  const container = document.getElementById(rootId);
+  if (!container) return;
 
-      // 나중에 팝업에서 쓸 수 있게 쿼리스트링으로 넘겨둠 (오늘은 그냥 넘겨놓기만)
-      const params = new URLSearchParams({
-        targetIdInput: targetIdInput || '',
-        targetNameInput: targetNameInput || ''
-      });
-
-      // 팝업 창 크기
-      const w = 720;
-      const h = 560;
-
-      // 화면 중앙정도에 위치
-      const left = window.screenX + (window.outerWidth - w) / 2;
-      const top = window.screenY + (window.outerHeight - h) / 2;
-
-      // ✅ 결재선 편집 전용 팝업 띄우기
-      window.open(
-        './approval-line-editor.html?' + params.toString(),
-        'approvalLineEditor', // 창 이름(같으면 같은 창 재사용)
-        [
-          'width=' + w,
-          'height=' + h,
-          'left=' + left,
-          'top=' + top,
-          'resizable=yes',
-          'scrollbars=yes'
-        ].join(',')
-      );
+  // 경로는 admin-common.js 기준이 아니라,
+  // HTML 페이지 기준 상대경로라서 ./ 또는 ../ 로 맞춰줘야 함
+  fetch('./approval-line-editor.html')
+    .then(res => res.text())
+    .then(html => {
+      container.innerHTML = html;
+      initApprovalLineModal(); // 모달 요소 생긴 뒤에 이벤트 세팅
+    })
+    .catch(err => {
+      console.error('결재선 모달 로드 실패:', err);
     });
+}
+
+/**
+ * 모달 내부의 닫기 / 배경 / ESC 이벤트 초기화
+ */
+function initApprovalLineModal() {
+  const modal = document.getElementById('approval-line-modal');
+  if (!modal) return;
+
+  const btnClose = document.getElementById('approval-line-close');
+  const btnCancel = document.getElementById('approval-line-cancel');
+  const backdrop = modal.querySelector('.approval-line-backdrop');
+
+  function closeModal() {
+    modal.classList.add('hidden');
+  }
+
+  // 닫기 버튼들
+  if (btnClose) btnClose.addEventListener('click', closeModal);
+  if (btnCancel) btnCancel.addEventListener('click', closeModal);
+
+  // 배경 클릭 시 닫기
+  if (backdrop) {
+    backdrop.addEventListener('click', function (e) {
+      // 그냥 backdrop 영역 클릭했을 때만 닫히게
+      if (e.target === backdrop) {
+        closeModal();
+      }
+    });
+  }
+
+  // ESC 키
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
+      closeModal();
+    }
   });
+
+  // (나중에) 저장 버튼 로직도 여기서 추가하면 됨
+  const btnSave = document.getElementById('approval-line-save');
+  if (btnSave) {
+    btnSave.addEventListener('click', function () {
+      // TODO: 결재선 저장 + 대상 input에 값 반영
+      // document.getElementById(currentApprovalLineTarget.idInputId) ...
+      // document.getElementById(currentApprovalLineTarget.nameInputId) ...
+      // 끝나면 closeModal();
+    });
+  }
+}
+
+/**
+ * 각 페이지 안의 "결재선 선택" 버튼 클릭 시 모달 열기
+ *  - 버튼: .approval-line-open-btn
+ *  - data-approval-line-id / data-approval-line-name 로 대상 input ID 전달
+ */
+function initApprovalLineOpenButtons() {
+  const modal = document.getElementById('approval-line-modal');
+
+  document
+    .querySelectorAll('.approval-line-open-btn')
+    .forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        const targetId = this.getAttribute('data-approval-line-id');
+        const targetName = this.getAttribute('data-approval-line-name');
+
+        currentApprovalLineTarget.idInputId = targetId;
+        currentApprovalLineTarget.nameInputId = targetName;
+
+        // 모달이 아직 로드 안돼있으면 무시
+        if (!modal) return;
+
+        const ctx = document.getElementById('approval-line-context');
+        if (ctx) {
+          ctx.textContent =
+            '대상 필드: ' + (targetName || targetId || '(정보 없음)');
+        }
+
+        modal.classList.remove('hidden');
+      });
+    });
+}
+
+// === 공통 초기화 진입점 ==========================================
+
+document.addEventListener('DOMContentLoaded', function () {
+  // 1) 모달 HTML 조각 로드
+  loadApprovalLineModal();
+
+  // 2) 결재선 선택 버튼 초기화
+  initApprovalLineOpenButtons();
 });
+
 
