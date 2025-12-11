@@ -263,6 +263,7 @@
                       <th>request_id</th>
                       <th>거래처</th>
                       <th>금액</th>
+                      <th>증빙</th>
                       <th>요청자</th>
                       <th>요청일</th>
                       <th>동작</th>
@@ -383,19 +384,25 @@
           statusEl.textContent = "";
 
           rows.forEach((r) => {
+            const spentDate = r.date ? new Date(r.date).toLocaleDateString() : "";
+            const requestedDate = r.requested_at
+              ? new Date(r.requested_at).toLocaleDateString()
+              : "";
+          
+            // evidence_link 가 Apps Script에서 내려온다고 가정
+            const evidenceHtml = r.evidence_link
+              ? `<a href="${r.evidence_link}" target="_blank" rel="noopener noreferrer">보기</a>`
+              : "-";
+          
             const tr = document.createElement("tr");
             tr.innerHTML = `
               <td>${r.expense_id}</td>
               <td>${r.request_id}</td>
-              <td>${r.date}</td>
-              <td>${r.vendor}</td>
+              <td>${r.vendor || ""}</td>
               <td class="approval-amount">${r.amount}</td>
-              <td>${r.requester}</td>
-              <td>${
-                r.requested_at
-                  ? new Date(r.requested_at).toLocaleDateString()
-                  : ""
-              }</td>
+              <td>${evidenceHtml}</td>
+              <td>${r.requester || ""}</td>
+              <td>${requestedDate || ""}</td>
               <td>
                 <button class="btn btn-primary" onclick="approveExpense('${r.expense_id}')">
                   승인
@@ -408,6 +415,7 @@
             `;
             tbody.appendChild(tr);
           });
+
         } catch (err) {
           console.error("loadExpenses ERROR:", err);
           alert("지출 정산 목록 로딩 실패:\n" + err.message);
@@ -437,30 +445,7 @@
           alert("예산요청 승인 실패:\n" + err.message);
         }
       }
-
-      // ---------------- 지출정산 승인 ----------------
-      async function approveExpense(expenseId) {
-        if (!confirm(`지출 정산 ${expenseId} 를 승인하시겠습니까?`)) return;
-
-        try {
-          const res = await fetch(
-            API_BASE +
-              "?mode=approveExpense&expenseId=" +
-              encodeURIComponent(expenseId)
-          );
-          const json = await res.json();
-          if (!json.ok) throw new Error(json.error || "API 에러");
-
-          const msg =
-            json.data && json.data.message ? json.data.message : "ok";
-          alert("승인 완료: " + msg);
-          await loadExpenses();
-        } catch (err) {
-          console.error("approveExpense ERROR:", err);
-          alert("지출 정산 승인 실패:\n" + err.message);
-        }
-      }
-      // ---------------- 예산요청 반려 ----------------
+        // ---------------- 예산요청 반려 ----------------
       async function rejectBudget(requestId) {
         const reason = prompt(
           `예산요청 ${requestId} 를 반려합니다.\n반려 사유를 입력해 주세요:`
@@ -487,11 +472,63 @@
         }
       }
 
+      // ---------------- 지출정산 승인 ----------------
+      async function approveExpense(expenseId) {
+        if (!confirm(`지출 정산 ${expenseId} 를 승인하시겠습니까?`)) return;
+
+        try {
+          const res = await fetch(
+            API_BASE +
+              "?mode=approveExpense&expenseId=" +
+              encodeURIComponent(expenseId)
+          );
+          const json = await res.json();
+          if (!json.ok) throw new Error(json.error || "API 에러");
+
+          const msg =
+            json.data && json.data.message ? json.data.message : "ok";
+          alert("승인 완료: " + msg);
+          await loadExpenses();
+        } catch (err) {
+          console.error("approveExpense ERROR:", err);
+          alert("지출 정산 승인 실패:\n" + err.message);
+        }
+      }
+      // ---------------- 지출정산 반려 ----------------
+      async function handleRejectExpense(expenseId) {
+        const reason = prompt(
+          `지출 정산 ${expenseId} 를 반려합니다.\n반려 사유를 입력해 주세요:`
+        );
+        if (reason === null) return; // 취소 시 아무 것도 안 함
+      
+        try {
+          const res = await fetch(
+            API_BASE +
+              "?mode=rejectExpense&expenseId=" +
+              encodeURIComponent(expenseId) +
+              "&reason=" +
+              encodeURIComponent(reason)
+          );
+          const json = await res.json();
+          if (!json.ok) throw new Error(json.error || "API 에러");
+      
+          const msg = json.data && json.data.message ? json.data.message : "ok";
+          alert("반려 완료: " + msg);
+      
+          // 목록 새로고침
+          await loadExpenses();
+        } catch (err) {
+          console.error("handleRejectExpense ERROR:", err);
+          alert("지출 정산 반려 실패:\n" + err.message);
+        }
+      }
+
       // ---------------- 초기 로딩 ----------------
       document.addEventListener("DOMContentLoaded", () => {
         loadBudgetRequests();
         loadExpenses();
       });
+
     </script>
   </body>
 </html>
