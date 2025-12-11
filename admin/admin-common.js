@@ -406,25 +406,31 @@ async function loadAdminHeader() {
   }
 }
 /***********************
- * 왼쪽 메뉴 HTML 로딩
+ * 역할에 따른 메뉴 필터링
  ***********************/
-async function loadAdminMenu() {
-  const slot = document.getElementById("admin-menu-slot");
-  if (!slot) return; // 이 페이지에 메뉴 슬롯이 없으면 아무것도 안 함
-
-  try {
-    const res = await fetch("./admin-menu.html");
-    if (!res.ok) throw new Error("HTTP " + res.status);
-
-    const html = await res.text();
-    slot.innerHTML = html;
-
-    // 메뉴가 DOM에 들어온 뒤 활성 메뉴 표시
-    highlightActiveMenu();
-  } catch (err) {
-    console.error("메뉴 로딩 실패:", err);
-    slot.innerHTML = '<div class="admin-side-nav-error">메뉴 로딩 에러</div>';
+function filterAdminMenuByRole() {
+  // 로그인 시 세션에 저장한 역할값 사용
+  const role = sessionStorage.getItem("cheese_admin_role") || "";
+  if (!role) {
+    // 역할 정보가 없으면(구버전 로그인 등) 일단 전체 메뉴 표시
+    return;
   }
+
+  document.querySelectorAll(".admin-side-link").forEach((link) => {
+    const rolesAttr = link.getAttribute("data-roles") || "";
+    // data-roles 가 없으면 제한 없이 항상 표시
+    if (!rolesAttr.trim()) return;
+
+    const allowedRoles = rolesAttr
+      .split(",")
+      .map((r) => r.trim())
+      .filter(Boolean);
+
+    // 현재 역할이 허용 리스트에 없으면 숨김
+    if (allowedRoles.length && !allowedRoles.includes(role)) {
+      link.style.display = "none";
+    }
+  });
 }
 
 /***********************
