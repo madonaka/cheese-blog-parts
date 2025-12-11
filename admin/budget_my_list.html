@@ -2,7 +2,7 @@
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
-    <title>내 예산 요청 목록 · Cheese Admin</title>
+    <title>내 예산 · 지출 요청 목록 · Cheese Admin</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
 
     <!-- 공통 CSS -->
@@ -97,7 +97,24 @@
       .my-req-status {
         font-size: 0.8rem;
         color: #6b7280;
-        margin-bottom: 0.5rem;
+        margin-bottom: 0.75rem;
+      }
+
+      .section-title {
+        font-size: 0.95rem;
+        font-weight: 600;
+        margin: 1.25rem 0 0.35rem;
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+      }
+
+      .section-title span.tag {
+        font-size: 0.72rem;
+        padding: 0.1rem 0.4rem;
+        border-radius: 999px;
+        background: #eff6ff;
+        color: #1d4ed8;
       }
 
       .my-req-table-wrap {
@@ -167,6 +184,14 @@
         color: #9ca3af;
       }
 
+      .link-small {
+        font-size: 0.75rem;
+        color: #2563eb;
+        text-decoration: underline;
+        text-underline-offset: 2px;
+        word-break: break-all;
+      }
+
       @media (max-width: 768px) {
         .my-req-shell {
           margin: 1rem 0.75rem 2rem;
@@ -200,12 +225,13 @@
         <!-- 본문 -->
         <main class="admin-content">
           <div class="my-req-shell">
-            <h1 class="my-req-title">내 예산 요청 목록</h1>
+            <h1 class="my-req-title">내 예산 · 지출 요청 목록</h1>
             <p class="my-req-sub">
-              내가 기안한 예산 사용 요청을 상태별로 확인할 수 있습니다. 반려된 건은
-              반려 사유도 함께 표시됩니다.
+              내가 기안한 예산 사용 요청과 그에 연결된 지출 정산 내역을 한 번에
+              확인할 수 있습니다.
             </p>
 
+            <!-- 공통 필터 -->
             <div class="my-req-filter">
               <label for="myRequester">요청자 이메일</label>
               <input
@@ -217,7 +243,7 @@
               <button
                 class="btn btn-primary"
                 type="button"
-                onclick="loadMyRequests()"
+                onclick="loadMyAll()"
               >
                 불러오기
               </button>
@@ -225,6 +251,11 @@
 
             <div id="my-req-status" class="my-req-status"></div>
 
+            <!-- 예산 요청 섹션 -->
+            <h2 class="section-title">
+              예산 사용 요청
+              <span class="tag">BUDGET_REQUESTS</span>
+            </h2>
             <div class="my-req-table-wrap">
               <table class="my-req-table">
                 <thead>
@@ -239,8 +270,35 @@
                     <th>반려 사유</th>
                   </tr>
                 </thead>
-                <tbody id="my-req-tbody">
-                  <!-- JS로 행 생성 -->
+                <tbody id="my-budget-tbody">
+                  <!-- JS로 생성 -->
+                </tbody>
+              </table>
+            </div>
+
+            <!-- 지출 정산 섹션 -->
+            <h2 class="section-title">
+              지출 정산 내역
+              <span class="tag">EXPENSES</span>
+            </h2>
+            <div class="my-req-table-wrap">
+              <table class="my-req-table">
+                <thead>
+                  <tr>
+                    <th>expense_id</th>
+                    <th>request_id</th>
+                    <th>지출일</th>
+                    <th>거래처</th>
+                    <th>지출 금액</th>
+                    <th>상태</th>
+                    <th>요청일</th>
+                    <th>승인자 / 승인일</th>
+                    <th>증빙 링크</th>
+                    <th>반려 사유</th>
+                  </tr>
+                </thead>
+                <tbody id="my-expense-tbody">
+                  <!-- JS로 생성 -->
                 </tbody>
               </table>
             </div>
@@ -253,7 +311,7 @@
     <script src="./admin-common.js" defer></script>
 
     <script>
-      // Apps Script Web App URL
+      // Apps Script Web App URL (다른 화면과 동일하게)
       const API_BASE =
         "https://script.google.com/macros/s/AKfycbxmKUfIbHUkrX5SdQXeELy4mKB3iydXlQiuKJ0Iyt1EAZATg8UV2KvIO1jXeL7xqMzf/exec";
 
@@ -272,7 +330,6 @@
 
       function formatDateCell(v) {
         if (!v) return "";
-        // 시트에서 Date 객체 or 문자열이 올 수 있으므로 문자열로만 표기
         return String(v);
       }
 
@@ -294,65 +351,125 @@
         );
       }
 
-      async function loadMyRequests() {
-        const requester = document.getElementById("myRequester").value.trim();
+      // 예산 요청 테이블 렌더링
+      function renderBudgetTable(rows) {
+        const tbody = document.getElementById("my-budget-tbody");
+        tbody.innerHTML = "";
+
+        rows.forEach((row) => {
+          const tr = document.createElement("tr");
+          const approvedInfo = [
+            row.approver || "",
+            row.approved_at ? " / " + row.approved_at : "",
+          ]
+            .join("")
+            .trim();
+
+          tr.innerHTML = `
+            <td>${row.request_id || ""}</td>
+            <td>${row.budget_id || ""}</td>
+            <td>${row.title || ""}</td>
+            <td>${formatAmount(row.amount)}</td>
+            <td class="status-cell">${statusBadge(row.status)}</td>
+            <td>${formatDateCell(row.requested_at)}</td>
+            <td>${approvedInfo || '<span class="text-muted">-</span>'}</td>
+            <td>${row.reject_reason || ""}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      }
+
+      // 지출 정산 테이블 렌더링
+      function renderExpenseTable(rows) {
+        const tbody = document.getElementById("my-expense-tbody");
+        tbody.innerHTML = "";
+
+        rows.forEach((row) => {
+          const tr = document.createElement("tr");
+          const approvedInfo = [
+            row.approver || "",
+            row.approved_at ? " / " + row.approved_at : "",
+          ]
+            .join("")
+            .trim();
+
+          let evidenceHtml = '<span class="text-muted">-</span>';
+          if (row.evidence_link) {
+            const safeUrl = String(row.evidence_link);
+            evidenceHtml = `<a class="link-small" href="${safeUrl}" target="_blank" rel="noopener">열기</a>`;
+          }
+
+          tr.innerHTML = `
+            <td>${row.expense_id || ""}</td>
+            <td>${row.request_id || ""}</td>
+            <td>${formatDateCell(row.date)}</td>
+            <td>${row.vendor || ""}</td>
+            <td>${formatAmount(row.amount_total)}</td>
+            <td class="status-cell">${statusBadge(row.status)}</td>
+            <td>${formatDateCell(row.requested_at)}</td>
+            <td>${approvedInfo || '<span class="text-muted">-</span>'}</td>
+            <td>${evidenceHtml}</td>
+            <td>${row.reject_reason || ""}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      }
+
+      // 한 번에 예산 + 지출 둘 다 불러오기
+      async function loadMyAll() {
+        const requester = document
+          .getElementById("myRequester")
+          .value.trim();
 
         if (!requester) {
           setMyStatus("요청자 이메일을 입력해 주세요.", true);
           return;
         }
 
-        setMyStatus("내 예산 요청을 불러오는 중입니다...", false);
+        setMyStatus("내 예산·지출 요청을 불러오는 중입니다...", false);
 
         try {
-          const params = new URLSearchParams();
-          params.set("mode", "myBudgetList");
-          params.set("requester", requester);
+          // 예산 요청
+          const p1 = (async () => {
+            const params = new URLSearchParams();
+            params.set("mode", "myBudgetList");
+            params.set("requester", requester);
 
-          const res = await fetch(API_BASE + "?" + params.toString(), {
-            method: "GET",
-          });
-          if (!res.ok) throw new Error("HTTP " + res.status);
+            const res = await fetch(API_BASE + "?" + params.toString(), {
+              method: "GET",
+            });
+            if (!res.ok) throw new Error("예산 목록 HTTP " + res.status);
+            const json = await res.json();
+            if (!json.ok) throw new Error(json.error || "예산 목록 API 에러");
+            return Array.isArray(json.data) ? json.data : [];
+          })();
 
-          const json = await res.json();
-          if (!json.ok) throw new Error(json.error || "API 에러");
+          // 지출 정산
+          const p2 = (async () => {
+            const params = new URLSearchParams();
+            params.set("mode", "myExpenseList");
+            params.set("requester", requester);
 
-          const rows = Array.isArray(json.data) ? json.data : [];
+            const res = await fetch(API_BASE + "?" + params.toString(), {
+              method: "GET",
+            });
+            if (!res.ok) throw new Error("지출 목록 HTTP " + res.status);
+            const json = await res.json();
+            if (!json.ok) throw new Error(json.error || "지출 목록 API 에러");
+            return Array.isArray(json.data) ? json.data : [];
+          })();
 
-          const tbody = document.getElementById("my-req-tbody");
-          tbody.innerHTML = "";
+          const [budgetRows, expenseRows] = await Promise.all([p1, p2]);
 
-          if (rows.length === 0) {
-            setMyStatus("조회 결과가 없습니다.", false);
-            return;
-          }
+          renderBudgetTable(budgetRows);
+          renderExpenseTable(expenseRows);
 
-          rows.forEach((row) => {
-            const tr = document.createElement("tr");
-
-            const approvedInfo = [
-              row.approver || "",
-              row.approved_at ? " / " + row.approved_at : "",
-            ]
-              .join("")
-              .trim();
-
-            tr.innerHTML = `
-              <td>${row.request_id || ""}</td>
-              <td>${row.budget_id || ""}</td>
-              <td>${row.title || ""}</td>
-              <td>${formatAmount(row.amount)}</td>
-              <td class="status-cell">${statusBadge(row.status)}</td>
-              <td>${formatDateCell(row.requested_at)}</td>
-              <td>${approvedInfo || '<span class="text-muted">-</span>'}</td>
-              <td>${row.reject_reason || ""}</td>
-            `;
-            tbody.appendChild(tr);
-          });
-
-          setMyStatus(`총 ${rows.length}건 조회되었습니다.`, false);
+          setMyStatus(
+            `예산 ${budgetRows.length}건 · 지출 ${expenseRows.length}건 조회되었습니다.`,
+            false
+          );
         } catch (err) {
-          console.error("loadMyRequests ERROR:", err);
+          console.error("loadMyAll ERROR:", err);
           setMyStatus("조회 실패: " + err.message, true);
         }
       }
