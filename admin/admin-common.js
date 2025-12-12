@@ -150,6 +150,14 @@ function hideAdminLoading() {
  ************************************************************/
 const CHEESE_ADMIN_API_BASE = window.CHEESE_ADMIN_API_BASE;
 
+// ✅ 결재선(직원목록) 전용 API 베이스 (listEmployees가 있는 GAS 웹앱)
+const CHEESE_APPROVAL_API_BASE =
+  window.CHEESE_APPROVAL_API_BASE ||
+  "https://script.google.com/macros/s/AKfycbxZDeXrK5LZQPpK1Qfs9WdDdIznqDQpxl-uQyT5Fq-Sgxrs1LW8BrhznCdO6WynKXshDQ/exec";
+
+// 모달(approval-line-editor.html) 안에서 window.* 로 읽을 수 있게 보장
+window.CHEESE_APPROVAL_API_BASE = CHEESE_APPROVAL_API_BASE;
+
 // exam_sets 시트에서 불러온 실제 데이터가 담길 배열
 let examSets = [];
 
@@ -566,6 +574,9 @@ function loadApprovalLineModal(rootId = 'approval-line-modal-root') {
   fetch('./approval-line-editor.html')
     .then(res => res.text())
     .then(html => {
+      // ✅ 모달 내부 스크립트가 읽을 수 있게 전용 API 베이스를 다시 한번 보장
+      window.CHEESE_APPROVAL_API_BASE = window.CHEESE_APPROVAL_API_BASE || CHEESE_APPROVAL_API_BASE;
+      
       container.innerHTML = html;
       executeApprovalLineModalScripts_(container); // ✅ 이 줄만 추가
       initApprovalLineModal(); // 모달 요소 생긴 뒤에 이벤트 세팅
