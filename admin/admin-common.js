@@ -567,6 +567,7 @@ function loadApprovalLineModal(rootId = 'approval-line-modal-root') {
     .then(res => res.text())
     .then(html => {
       container.innerHTML = html;
+      executeApprovalLineModalScripts_(container); // ✅ 이 줄만 추가
       initApprovalLineModal(); // 모달 요소 생긴 뒤에 이벤트 세팅
     })
     .catch(err => {
@@ -696,6 +697,17 @@ function initApprovalLineOpenButtons() {
         modal.classList.remove('hidden');
       });
     });
+}
+function executeApprovalLineModalScripts_(container) {
+  if (!container) return;
+  const scripts = Array.from(container.querySelectorAll("script"));
+  scripts.forEach((old) => {
+    const s = document.createElement("script");
+    if (old.src) s.src = old.src;
+    if (old.textContent && old.textContent.trim()) s.textContent = old.textContent;
+    old.parentNode.insertBefore(s, old);
+    old.remove();
+  });
 }
 
 
