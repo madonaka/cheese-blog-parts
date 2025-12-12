@@ -639,10 +639,25 @@ function initApprovalLineModal() {
   const btnSave = document.getElementById('approval-line-save');
   if (btnSave) {
     btnSave.addEventListener('click', function () {
-      // TODO: 결재선 저장 + 대상 input에 값 반영
-      // document.getElementById(currentApprovalLineTarget.idInputId) ...
-      // document.getElementById(currentApprovalLineTarget.nameInputId) ...
-      // 끝나면 closeModal();
+      const lineId = (document.getElementById('approval-line-selected-id')?.value || '').trim();
+      const lineName = (document.getElementById('approval-line-selected-name')?.value || '').trim();
+      const lineJson = (document.getElementById('approval-line-selected-json')?.value || '').trim();
+  
+      if (!lineId || !lineName) {
+        alert('결재선을 구성해 주세요.');
+        return;
+      }
+  
+      const idEl = document.getElementById(currentApprovalLineTarget.idInputId);
+      const nameEl = document.getElementById(currentApprovalLineTarget.nameInputId);
+      if (idEl) idEl.value = lineId;
+      if (nameEl) nameEl.value = lineName;
+  
+      // (선택) 페이지에 JSON hidden이 있으면 같이 저장
+      const jsonEl = document.getElementById('approvalLineJson');
+      if (jsonEl) jsonEl.value = lineJson;
+  
+      closeModal();
     });
   }
 }
