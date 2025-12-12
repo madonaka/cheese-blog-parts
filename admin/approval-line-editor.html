@@ -18,13 +18,31 @@
       <!-- 왼쪽: 직원 목록 (나중에 구현) -->
       <div class="panel">
         <h3>직원 목록</h3>
-        <p>여기에 전 직원 검색/목록 UI가 들어갈 예정입니다.</p>
+        <div id="empList" class="emp-list"></div>
       </div>
 
       <!-- 오른쪽: 결재선 구성 (나중에 구현) -->
       <div class="panel">
         <h3>결재선 구성</h3>
-        <p>여기에 1단계 / 2단계 / 3단계 단계 구성이 들어갈 예정입니다.</p>
+        <div class="steps">
+          <div class="step">
+            <div class="step-title">1단계</div>
+            <div class="dropzone" data-step="1"></div>
+          </div>
+          <div class="step">
+            <div class="step-title">2단계</div>
+            <div class="dropzone" data-step="2"></div>
+          </div>
+          <div class="step">
+            <div class="step-title">3단계</div>
+            <div class="dropzone" data-step="3"></div>
+          </div>
+        </div>
+        
+        <!-- ✅ admin-common.js가 읽어갈 “선택 결과” -->
+        <input type="hidden" id="approval-line-selected-id" value="">
+        <input type="hidden" id="approval-line-selected-json" value="">
+        <input type="hidden" id="approval-line-selected-name" value="">
       </div>
     </div>
 
@@ -121,3 +139,122 @@
     cursor: pointer;
   }
 </style>
+
+<script>
+  // ===== 샘플 직원 데이터 (나중에 API로 교체) =====
+  const employees = [
+    { userId: "EMP001", name: "김치즈", role: "EMP" },
+    { userId: "MGR001", name: "김부장", role: "MGR" },
+    { userId: "FIN001", name: "이재무", role: "FIN" },
+    { userId: "ADM001", name: "박관리", role: "ADMIN" },
+  ];
+
+  // ===== 결재선 상태 =====
+  const line = { steps: { 1: [], 2: [], 3: [] } };
+
+  // ===== 렌더 =====
+  function renderEmployees() {
+    const root = document.getElementById("empList");
+    root.innerHTML = employees.map(e => `
+      <div class="emp-card" draggable="true"
+           data-user-id="${e.userId}" data-name="${e.name}" data-role="${e.role}">
+        <div class="emp-name">${e.name}</div>
+        <div class="emp-meta">${e.userId} · ${e.role}</div>
+      </div>
+    `).join("");
+  }
+
+  function renderDropzones() {
+    document.querySelectorAll(".dropzone").forEach(z => {
+      const step = z.dataset.step;
+      const arr = line.steps[step];
+
+      z.innerHTML = arr.length
+        ? arr.map(e => `
+            <div class="picked" data-user-id="${e.userId}">
+              <span>${e.name} (${e.role})</span>
+              <button type="button" class="picked-del" data-step="${step}" data-del="${e.userId}">×</button>
+            </div>
+          `).join("")
+        : `<div class="drop-hint">여기로 드래그</div>`;
+    });
+
+    syncHiddenAndSaveState();
+  }
+
+  // ===== 중복 방지(1~3단계 전체에서 같은 사람 2번 못 들어가게) =====
+  function existsAnywhere(userId) {
+    return [1,2,3].some(s => line.steps[s].some(e => e.userId === userId));
+  }
+
+  // ===== hidden 값 + 저장 버튼 활성화 =====
+  function syncHiddenAndSaveState() {
+    const all = [...line.steps[1], ...line.steps[2], ...line.steps[3]];
+    const saveBtn = document.getElementById("approval-line-save");
+
+    const canSave = all.length > 0;
+    if (saveBtn) saveBtn.disabled = !canSave;
+
+    // name/id/json 생성(일단 기본)
+    const lineId = canSave ? "LINE-" + Date.now() : "";
+    const lineName = canSave ? "사용자 지정 결재선" : "";
+    const json = canSave ? JSON.stringify({
+      lineName,
+      steps: all.map((e, idx) => ({ order: idx + 1, userId: e.userId, name: e.name, role: e.role }))
+    }) : "";
+
+    document.getElementById("approval-line-selected-id").value = lineId;
+    document.getElementById("approval-line-selected-name").value = lineName;
+    document.getElementById("approval-line-selected-json").value = json;
+  }
+
+  // ===== 드래그 시작 =====
+  document.addEventListener("dragstart", (e) => {
+    const card = e.target.closest(".emp-card");
+    if (!card) return;
+    e.dataTransfer.setData("text/plain", JSON.stringify({
+      userId: card.dataset.userId,
+      name: card.dataset.name,
+      role: card.dataset.role
+    }));
+  });
+
+  // ===== 드롭존 이벤트 =====
+  document.addEventListener("dragover", (e) => {
+    const zone = e.target.closest(".dropzone");
+    if (!zone) return;
+    e.preventDefault();
+  });
+
+  document.addEventListener("drop", (e) => {
+    const zone = e.target.closest(".dropzone");
+    if (!zone) return;
+    e.preventDefault();
+
+    const step = Number(zone.dataset.step);
+    const payload = JSON.parse(e.dataTransfer.getData("text/plain") || "{}");
+    if (!payload.userId) return;
+
+    if (existsAnywhere(payload.userId)) {
+      alert("이미 결재선에 포함된 직원입니다.");
+      return;
+    }
+
+    line.steps[step].push(payload);
+    renderDropzones();
+  });
+
+  // ===== 선택 제거 =====
+  document.addEventListener("click", (e) => {
+    const del = e.target.closest(".picked-del");
+    if (!del) return;
+    const step = Number(del.dataset.step);
+    const userId = del.dataset.del;
+    line.steps[step] = line.steps[step].filter(x => x.userId !== userId);
+    renderDropzones();
+  });
+
+  // 초기 렌더
+  renderEmployees();
+  renderDropzones();
+</script>
