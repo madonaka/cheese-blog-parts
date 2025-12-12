@@ -573,6 +573,31 @@ function loadApprovalLineModal(rootId = 'approval-line-modal-root') {
       console.error('결재선 모달 로드 실패:', err);
     });
 }
+// (추가) "결재선 적용" 버튼 로직
+const btnSave = document.getElementById('approval-line-save');
+if (btnSave) {
+  btnSave.addEventListener('click', function () {
+    const selectedIdEl = document.getElementById('approval-line-selected-id');
+    const selectedNameEl = document.getElementById('approval-line-selected-name');
+
+    const lineId = (selectedIdEl ? selectedIdEl.value : '').trim();
+    const lineName = (selectedNameEl ? selectedNameEl.value : '').trim();
+
+    if (!lineId || !lineName) {
+      alert('결재선을 선택해 주세요.');
+      return;
+    }
+
+    const idEl = document.getElementById(currentApprovalLineTarget.idInputId);
+    const nameEl = document.getElementById(currentApprovalLineTarget.nameInputId);
+
+    if (idEl) idEl.value = lineId;
+    if (nameEl) nameEl.value = lineName;
+
+    closeModal();
+  });
+}
+
 
 /**
  * 모달 내부의 닫기 / 배경 / ESC 이벤트 초기화
