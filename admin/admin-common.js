@@ -548,6 +548,26 @@ document.addEventListener("DOMContentLoaded", async () => {
 //  ----------------------------
 //  결재선 모달 띄우기
 // === 결재선 모달 관련 전역 상태 ==================================
+
+/**
+ * ✅ loadApprovalLineModal()이 innerHTML로 조각을 주입할 때,
+ * 조각 안에 포함된 <script>가 실행되지 않는 문제를 해결한다.
+ */
+function executeApprovalLineModalScripts_(container) {
+  if (!container) return;
+  const scripts = Array.from(container.querySelectorAll("script"));
+  scripts.forEach((old) => {
+    const s = document.createElement("script");
+    // src 스크립트 지원
+    if (old.src) s.src = old.src;
+    // 인라인 스크립트 지원
+    if (old.textContent && old.textContent.trim()) s.textContent = old.textContent;
+    // 기존 script 교체
+    old.parentNode.insertBefore(s, old);
+    old.remove();
+  });
+}
+
 let currentApprovalLineTarget = {
   idInputId: null,
   nameInputId: null
@@ -567,37 +587,14 @@ function loadApprovalLineModal(rootId = 'approval-line-modal-root') {
     .then(res => res.text())
     .then(html => {
       container.innerHTML = html;
+      // ✅ innerHTML로 주입된 <script>는 기본적으로 실행되지 않으므로 강제 실행
+      executeApprovalLineModalScripts_(container);
       initApprovalLineModal(); // 모달 요소 생긴 뒤에 이벤트 세팅
     })
     .catch(err => {
       console.error('결재선 모달 로드 실패:', err);
     });
 }
-// (추가) "결재선 적용" 버튼 로직
-const btnSave = document.getElementById('approval-line-save');
-if (btnSave) {
-  btnSave.addEventListener('click', function () {
-    const selectedIdEl = document.getElementById('approval-line-selected-id');
-    const selectedNameEl = document.getElementById('approval-line-selected-name');
-
-    const lineId = (selectedIdEl ? selectedIdEl.value : '').trim();
-    const lineName = (selectedNameEl ? selectedNameEl.value : '').trim();
-
-    if (!lineId || !lineName) {
-      alert('결재선을 선택해 주세요.');
-      return;
-    }
-
-    const idEl = document.getElementById(currentApprovalLineTarget.idInputId);
-    const nameEl = document.getElementById(currentApprovalLineTarget.nameInputId);
-
-    if (idEl) idEl.value = lineId;
-    if (nameEl) nameEl.value = lineName;
-
-    closeModal();
-  });
-}
-
 
 /**
  * 모달 내부의 닫기 / 배경 / ESC 이벤트 초기화
@@ -653,6 +650,10 @@ function initApprovalLineModal() {
       if (idEl) idEl.value = lineId;
       if (nameEl) nameEl.value = lineName;
   
+
+    // (선택) 페이지에 JSON hidden이 있으면 같이 저장
+    const jsonEl = document.getElementById('approvalLineJson');
+    if (jsonEl) jsonEl.value = lineJson;
       // (선택) 페이지에 JSON hidden이 있으면 같이 저장
       const jsonEl = document.getElementById('approvalLineJson');
       if (jsonEl) jsonEl.value = lineJson;
