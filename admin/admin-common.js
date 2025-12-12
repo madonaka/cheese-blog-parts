@@ -720,6 +720,90 @@ function executeApprovalLineModalScripts_(container) {
     old.remove();
   });
 }
+/************************************************************
+ * ✅ 결재선 프리뷰 렌더
+ * - approval-line-editor가 채워준 hidden JSON을 읽어서
+ *   화면에 "기안자 → 1단계 → 2단계 → 3단계" 형태로 표시
+ ************************************************************/
+function renderApprovalLinePreview(targetNameInputId, previewContainerId) {
+  const nameEl = document.getElementById(targetNameInputId);
+  const previewEl = document.getElementById(previewContainerId);
+  if (!nameEl || !previewEl) return;
+
+  // 모달이 넣어준 JSON (approval-line-editor에서 hidden input으로 채움)
+  const jsonEl = document.getElementById("approval-line-selected-json");
+  const raw = jsonEl ? (jsonEl.value || "") : "";
+
+  // 이름 input에 값이 없으면 프리뷰도 비우기
+  if (!nameEl.value || !raw) {
+    previewEl.innerHTML = "";
+    return;
+  }
+
+  let data = null;
+  try {
+    data = JSON.parse(raw);
+  } catch (e) {
+    previewEl.innerHTML = `<div style="color:#b91c1c;font-size:12px;">결재선 정보(JSON) 파싱 실패</div>`;
+    return;
+  }
+
+  // data.steps: [{step, userId, name, role}, ...]
+  const steps = Array.isArray(data.steps) ? data.steps : [];
+
+  // 단계별 그룹
+  const byStep = { 1: [], 2: [], 3: [] };
+  steps.forEach(x => {
+    const s = Number(x.step);
+    if (s === 1 || s === 2 || s === 3) byStep[s].push(x);
+  });
+
+  const draftName =
+    (window.CHEESE_ADMIN_DISPLAY_NAME || "").trim() ||
+    (window.CHEESE_ADMIN_LOGIN_ID || "").trim() ||
+    "기안자";
+
+  // 렌더(칩 형태)
+  previewEl.innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;">
+      ${chip_("기안자", draftName)}
+      ${arrow_()}
+      ${stepChips_(1, byStep[1])}
+      ${arrow_()}
+      ${stepChips_(2, byStep[2])}
+      ${arrow_()}
+      ${stepChips_(3, byStep[3])}
+    </div>
+  `;
+}
+
+function chip_(label, name) {
+  const safeLabel = escapeHtml_(label);
+  const safeName  = escapeHtml_(name || "");
+  return `
+    <span style="display:inline-flex;gap:6px;align-items:center;border:1px solid #e5e7eb;background:#f9fafb;border-radius:9999px;padding:6px 10px;font-size:12px;">
+      <b style="font-weight:800;">${safeLabel}</b>
+      <span style="color:#111827;">${safeName}</span>
+    </span>
+  `;
+}
+
+function stepChips_(step, arr) {
+  if (!arr || arr.length === 0) {
+    return `<span style="color:#9ca3af;font-size:12px;">${step}단계(없음)</span>`;
+  }
+  return arr.map(x => chip_(`${step}단계`, x.name)).join(`<span style="width:6px;"></span>`);
+}
+
+function arrow_() {
+  return `<span style="color:#9ca3af;">→</span>`;
+}
+
+// admin-common에 이미 escapeHtml이 있으면 이건 빼도 됨.
+// 없을 경우를 대비한 최소 구현
+function escapeHtml_(s){
+  return String(s).replace(/[&<>"']/g, (m)=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m]));
+}
 
 
 // === 공통 초기화 진입점 ==========================================
