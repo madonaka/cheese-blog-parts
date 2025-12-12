@@ -95,24 +95,41 @@
 </style>
 
 <script>
+(() => {
+  // 모달 HTML이 다시 로드/삽입될 때 스크립트가 중복 실행되는 것을 방지
+  if (window.__approvalLineEditorLoaded) return;
+  window.__approvalLineEditorLoaded = true;
+
   // ====== 설정 ======
-  const API_BASE = (typeof CHEESE_ADMIN_API_BASE !== "undefined" ? CHEESE_ADMIN_API_BASE : "") || window.CHEESE_ADMIN_API_BASE || "";
+  const AL_API_BASE =
+    (typeof CHEESE_ADMIN_API_BASE !== "undefined" ? CHEESE_ADMIN_API_BASE : "") ||
+    (window.CHEESE_ADMIN_API_BASE || "");
   const TOKEN_KEY = "cheese_admin_token";
 
   // ===== 직원 데이터 (API) =====
   let employees = [];
   const line = { steps: { 1: [], 2: [], 3: [] } };
 
+  // ====== DOM 안전 접근 ======
+  function getModalRoot_() {
+    return document.getElementById("approval-line-modal");
+  }
+
   // ====== 유틸 ======
-  function escapeHtml(s){ return String(s).replace(/[&<>"']/g, (m)=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m])); }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, (m)=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m]));
+  }
 
   function existsAnywhere(userId) {
     return [1,2,3].some(s => line.steps[s].some(e => e.userId === userId));
   }
 
   function syncHiddenAndSaveState() {
+    const modal = getModalRoot_();
+    if (!modal) return;
+
     const all = [...line.steps[1], ...line.steps[2], ...line.steps[3]];
-    const saveBtn = document.getElementById("approval-line-save");
+    const saveBtn = modal.querySelector("#approval-line-save");
 
     const canSave = all.length > 0;
     if (saveBtn) saveBtn.disabled = !canSave;
@@ -129,15 +146,22 @@
       ]
     }) : "";
 
-    document.getElementById("approval-line-selected-id").value = lineId;
-    document.getElementById("approval-line-selected-name").value = lineName;
-    document.getElementById("approval-line-selected-json").value = json;
+    const idEl = modal.querySelector("#approval-line-selected-id");
+    const nameEl = modal.querySelector("#approval-line-selected-name");
+    const jsonEl = modal.querySelector("#approval-line-selected-json");
+    if (idEl) idEl.value = lineId;
+    if (nameEl) nameEl.value = lineName;
+    if (jsonEl) jsonEl.value = json;
   }
 
   // ====== 렌더 ======
   function renderEmployees() {
-    const root = document.getElementById("empList");
-    const empty = document.getElementById("empEmpty");
+    const modal = getModalRoot_();
+    if (!modal) return;
+
+    const root = modal.querySelector("#empList");
+    const empty = modal.querySelector("#empEmpty");
+    if (!root || !empty) return;
 
     if (!employees || employees.length === 0) {
       root.innerHTML = "";
@@ -169,7 +193,10 @@
   }
 
   function renderDropzones() {
-    document.querySelectorAll(".dropzone").forEach(z => {
+    const modal = getModalRoot_();
+    if (!modal) return;
+
+    modal.querySelectorAll(".dropzone").forEach(z => {
       const step = Number(z.dataset.step);
       const arr = line.steps[step];
 
@@ -204,17 +231,21 @@
     renderDropzones();
   }
 
-  // ====== 이벤트: 클릭으로 추가/삭제 ======
+  // ====== 이벤트: 클릭으로 추가/삭제 (모달 내부에서만 동작) ======
   document.addEventListener("click", (e) => {
+    const modal = getModalRoot_();
+    if (!modal) return;
+
     const addBtn = e.target.closest(".emp-add");
-    if (addBtn) {
+    if (addBtn && modal.contains(addBtn)) {
       const step = Number(addBtn.dataset.step);
       const userId = addBtn.dataset.userId;
       addToStep(step, userId);
       return;
     }
+
     const delBtn = e.target.closest(".picked-del");
-    if (delBtn) {
+    if (delBtn && modal.contains(delBtn)) {
       const step = Number(delBtn.dataset.step);
       const userId = delBtn.dataset.del;
       removeFromStep(step, userId);
@@ -222,10 +253,14 @@
     }
   });
 
-  // ====== 이벤트: 드래그&드롭(PC용, 모바일에선 클릭으로) ======
+  // ====== 이벤트: 드래그&드롭(PC용, 모바일은 클릭으로) ======
   document.addEventListener("dragstart", (e) => {
+    const modal = getModalRoot_();
+    if (!modal) return;
+
     const card = e.target.closest(".emp-card");
-    if (!card) return;
+    if (!card || !modal.contains(card)) return;
+
     e.dataTransfer.setData("text/plain", JSON.stringify({
       userId: card.dataset.userId,
       name: card.dataset.name,
@@ -234,14 +269,22 @@
   });
 
   document.addEventListener("dragover", (e) => {
+    const modal = getModalRoot_();
+    if (!modal) return;
+
     const zone = e.target.closest(".dropzone");
-    if (!zone) return;
+    if (!zone || !modal.contains(zone)) return;
+
     e.preventDefault();
   });
 
   document.addEventListener("drop", (e) => {
+    const modal = getModalRoot_();
+    if (!modal) return;
+
     const zone = e.target.closest(".dropzone");
-    if (!zone) return;
+    if (!zone || !modal.contains(zone)) return;
+
     e.preventDefault();
 
     const step = Number(zone.dataset.step);
@@ -258,14 +301,14 @@
 
   // ====== API: 직원 목록 로드 ======
   async function loadEmployeesFromApi() {
-    if (!API_BASE) throw new Error("API_BASE가 설정되지 않았습니다. (window.CHEESE_ADMIN_API_BASE 필요)");
+    if (!AL_API_BASE) throw new Error("CHEESE_ADMIN_API_BASE가 설정되지 않았습니다.");
 
     const token = sessionStorage.getItem(TOKEN_KEY) || "";
     const params = new URLSearchParams();
     params.set("mode", "listEmployees");
     if (token) params.set("token", token);
 
-    const res = await fetch(API_BASE + "?" + params.toString(), { method: "GET" });
+    const res = await fetch(AL_API_BASE + "?" + params.toString(), { method: "GET" });
     if (!res.ok) throw new Error("HTTP " + res.status);
 
     const json = await res.json();
@@ -273,7 +316,6 @@
       throw new Error(json.error || "employees 응답 형식이 올바르지 않습니다.");
     }
 
-    // 기대 포맷: [{userId,name,role}, ...]
     employees = json.employees.map(e => ({
       userId: String(e.userId || e.employeeId || "").trim(),
       name: String(e.name || e.nameKor || "").trim(),
@@ -289,11 +331,11 @@
       await loadEmployeesFromApi();
     } catch (err) {
       console.warn("직원 목록 로드 실패:", err);
-      // API가 아직 준비 전이면 빈 목록으로 표시
       employees = [];
     }
     renderEmployees();
     renderDropzones();
   })();
+
 })();
 </script>
