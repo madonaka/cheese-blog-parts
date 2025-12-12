@@ -19,6 +19,9 @@
       <div class="panel">
         <h3>직원 목록</h3>
         <div id="empList" class="emp-list"></div>
+        <div id="empList"></div>
+
+
       </div>
 
       <!-- 오른쪽: 결재선 구성 (나중에 구현) -->
@@ -26,6 +29,7 @@
         <h3>결재선 구성</h3>
         <div class="steps">
           <div class="step">
+            <div id="stepsArea"></div>
             <div class="step-title">1단계</div>
             <div class="dropzone" data-step="1"></div>
           </div>
@@ -257,4 +261,67 @@
   // 초기 렌더
   renderEmployees();
   renderDropzones();
+</script>
+<script>
+  const employees = [
+    { userId:"MGR001", name:"김부장", role:"MGR" },
+    { userId:"FIN001", name:"이재무", role:"FIN" },
+    { userId:"ADM001", name:"박관리", role:"ADMIN" },
+  ];
+  const steps = { 1: null, 2: null, 3: null };
+
+  function render(){
+    const emp = document.getElementById("empList");
+    const area = document.getElementById("stepsArea");
+    const saveBtn = document.getElementById("approval-line-save");
+
+    emp.innerHTML = employees.map(e =>
+      `<button type="button" class="empPick"
+        data-id="${e.userId}" data-name="${e.name}" data-role="${e.role}">
+        ${e.name} (${e.role})
+      </button>`
+    ).join(" ");
+
+    area.innerHTML = [1,2,3].map(s => `
+      <div style="margin-top:8px;padding:8px;border:1px solid #e5e7eb;border-radius:8px;">
+        <b>${s}단계</b> :
+        <span id="step-${s}">${steps[s] ? steps[s].name+"("+steps[s].role+")" : "비어있음"}</span>
+        <button type="button" class="stepClear" data-step="${s}">비우기</button>
+      </div>
+    `).join("");
+
+    const picked = Object.values(steps).filter(Boolean);
+    const canSave = picked.length > 0;
+    if (saveBtn) saveBtn.disabled = !canSave;
+
+    // ✅ admin-common.js가 읽어갈 값(최소 id/name) 세팅
+    let hidId = document.getElementById("approval-line-selected-id");
+    let hidName = document.getElementById("approval-line-selected-name");
+    if (!hidId) { hidId = document.createElement("input"); hidId.type="hidden"; hidId.id="approval-line-selected-id"; document.body.appendChild(hidId); }
+    if (!hidName) { hidName = document.createElement("input"); hidName.type="hidden"; hidName.id="approval-line-selected-name"; document.body.appendChild(hidName); }
+
+    hidId.value = canSave ? ("LINE-" + Date.now()) : "";
+    hidName.value = canSave ? "사용자 지정 결재선" : "";
+  }
+
+  document.addEventListener("click", (e)=>{
+    const btn = e.target.closest(".empPick");
+    if (btn){
+      // 빈 단계부터 채움
+      const item = { userId:btn.dataset.id, name:btn.dataset.name, role:btn.dataset.role };
+      const targetStep = [1,2,3].find(s => !steps[s]);
+      if (!targetStep) { alert("1~3단계가 모두 찼습니다."); return; }
+      // 중복 방지
+      if ([1,2,3].some(s => steps[s]?.userId === item.userId)) { alert("이미 포함된 직원입니다."); return; }
+      steps[targetStep] = item;
+      render();
+    }
+    const clr = e.target.closest(".stepClear");
+    if (clr){
+      steps[Number(clr.dataset.step)] = null;
+      render();
+    }
+  });
+
+  render();
 </script>
