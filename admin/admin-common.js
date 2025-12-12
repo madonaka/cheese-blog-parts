@@ -485,6 +485,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   // 2) 왼쪽 메뉴 로딩
   await loadAdminMenu();
 
+  // 2-1) ✅ 결재선 모달 조각 로드 + 버튼 초기화 (헤더/메뉴가 DOM에 들어온 뒤)
+  loadApprovalLineModal();
+  initApprovalLineOpenButtons();
+
   // 3) 페이지별 서브타이틀 / 뱃지 채우기
   const subtitleEl = document.querySelector("[data-admin-page-subtitle]");
   if (subtitleEl && window.CHEESE_ADMIN_PAGE_SUBTITLE) {
@@ -567,7 +571,6 @@ function executeApprovalLineModalScripts_(container) {
     old.remove();
   });
 }
-
 let currentApprovalLineTarget = {
   idInputId: null,
   nameInputId: null
@@ -650,13 +653,9 @@ function initApprovalLineModal() {
       if (idEl) idEl.value = lineId;
       if (nameEl) nameEl.value = lineName;
   
-
-    // (선택) 페이지에 JSON hidden이 있으면 같이 저장
-    const jsonEl = document.getElementById('approvalLineJson');
-    if (jsonEl) jsonEl.value = lineJson;
       // (선택) 페이지에 JSON hidden이 있으면 같이 저장
-      const jsonEl = document.getElementById('approvalLineJson');
-      if (jsonEl) jsonEl.value = lineJson;
+      const approvalLineJsonEl = document.getElementById('approvalLineJson');
+      if (approvalLineJsonEl) approvalLineJsonEl.value = lineJson;
   
       closeModal();
     });
@@ -700,14 +699,5 @@ function initApprovalLineOpenButtons() {
 }
 
 
-// === 공통 초기화 진입점 ==========================================
-
-document.addEventListener('DOMContentLoaded', function () {
-  // 1) 모달 HTML 조각 로드
-  loadApprovalLineModal();
-
-  // 2) 결재선 선택 버튼 초기화
-  initApprovalLineOpenButtons();
-});
 
 
