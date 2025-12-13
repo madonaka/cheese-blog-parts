@@ -5,6 +5,7 @@
   const LOGIN_ID_KEY     = "cheese_admin_login_id";
   const DISPLAY_NAME_KEY = "cheese_admin_display_name";
   const ROLE_KEY         = "cheese_admin_role";
+  const EMP_NO_KEY       = "cheese_admin_emp_no";
 
   // 1) 로그인 토큰 가져오기
   var token = sessionStorage.getItem(TOKEN_KEY) || "";
@@ -19,12 +20,14 @@
   const loginId     = sessionStorage.getItem(LOGIN_ID_KEY)     || "";
   const displayName = sessionStorage.getItem(DISPLAY_NAME_KEY) || "";
   const role        = sessionStorage.getItem(ROLE_KEY)         || "";
+  const empNo       = sessionStorage.getItem(EMP_NO_KEY)       || ""; 
 
   // 4) 전역으로 보관 (다른 스크립트/페이지에서 사용)
   window.CHEESE_ADMIN_TOKEN        = token;
   window.CHEESE_ADMIN_LOGIN_ID     = loginId;
   window.CHEESE_ADMIN_DISPLAY_NAME = displayName;
   window.CHEESE_ADMIN_ROLE         = role;
+  window.CHEESE_ADMIN_EMP_NO       = empNo;
 
   // 5) 권한 체크 (페이지 상단에서 REQUIRED_ROLES를 세팅해 둔 경우만)
   const requiredRoles = window.CHEESE_ADMIN_REQUIRED_ROLES;
@@ -43,6 +46,7 @@
       sessionStorage.removeItem(LOGIN_ID_KEY);
       sessionStorage.removeItem(DISPLAY_NAME_KEY);
       sessionStorage.removeItem(ROLE_KEY);
+      sessionStorage.removeItem(EMP_NO_KEY);
     } catch (err) {
       console.error("세션스토리지 삭제 중 에러:", err);
     }
