@@ -9,8 +9,6 @@
     <link rel="stylesheet" href="./admin.css" />
 
     <style>
-      /* 이 페이지 전용 스타일 (prefix: approval-) */
-
       body {
         margin: 0;
         font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
@@ -66,7 +64,6 @@
         margin: 0.2rem 0 0.4rem;
       }
 
-      /* 테이블을 가로 스크롤 박스로 감싸기 */
       .approval-table-wrapper {
         width: 100%;
         overflow-x: auto;
@@ -81,7 +78,7 @@
         width: 100%;
         border-collapse: collapse;
         font-size: 0.8rem;
-        min-width: 720px; /* 모바일에서 가로 스크롤 나도록 최소 폭 지정 */
+        min-width: 720px;
       }
 
       .approval-table thead {
@@ -130,60 +127,53 @@
         background: #1d4ed8;
       }
 
-      /* ---------- 모바일 대응 ---------- */
+      .btn-ghost {
+        background: transparent;
+        color: #4b5563;
+      }
+
       @media (max-width: 768px) {
         .admin-main {
-          /* admin.css 에서 flex로 되어있다는 가정 */
           flex-direction: column;
         }
-
         .admin-sidebar {
           width: 100%;
           border-right: none;
           border-bottom: 1px solid #e5e7eb;
         }
-
         .admin-content {
           width: 100%;
           padding: 1rem;
           box-sizing: border-box;
         }
-
         .approval-shell {
           padding: 1rem 0.5rem 1.5rem;
         }
-
         .approval-header-title {
           font-size: 1.15rem;
         }
-
         .approval-header-sub {
           font-size: 0.8rem;
         }
-
         .approval-tabs {
           width: 100%;
           justify-content: space-between;
         }
-
         .approval-tab-btn {
           flex: 1 1 0;
           text-align: center;
           padding: 0.45rem 0.3rem;
           font-size: 0.78rem;
         }
-
         .approval-table-wrapper {
           margin: 0.3rem -0.5rem 0;
           padding: 0 0.5rem;
           border-radius: 0.5rem;
         }
-
         .approval-table {
-          min-width: 640px; /* 최소폭 약간 줄이기 */
+          min-width: 640px;
           font-size: 0.78rem;
         }
-
         .btn {
           padding: 0.25rem 0.7rem;
           font-size: 0.78rem;
@@ -192,19 +182,17 @@
     </style>
   </head>
   <body>
-  <!-- 화면 권한 제어 -->
-  <script>
-    window.CHEESE_ADMIN_REQUIRED_ROLES = ["FIN", "MGR", "ADMIN"];
-  </script>
+    <!-- 화면 권한 제어 -->
+    <script>
+      window.CHEESE_ADMIN_REQUIRED_ROLES = ["FIN", "MGR", "ADMIN"];
+    </script>
+
     <div class="admin-shell">
-      <!-- 헤더 슬롯 (admin-common.js에서 채움) -->
       <div id="admin-header-slot"></div>
 
       <div class="admin-main">
-        <!-- 왼쪽 메뉴 슬롯 -->
         <aside id="admin-menu-slot" class="admin-sidebar"></aside>
 
-        <!-- 우측 본문 영역 -->
         <main class="admin-content">
           <div class="approval-shell">
             <h1 class="approval-header-title">결재 관리</h1>
@@ -213,7 +201,6 @@
               바로 승인할 수 있습니다.
             </p>
 
-            <!-- 탭 -->
             <div class="approval-tabs">
               <button
                 id="tab-req"
@@ -231,7 +218,6 @@
               </button>
             </div>
 
-            <!-- 예산요청 뷰 -->
             <section id="view-req">
               <div id="req-status" class="approval-loading">
                 예산요청 목록을 불러오는 중...
@@ -254,7 +240,6 @@
               </div>
             </section>
 
-            <!-- 지출정산 뷰 -->
             <section id="view-exp" style="display: none">
               <div id="exp-status" class="approval-loading">
                 지출 정산 목록을 불러오는 중...
@@ -282,16 +267,19 @@
       </div>
     </div>
 
-    <!-- 공통 헤더/메뉴 초기화 스크립트 -->
     <script src="./admin-common.js" defer></script>
 
     <script>
-      // ★ Apps Script Web App URL ( /exec 까지 )
-      //   실제 배포된 URL로 교체해서 사용해줘.
       const API_BASE =
         "https://script.google.com/macros/s/AKfycbxmKUfIbHUkrX5SdQXeELy4mKB3iydXlQiuKJ0Iyt1EAZATg8UV2KvIO1jXeL7xqMzf/exec";
 
-      // ---------------- 탭 전환 ----------------
+      // ✅ 결재자 식별자 가져오기 (결재선 steps.userId가 employeeId라면 이 값이 맞아야 함)
+      function getActor_() {
+        return (window.CHEESE_ADMIN_EMPLOYEE_ID ||
+          window.CHEESE_ADMIN_LOGIN_ID ||
+          "").trim();
+      }
+
       function switchTab(tab) {
         document.getElementById("view-req").style.display =
           tab === "req" ? "" : "none";
@@ -310,72 +298,71 @@
       async function loadBudgetRequests() {
         const statusEl = document.getElementById("req-status");
         const tbody = document.getElementById("req-tbody");
-      
+
         statusEl.textContent = "예산요청 목록을 불러오는 중...";
         tbody.innerHTML = "";
-      
-        // ✅ 현재 로그인 사용자(결재자 판별용)
-        const actor = (window.CHEESE_ADMIN_LOGIN_ID || "").trim().toLowerCase();
-      
-        try {
-          const actor = (window.CHEESE_ADMIN_LOGIN_ID || "").trim();
-          const res = await fetch(
-            API_BASE +
-              "?mode=budgetInbox&actor=" +
-              encodeURIComponent(actor)
-          );
 
-          
+        try {
+          const actor = getActor_();
+          const res = await fetch(
+            API_BASE + "?mode=budgetInbox&actor=" + encodeURIComponent(actor)
+          );
           if (!res.ok) throw new Error("HTTP " + res.status);
-      
+
           const json = await res.json();
           if (!json.ok) throw new Error(json.error || "API 에러");
-      
+
           const rows = json.data || [];
           if (!rows.length) {
             statusEl.textContent = "결재 대기 중인 예산요청이 없습니다.";
             return;
           }
-      
+
           statusEl.textContent = "";
-      
+
           rows.forEach((r) => {
             const tr = document.createElement("tr");
-      
-            // ✅ 이 건의 현재 결재자
-            const current = String(r.current_approver || "").trim().toLowerCase();
-      
-            // ✅ 승인/반려 가능 조건: submitted + actor==current_approver
-            const canAct = (r.status === "submitted" && actor && current && actor === current);
-      
-            // ✅ 버튼 or 대기표시
+
+            const actorKey = String(actor).trim().toLowerCase();
+            const currentId = String(r.current_approver_id || "")
+              .trim()
+              .toLowerCase();
+
+            const canAct =
+              r.status === "submitted" &&
+              actorKey &&
+              currentId &&
+              actorKey === currentId;
+
             const actionHtml = canAct
               ? `
                 <button class="btn btn-primary" onclick="approveBudget('${r.request_id}')">승인</button>
                 <button class="btn" onclick="rejectBudget('${r.request_id}')">반려</button>
               `
-              : `<span style="color:#6b7280;font-size:0.78rem;">대기중: ${r.current_approver || "-"}</span>`;
-      
+              : `<span style="color:#6b7280;font-size:0.78rem;">대기중: ${
+                  r.current_approver || "-"
+                }</span>`;
+
             tr.innerHTML = `
               <td>${r.request_id ?? ""}</td>
               <td>${r.budget_id ?? ""}</td>
               <td>${r.title ?? ""}</td>
               <td class="approval-amount">${r.requested_amount ?? ""}</td>
               <td>${r.requester ?? ""}</td>
-              <td>${r.requested_at ? new Date(r.requested_at).toLocaleDateString() : ""}</td>
+              <td>${
+                r.requested_at ? new Date(r.requested_at).toLocaleDateString() : ""
+              }</td>
               <td>${actionHtml}</td>
             `;
-      
+
             tbody.appendChild(tr);
           });
-      
         } catch (err) {
           console.error("loadBudgetRequests ERROR:", err);
           alert("예산요청 목록 로딩 실패:\n" + err.message);
           statusEl.textContent = "목록 로딩 중 에러";
         }
       }
-
 
       // ---------------- 지출정산 목록 로딩 ----------------
       async function loadExpenses() {
@@ -386,13 +373,14 @@
         tbody.innerHTML = "";
 
         try {
-          const res = await fetch(API_BASE + "?mode=expenseInbox");
+          const actor = getActor_();
+          const res = await fetch(
+            API_BASE + "?mode=expenseInbox&actor=" + encodeURIComponent(actor)
+          );
           if (!res.ok) throw new Error("HTTP " + res.status);
 
           const json = await res.json();
-          if (!json.ok) {
-            throw new Error(json.error || "API 에러");
-          }
+          if (!json.ok) throw new Error(json.error || "API 에러");
 
           const rows = json.data || [];
           if (!rows.length) {
@@ -403,38 +391,47 @@
           statusEl.textContent = "";
 
           rows.forEach((r) => {
-            const spentDate = r.date ? new Date(r.date).toLocaleDateString() : "";
-            const requestedDate = r.requested_at
-              ? new Date(r.requested_at).toLocaleDateString()
-              : "";
-          
-            // evidence_link 가 Apps Script에서 내려온다고 가정
+            const tr = document.createElement("tr");
+
+            const actorKey = String(actor).trim().toLowerCase();
+            const currentId = String(r.current_approver_id || "")
+              .trim()
+              .toLowerCase();
+
+            const canAct =
+              r.status === "submitted" &&
+              actorKey &&
+              currentId &&
+              actorKey === currentId;
+
             const evidenceHtml = r.evidence_link
               ? `<a href="${r.evidence_link}" target="_blank" rel="noopener noreferrer">보기</a>`
               : "-";
-          
-            const tr = document.createElement("tr");
-            tr.innerHTML = `
-              <td>${r.expense_id}</td>
-              <td>${r.request_id}</td>
 
-              <td class="approval-amount">${r.requested_amount ?? ""}</td>
+            const actionHtml = canAct
+              ? `
+                <button class="btn btn-primary" onclick="approveExpense('${r.expense_id}')">승인</button>
+                <button class="btn btn-ghost" type="button" onclick="rejectExpense('${r.expense_id}')">반려</button>
+              `
+              : `<span style="color:#6b7280;font-size:0.78rem;">대기중: ${
+                  r.current_approver || "-"
+                }</span>`;
+
+            tr.innerHTML = `
+              <td>${r.expense_id ?? ""}</td>
+              <td>${r.request_id ?? ""}</td>
+              <td>${r.vendor ?? r.merchant ?? ""}</td>
+              <td class="approval-amount">${r.requested_amount ?? r.amount ?? ""}</td>
               <td>${evidenceHtml}</td>
-              <td>${r.requester || ""}</td>
-              <td>${requestedDate || ""}</td>
-              <td>
-                <button class="btn btn-primary" onclick="approveExpense('${r.expense_id}')">
-                  승인
-                </button>
-                <button class="btn btn-ghost" type="button"
-                  onclick="handleRejectExpense('${r.expense_id}')">
-                  반려
-                </button>
-              </td>
+              <td>${r.requester ?? ""}</td>
+              <td>${
+                r.requested_at ? new Date(r.requested_at).toLocaleDateString() : ""
+              }</td>
+              <td>${actionHtml}</td>
             `;
+
             tbody.appendChild(tr);
           });
-
         } catch (err) {
           console.error("loadExpenses ERROR:", err);
           alert("지출 정산 목록 로딩 실패:\n" + err.message);
@@ -447,44 +444,50 @@
         if (!confirm(`예산요청 ${requestId} 를 승인하시겠습니까?`)) return;
 
         try {
+          const actor = getActor_();
           const res = await fetch(
             API_BASE +
-              "?mode=approveBudget&requestId=" +
-              encodeURIComponent(requestId)
+              "?mode=approveBudget" +
+              "&requestId=" +
+              encodeURIComponent(requestId) +
+              "&actor=" +
+              encodeURIComponent(actor)
           );
           const json = await res.json();
           if (!json.ok) throw new Error(json.error || "API 에러");
 
-          const msg =
-            json.data && json.data.message ? json.data.message : "ok";
-          alert("승인 완료: " + msg);
+          alert("승인 완료");
           await loadBudgetRequests();
         } catch (err) {
           console.error("approveBudget ERROR:", err);
           alert("예산요청 승인 실패:\n" + err.message);
         }
       }
-        // ---------------- 예산요청 반려 ----------------
+
+      // ---------------- 예산요청 반려 ----------------
       async function rejectBudget(requestId) {
         const reason = prompt(
           `예산요청 ${requestId} 를 반려합니다.\n반려 사유를 입력해 주세요:`
         );
-        if (reason === null) return; // 취소
-      
+        if (reason === null) return;
+
         try {
+          const actor = getActor_();
           const res = await fetch(
             API_BASE +
-              "?mode=rejectBudget&requestId=" +
+              "?mode=rejectBudget" +
+              "&requestId=" +
               encodeURIComponent(requestId) +
               "&reason=" +
-              encodeURIComponent(reason)
+              encodeURIComponent(reason) +
+              "&actor=" +
+              encodeURIComponent(actor)
           );
           const json = await res.json();
           if (!json.ok) throw new Error(json.error || "API 에러");
-      
-          const msg = json.data && json.data.message ? json.data.message : "ok";
-          alert("반려 완료: " + msg);
-          await loadBudgetRequests(); // 목록 새로고침
+
+          alert("반려 완료");
+          await loadBudgetRequests();
         } catch (err) {
           console.error("rejectBudget ERROR:", err);
           alert("예산요청 반려 실패:\n" + err.message);
@@ -496,58 +499,60 @@
         if (!confirm(`지출 정산 ${expenseId} 를 승인하시겠습니까?`)) return;
 
         try {
+          const actor = getActor_();
           const res = await fetch(
             API_BASE +
-              "?mode=approveExpense&expenseId=" +
-              encodeURIComponent(expenseId)
+              "?mode=approveExpense" +
+              "&expenseId=" +
+              encodeURIComponent(expenseId) +
+              "&actor=" +
+              encodeURIComponent(actor)
           );
           const json = await res.json();
           if (!json.ok) throw new Error(json.error || "API 에러");
 
-          const msg =
-            json.data && json.data.message ? json.data.message : "ok";
-          alert("승인 완료: " + msg);
+          alert("승인 완료");
           await loadExpenses();
         } catch (err) {
           console.error("approveExpense ERROR:", err);
           alert("지출 정산 승인 실패:\n" + err.message);
         }
       }
+
       // ---------------- 지출정산 반려 ----------------
-      async function handleRejectExpense(expenseId) {
+      async function rejectExpense(expenseId) {
         const reason = prompt(
           `지출 정산 ${expenseId} 를 반려합니다.\n반려 사유를 입력해 주세요:`
         );
-        if (reason === null) return; // 취소 시 아무 것도 안 함
-      
+        if (reason === null) return;
+
         try {
+          const actor = getActor_();
           const res = await fetch(
             API_BASE +
-              "?mode=rejectExpense&expenseId=" +
+              "?mode=rejectExpense" +
+              "&expenseId=" +
               encodeURIComponent(expenseId) +
               "&reason=" +
-              encodeURIComponent(reason)
+              encodeURIComponent(reason) +
+              "&actor=" +
+              encodeURIComponent(actor)
           );
           const json = await res.json();
           if (!json.ok) throw new Error(json.error || "API 에러");
-      
-          const msg = json.data && json.data.message ? json.data.message : "ok";
-          alert("반려 완료: " + msg);
-      
-          // 목록 새로고침
+
+          alert("반려 완료");
           await loadExpenses();
         } catch (err) {
-          console.error("handleRejectExpense ERROR:", err);
+          console.error("rejectExpense ERROR:", err);
           alert("지출 정산 반려 실패:\n" + err.message);
         }
       }
 
-      // ---------------- 초기 로딩 ----------------
       document.addEventListener("DOMContentLoaded", () => {
         loadBudgetRequests();
         loadExpenses();
       });
-
     </script>
   </body>
 </html>
