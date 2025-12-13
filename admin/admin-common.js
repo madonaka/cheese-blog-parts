@@ -407,6 +407,7 @@ async function loadAdminHeader() {
     slot.innerHTML = html;
 
     // 헤더 + 메뉴가 DOM에 들어온 뒤에 활성 메뉴 표시
+    fillHeaderLoginUser();
     highlightActiveMenu();
   } catch (err) {
     console.error("헤더 로딩 실패:", err);
@@ -828,4 +829,19 @@ document.addEventListener('DOMContentLoaded', function () {
   initApprovalLineOpenButtons();
 });
 
+
+
+// === 헤더에 이름 채우기 ==========================================
+
+function fillHeaderLoginUser() {
+  const el = document.getElementById("admin-login-user");
+  if (!el) return;
+
+  const name =
+    (window.CHEESE_ADMIN_DISPLAY_NAME || "").trim() ||
+    (window.CHEESE_ADMIN_LOGIN_ID || "").trim() ||
+    "";
+
+  el.textContent = name ? `${name}님` : "";
+}
 
