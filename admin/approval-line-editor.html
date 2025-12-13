@@ -100,6 +100,15 @@
   if (window.__approvalLineEditorLoaded) return;
   window.__approvalLineEditorLoaded = true;
 
+  // ✅ 기안자(로그인 사용자) ID/이름
+  // - userId 비교는 "사번/로그인ID(employeeId)" 기준으로 맞춰야 함
+  const DRAFTER_USER_ID =
+    (window.CHEESE_ADMIN_LOGIN_ID || sessionStorage.getItem("cheese_admin_login_id") || "").trim();
+  
+  const DRAFTER_NAME =
+    (window.CHEESE_ADMIN_DISPLAY_NAME || sessionStorage.getItem("cheese_admin_display_name") || "").trim()
+    || DRAFTER_USER_ID; // 이름이 없으면 ID로 대체
+  
   // ====== 설정 ======
   const AL_API_BASE =
     (typeof CHEESE_APPROVAL_API_BASE !== "undefined" ? CHEESE_APPROVAL_API_BASE : "") ||
@@ -226,6 +235,13 @@
       alert("이미 결재선에 포함된 직원입니다.");
       return;
     }
+    
+    // ✅ 기안자는 승인자에 넣을 수 없음
+    if (DRAFTER_USER_ID && payload.userId === DRAFTER_USER_ID) {
+      alert("기안자는 결재 단계(1~3단계)에 포함될 수 없습니다.");
+      return;
+    }
+    
     line.steps[step].push({ userId: emp.userId, name: emp.name, role: emp.role || "" });
     renderDropzones();
   }
@@ -324,7 +340,10 @@
       userId: String(e.userId || e.employeeId || "").trim(),
       name: String(e.name || e.nameKor || "").trim(),
       role: String(e.role || e.roleId || "").trim(),
-    })).filter(e => e.userId && e.name);
+    }))
+    .filter(e => e.userId && e.name)
+    .filter(e => !DRAFTER_USER_ID || e.userId !== DRAFTER_USER_ID); // ✅ 기안자 제외
+
 
     return employees;
   }
