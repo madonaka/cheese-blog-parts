@@ -558,7 +558,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 // === 결재선 모달 관련 전역 상태 ==================================
 let currentApprovalLineTarget = {
   idInputId: null,
-  nameInputId: null
+  nameInputId: null,
+  previewContainerId: null, 
 };
 
 /**
@@ -668,7 +669,15 @@ function initApprovalLineModal() {
       // (선택) 페이지에 JSON hidden이 있으면 같이 저장
       const jsonEl = document.getElementById('approvalLineJson');
       if (jsonEl) jsonEl.value = lineJson;
-  
+
+      // ✅ 프리뷰 갱신 (페이지에 프리뷰 영역이 있을 때만)
+      if (currentApprovalLineTarget.previewContainerId) {
+        renderApprovalLinePreview(
+          currentApprovalLineTarget.nameInputId,
+          currentApprovalLineTarget.previewContainerId
+        );
+      }
+
       closeModal();
     });
   }
@@ -695,9 +704,12 @@ function initApprovalLineOpenButtons() {
 
         const targetId = this.getAttribute('data-approval-line-id');
         const targetName = this.getAttribute('data-approval-line-name');
+        const targetPreview = this.getAttribute('data-approval-line-preview');
 
+        
         currentApprovalLineTarget.idInputId = targetId;
         currentApprovalLineTarget.nameInputId = targetName;
+        currentApprovalLineTarget.previewContainerId = targetPreview;
 
         const ctx = document.getElementById('approval-line-context');
         if (ctx) {
