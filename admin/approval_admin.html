@@ -310,57 +310,65 @@
       async function loadBudgetRequests() {
         const statusEl = document.getElementById("req-status");
         const tbody = document.getElementById("req-tbody");
-
+      
         statusEl.textContent = "예산요청 목록을 불러오는 중...";
         tbody.innerHTML = "";
-
+      
+        // ✅ 현재 로그인 사용자(결재자 판별용)
+        const actor = (window.CHEESE_ADMIN_LOGIN_ID || "").trim().toLowerCase();
+      
         try {
           const res = await fetch(API_BASE + "?mode=budgetInbox");
           if (!res.ok) throw new Error("HTTP " + res.status);
-
+      
           const json = await res.json();
-          if (!json.ok) {
-            throw new Error(json.error || "API 에러");
-          }
-
+          if (!json.ok) throw new Error(json.error || "API 에러");
+      
           const rows = json.data || [];
           if (!rows.length) {
             statusEl.textContent = "결재 대기 중인 예산요청이 없습니다.";
             return;
           }
-
+      
           statusEl.textContent = "";
-
+      
           rows.forEach((r) => {
             const tr = document.createElement("tr");
+      
+            // ✅ 이 건의 현재 결재자
+            const current = String(r.current_approver || "").trim().toLowerCase();
+      
+            // ✅ 승인/반려 가능 조건: submitted + actor==current_approver
+            const canAct = (r.status === "submitted" && actor && current && actor === current);
+      
+            // ✅ 버튼 or 대기표시
+            const actionHtml = canAct
+              ? `
+                <button class="btn btn-primary" onclick="approveBudget('${r.request_id}')">승인</button>
+                <button class="btn" onclick="rejectBudget('${r.request_id}')">반려</button>
+              `
+              : `<span style="color:#6b7280;font-size:0.78rem;">대기중: ${r.current_approver || "-"}</span>`;
+      
             tr.innerHTML = `
-              <td>${r.request_id}</td>
-              <td>${r.budget_id}</td>
-              <td>${r.title}</td>
-              <td class="approval-amount">${r.amount_total ?? ""}</td>
-              <td>${r.requester}</td>
-              <td>${
-                r.requested_at
-                  ? new Date(r.requested_at).toLocaleDateString()
-                  : ""
-              }</td>
-              <td>
-                <button class="btn btn-primary" onclick="approveBudget('${r.request_id}')">
-                  승인
-                </button>
-                <button class="btn" onclick="rejectBudget('${r.request_id}')">
-                  반려
-                </button>
-              </td>
+              <td>${r.request_id ?? ""}</td>
+              <td>${r.budget_id ?? ""}</td>
+              <td>${r.title ?? ""}</td>
+              <td class="approval-amount">${r.requested_amount ?? ""}</td>
+              <td>${r.requester ?? ""}</td>
+              <td>${r.requested_at ? new Date(r.requested_at).toLocaleDateString() : ""}</td>
+              <td>${actionHtml}</td>
             `;
+      
             tbody.appendChild(tr);
           });
+      
         } catch (err) {
           console.error("loadBudgetRequests ERROR:", err);
           alert("예산요청 목록 로딩 실패:\n" + err.message);
           statusEl.textContent = "목록 로딩 중 에러";
         }
       }
+
 
       // ---------------- 지출정산 목록 로딩 ----------------
       async function loadExpenses() {
