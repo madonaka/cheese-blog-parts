@@ -199,9 +199,11 @@
               <div id="budget-info" class="budget-info" style="display:none;"></div>
             </div>
             
+            <input type="hidden" id="approvalLineJson" name="approvalLineJson" value="" />
             <!-- 결재선 -->
             <div class="form-row approval-line-row">
               <label for="budget-approval-line-name" class="form-label">결재선</label>
+              <div id="approval-line-preview" class="approval-line-preview" style="margin-top:10px;"></div>
             
               <div class="approval-line-input-group">
                 <input
@@ -217,14 +219,15 @@
                   id="budget-approval-line-id"
                   name="approvalLineId"
                 />
-                <button
-                  type="button"
-                  class="btn btn-outline approval-line-open-btn"
-                  data-approval-line-id="budget-approval-line-id"
-                  data-approval-line-name="budget-approval-line-name"
-                >
-                  결재선 선택
-                </button>
+              <button
+                type="button"
+                class="btn btn-outline approval-line-open-btn"
+                data-approval-line-id="budget-approval-line-id"
+                data-approval-line-name="budget-approval-line-name"
+                data-approval-line-preview="approval-line-preview"
+              >
+                결재선 선택
+              </button>
               </div>
             </div>
             <div id="approval-line-modal-root"></div>
@@ -317,6 +320,7 @@
       // ★ Apps Script Web App URL (/exec 까지)
       const API_BASE =
         "https://script.google.com/macros/s/AKfycbxmKUfIbHUkrX5SdQXeELy4mKB3iydXlQiuKJ0Iyt1EAZATg8UV2KvIO1jXeL7xqMzf/exec";
+      window.CHEESE_ADMIN_API_BASE = API_BASE;
 
       function setExpStatus(msg, isError) {
         const el = document.getElementById("exp-status");
@@ -366,6 +370,16 @@
         document.getElementById("note").value = "";
         setExpStatus("");
         showBudgetInfo(null);
+
+        // ✅ 결재선 초기화
+        document.getElementById("budget-approval-line-id").value = "";
+        document.getElementById("budget-approval-line-name").value = "";
+        const jsonEl = document.getElementById("approvalLineJson");
+        if (jsonEl) jsonEl.value = "";
+        const pv = document.getElementById("approval-line-preview");
+        if (pv) pv.innerHTML = "";
+
+        
       }
 
       async function submitExpenseForm() {
@@ -376,12 +390,26 @@
         const requester = document.getElementById("requester").value.trim();
         const receiptUrl = document.getElementById("receiptUrl").value.trim();
         const note = document.getElementById("note").value.trim();
+        const approvalLineId = document.getElementById("budget-approval-line-id").value.trim();
+        const approvalLineName = document.getElementById("budget-approval-line-name").value.trim();
+        const approvalLineJson = (document.getElementById("approvalLineJson")?.value || "").trim();
+
 
         if (!requestId || !amount || !requester) {
           setExpStatus("request_id, 금액, 요청자는 필수입니다.", true);
           return;
         }
 
+        // ✅ 여기(필수 체크 바로 아래)에 결재선 체크 추가
+        if (!approvalLineId || !approvalLineName) {
+          setExpStatus("결재선을 선택해 주세요.", true);
+          return;
+        }
+        if (!approvalLineJson) {
+          setExpStatus("결재선 JSON이 비어있습니다. 결재선 선택 모달 저장을 확인해주세요.", true);
+          return;
+        }
+                
         if (isNaN(Number(amount)) || Number(amount) <= 0) {
           setExpStatus("금액은 0보다 큰 숫자로 입력해 주세요.", true);
           return;
@@ -399,6 +427,9 @@
           params.set("requester", requester);
           params.set("receiptUrl", receiptUrl);
           params.set("note", note);
+          params.set("approvalLineId", approvalLineId);
+          params.set("approvalLineName", approvalLineName);
+          params.set("approvalLineJson", approvalLineJson);
 
           const res = await fetch(API_BASE + "?" + params.toString(), {
             method: "GET",
