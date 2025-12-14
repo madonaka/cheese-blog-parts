@@ -515,13 +515,19 @@ document.addEventListener("DOMContentLoaded", async () => {
     badgeEl.textContent = window.CHEESE_ADMIN_PAGE_BADGE;
   }
 
-  // 4) 로그아웃 버튼 (이벤트 위임)
+  // 4) 로그아웃 버튼 (이벤트 위임) - 헤더 + 모바일 드로어 공통
   document.addEventListener("click", (e) => {
-    const logoutBtn = e.target.closest("#btn-logout");
+    const logoutBtn = e.target.closest("#btn-logout, [data-action='logout']");
     if (!logoutBtn) return;
-
+  
+    e.preventDefault();
+  
     if (confirm("로그아웃 하시겠습니까?")) {
-      window.cheeseAdminLogout();
+      if (typeof window.cheeseAdminLogout === "function") {
+        window.cheeseAdminLogout();
+      } else {
+        alert("logout 함수가 없습니다. admin-common.js의 cheeseAdminLogout 정의를 확인하세요.");
+      }
     }
   });
 
