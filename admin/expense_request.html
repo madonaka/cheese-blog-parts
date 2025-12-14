@@ -693,6 +693,120 @@
       
       initRequestIdSuggest();
 
+
+      let approvedReqCache = [];
+      let approvedReqLoaded = false;
+      
+      function fmtMoney(v) {
+        const n = Number(v || 0);
+        return isNaN(n) ? String(v || '') : n.toLocaleString();
+      }
+      
+      function renderSuggest(list) {
+        const box = document.getElementById("request-suggest");
+        if (!box) return;
+      
+        if (!list || list.length === 0) {
+          box.innerHTML = `<div style="padding:10px 12px; font-size:13px; color:#6b7280;">
+            승인 완료된 예산요청이 없습니다
+          </div>`;
+          box.style.display = "block";
+          return;
+        }
+      
+        box.innerHTML = list.map((it) => `
+          <div class="req-item" data-id="${it.request_id}"
+               style="padding:10px 12px; cursor:pointer; border-top:1px solid #f3f4f6;">
+            <div style="font-weight:600; font-size:13px; color:#111827;">
+              ${it.request_id} · ${it.title || "(제목 없음)"}
+            </div>
+            <div style="margin-top:3px; font-size:12px; color:#6b7280;">
+              요청금액 ${fmtMoney(it.requested_amount)}원 · 승인일 ${it.approved_at ? new Date(it.approved_at).toLocaleDateString() : "-"}
+            </div>
+          </div>
+        `).join("");
+      
+        // 첫줄 border 제거
+        const first = box.querySelector(".req-item");
+        if (first) first.style.borderTop = "0";
+      
+        box.style.display = "block";
+      
+        // 클릭 선택
+        box.querySelectorAll(".req-item").forEach(el => {
+          el.addEventListener("click", () => {
+            const rid = el.getAttribute("data-id");
+            document.getElementById("requestId").value = rid;
+      
+            const picked = approvedReqCache.find(x => x.request_id === rid);
+            if (picked) {
+              // 기존 showBudgetInfo는 “승인금액/남은금액” 계산용이라 구조가 다릅니다.
+              // 여기서는 간단히 안내 박스로 씁니다.
+              const infoBox = document.getElementById("budget-info");
+              infoBox.innerHTML =
+                `<div><strong>선택됨</strong> : ${picked.request_id}</div>` +
+                `<div><strong>제목</strong> : ${picked.title || "-"}</div>` +
+                `<div><strong>요청 금액</strong> : ${fmtMoney(picked.requested_amount)}원</div>` +
+                `<div><strong>승인일</strong> : ${picked.approved_at ? new Date(picked.approved_at).toLocaleString() : "-"}</div>`;
+              infoBox.style.display = "block";
+            }
+      
+            box.style.display = "none";
+          });
+        });
+      }
+      
+      async function loadMyApprovedBudgetsOnce() {
+        if (approvedReqLoaded) return;
+        approvedReqLoaded = true;
+      
+        const actor = (window.CHEESE_ADMIN_LOGIN_ID || "").trim(); // ✅ 여기 empNo여야 함
+        if (!actor) return;
+      
+        const url = `${API_BASE}?mode=myApprovedBudgetRequests&requester=${encodeURIComponent(actor)}&page=1&size=50`;
+        const res = await fetch(url);
+        const json = await res.json();
+        if (!json.ok) throw new Error(json.error || "승인 예산 목록 조회 실패");
+      
+        approvedReqCache = (json.data && json.data.items) ? json.data.items : [];
+      }
+      
+      (function bindRequestIdSuggest(){
+        const input = document.getElementById("requestId");
+        const box = document.getElementById("request-suggest");
+        if (!input || !box) return;
+      
+        input.addEventListener("focus", async () => {
+          try {
+            await loadMyApprovedBudgetsOnce();
+            // 포커스 시 기본 8개 노출
+            renderSuggest(approvedReqCache.slice(0, 8));
+          } catch (e) {
+            renderSuggest([]);
+          }
+        });
+      
+        input.addEventListener("input", () => {
+          const kw = String(input.value || "").trim().toUpperCase();
+          if (!kw) {
+            renderSuggest(approvedReqCache.slice(0, 8));
+            return;
+          }
+          const filtered = approvedReqCache.filter(x =>
+            String(x.request_id || "").toUpperCase().includes(kw) ||
+            String(x.title || "").toUpperCase().includes(kw)
+          ).slice(0, 8);
+          renderSuggest(filtered);
+        });
+      
+        // 바깥 클릭 시 닫기
+        document.addEventListener("click", (e) => {
+          if (e.target === input || box.contains(e.target)) return;
+          box.style.display = "none";
+        });
+      })();
+
+      
     </script>
   </body>
 </html>
