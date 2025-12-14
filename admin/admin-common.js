@@ -1088,3 +1088,26 @@ function initMobileDrawer_() {
   });
 }
 
+// ✅ 모바일 드로어 닫기(<) 버튼
+document.addEventListener("click", (e) => {
+  const closeBtn = e.target.closest(".admin-drawer-close");
+  if (!closeBtn) return;
+
+  // 1) 너가 이미 만들어 둔 "열고/닫기" 토글 버튼이 있으면 그걸 눌러서 닫기(가장 안전)
+  const toggle =
+    document.querySelector("#btn-hamburger, #btn-nav-toggle, [data-nav-toggle], .admin-hamburger") || null;
+
+  if (toggle) {
+    toggle.click();
+    return;
+  }
+
+  // 2) 토글 버튼이 없으면: 일반적인 방식으로 class 제거해서 닫기
+  document.body.classList.remove("admin-nav-open", "nav-open", "mobile-nav-open");
+  const sidebar = document.querySelector(".admin-sidebar");
+  if (sidebar) sidebar.classList.remove("open", "is-open");
+
+  const overlay = document.querySelector(".admin-nav-overlay, .nav-overlay");
+  if (overlay) overlay.classList.remove("open", "is-open", "show");
+});
+
