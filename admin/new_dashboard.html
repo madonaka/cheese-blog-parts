@@ -83,7 +83,7 @@
             <div class="dash-card">
               <div class="dash-card-h">
                 <div class="dash-card-title">📌 공지사항</div>
-                <div class="dash-card-sub"><a href="./notice.html">전체보기 →</a></div>
+                <div class="dash-card-sub"><a href="./board.html">전체보기 →</a></div>
               </div>
               <div class="dash-card-b">
                 <ul class="dash-list" id="noticeList">
@@ -158,6 +158,7 @@
 
   <script src="./admin-common.js"></script>
   <script>
+    const API_BASE = 'https://script.google.com/macros/s/AKfycbyE0uUpF2VdePr6AC6VcK7UOI4y5zvkUfMHlGHEiNKiGiiAjSzr172140GtV5MpiwzaSg/exec';
     // ===== Utils =====
     function pad2(n){ return String(n).padStart(2,'0'); }
     function ymd(d){ return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate()); }
@@ -355,38 +356,40 @@
       });
     }
 
-    // ===== Data (더미) =====
+    // ===== Data =====
     async function loadDashboard(){
-      const notices = [
-        { title:'[필독] 12월 마감: 지출 증빙 첨부 기준', date:'2025-12-14', author:'CL25-0001', level:'danger', href:'./notice.html?id=NOTICE-0001' },
-        { title:'예산/지출 결재 처리 시간 안내', date:'2025-12-13', author:'CL25-0002', level:'warn', href:'./notice.html?id=NOTICE-0002' },
-        { title:'재직증명서 양식 업데이트 공지', date:'2025-12-10', author:'CL25-0003', level:'ok', href:'./notice.html?id=NOTICE-0003' },
-      ];
-
-      const todo = {
-        pending: 2, needAction: 3,
-        items: [
-          { kind:'pending', title:'[예산] 도메인/호스팅 비용 요청', type:'예산요청', date:'2025-12-14', hint:'결재 대기', href:'#' },
-          { kind:'pending', title:'[지출] 이미지 구매(자료 제작)', type:'지출', date:'2025-12-13', hint:'결재 대기', href:'#' },
-          { kind:'rejected', title:'[예산] 외주 디자인 비용', type:'예산요청', date:'2025-12-12', hint:'보완 후 재제출', href:'#' },
-        ]
-      };
-
-      const approvalLogs = [
-        { result:'approved', title:'[지출] 이미지 구매 승인 처리', type:'지출', date:'2025-12-14 18:20', actor:'FIN', href:'#' },
-        { result:'rejected', title:'[예산] 외주 디자인 비용 반려', type:'예산요청', date:'2025-12-12 20:02', actor:'ADMIN', href:'#' },
-        { result:'approved', title:'[예산] 구독 서비스 비용 승인', type:'예산요청', date:'2025-12-11 10:40', actor:'FIN', href:'#' },
-      ];
-
-      const myRejected = [
-        { title:'[예산] 외주 디자인 비용', type:'예산요청', date:'2025-12-12', reason:'견적/근거 자료 누락', href:'#' }
-      ];
-
-      renderNotices(notices);
+      try {
+        const res = await fetch(API_BASE + '?mode=listAnnouncements&limit=5');
+        const json = await res.json();
+    
+        if (json && json.ok === true && Array.isArray(json.items)) {
+          // 서버 응답을 renderNotices 형식에 맞춰 살짝 정규화
+          const notices = json.items.map(x => ({
+            noticeId: x.noticeId,
+            title: x.title,
+            authorEmpNo: x.authorEmpNo,
+            level: x.level,
+            updatedAt: x.updatedAt || x.createdAt,
+          }));
+          renderNotices(notices);
+        } else {
+          renderNotices([]); // "공지 없음" 표시
+        }
+      } catch (e) {
+        console.warn('공지 불러오기 실패', e);
+        renderNotices([]);
+      }
+    
+      // ⛔ 아래는 아직 더미 그대로 둬도 됨 (추후 API 붙이면 됨)
+      const todo = { pending: 2, needAction: 3, items: [ /* ... */ ] };
+      const approvalLogs = [ /* ... */ ];
+      const myRejected = [ /* ... */ ];
+    
       renderTodo(todo);
       renderApprovalLogs(approvalLogs);
       renderMyRejected(myRejected);
     }
+
 
     function wireLogFilter(){
       document.querySelectorAll('[data-log-filter]').forEach(btn=>{
