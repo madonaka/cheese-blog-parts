@@ -572,127 +572,6 @@
         if (drafterIdEl) drafterIdEl.value = (window.CHEESE_ADMIN_EMP_NO || "").trim();
       });
 
-      // ===== request_id 자동완성(내 승인 완료 예산요청 목록) =====
-      let reqSuggestTimer = null;
-      let lastReqSuggestItems = [];
-      
-      function escapeHtml(s) {
-        return String(s ?? '').replace(/[&<>"']/g, (m) => ({
-          '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-        }[m]));
-      }
-      
-      function fmtAmt(v) {
-        const n = Number(String(v ?? '').replace(/,/g, ''));
-        return Number.isFinite(n) ? n.toLocaleString() : "-";
-      }
-      
-      function fmtDate(v) {
-        if (!v) return "-";
-        const d = new Date(v);
-        if (isNaN(d)) return String(v);
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, "0");
-        const dd = String(d.getDate()).padStart(2, "0");
-        return `${y}. ${m}. ${dd}.`;
-      }
-      
-      function openSuggest(items) {
-        const box = document.getElementById("request-suggest");
-        if (!box) return;
-      
-        lastReqSuggestItems = items || [];
-      
-        if (!items || items.length === 0) {
-          box.innerHTML = `<div class="empty">승인 완료된 예산요청이 없습니다.</div>`;
-          box.style.display = "block";
-          return;
-        }
-      
-        box.innerHTML = items.map((it, idx) => `
-          <div class="item" data-idx="${idx}">
-            <div class="left">
-              <div class="rid">${escapeHtml(it.request_id || "")}</div>
-              <div class="title">${escapeHtml(it.title || "")}</div>
-            </div>
-            <div class="right">
-              <div class="amt">${fmtAmt(it.requested_amount)}원</div>
-              <div class="date">${escapeHtml(fmtDate(it.approved_at))}</div>
-            </div>
-          </div>
-        `).join("");
-      
-        box.style.display = "block";
-      }
-      
-      function closeSuggest() {
-        const box = document.getElementById("request-suggest");
-        if (box) box.style.display = "none";
-      }
-      
-      async function loadMyApprovedRequests(q) {
-        const actor = (window.CHEESE_ADMIN_LOGIN_ID || "").trim();
-        if (!actor) return;
-      
-        const query = String(q || "").trim();
-      
-        const url =
-          `${API_BASE}?mode=myApprovedBudgetRequests` +
-          `&requester=${encodeURIComponent(actor)}` +
-          `&q=${encodeURIComponent(query)}` +
-          `&limit=10`;
-      
-        try {
-          const res = await fetch(url);
-          if (!res.ok) throw new Error("HTTP " + res.status);
-          const json = await res.json();
-          if (!json.ok) throw new Error(json.error || "API 에러");
-          openSuggest(json.data || []);
-        } catch (e) {
-          // 실패해도 입력은 그대로 가능해야 하니까, UI만 닫거나 빈 상태 표시
-          openSuggest([]);
-        }
-      }
-      
-      function scheduleSuggest(q) {
-        if (reqSuggestTimer) clearTimeout(reqSuggestTimer);
-        reqSuggestTimer = setTimeout(() => loadMyApprovedRequests(q), 180);
-      }
-      
-      function initRequestIdSuggest() {
-        const input = document.getElementById("requestId");
-        const box = document.getElementById("request-suggest");
-        if (!input || !box) return;
-      
-        input.addEventListener("input", () => scheduleSuggest(input.value));
-        input.addEventListener("focus", () => scheduleSuggest(input.value));
-      
-        input.addEventListener("keydown", (e) => {
-          if (e.key === "Escape") closeSuggest();
-        });
-      
-        box.addEventListener("click", (e) => {
-          const item = e.target.closest(".item");
-          if (!item) return;
-          const idx = Number(item.dataset.idx);
-          const it = lastReqSuggestItems[idx];
-          if (!it) return;
-      
-          // ✅ 선택하면 request_id 채워줌 (직접 입력도 가능하게 유지)
-          input.value = it.request_id || "";
-          closeSuggest();
-        });
-      
-        document.addEventListener("click", (e) => {
-          // input/box 밖 클릭하면 닫기
-          const wrap = input.closest(".request-autocomplete");
-          if (wrap && wrap.contains(e.target)) return;
-          closeSuggest();
-        });
-      }
-      
-      initRequestIdSuggest();
-
 
       let approvedReqCache = [];
       let approvedReqLoaded = false;
@@ -757,54 +636,53 @@
       }
       
       async function loadMyApprovedBudgetsOnce() {
-        if (approvedReqLoaded) return;
-        approvedReqLoaded = true;
+        if (approvedBudgetsCache) return approvedBudgetsCache;
       
-        const actor = (window.CHEESE_ADMIN_LOGIN_ID || "").trim(); // ✅ 여기 empNo여야 함
-        if (!actor) return;
+        // ✅ 과거/현재 혼용(cheese_admin vs CL25-0001) 대비: 둘 다 조회해서 합침
+        const requesters = [...new Set([
+          (window.CHEESE_ADMIN_EMP_NO || '').trim(),
+          (window.CHEESE_ADMIN_LOGIN_ID || '').trim(),
+          (drafterIdEl ? drafterIdEl.value : '').trim(),
+        ].filter(Boolean))];
       
-        const url = `${API_BASE}?mode=myApprovedBudgetRequests&requester=${encodeURIComponent(actor)}&page=1&size=50`;
-        const res = await fetch(url);
-        const json = await res.json();
-        if (!json.ok) throw new Error(json.error || "승인 예산 목록 조회 실패");
+        if (!requesters.length) {
+          approvedBudgetsCache = [];
+          return approvedBudgetsCache;
+        }
       
-        approvedReqCache = (json.data && json.data.items) ? json.data.items : [];
-      }
-      
-      (function bindRequestIdSuggest(){
-        const input = document.getElementById("requestId");
-        const box = document.getElementById("request-suggest");
-        if (!input || !box) return;
-      
-        input.addEventListener("focus", async () => {
+        let all = [];
+        for (const requester of requesters) {
+          const url =
+            `${API_BASE}?mode=myBudgetList&requester=${encodeURIComponent(requester)}&page=1&size=200`;
           try {
-            await loadMyApprovedBudgetsOnce();
-            // 포커스 시 기본 8개 노출
-            renderSuggest(approvedReqCache.slice(0, 8));
+            const res = await fetch(url);
+            const json = await res.json();
+      
+            // myBudgetList는 data.items 로 내려옴
+            const items = (json && json.ok && json.data && Array.isArray(json.data.items))
+              ? json.data.items
+              : [];
+      
+            all = all.concat(items);
           } catch (e) {
-            renderSuggest([]);
+            // 조용히 무시(다른 requester에서 잡힐 수 있음)
           }
-        });
+        }
       
-        input.addEventListener("input", () => {
-          const kw = String(input.value || "").trim().toUpperCase();
-          if (!kw) {
-            renderSuggest(approvedReqCache.slice(0, 8));
-            return;
-          }
-          const filtered = approvedReqCache.filter(x =>
-            String(x.request_id || "").toUpperCase().includes(kw) ||
-            String(x.title || "").toUpperCase().includes(kw)
-          ).slice(0, 8);
-          renderSuggest(filtered);
-        });
+        // request_id 기준 중복 제거
+        const uniq = new Map();
+        for (const it of all) {
+          const rid = it && it.request_id;
+          if (rid) uniq.set(rid, it);
+        }
       
-        // 바깥 클릭 시 닫기
-        document.addEventListener("click", (e) => {
-          if (e.target === input || box.contains(e.target)) return;
-          box.style.display = "none";
-        });
-      })();
+        // ✅ 승인 건만
+        approvedBudgetsCache = [...uniq.values()]
+          .filter(it => String(it.status || '').trim() === 'approved');
+      
+        return approvedBudgetsCache;
+      }
+
 
       
     </script>
