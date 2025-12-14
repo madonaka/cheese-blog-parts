@@ -854,48 +854,39 @@ function fillHeaderLoginUser() {
 }
 
 function initAdminMenuAccordion_() {
-  const groups = Array.from(document.querySelectorAll(".admin-side-group"));
+  const groups = Array.from(document.querySelectorAll('.admin-side-group'));
   if (!groups.length) return;
 
-  const KEY = "cheese_admin_menu_open_groups";
-
-  // ✅ 여러 개 open 상태 저장/복원 (배열)
-  let openGroups = [];
-  try {
-    const raw = localStorage.getItem(KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    openGroups = Array.isArray(parsed) ? parsed : [];
-  } catch (e) {
-    openGroups = [];
+  // active 링크가 속한 그룹은 자동으로 펼침
+  const active = document.querySelector('.admin-side-link.active');
+  if (active) {
+    const g = active.closest('.admin-side-group');
+    if (g) g.open = true;
   }
 
-  // ✅ 저장된 그룹들 먼저 펼치기
-  groups.forEach((g) => {
-    const id = (g.dataset.group || "").trim();
-    if (id && openGroups.includes(id)) g.open = true;
-  });
-
-  // ✅ active 링크가 속한 그룹은 항상 펼치기 (저장값보다 우선)
-  const activeLink = document.querySelector(".admin-side-link.active");
-  if (activeLink) {
-    const activeGroup = activeLink.closest(".admin-side-group");
-    if (activeGroup) activeGroup.open = true;
+  // 마지막으로 열었던 그룹 복원 (active가 있으면 active 우선)
+  if (!active) {
+    try {
+      const saved = localStorage.getItem('cheese_admin_menu_open');
+      if (saved) {
+        const g = document.querySelector(`.admin-side-group[data-group="${saved}"]`);
+        if (g) g.open = true;
+      }
+    } catch (e) {}
   }
 
-  // ✅ toggle 이벤트로 open/close 변화 감지 → 배열 저장
-  groups.forEach((g) => {
-    g.addEventListener("toggle", () => {
-      const id = (g.dataset.group || "").trim();
-      if (!id) return;
+  // ✅ 여러 그룹 동시 open 허용 (다른 그룹을 닫는 로직 없음)
+  // 마지막으로 open된 그룹만 저장(옵션)
+  groups.forEach(g => {
+    const summary = g.querySelector('summary');
+    if (!summary) return;
 
-      try {
-        const set = new Set(openGroups);
-        if (g.open) set.add(id);
-        else set.delete(id);
-
-        openGroups = Array.from(set);
-        localStorage.setItem(KEY, JSON.stringify(openGroups));
-      } catch (e) {}
+    summary.addEventListener('click', () => {
+      setTimeout(() => {
+        if (g.open) {
+          try { localStorage.setItem('cheese_admin_menu_open', g.dataset.group || ''); } catch (e) {}
+        }
+      }, 0);
     });
   });
 }
