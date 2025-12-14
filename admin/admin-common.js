@@ -502,6 +502,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   // 2) 왼쪽 메뉴 로딩
   await loadAdminMenu();
 
+  initMobileDrawer_();
+
   // 3) 페이지별 서브타이틀 / 뱃지 채우기
   const subtitleEl = document.querySelector("[data-admin-page-subtitle]");
   if (subtitleEl && window.CHEESE_ADMIN_PAGE_SUBTITLE) {
@@ -1034,3 +1036,55 @@ function initMenuGroups(menuHost) {
     });
   });
 }
+function initMobileDrawer_() {
+  const btn = document.getElementById("btn-nav-toggle");
+  const sidebar = document.querySelector(".admin-sidebar"); // 너 페이지 구조 기준
+  if (!btn || !sidebar) return;
+
+  // 오버레이가 없으면 생성
+  let overlay = document.getElementById("admin-mobile-overlay");
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "admin-mobile-overlay";
+    overlay.className = "admin-mobile-overlay";
+    document.body.appendChild(overlay);
+  }
+
+  const mq = window.matchMedia("(max-width: 860px)");
+
+  const open = () => {
+    if (!mq.matches) return;
+    document.body.classList.add("admin-nav-open");
+    btn.setAttribute("aria-expanded", "true");
+  };
+
+  const close = () => {
+    document.body.classList.remove("admin-nav-open");
+    btn.setAttribute("aria-expanded", "false");
+  };
+
+  btn.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (document.body.classList.contains("admin-nav-open")) close();
+    else open();
+  });
+
+  overlay.addEventListener("click", close);
+
+  // 메뉴 링크 누르면 닫기(모바일에서만)
+  sidebar.addEventListener("click", (e) => {
+    const a = e.target.closest("a");
+    if (a && mq.matches) close();
+  });
+
+  // ESC로 닫기
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") close();
+  });
+
+  // 화면이 커지면(PC로) 열린 상태 강제 해제
+  mq.addEventListener?.("change", (ev) => {
+    if (!ev.matches) close();
+  });
+}
+
