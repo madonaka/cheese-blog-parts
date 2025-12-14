@@ -890,3 +890,4 @@ function initAdminMenuAccordion_() {
     });
   });
 }
+
