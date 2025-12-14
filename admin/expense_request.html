@@ -168,8 +168,35 @@
       }
 
       /* request_id 추천 리스트(자동완성) */
-      .request-autocomplete {
-        position: relative;
+      .request-autocomplete { position: relative; }
+
+      .request-autocomplete .request-suggest{
+        top: 100%;                 /* ✅ 붙게 (기존 calc(100% + 6px) 덮어쓰기) */
+        background: #f8fafc;       /* ✅ 너무 하얗지 않게 */
+        border: 1px solid #dbe3ee; /* ✅ 경계 더 또렷하게 */
+        border-top: 0;             /* ✅ input과 이어붙는 느낌 */
+        border-radius: 0 0 14px 14px;
+        box-shadow: 0 16px 40px rgba(15, 23, 42, 0.14);
+        max-height: 280px;
+        overflow-y: auto;
+      }
+      
+      /* ✅ 드롭다운 열릴 때 input 아래 라운드 제거 */
+      .request-autocomplete.is-open #requestId{
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
+        background: #ffffff;
+      }
+      
+      /* ✅ 항목 구분선 + hover 강조 */
+      .request-suggest .item{
+        border-top: 1px solid rgba(148, 163, 184, 0.28);
+        background: #f8fafc;
+      }
+      .request-suggest .item:first-child{ border-top: 0; }
+      
+      .request-suggest .item:hover{
+        background: #eef2ff;
       }
       
       .request-suggest {
@@ -261,37 +288,26 @@
               영수증/증빙 링크를 함께 남겨 주세요.
             </p>
             
-        <div class="expense-field" style="position:relative;">
-          <label class="expense-label" for="requestId">request_id</label>
-        
-          <input
-            id="requestId"
-            class="expense-input"
-            placeholder="예: R2025-12-011 (직접 입력도 가능)"
-            autocomplete="off"
-          />
-        
-          <div id="request-suggest" style="
-              display:none;
-              position:absolute;
-              left:0; right:0;
-              top:100%;
-              margin-top:6px;
-              background:#fff;
-              border:1px solid #e5e7eb;
-              border-radius:12px;
-              box-shadow:0 16px 40px rgba(15,23,42,0.12);
-              z-index:50;
-              overflow:hidden;
-            ">
-          </div>
-        
-          <div class="expense-hint">
-            승인 완료된 예산요청은 아래 추천에서 선택할 수 있고, 직접 입력도 가능합니다.
-          </div>
-        
-          <div id="budget-info" class="budget-info" style="display:none;"></div>
-        </div>
+            <div class="expense-field request-autocomplete">
+              <label class="expense-label" for="requestId">request_id</label>
+            
+              <input
+                id="requestId"
+                class="expense-input"
+                placeholder="예: R2025-12-011 (직접 입력도 가능)"
+                autocomplete="off"
+              />
+            
+              <!-- ✅ inline style 제거 + class 적용 -->
+              <div id="request-suggest" class="request-suggest" style="display:none;"></div>
+            
+              <div class="expense-hint">
+                승인 완료된 예산요청은 아래 추천에서 선택할 수 있고, 직접 입력도 가능합니다.
+              </div>
+            
+              <div id="budget-info" class="budget-info" style="display:none;"></div>
+            </div>
+
             
             <input type="hidden" id="approvalLineJson" name="approvalLineJson" value="" />
             <input type="hidden" id="drafterId" name="drafterId" value="" />
@@ -580,47 +596,45 @@
         const n = Number(v || 0);
         return isNaN(n) ? String(v || '') : n.toLocaleString();
       }
+
       
       function renderSuggest(list) {
         const box = document.getElementById("request-suggest");
         if (!box) return;
       
+        const wrap = box.closest(".request-autocomplete");
+      
         if (!list || list.length === 0) {
-          box.innerHTML = `<div style="padding:10px 12px; font-size:13px; color:#6b7280;">
-            승인 완료된 예산요청이 없습니다
-          </div>`;
+          box.innerHTML = `<div class="empty">승인 완료된 예산요청이 없습니다</div>`;
           box.style.display = "block";
+          wrap?.classList.add("is-open");
           return;
         }
       
         box.innerHTML = list.map((it) => `
-          <div class="req-item" data-id="${it.request_id}"
-               style="padding:10px 12px; cursor:pointer; border-top:1px solid #f3f4f6;">
-            <div style="font-weight:600; font-size:13px; color:#111827;">
-              ${it.request_id} · ${it.title || "(제목 없음)"}
+          <div class="item" data-id="${it.request_id}">
+            <div class="left">
+              <div class="rid">${it.request_id}</div>
+              <div class="title">${it.title || "(제목 없음)"}</div>
             </div>
-            <div style="margin-top:3px; font-size:12px; color:#6b7280;">
-              요청금액 ${fmtMoney(it.requested_amount)}원 · 승인일 ${it.approved_at ? new Date(it.approved_at).toLocaleDateString() : "-"}
+            <div class="right">
+              <div class="amt">${fmtMoney(it.requested_amount)}원</div>
+              <div class="date">승인일 ${it.approved_at ? new Date(it.approved_at).toLocaleDateString() : "-"}</div>
             </div>
           </div>
         `).join("");
       
-        // 첫줄 border 제거
-        const first = box.querySelector(".req-item");
-        if (first) first.style.borderTop = "0";
-      
         box.style.display = "block";
+        wrap?.classList.add("is-open");
       
         // 클릭 선택
-        box.querySelectorAll(".req-item").forEach(el => {
+        box.querySelectorAll(".item").forEach(el => {
           el.addEventListener("click", () => {
             const rid = el.getAttribute("data-id");
             document.getElementById("requestId").value = rid;
       
             const picked = approvedReqCache.find(x => x.request_id === rid);
             if (picked) {
-              // 기존 showBudgetInfo는 “승인금액/남은금액” 계산용이라 구조가 다릅니다.
-              // 여기서는 간단히 안내 박스로 씁니다.
               const infoBox = document.getElementById("budget-info");
               infoBox.innerHTML =
                 `<div><strong>선택됨</strong> : ${picked.request_id}</div>` +
@@ -631,9 +645,13 @@
             }
       
             box.style.display = "none";
+            wrap?.classList.remove("is-open");
           });
         });
       }
+
+      
+      
       
       async function loadMyApprovedBudgetsOnce() {
         // ✅ 이미 로드됐으면 캐시 반환
@@ -693,7 +711,10 @@
       const box = document.getElementById("request-suggest");
       if (!input || !box) return;
     
-      const hide = () => { box.style.display = "none"; };
+      const hide = () => {
+        box.style.display = "none";
+        box.closest(".request-autocomplete")?.classList.remove("is-open");
+      };
     
       async function ensureLoaded() {
         // loadMyApprovedBudgetsOnce 내부에서 캐시/플래그까지 정리함
