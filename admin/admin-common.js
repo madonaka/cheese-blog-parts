@@ -891,3 +891,146 @@ function initAdminMenuAccordion_() {
   });
 }
 
+/* =========================================================
+ * ✅ Admin Header/Menu 초기화 (복구 + 모바일 Drawer + 멀티 오픈)
+ *   - initAdminHeader / initAdminMenu / initMenuGroups 제공
+ * ========================================================= */
+
+function setNavDrawerOpen_(open) {
+  document.body.classList.toggle('admin-nav-open', !!open);
+}
+
+function ensureNavBackdrop_() {
+  let el = document.getElementById('admin-drawer-backdrop');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'admin-drawer-backdrop';
+    el.className = 'admin-drawer-backdrop';
+    document.body.appendChild(el);
+  }
+  el.onclick = () => setNavDrawerOpen_(false);
+  return el;
+}
+
+function getSessionUserLabel_() {
+  const name =
+    sessionStorage.getItem(SESSION_DISPLAY_NAME) ||
+    sessionStorage.getItem(SESSION_USER_NAME) ||
+    '';
+  const emp = sessionStorage.getItem(SESSION_EMP_NO) || '';
+  if (name && emp) return `${name} (${emp})`;
+  return name || emp || '';
+}
+
+function initAdminHeader(headerHost) {
+  ensureNavBackdrop_();
+
+  // 유저 표시
+  const userLabel = getSessionUserLabel_();
+  const userEl = headerHost.querySelector('#admin-login-user');
+  if (userEl) userEl.textContent = userLabel;
+
+  // 모바일 메뉴 버튼
+  const btnNav = headerHost.querySelector('#btn-nav-toggle');
+  if (btnNav) {
+    btnNav.addEventListener('click', () => {
+      const isOpen = document.body.classList.contains('admin-nav-open');
+      setNavDrawerOpen_(!isOpen);
+    });
+  }
+
+  // ESC로 닫기
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') setNavDrawerOpen_(false);
+  });
+
+  // 로그아웃(헤더)
+  const btnLogout = headerHost.querySelector('#btn-logout');
+  if (btnLogout) {
+    btnLogout.addEventListener('click', () => {
+      if (typeof window.cheeseAdminLogout === 'function') window.cheeseAdminLogout();
+      else alert('logout 함수가 없습니다. admin-common.js의 cheeseAdminLogout 정의를 확인하세요.');
+    });
+  }
+}
+
+function initAdminMenu(menuHost) {
+  const role = sessionStorage.getItem(SESSION_ROLE_ID) || 'EMP';
+
+  // 모바일 drawer 상단 유저명
+  const drawerUser = menuHost.querySelector('#admin-drawer-user');
+  if (drawerUser) drawerUser.textContent = getSessionUserLabel_();
+
+  // 권한 필터
+  menuHost.querySelectorAll('[data-roles]').forEach((el) => {
+    const raw = (el.getAttribute('data-roles') || '').trim();
+    if (!raw) return;
+
+    const roles = raw.split(',').map(s => s.trim()).filter(Boolean);
+    el.style.display = roles.includes(role) ? '' : 'none';
+  });
+
+  // 링크형 summary(대시보드 등) 이동 처리
+  menuHost.querySelectorAll('.admin-side-summary--link[data-href]').forEach((sum) => {
+    sum.addEventListener('click', (e) => {
+      e.preventDefault();
+      const href = sum.getAttribute('data-href');
+      if (href) {
+        setNavDrawerOpen_(false);
+        location.href = href;
+      }
+    });
+  });
+
+  // 일반 링크 클릭 시 모바일 drawer 닫기
+  menuHost.querySelectorAll('a[href]').forEach((a) => {
+    a.addEventListener('click', () => setNavDrawerOpen_(false));
+  });
+
+  // 메뉴 안 로그아웃 버튼(모바일)
+  menuHost.querySelectorAll('[data-action="logout"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (typeof window.cheeseAdminLogout === 'function') window.cheeseAdminLogout();
+      else alert('logout 함수가 없습니다. admin-common.js의 cheeseAdminLogout 정의를 확인하세요.');
+    });
+  });
+
+  // 현재 페이지 active 표시(링크 + 링크형 summary 둘 다)
+  const current = (location.pathname.split('/').pop() || '').toLowerCase();
+  menuHost.querySelectorAll('.admin-side-link').forEach((a) => {
+    const href = (a.getAttribute('href') || '').toLowerCase();
+    a.classList.toggle('is-active', href.endsWith(current));
+  });
+  menuHost.querySelectorAll('.admin-side-summary--link[data-href]').forEach((sum) => {
+    const href = (sum.getAttribute('data-href') || '').toLowerCase();
+    sum.classList.toggle('is-active', href.endsWith(current));
+  });
+}
+
+/**
+ * ✅ 여러 그룹 동시에 열기 + 상태 저장
+ * - 예전 "한 개만 열리게" 로직이 있었다면 그걸 없애는 역할
+ */
+function initMenuGroups(menuHost) {
+  const LS_KEY = 'cheeseAdmin.menuOpenGroups';
+  let saved = [];
+  try { saved = JSON.parse(localStorage.getItem(LS_KEY) || '[]'); } catch (e) {}
+
+  const groups = Array.from(menuHost.querySelectorAll('details.admin-side-group[data-group]'));
+
+  // 복원
+  groups.forEach((d) => {
+    const id = d.getAttribute('data-group');
+    if (id && saved.includes(id)) d.open = true;
+
+    // toggle 될 때마다 "현재 열려있는 그룹들"을 저장
+    d.addEventListener('toggle', () => {
+      const opened = groups
+        .filter(x => x.open)
+        .map(x => x.getAttribute('data-group'))
+        .filter(Boolean);
+
+      try { localStorage.setItem(LS_KEY, JSON.stringify(opened)); } catch (e) {}
+    });
+  });
+}
