@@ -469,6 +469,10 @@ async function loadAdminMenu() {
 
     // 그리고 현재 페이지에 맞게 활성 메뉴 표시
     highlightActiveMenu();
+    
+    // 메뉴 아코디언 표시
+    initAdminMenuAccordion_();
+    
   } catch (err) {
     console.error("왼쪽 메뉴 로딩 실패:", err);
     slot.innerHTML =
@@ -849,3 +853,41 @@ function fillHeaderLoginUser() {
   el.textContent = name ? `${name}님` : "";
 }
 
+function initAdminMenuAccordion_() {
+  const groups = Array.from(document.querySelectorAll('.admin-side-group'));
+  if (!groups.length) return;
+
+  // active 링크가 속한 그룹은 자동으로 펼침
+  const active = document.querySelector('.admin-side-link.active');
+  if (active) {
+    const g = active.closest('.admin-side-group');
+    if (g) g.open = true;
+  }
+
+  // 한 번에 하나만 열리게 + 마지막으로 연 그룹 기억
+  groups.forEach(g => {
+    const summary = g.querySelector('summary');
+    if (!summary) return;
+
+    summary.addEventListener('click', () => {
+      // details의 open 반영 타이밍 때문에 setTimeout
+      setTimeout(() => {
+        if (g.open) {
+          groups.forEach(other => { if (other !== g) other.open = false; });
+          try { localStorage.setItem('cheese_admin_menu_open', g.dataset.group || ''); } catch (e) {}
+        }
+      }, 0);
+    });
+  });
+
+  // 마지막으로 열었던 그룹 복원 (active 그룹이 있으면 active가 우선)
+  if (!active) {
+    try {
+      const saved = localStorage.getItem('cheese_admin_menu_open');
+      if (saved) {
+        const g = document.querySelector(`.admin-side-group[data-group="${saved}"]`);
+        if (g) g.open = true;
+      }
+    } catch (e) {}
+  }
+}
