@@ -864,21 +864,20 @@ function initAdminMenuAccordion_() {
     if (g) g.open = true;
   }
 
-  // 한 번에 하나만 열리게 + 마지막으로 연 그룹 기억
+  // 여러 개 동시 open 허용 + 마지막 open 저장(옵션)
   groups.forEach(g => {
     const summary = g.querySelector('summary');
     if (!summary) return;
 
     summary.addEventListener('click', () => {
-      // details의 open 반영 타이밍 때문에 setTimeout
       setTimeout(() => {
         if (g.open) {
-          groups.forEach(other => { if (other !== g) other.open = false; });
           try { localStorage.setItem('cheese_admin_menu_open', g.dataset.group || ''); } catch (e) {}
         }
       }, 0);
     });
   });
+}
 
   // 마지막으로 열었던 그룹 복원 (active 그룹이 있으면 active가 우선)
   if (!active) {
