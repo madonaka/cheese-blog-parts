@@ -287,7 +287,23 @@
     .muted{ color:#6b7280; font-size:12px; text-align:center; padding:14px 0; }
 
     /* ===== Print ===== */
-    @media print{
+    
+    /* 상태 표시(목록) */
+    .status-chip{
+      display:inline-block;
+      padding:2px 8px;
+      border-radius:999px;
+      font-size:12px;
+      line-height:1.3;
+      border:1px solid #cbd5e1;
+      background:#fff;
+      white-space:nowrap;
+    }
+    .status-approved{ border-color:#16a34a; color:#16a34a; }
+    .status-submitted{ border-color:#2563eb; color:#2563eb; }
+    .status-rejected{ border-color:#ef4444; color:#ef4444; }
+
+@media print{
       /* 화면 UI 숨김 */
       #admin-header-slot, #admin-menu-slot, .page-wrap .card:not(.doc-wrap), .page-wrap .grid, .noprint { display:none !important; }
       body{ background:#fff !important; }
@@ -310,12 +326,10 @@
   <!-- 공통 헤더/메뉴 -->
   <div id="admin-header-slot"></div>
 
-   <div class="admin-main">
-      <!-- 왼쪽 메뉴 슬롯 -->
-      <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+  <div class="admin-layout">
+    <aside id="admin-menu-slot"></aside>
 
-      <!-- 오른쪽 메인 내용 -->
-   <main>
+    <main class="admin-main">
       <div class="page-wrap">
         <div class="grid">
           <!-- ===== 좌측: 입력/조회 ===== -->
@@ -526,7 +540,7 @@
 
   <script>
     // ✅ 기존 페이지들에서 쓰는 API_BASE를 그대로 사용 (너의 배포 URL로 맞춰두기)
-    const API_BASE = "https://script.google.com/macros/s/AKfycbxmKUfIbHUkrX5SdQXeELy4mKB3iydXlQiuKJ0Iyt1EAZATg8UV2KvIO1jXeL7xqMzf/exec";
+    const API_BASE = "https://script.google.com/macros/s/AKfycbzOsfLLrt8fK0SXdxH6CCamSYk9MrLfcycJv7Okz1t4OnaGvpQARFV7cGf0ggH1IzfUTw/exec";
     window.CHEESE_ADMIN_API_BASE = API_BASE;
 
     // ===== 유틸 =====
@@ -573,7 +587,54 @@
       return `${y}-${m}`;
     }
 
-    // ===== 상태 =====
+    // ===== 상태/표시 유틸 =====
+    function normalizeStatus(raw){
+      const s = String(raw || '').trim();
+      if (!s) return '';
+      const low = s.toLowerCase();
+
+      // 시트/표기 흔들림 방어 (예: '승인(approved)', '결재중(submitted)', '반려(rejected)')
+      if (low === 'approved' || low.includes('approved') || s.includes('승인')) return 'approved';
+      if (low === 'submitted' || low.includes('submitted') || s.includes('결재') || s.includes('진행') || s.includes('대기')) return 'submitted';
+      if (low === 'rejected' || low.includes('rejected') || s.includes('반려') || s.includes('거절')) return 'rejected';
+
+      return low;
+    }
+
+    function statusText(key){
+      if (key === 'approved') return '승인';
+      if (key === 'submitted') return '결재중';
+      if (key === 'rejected') return '반려';
+      return key || '알수없음';
+    }
+
+    // 예산요청 제목 매핑(요청ID → 제목). EXPENSES에는 제목이 없을 수 있어, 화면에서 보강함.
+    let reqTitleMap = {};
+    async function loadRequestTitleMap(requesterId){
+      reqTitleMap = {};
+      const pageSize = 200;
+
+      for (let page = 1; page <= 5; page++){
+        const url = `${API_BASE}?mode=myBudgetList&requesterId=${encodeURIComponent(requesterId)}&page=${page}&pageSize=${pageSize}`;
+        try{
+          const res = await fetch(url, { method: 'GET', cache: 'no-store' });
+          const j = await res.json();
+          if (!j || !j.ok || !Array.isArray(j.items) || j.items.length === 0) break;
+
+          for (const it of j.items){
+            const rid = it && it.request_id ? String(it.request_id).trim() : '';
+            const title = it && it.title ? String(it.title).trim() : '';
+            if (rid && title) reqTitleMap[rid] = title;
+          }
+
+          if (j.items.length < pageSize) break;
+        } catch (e){
+          break;
+        }
+      }
+    }
+
+    // ===== 전역 상태 =====
     let allExpenses = [];       // API에서 가져온 전체(해당 requester)
     let filtered = [];          // 해당월 + 상태필터
     const selected = new Set(); // expense_id
@@ -635,7 +696,8 @@
         if (monthKey(dt) !== mon) return false;
 
         if (st === "all") return true;
-        return String(x.status || "").trim() === st;
+        const key = normalizeStatus(x.status);
+        return key === st;
       });
 
       // 선택 유지: 현재 필터에 없는 선택은 해제
@@ -671,6 +733,12 @@
 
       for (const it of filtered){
         const id = String(it.expense_id || "").trim();
+        const statusKey = normalizeStatus(it.status);
+        const statusLabel = statusText(statusKey);
+
+        const reqId = String(it.request_id || "").trim();
+        const titleText = (reqId && reqTitleMap[reqId]) ? String(reqTitleMap[reqId]) : String(it.request_title || it.title || "").trim();
+
         const dt = parseAnyDate(it.date || it.requested_at);
         const checked = selected.has(id);
 
@@ -680,9 +748,12 @@
           <td class="check"><input type="checkbox" data-id="${id}" ${checked ? "checked":""}></td>
           <td>${ymd(dt)}</td>
           <td>
-            <b>${escapeHtml(String(it.vendor || ""))}</b>
-            <span class="sub">${escapeHtml(String(it.description || ""))}</span>
-            <span class="sub">expense_id: ${escapeHtml(id)} · request_id: ${escapeHtml(String(it.request_id||""))} · status: ${escapeHtml(String(it.status||""))}</span>
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+              <b>${escapeHtml(String(it.vendor || "")) || (titleText ? escapeHtml(titleText) : "(거래처 미입력)")}</b>
+              ${statusKey ? `<span class="status-chip status-${statusKey}">${escapeHtml(statusLabel)}</span>` : ""}
+            </div>
+            <span class="sub">${escapeHtml(titleText || String(it.description || "")) || "(사용내역 미입력)"}</span>
+            <span class="sub">expense_id: ${escapeHtml(id)} · request_id: ${escapeHtml(reqId)}</span>
           </td>
           <td class="money">${fmtMoney(it.amount_total)}원</td>
           <td>${renderEvidenceLink(it.evidence_link)}</td>
@@ -838,12 +909,17 @@
           setStatus("지출을 불러오는 중...", false);
 
           allExpenses = await loadExpensesForRequester(requester);
-          setStatus(`불러오기 완료: ${allExpenses.length}건\n(대상월/상태 조건으로 자동 필터링됩니다)`, false);
+
+          // 예산요청 제목 매핑도 함께 로드(목록에 '요청 제목' 표시)
+          await loadRequestTitleMap(requester);
 
           // 선택 초기화
           selected.clear();
           applyFilter();
-          // 문서 상단도 반영
+
+          setStatus(`불러오기 완료: ${allExpenses.length}건 (표시: ${filtered.length}건)
+(대상월/상태 조건으로 자동 필터링됩니다)`, false);
+// 문서 상단도 반영
           document.getElementById("p_requester").textContent = requester;
         }catch(err){
           console.error(err);
