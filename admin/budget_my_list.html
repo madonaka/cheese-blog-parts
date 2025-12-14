@@ -304,6 +304,8 @@
                     <th>금액</th>
                     <th>증빙</th>
                     <th>상태</th>
+                    <th>진행</th>
+                    <th>현재 결재자</th>
                     <th>승인자</th>
                     <th>승인/반려일</th>
                     <th>반려 사유</th>
@@ -717,6 +719,89 @@
           });
         }
       });
+
+      
+      function getMyExpensesForWeb_(params) {
+        const requester = normId_(params.requester || params.requesterId || '');
+        const page = Math.max(1, Number(params.page || 1));
+        const size = Math.max(1, Number(params.size || 10));
+      
+        const sh = getSheet_(SHEET_EXPENSES);
+        const { map: hm } = getHeaderMap_(sh);
+        const values = sh.getDataRange().getValues();
+        if (values.length <= 1) {
+          return { items: [], total: 0, page, size };
+        }
+      
+        // ✅ 필요한 컬럼 인덱스
+        const cExpenseId = col_(hm, H_EXP.expense_id, true);
+        const cRequestId = col_(hm, H_EXP.request_id, false);
+        const cDate      = col_(hm, H_EXP.date, false);
+        const cVendor    = col_(hm, H_EXP.vendor, false);
+        const cAmtTotal  = col_(hm, H_EXP.amount_total, false);
+        const cEvidence  = col_(hm, H_EXP.evidence_link, false);
+        const cStatus    = col_(hm, H_EXP.status, false);
+        const cRequester = col_(hm, H_EXP.requester, false);
+        const cReqAt     = col_(hm, H_EXP.requested_at, false);
+        const cApprover  = col_(hm, H_EXP.approver, false);
+        const cAppAt     = col_(hm, H_EXP.approved_at, false);
+        const cReject    = col_(hm, H_EXP.reject_reason, false);
+      
+        // ✅ 결재선용(네가 추가한 2개)
+        const cCurApp    = col_(hm, H_EXP.current_approver, false);
+        const cLineJson  = col_(hm, H_EXP.approval_line_json, false);
+      
+        // 1) requester 필터
+        let rows = [];
+        for (let r = 1; r < values.length; r++) {
+          const row = values[r];
+          if (requester && normId_(row[cRequester]) !== requester) continue;
+      
+          rows.push({
+            expense_id: row[cExpenseId] || '',
+            request_id: row[cRequestId] || '',
+            date: row[cDate] || '',
+            vendor: row[cVendor] || '',
+            amount_total: row[cAmtTotal] ?? '',
+            evidence_link: row[cEvidence] || '',
+            status: row[cStatus] || '',
+            requester: row[cRequester] || '',
+            requested_at: row[cReqAt] || '',
+            approver: row[cApprover] || '',
+            approved_at: row[cAppAt] || '',
+            reject_reason: row[cReject] || '',
+            current_approver: row[cCurApp] || '',
+            approval_line_json: row[cLineJson] || '',
+          });
+        }
+      
+        // 최신순 정렬(요청일 기준)
+        rows.sort((a, b) => new Date(b.requested_at) - new Date(a.requested_at));
+      
+        const total = rows.length;
+        const start = (page - 1) * size;
+        const items = rows.slice(start, start + size);
+      
+        // 2) 진행률 계산(결재 로그 기반)
+        const ids = items.map(x => x.expense_id).filter(Boolean);
+        const logMap = buildApprovalLogMap_('expense', ids);
+      
+        items.forEach((x) => {
+          const prog = calcApprovalProgressV3_(
+            x.expense_id,
+            x.requester,
+            x.approval_line_json,
+            x.status,
+            x.current_approver, // (함수 시그니처가 6개면 유지)
+            logMap
+          );
+          x.progress_done = prog.progress_done;
+          x.progress_total = prog.progress_total;
+          x.progress_ratio = prog.progress_ratio;
+        });
+      
+        return { items, total, page, size };
+      }
 
       
     </script>
