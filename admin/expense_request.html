@@ -636,52 +636,103 @@
       }
       
       async function loadMyApprovedBudgetsOnce() {
-        if (approvedBudgetsCache) return approvedBudgetsCache;
+        // ✅ 이미 로드됐으면 캐시 반환
+        if (approvedReqLoaded) return approvedReqCache;
       
-        // ✅ 과거/현재 혼용(cheese_admin vs CL25-0001) 대비: 둘 다 조회해서 합침
+        // ✅ drafterIdEl 스코프 문제 제거: 필요할 때 DOM에서 직접 꺼냄
+        const drafterIdVal = (document.getElementById("drafterId")?.value || "").trim();
+      
+        // ✅ 과거/현재 혼용 대비: 가능한 requester 후보들 합치기
         const requesters = [...new Set([
-          (window.CHEESE_ADMIN_EMP_NO || '').trim(),
-          (window.CHEESE_ADMIN_LOGIN_ID || '').trim(),
-          (drafterIdEl ? drafterIdEl.value : '').trim(),
+          (window.CHEESE_ADMIN_EMP_NO || "").trim(),
+          (window.CHEESE_ADMIN_LOGIN_ID || "").trim(),
+          drafterIdVal,
         ].filter(Boolean))];
       
         if (!requesters.length) {
-          approvedBudgetsCache = [];
-          return approvedBudgetsCache;
+          approvedReqCache = [];
+          approvedReqLoaded = true;
+          return approvedReqCache;
         }
       
         let all = [];
         for (const requester of requesters) {
+          // ✅ 승인 완료건 전용 API 사용 (Apps Script doGet에 존재)
           const url =
-            `${API_BASE}?mode=myBudgetList&requester=${encodeURIComponent(requester)}&page=1&size=200`;
+            `${API_BASE}?mode=myApprovedBudgetRequests&requester=${encodeURIComponent(requester)}&page=1&size=200`;
+      
           try {
             const res = await fetch(url);
             const json = await res.json();
       
-            // myBudgetList는 data.items 로 내려옴
+            // ✅ jsonOk_ 래핑 구조: { ok:true, data:{ items, total, page, size } }
             const items = (json && json.ok && json.data && Array.isArray(json.data.items))
               ? json.data.items
               : [];
       
             all = all.concat(items);
           } catch (e) {
-            // 조용히 무시(다른 requester에서 잡힐 수 있음)
+            // 조용히 무시 (다른 requester에서 잡힐 수 있음)
           }
         }
       
-        // request_id 기준 중복 제거
+        // ✅ request_id 기준 중복 제거
         const uniq = new Map();
         for (const it of all) {
           const rid = it && it.request_id;
           if (rid) uniq.set(rid, it);
         }
       
-        // ✅ 승인 건만
-        approvedBudgetsCache = [...uniq.values()]
-          .filter(it => String(it.status || '').trim() === 'approved');
-      
-        return approvedBudgetsCache;
+        approvedReqCache = [...uniq.values()];
+        approvedReqLoaded = true;
+        return approvedReqCache;
       }
+
+      document.addEventListener("DOMContentLoaded", () => {
+      const input = document.getElementById("requestId");
+      const box = document.getElementById("request-suggest");
+      if (!input || !box) return;
+    
+      const hide = () => { box.style.display = "none"; };
+    
+      async function ensureLoaded() {
+        // loadMyApprovedBudgetsOnce 내부에서 캐시/플래그까지 정리함
+        return await loadMyApprovedBudgetsOnce();
+      }
+    
+      // 1) 포커스되면 추천 1차 표시
+      input.addEventListener("focus", async () => {
+        const list = await ensureLoaded();
+        renderSuggest(list.slice(0, 20));
+      });
+    
+      // 2) 타이핑하면 필터링해서 표시
+      input.addEventListener("input", async () => {
+        const q = input.value.trim().toLowerCase();
+        const list = await ensureLoaded();
+    
+        const filtered = !q
+          ? list
+          : list.filter(it =>
+              String(it.request_id || "").toLowerCase().includes(q) ||
+              String(it.title || "").toLowerCase().includes(q)
+            );
+    
+        renderSuggest(filtered.slice(0, 20));
+      });
+    
+      // 3) ESC로 닫기
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") hide();
+      });
+    
+      // 4) 바깥 클릭 시 닫기
+      document.addEventListener("click", (e) => {
+        if (e.target === input) return;
+        if (box.contains(e.target)) return;
+        hide();
+      });
+    });
 
 
       
