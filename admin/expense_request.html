@@ -166,6 +166,81 @@
           /* 필요하면 width: 100%; 로 풀폭 버튼도 가능 */
         }
       }
+
+      /* request_id 추천 리스트(자동완성) */
+      .request-autocomplete {
+        position: relative;
+      }
+      
+      .request-suggest {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: calc(100% + 6px);
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        box-shadow: 0 16px 40px rgba(15, 23, 42, 0.12);
+        z-index: 50;
+        overflow: hidden;
+      }
+      
+      .request-suggest .item {
+        padding: 0.6rem 0.75rem;
+        cursor: pointer;
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      
+      .request-suggest .item:hover {
+        background: #f3f4f6;
+      }
+      
+      .request-suggest .left {
+        min-width: 0;
+      }
+      
+      .request-suggest .rid {
+        font-weight: 700;
+        font-size: 0.82rem;
+        color: #111827;
+      }
+      
+      .request-suggest .title {
+        margin-top: 2px;
+        font-size: 0.78rem;
+        color: #374151;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 420px;
+      }
+      
+      .request-suggest .right {
+        text-align: right;
+        flex: 0 0 auto;
+      }
+      
+      .request-suggest .amt {
+        font-weight: 700;
+        font-size: 0.8rem;
+        color: #111827;
+      }
+      
+      .request-suggest .date {
+        margin-top: 2px;
+        font-size: 0.72rem;
+        color: #6b7280;
+      }
+      
+      .request-suggest .empty {
+        padding: 0.65rem 0.75rem;
+        font-size: 0.78rem;
+        color: #6b7280;
+      }
+      
     </style>
   </head>
   <body>
@@ -188,11 +263,15 @@
             
             <div class="expense-field">
               <label class="expense-label" for="requestId">request_id</label>
+              <div class="request-autocomplete">
               <input
                 id="requestId"
                 class="expense-input"
                 placeholder="예: R2025-12-011"
+                autocomplete="off"
               />
+              <div id="request-suggest" class="request-suggest" style="display:none;"></div>
+            </div>
               <div class="expense-hint">
                 BUDGET_REQUESTS 시트에서 승인된 예산요청의 request_id를 입력합니다.
               </div>
@@ -477,6 +556,128 @@
         const drafterIdEl = document.getElementById("drafterId");
         if (drafterIdEl) drafterIdEl.value = (window.CHEESE_ADMIN_EMP_NO || "").trim();
       });
+
+      // ===== request_id 자동완성(내 승인 완료 예산요청 목록) =====
+      let reqSuggestTimer = null;
+      let lastReqSuggestItems = [];
+      
+      function escapeHtml(s) {
+        return String(s ?? '').replace(/[&<>"']/g, (m) => ({
+          '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[m]));
+      }
+      
+      function fmtAmt(v) {
+        const n = Number(String(v ?? '').replace(/,/g, ''));
+        return Number.isFinite(n) ? n.toLocaleString() : "-";
+      }
+      
+      function fmtDate(v) {
+        if (!v) return "-";
+        const d = new Date(v);
+        if (isNaN(d)) return String(v);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        return `${y}. ${m}. ${dd}.`;
+      }
+      
+      function openSuggest(items) {
+        const box = document.getElementById("request-suggest");
+        if (!box) return;
+      
+        lastReqSuggestItems = items || [];
+      
+        if (!items || items.length === 0) {
+          box.innerHTML = `<div class="empty">승인 완료된 예산요청이 없습니다.</div>`;
+          box.style.display = "block";
+          return;
+        }
+      
+        box.innerHTML = items.map((it, idx) => `
+          <div class="item" data-idx="${idx}">
+            <div class="left">
+              <div class="rid">${escapeHtml(it.request_id || "")}</div>
+              <div class="title">${escapeHtml(it.title || "")}</div>
+            </div>
+            <div class="right">
+              <div class="amt">${fmtAmt(it.requested_amount)}원</div>
+              <div class="date">${escapeHtml(fmtDate(it.approved_at))}</div>
+            </div>
+          </div>
+        `).join("");
+      
+        box.style.display = "block";
+      }
+      
+      function closeSuggest() {
+        const box = document.getElementById("request-suggest");
+        if (box) box.style.display = "none";
+      }
+      
+      async function loadMyApprovedRequests(q) {
+        const actor = (window.CHEESE_ADMIN_LOGIN_ID || "").trim();
+        if (!actor) return;
+      
+        const query = String(q || "").trim();
+      
+        const url =
+          `${API_BASE}?mode=myApprovedBudgetRequests` +
+          `&requester=${encodeURIComponent(actor)}` +
+          `&q=${encodeURIComponent(query)}` +
+          `&limit=10`;
+      
+        try {
+          const res = await fetch(url);
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          const json = await res.json();
+          if (!json.ok) throw new Error(json.error || "API 에러");
+          openSuggest(json.data || []);
+        } catch (e) {
+          // 실패해도 입력은 그대로 가능해야 하니까, UI만 닫거나 빈 상태 표시
+          openSuggest([]);
+        }
+      }
+      
+      function scheduleSuggest(q) {
+        if (reqSuggestTimer) clearTimeout(reqSuggestTimer);
+        reqSuggestTimer = setTimeout(() => loadMyApprovedRequests(q), 180);
+      }
+      
+      function initRequestIdSuggest() {
+        const input = document.getElementById("requestId");
+        const box = document.getElementById("request-suggest");
+        if (!input || !box) return;
+      
+        input.addEventListener("input", () => scheduleSuggest(input.value));
+        input.addEventListener("focus", () => scheduleSuggest(input.value));
+      
+        input.addEventListener("keydown", (e) => {
+          if (e.key === "Escape") closeSuggest();
+        });
+      
+        box.addEventListener("click", (e) => {
+          const item = e.target.closest(".item");
+          if (!item) return;
+          const idx = Number(item.dataset.idx);
+          const it = lastReqSuggestItems[idx];
+          if (!it) return;
+      
+          // ✅ 선택하면 request_id 채워줌 (직접 입력도 가능하게 유지)
+          input.value = it.request_id || "";
+          closeSuggest();
+        });
+      
+        document.addEventListener("click", (e) => {
+          // input/box 밖 클릭하면 닫기
+          const wrap = input.closest(".request-autocomplete");
+          if (wrap && wrap.contains(e.target)) return;
+          closeSuggest();
+        });
+      }
+      
+      initRequestIdSuggest();
+
     </script>
   </body>
 </html>
