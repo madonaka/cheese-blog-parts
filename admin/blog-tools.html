@@ -38,6 +38,11 @@
     .ok{ color:#15803d; font-weight:900; }
     .row2{ grid-column: 1 / -1; }
     .hide{ display:none; }
+    .rows { display:flex; flex-direction:column; gap:.5rem; margin:.6rem 0; }
+    .row  { display:flex; gap:.5rem; align-items:center; }
+    .row input { flex:1; padding:.55rem .7rem; border:1px solid #e5e7eb; border-radius:10px; }
+    .row .mini { padding:.5rem .7rem; border-radius:10px; border:1px solid #e5e7eb; background:#fff; cursor:pointer; }
+    .row-head { display:flex; justify-content:flex-end; margin-top:.25rem; }
   </style>
 </head>
 <body>
@@ -65,7 +70,10 @@
               <div class="grid">
                 <div class="field">
                   <label>카드 데이터 (줄 단위)</label>
-                  <textarea class="ta" id="fcData" placeholder="civilization\t문명
+                  <div class="row-head">
+                    <button type="button" class="btn secondary" id="fcAdd">+ 카드 추가</button>
+                  </div>
+                  <div id="fcRows" class="rows"></div>
 sovereignty\t주권
 annexation | 병합, 합병
 protectorate => 보호국"></textarea>
@@ -102,10 +110,10 @@ protectorate => 보호국"></textarea>
 
                 <div class="field">
                   <label>보기 항목 (줄 단위)</label>
-                  <textarea class="ta" id="oqItems" placeholder="구석기 시대
-신석기 시대
-청동기 시대
-철기 시대"></textarea>
+                  <div class="row-head">
+                    <button type="button" class="btn secondary" id="oqAdd">+ 항목 추가</button>
+                  </div>
+                  <div id="oqRows" class="rows"></div>
                   <div class="hint">줄 순서가 “보기” 순서가 됨</div>
                 </div>
 
@@ -421,279 +429,238 @@ protectorate => 보호국"></textarea>
 </style>
 
 <script>
+/**
+ * blog-tools.js (inline)
+ * 요구사항:
+ * - 플래시카드 / 순서퀴즈 탭
+ * - 인풋 행 추가/삭제
+ * - 생성 / 복사 / 초기화
+ * - 구분자 입력 X (행 추가 방식)
+ * - 구형 환경에서도 깨지지 않게(옵셔널 체이닝 제거)
+ */
+
 (function () {
-  const items = ${itemsJson};
-  const correctOrder = ${correctJson};
+  function $(id) { return document.getElementById(id); }
 
-  const root = document.getElementById("${id}");
-  if (!root) return;
-
-  root.innerHTML = \`
-    <div class="cheese-order-title">${safeTitle}</div>
-    <div class="cheese-order-sub">${safeSub}</div>
-
-    <div class="cheese-order-section cheese-order-section-top">
-      <div class="cheese-order-section-label">보기</div>
-      <div class="cheese-order-top" data-top></div>
-    </div>
-
-    <div class="cheese-order-guide">
-      <div class="cheese-order-guide-arrow">⬇</div>
-      <div class="cheese-order-guide-text">카드를 아래 순서 영역으로 드래그해서 옮겨 보세요.</div>
-    </div>
-
-    <div class="cheese-order-section cheese-order-section-bottom">
-      <div class="cheese-order-section-label">정답</div>
-      <div class="cheese-order-bottom" data-bottom></div>
-    </div>
-
-    <div class="cheese-order-controls">
-      <div class="cheese-order-result" id="${id}-result"></div>
-      <button type="button" class="cheese-order-btn secondary" id="${id}-reset">↺ 초기화</button>
-      <button type="button" class="cheese-order-btn" id="${id}-check">✅ 채점하기</button>
-    </div>
-  \`;
-
-  const topRow    = root.querySelector("[data-top]");
-  const bottomRow = root.querySelector("[data-bottom]");
-  const resultEl  = document.getElementById("${id}-result");
-  const btnCheck  = document.getElementById("${id}-check");
-  const btnReset  = document.getElementById("${id}-reset");
-
-  const slotCount = correctOrder.length;
-
-  const topSlots = [];
-  for (let i = 0; i < slotCount; i++) {
-    const topSlot = document.createElement("div");
-    topSlot.className = "cheese-order-top-slot";
-    topRow.appendChild(topSlot);
-    topSlots.push(topSlot);
+  function setMsg(id, text) {
+    var el = $(id);
+    if (el) el.textContent = text || '';
   }
 
-  for (let i = 0; i < slotCount; i++) {
-    const slot = document.createElement("div");
-    slot.className = "cheese-order-slot";
-    slot.dataset.slotIndex = String(i);
-    slot.textContent = (i + 1) + "번";
-    bottomRow.appendChild(slot);
-
-    if (i < slotCount - 1) {
-      const arrow = document.createElement("div");
-      arrow.className = "cheese-order-slot-arrow";
-      arrow.textContent = "↓";
-      bottomRow.appendChild(arrow);
-    }
+  function escAttr_(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
   }
 
-  function placeInTop(cardEl) {
-    let target = null;
-    for (const slot of topSlots) {
-      if (!slot.querySelector(".cheese-order-card")) { target = slot; break; }
+  function copyText_(text) {
+    if (!text) return Promise.reject(new Error('복사할 내용이 비어 있습니다.'));
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text);
     }
-    if (!target) target = topSlots[0];
-    target.appendChild(cardEl);
+    // fallback
+    return new Promise(function (res, rej) {
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        res();
+      } catch (e) { rej(e); }
+    });
   }
 
-  items.forEach((item, index) => {
-    const card = document.createElement("div");
-    card.className = "cheese-order-card";
-    card.draggable = true;
-    card.dataset.itemId = item.id;
-    card.textContent = item.label;
+  // ===== UI: 탭 =====
+  function activateTab(which) {
+    var isFlash = (which === 'flash');
+    var tabFlash = $('tabFlash');
+    var tabOrder = $('tabOrder');
+    var secFlash = $('secFlash');
+    var secOrder = $('secOrder');
 
-    (topSlots[index] || topSlots[0]).appendChild(card);
-  });
+    if (tabFlash) tabFlash.classList.toggle('active', isFlash);
+    if (tabOrder) tabOrder.classList.toggle('active', !isFlash);
+    if (secFlash) secFlash.classList.toggle('active', isFlash);
+    if (secOrder) secOrder.classList.toggle('active', !isFlash);
+  }
 
-  let draggingCard = null;
+  // ===== 플래시카드: 행 추가/수집 =====
+  function addFlashRow_(front, back) {
+    front = front || '';
+    back = back || '';
 
-  root.addEventListener("dragstart", (e) => {
-    const card = e.target.closest(".cheese-order-card");
-    if (!card) return;
-    draggingCard = card;
-    card.classList.add("is-dragging");
-    if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
-  });
+    var wrap = $('fcRows');
+    if (!wrap) return;
 
-  root.addEventListener("dragend", (e) => {
-    const card = e.target.closest(".cheese-order-card");
-    if (card) card.classList.remove("is-dragging");
-    draggingCard = null;
-    root.querySelectorAll(".cheese-order-slot.is-over").forEach((el)=>el.classList.remove("is-over"));
-  });
+    var row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML =
+      '<input type="text" class="fc-front" placeholder="앞면(질문/단어)" value="' + escAttr_(front) + '">' +
+      '<input type="text" class="fc-back"  placeholder="뒷면(정답/뜻)" value="' + escAttr_(back) + '">' +
+      '<button type="button" class="mini fc-del">삭제</button>';
 
-  root.addEventListener("dragover", (e) => {
-    if (!draggingCard) return;
-    const slot = e.target.closest(".cheese-order-slot");
-    const topArea = e.target.closest("[data-top]");
-    if (!slot && !topArea) return;
-    e.preventDefault();
-    root.querySelectorAll(".cheese-order-slot.is-over").forEach((el)=>el.classList.remove("is-over"));
-    if (slot) slot.classList.add("is-over");
-  });
+    var delBtn = row.querySelector('.fc-del');
+    if (delBtn) delBtn.addEventListener('click', function () { row.remove(); });
 
-  root.addEventListener("drop", (e) => {
-    if (!draggingCard) return;
-    const slot = e.target.closest(".cheese-order-slot");
-    const topArea = e.target.closest("[data-top]");
-    if (!slot && !topArea) return;
-    e.preventDefault();
+    wrap.appendChild(row);
+  }
 
-    if (slot) {
-      root.querySelectorAll(".cheese-order-slot.is-over").forEach((el)=>el.classList.remove("is-over"));
-      const existing = slot.querySelector(".cheese-order-card");
-      if (existing) placeInTop(existing);
+  function collectFlashPairs_() {
+    var wrap = $('fcRows');
+    if (!wrap) throw new Error('fcRows 영역이 없습니다. (HTML에 id="fcRows" 확인)');
 
-      slot.innerHTML = "";
-      slot.appendChild(draggingCard);
-      slot.classList.add("has-card");
+    var rows = Array.prototype.slice.call(wrap.querySelectorAll('.row'));
+    var pairs = rows.map(function (r) {
+      var f = r.querySelector('.fc-front');
+      var b = r.querySelector('.fc-back');
+      var front = (f && f.value ? f.value : '').trim();
+      var back  = (b && b.value ? b.value : '').trim();
+      return { front: front, back: back };
+    }).filter(function (x) { return x.front || x.back; });
 
-      resultEl.textContent = "";
-      resultEl.className = "cheese-order-result";
-      return;
-    }
+    if (pairs.length === 0) throw new Error('플래시 카드가 비어 있습니다. 카드 추가 후 입력해 주세요.');
+    return pairs;
+  }
 
-    if (topArea) {
-      placeInTop(draggingCard);
-      resultEl.textContent = "";
-      resultEl.className = "cheese-order-result";
-      bottomRow.querySelectorAll(".cheese-order-slot").forEach((s) => {
-        if (!s.querySelector(".cheese-order-card")) {
-          s.classList.remove("has-card");
-          s.textContent = (Number(s.dataset.slotIndex) + 1) + "번";
+  // ===== 순서퀴즈: 행 추가/수집 =====
+  function addOrderRow_(label) {
+    label = label || '';
+
+    var wrap = $('oqRows');
+    if (!wrap) return;
+
+    var row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML =
+      '<input type="text" class="oq-label" placeholder="항목(정답 순서대로 입력)" value="' + escAttr_(label) + '">' +
+      '<button type="button" class="mini oq-del">삭제</button>';
+
+    var delBtn = row.querySelector('.oq-del');
+    if (delBtn) delBtn.addEventListener('click', function () { row.remove(); });
+
+    wrap.appendChild(row);
+  }
+
+  function collectOrderLabels_() {
+    var wrap = $('oqRows');
+    if (!wrap) throw new Error('oqRows 영역이 없습니다. (HTML에 id="oqRows" 확인)');
+
+    var inputs = Array.prototype.slice.call(wrap.querySelectorAll('.oq-label'));
+    var labels = inputs.map(function (el) {
+      return (el && el.value ? el.value : '').trim();
+    }).filter(function (v) { return !!v; });
+
+    if (labels.length < 2) throw new Error('순서 퀴즈 항목은 최소 2개 이상 입력해 주세요.');
+    return labels;
+  }
+
+  // ===== 스니펫 생성기 (여기는 네가 기존 템플릿 붙여넣는 자리) =====
+  // ⚠️ 아래 두 함수는 "반드시" blog-tools.html 어딘가에 존재해야 함.
+  // - buildFlashcardSnippet_(pairs)
+  // - buildOrderSnippet_({ title, sub, labels, orderNums })
+  //
+  // 만약 네 파일에 아직 없다면, 기존에 만들어둔 build... 함수들을 그대로 아래에 추가하면 됨.
+
+  // ===== 이벤트 바인딩 =====
+  function wire_() {
+    // 탭
+    var tabFlash = $('tabFlash');
+    var tabOrder = $('tabOrder');
+    if (tabFlash) tabFlash.addEventListener('click', function () { activateTab('flash'); });
+    if (tabOrder) tabOrder.addEventListener('click', function () { activateTab('order'); });
+
+    // 행 추가 버튼
+    var fcAdd = $('fcAdd');
+    if (fcAdd) fcAdd.addEventListener('click', function () { addFlashRow_(); });
+
+    var oqAdd = $('oqAdd');
+    if (oqAdd) oqAdd.addEventListener('click', function () { addOrderRow_(); });
+
+    // 플래시 생성/복사/초기화
+    var btnGen = $('btnGen');
+    if (btnGen) btnGen.addEventListener('click', function () {
+      try {
+        if (typeof buildFlashcardSnippet_ !== 'function') {
+          throw new Error('buildFlashcardSnippet_ 함수가 없습니다. (생성기 함수 누락)');
         }
-      });
-    }
+        var pairs = collectFlashPairs_();
+        var code = buildFlashcardSnippet_(pairs);
+        var out = $('out');
+        if (out) out.value = code;
+        setMsg('msg', '생성 완료');
+      } catch (e) {
+        setMsg('msg', e.message || String(e));
+      }
+    });
+
+    var btnCopy = $('btnCopy');
+    if (btnCopy) btnCopy.addEventListener('click', function () {
+      copyText_(($('out') && $('out').value) ? $('out').value : '')
+        .then(function () { setMsg('msg', '복사 완료'); })
+        .catch(function (e) { setMsg('msg', e.message || String(e)); });
+    });
+
+    var btnClear = $('btnClear');
+    if (btnClear) btnClear.addEventListener('click', function () {
+      var out = $('out');
+      if (out) out.value = '';
+      setMsg('msg', '');
+    });
+
+    // 순서퀴즈 생성/복사/초기화
+    var btnGen2 = $('btnGen2');
+    if (btnGen2) btnGen2.addEventListener('click', function () {
+      try {
+        if (typeof buildOrderSnippet_ !== 'function') {
+          throw new Error('buildOrderSnippet_ 함수가 없습니다. (생성기 함수 누락)');
+        }
+        var labels = collectOrderLabels_();
+        var title = ($('oqTitle') && $('oqTitle').value ? $('oqTitle').value : '').trim();
+        var sub   = ($('oqSub') && $('oqSub').value ? $('oqSub').value : '').trim();
+
+        // 입력한 순서 = 정답 순서
+        var orderNums = labels.map(function (_, i) { return i + 1; });
+
+        var code = buildOrderSnippet_({ title: title, sub: sub, labels: labels, orderNums: orderNums });
+        var out2 = $('out2');
+        if (out2) out2.value = code;
+        setMsg('msg2', '생성 완료');
+      } catch (e) {
+        setMsg('msg2', e.message || String(e));
+      }
+    });
+
+    var btnCopy2 = $('btnCopy2');
+    if (btnCopy2) btnCopy2.addEventListener('click', function () {
+      copyText_(($('out2') && $('out2').value) ? $('out2').value : '')
+        .then(function () { setMsg('msg2', '복사 완료'); })
+        .catch(function (e) { setMsg('msg2', e.message || String(e)); });
+    });
+
+    var btnClear2 = $('btnClear2');
+    if (btnClear2) btnClear2.addEventListener('click', function () {
+      var out2 = $('out2');
+      if (out2) out2.value = '';
+      setMsg('msg2', '');
+    });
+  }
+
+  // ===== 시작 =====
+  document.addEventListener('DOMContentLoaded', function () {
+    wire_();
+
+    // 처음에 한 줄씩 보여주기(원하면 삭제 가능)
+    addFlashRow_();
+    addOrderRow_();
+
+    // 초기 탭
+    activateTab('flash');
   });
 
-  btnCheck.addEventListener("click", () => {
-    const slotEls = bottomRow.querySelectorAll(".cheese-order-slot");
-    const userOrder = [];
-    let filledCount = 0;
-
-    slotEls.forEach((slot) => {
-      const card = slot.querySelector(".cheese-order-card");
-      if (card) { userOrder.push(card.dataset.itemId || null); filledCount++; }
-      else userOrder.push(null);
-    });
-
-    if (filledCount < correctOrder.length) {
-      resultEl.textContent = "아직 빈 칸이 있어요. 모든 칸에 카드를 배치해 주세요.";
-      resultEl.className = "cheese-order-result bad";
-      return;
-    }
-
-    let allCorrect = true;
-    userOrder.forEach((id, idx) => { if (id !== correctOrder[idx]) allCorrect = false; });
-
-    if (allCorrect) {
-      resultEl.textContent = "정답! 아주 잘했습니다 👍";
-      resultEl.className = "cheese-order-result ok";
-    } else {
-      resultEl.textContent = "순서가 일부 다릅니다. 다시 한 번 조정해 보세요.";
-      resultEl.className = "cheese-order-result bad";
-    }
-  });
-
-  btnReset.addEventListener("click", () => {
-    bottomRow.querySelectorAll(".cheese-order-slot").forEach((slot) => {
-      slot.classList.remove("has-card", "is-over");
-      slot.textContent = (Number(slot.dataset.slotIndex) + 1) + "번";
-      const card = slot.querySelector(".cheese-order-card");
-      if (card) card.remove();
-    });
-    topSlots.forEach((slot) => {
-      const card = slot.querySelector(".cheese-order-card");
-      if (card) card.remove();
-    });
-    items.forEach((item, index) => {
-      const card = document.createElement("div");
-      card.className = "cheese-order-card";
-      card.draggable = true;
-      card.dataset.itemId = item.id;
-      card.textContent = item.label;
-      (topSlots[index] || topSlots[0]).appendChild(card);
-    });
-    resultEl.textContent = "";
-    resultEl.className = "cheese-order-result";
-  });
 })();
-<\/script>`;
-    }
-
-    // ---------- UI wiring ----------
-    const tabFlash = $('tabFlash');
-    const tabOrder = $('tabOrder');
-    const secFlash = $('secFlash');
-    const secOrder = $('secOrder');
-
-    tabFlash.onclick = ()=>{
-      tabFlash.classList.add('on'); tabOrder.classList.remove('on');
-      secFlash.classList.remove('hide'); secOrder.classList.add('hide');
-    };
-    tabOrder.onclick = ()=>{
-      tabOrder.classList.add('on'); tabFlash.classList.remove('on');
-      secOrder.classList.remove('hide'); secFlash.classList.add('hide');
-    };
-
-    // Flashcard buttons
-    $('btnGen').onclick = ()=>{
-      const pairs = parsePairs_($('fcData').value);
-      if(pairs.length === 0){
-        $('out').value = '';
-        setMsg($('msg'), '카드 데이터가 비어있거나 형식이 맞지 않아요. (앞면[TAB]뒷면)', false);
-        return;
-      }
-      $('out').value = buildFlashcardSnippet_(pairs);
-      setMsg($('msg'), `생성 완료 (${pairs.length}장)`, true);
-    };
-    $('btnCopy').onclick = async ()=>{
-      const text = $('out').value || '';
-      if(!text) return setMsg($('msg'), '먼저 생성하세요.', false);
-      await copy_(text);
-      setMsg($('msg'), '복사 완료 ✅', true);
-    };
-    $('btnClear').onclick = ()=>{
-      $('fcData').value = '';
-      $('out').value = '';
-      setMsg($('msg'), '', true);
-    };
-
-    // Order buttons
-    $('btnGen2').onclick = ()=>{
-      const labels = String($('oqItems').value||'').split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
-      if(labels.length < 2){
-        $('out2').value = '';
-        setMsg($('msg2'), '보기 항목은 2개 이상 입력해 주세요.', false);
-        return;
-      }
-      const chk = parseOrderNums_($('oqOrder').value, labels.length);
-      if(!chk.ok){
-        $('out2').value = '';
-        setMsg($('msg2'), chk.msg, false);
-        return;
-      }
-      $('out2').value = buildOrderSnippet_({
-        title: $('oqTitle').value,
-        sub: $('oqSub').value,
-        labels,
-        orderNums: chk.nums
-      });
-      setMsg($('msg2'), `생성 완료 (${labels.length}개)`, true);
-    };
-    $('btnCopy2').onclick = async ()=>{
-      const text = $('out2').value || '';
-      if(!text) return setMsg($('msg2'), '먼저 생성하세요.', false);
-      await copy_(text);
-      setMsg($('msg2'), '복사 완료 ✅', true);
-    };
-    $('btnClear2').onclick = ()=>{
-      $('oqTitle').value = '';
-      $('oqSub').value = '';
-      $('oqItems').value = '';
-      $('oqOrder').value = '';
-      $('out2').value = '';
-      setMsg($('msg2'), '', true);
-    };
-  </script>
+</script>
 </body>
 </html>
