@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>블로그 도구 · 코드 생성기</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="./admin.css" />
+  <style>
+    body{ margin:0; background:#f3f4f6; font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color:#0f172a; }
+    .wrap{ max-width:1100px; margin:0 auto; padding:18px 18px 28px; box-sizing:border-box; }
+    .card{ background:#fff; border:1px solid rgba(15,23,42,.10); border-radius:18px; box-shadow:0 10px 28px rgba(15,23,42,.10); overflow:hidden; margin-bottom:14px; }
+    .h{ padding:14px 14px 10px; border-bottom:1px solid rgba(15,23,42,.06); display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
+    .t{ font-weight:1000; letter-spacing:-0.02em; }
+    .s{ color:#475569; font-size:12px; font-weight:650; }
+    .b{ padding:14px; }
+    .tabs{ display:flex; gap:8px; flex-wrap:wrap; }
+    .tab{ border:1px solid rgba(15,23,42,.14); background:#fff; border-radius:999px; padding:8px 12px; font-weight:900; cursor:pointer; }
+    .tab.on{ background:rgba(15,23,42,.92); color:#fff; border-color:rgba(15,23,42,.92); }
+    .grid{ display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+    @media (max-width:900px){ .grid{ grid-template-columns:1fr; } }
+
+    label{ font-size:12px; color:#475569; font-weight:900; }
+    .field{ display:flex; flex-direction:column; gap:8px; }
+    .input, .ta{
+      border:1px solid rgba(15,23,42,.14); border-radius:12px; padding:10px 12px;
+      font-size:13px; font-weight:650; outline:none; background:#fff;
+    }
+    .ta{ min-height:220px; resize:vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .ta.out{ min-height:320px; }
+    .btns{ display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; margin-top:10px; }
+    .btn{
+      border:1px solid rgba(15,23,42,.14); background:#fff; border-radius:12px;
+      padding:10px 12px; font-size:13px; font-weight:900; cursor:pointer;
+    }
+    .btn.primary{ background:rgba(15,23,42,.92); color:#fff; border-color:rgba(15,23,42,.92); }
+    .hint{ font-size:12px; color:#475569; font-weight:650; }
+    .err{ color:#b91c1c; font-weight:900; }
+    .ok{ color:#15803d; font-weight:900; }
+    .row2{ grid-column: 1 / -1; }
+    .hide{ display:none; }
+  </style>
+</head>
+<body>
+  <div class="admin-shell">
+    <div id="admin-header-slot"></div>
+    <div class="admin-main">
+      <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+
+      <main class="wrap">
+        <div class="card">
+          <div class="h">
+            <div>
+              <div class="t">블로그 코드 생성기</div>
+              <div class="s">값만 넣고 “생성” → “복사” → 블로그 HTML에 붙여넣기</div>
+            </div>
+            <div class="tabs">
+              <button class="tab on" id="tabFlash" type="button">플래시카드</button>
+              <button class="tab" id="tabOrder" type="button">드래그 정렬</button>
+            </div>
+          </div>
+
+          <div class="b">
+            <!-- Flashcard -->
+            <section id="secFlash">
+              <div class="grid">
+                <div class="field">
+                  <label>카드 데이터 (줄 단위)</label>
+                  <textarea class="ta" id="fcData" placeholder="civilization\t문명
+sovereignty\t주권
+annexation | 병합, 합병
+protectorate => 보호국"></textarea>
+                  <div class="hint">구분자: TAB / | / =&gt; 중 아무거나. 빈 줄은 무시.</div>
+                </div>
+
+                <div class="field">
+                  <label>출력</label>
+                  <textarea class="ta out" id="out" readonly></textarea>
+                  <div class="hint" id="msg"></div>
+                </div>
+
+                <div class="field row2">
+                  <div class="btns">
+                    <button class="btn" id="btnClear" type="button">비우기</button>
+                    <button class="btn primary" id="btnGen" type="button">생성</button>
+                    <button class="btn" id="btnCopy" type="button">복사</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- Order -->
+            <section id="secOrder" class="hide">
+              <div class="grid">
+                <div class="field">
+                  <label>제목(옵션)</label>
+                  <input class="input" id="oqTitle" placeholder="시대 순서를 맞춰 보세요" />
+                </div>
+                <div class="field">
+                  <label>설명(옵션)</label>
+                  <input class="input" id="oqSub" placeholder="카드를 아래 순서 영역으로 드래그해서 옮겨 보세요." />
+                </div>
+
+                <div class="field">
+                  <label>보기 항목 (줄 단위)</label>
+                  <textarea class="ta" id="oqItems" placeholder="구석기 시대
+신석기 시대
+청동기 시대
+철기 시대"></textarea>
+                  <div class="hint">줄 순서가 “보기” 순서가 됨</div>
+                </div>
+
+                <div class="field">
+                  <label>정답 순서 (숫자, 쉼표)</label>
+                  <input class="input" id="oqOrder" placeholder="1,2,3,4" />
+                  <div class="hint">예: 2,1,4,3 (각 숫자는 보기 항목의 줄 번호)</div>
+                </div>
+
+                <div class="field">
+                  <label>출력</label>
+                  <textarea class="ta out" id="out2" readonly></textarea>
+                  <div class="hint" id="msg2"></div>
+                </div>
+
+                <div class="field row2">
+                  <div class="btns">
+                    <button class="btn" id="btnClear2" type="button">비우기</button>
+                    <button class="btn primary" id="btnGen2" type="button">생성</button>
+                    <button class="btn" id="btnCopy2" type="button">복사</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script src="./admin-common.js"></script>
+  <script>
+    // (선택) 너의 기존 헤더/메뉴 마운트 함수가 있으면 자동으로 붙음
+    (function mountShell(){
+      const tryCall = (names, args)=>{
+        for(const n of names){
+          if(typeof window[n] === 'function'){
+            try{ window[n](args); }catch(e){ console.warn(n,e); }
+            return true;
+          }
+        }
+        return false;
+      };
+      tryCall(['renderAdminHeader','mountAdminHeader'], { mountId:'admin-header-slot', badgeText:'blog', subtitle:'코드 생성기' });
+      tryCall(['renderAdminMenu','renderAdminSidebar','mountAdminMenu'], { mountId:'admin-menu-slot', active:'blog' });
+    })();
+
+    // ---------- helpers ----------
+    const $ = (id)=>document.getElementById(id);
+
+    function setMsg(el, text, ok){
+      el.textContent = text || '';
+      el.className = 'hint ' + (ok ? 'ok' : (text ? 'err' : ''));
+    }
+
+    function uid_(){
+      return Math.random().toString(36).slice(2, 8);
+    }
+
+    function parsePairs_(text){
+      const lines = String(text||'').split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+      const pairs = [];
+      for(const line of lines){
+        // TAB 우선
+        let a='', b='';
+        if(line.includes('\t')){
+          const p = line.split('\t');
+          a = (p[0]||'').trim(); b = (p.slice(1).join('\t')||'').trim();
+        }else if(line.includes('=>')){
+          const p = line.split('=>');
+          a = (p[0]||'').trim(); b = (p.slice(1).join('=>')||'').trim();
+        }else if(line.includes('|')){
+          const p = line.split('|');
+          a = (p[0]||'').trim(); b = (p.slice(1).join('|')||'').trim();
+        }else{
+          // 구분자 없으면 실패
+          a = line.trim(); b = '';
+        }
+        if(!a || !b) continue;
+        pairs.push({ front:a, back:b });
+      }
+      return pairs;
+    }
+
+    function parseOrderNums_(text, n){
+      const nums = String(text||'')
+        .split(',')
+        .map(s=>s.trim())
+        .filter(Boolean)
+        .map(s=>Number(s));
+
+      if(nums.length !== n) return { ok:false, msg:`정답 순서 숫자 개수(${nums.length})가 보기 항목(${n})과 달라요.` };
+
+      for(const x of nums){
+        if(!Number.isInteger(x) || x < 1 || x > n) return { ok:false, msg:`정답 순서에 1~${n} 범위 밖 숫자가 있어요: ${x}` };
+      }
+      // 중복 체크
+      const set = new Set(nums);
+      if(set.size !== nums.length) return { ok:false, msg:`정답 순서에 중복 숫자가 있어요.` };
+
+      return { ok:true, nums };
+    }
+
+    async function copy_(text){
+      try{
+        await navigator.clipboard.writeText(text);
+        return true;
+      }catch(e){
+        // fallback
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        try{ document.execCommand('copy'); }catch(_){}
+        document.body.removeChild(ta);
+        return true;
+      }
+    }
+
+    // ---------- templates (주의: </script>는 <\/script>로) ----------
+    function buildFlashcardSnippet_(cards){
+      const id = 'cheese-flashcard-root-' + uid_();
+      const data = JSON.stringify(cards);
+
+      return `<!-- ▼ 카드가 표시될 자리 -->
+<div id="${id}" class="cheese-flashcard-wrapper"></div>
+
+<style>
+  .cheese-flashcard-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.5rem;
+    margin: 1.5rem 0;
+  }
+  .cheese-flashcard {
+    background: none;
+    border: none;
+    padding: 0;
+    width: 380px;
+    height: 230px;
+    perspective: 1000px;
+    cursor: pointer;
+    position: relative;
+    border-radius: 22px;
+    overflow: hidden;
+    box-shadow: 0 14px 30px rgba(15, 23, 42, 0.2);
+  }
+  .cheese-flashcard.is-flipped .cheese-flashcard-inner { transform: rotateY(180deg); }
+  .cheese-flashcard-inner {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    border-radius: 22px;
+    box-shadow: 0 14px 30px rgba(15, 23, 42, 0.2);
+    background: #ffffff;
+    transform-style: preserve-3d;
+    transition: transform 0.4s ease;
+  }
+  .cheese-flashcard-face {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.4rem 1.8rem;
+    box-sizing: border-box;
+    backface-visibility: hidden;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 1.4rem;
+    text-align: center;
+    line-height: 1.5;
+    border-radius: 22px;
+  }
+  .cheese-flashcard-front {
+    background: #111827;
+    color: #f9fafb;
+    font-weight: 700;
+  }
+  .cheese-flashcard-back {
+    background: #e0f2fe;
+    color: #111827;
+    transform: rotateY(180deg);
+  }
+  .cheese-flashcard-main { font-size: 1.7rem; font-weight: 700; }
+  .cheese-flashcard-hint {
+    position: absolute;
+    right: 0.9rem;
+    bottom: 0.6rem;
+    font-size: 0.75rem;
+    opacity: 0.8;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.1rem;
+    pointer-events: none;
+  }
+  @media (max-width: 600px) {
+    .cheese-flashcard { width: 80vw; max-width: 320px; height: 200px; }
+    .cheese-flashcard-main { font-size: 2rem; }
+    .cheese-flashcard-hint { font-size: 1.2rem; right: 0.7rem; bottom: 0.45rem; }
+    .cheese-flashcard { -webkit-tap-highlight-color: transparent; outline: none; }
+  }
+</style>
+
+<script>
+(function () {
+  const cheeseCards = ${data};
+
+  const root = document.getElementById("${id}");
+  if (!root) return;
+
+  cheeseCards.forEach((item, index) => {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "cheese-flashcard";
+    card.setAttribute("aria-label", "카드 " + (index + 1));
+
+    card.innerHTML = \`
+      <div class="cheese-flashcard-inner">
+        <div class="cheese-flashcard-face cheese-flashcard-front">
+          <span class="cheese-flashcard-main">\${item.front}</span>
+          <span class="cheese-flashcard-hint">👉 뒤집기</span>
+        </div>
+        <div class="cheese-flashcard-face cheese-flashcard-back">
+          <span class="cheese-flashcard-main">\${item.back}</span>
+          <span class="cheese-flashcard-hint">👉 뒤집기</span>
+        </div>
+      </div>
+    \`;
+
+    card.addEventListener("click", () => {
+      card.classList.toggle("is-flipped");
+    });
+
+    root.appendChild(card);
+  });
+})();
+<\/script>`;
+    }
+
+    function buildOrderSnippet_({ title, sub, labels, orderNums }){
+      const id = 'cheese-order-quiz-' + uid_();
+
+      // 자동 id: i1, i2 ...
+      const items = labels.map((label, idx)=>({ id: 'i' + (idx+1), label }));
+      const correctOrder = orderNums.map(n => 'i' + n);
+
+      const itemsJson = JSON.stringify(items);
+      const correctJson = JSON.stringify(correctOrder);
+
+      const safeTitle = title ? String(title) : '시대 순서를 맞춰 보세요';
+      const safeSub = sub ? String(sub) : '카드를 아래 순서 영역으로 드래그해서 옮겨 보세요.';
+
+      // CSS 변수 없으면 깨지는 부분이 있어서 기본값 포함
+      return `<!-- ▼ 순서 맞추기 퀴즈가 들어갈 자리 -->
+<div id="${id}" class="cheese-order-quiz"></div>
+
+<style>
+  :root{
+    --coq-wine:#7B2C39;
+    --coq-gray:#d1d5db;
+  }
+  .cheese-order-quiz {
+    max-width: 720px;
+    margin: 2rem auto;
+    padding: 1.5rem 1.25rem;
+    border-radius: 16px;
+    background: #f9fafb;
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.10);
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    box-sizing: border-box;
+  }
+  .cheese-order-title { font-size: 2rem; font-weight: 700; margin-bottom: 1.2rem; }
+  .cheese-order-sub { font-size: 1.2rem; color: #6b7280; margin-bottom: 1.2rem; }
+  .cheese-order-section-label { font-size: 1.2rem; font-weight: 600; color: #4b5563; margin-bottom: 0.4rem; }
+  .cheese-order-top, .cheese-order-bottom { display:flex; flex-wrap:wrap; gap:.8rem; margin-bottom:1rem; min-height:3.5rem; }
+  .cheese-order-bottom{ flex-direction:column; flex-wrap:nowrap; gap:.6rem; }
+  .cheese-order-card{
+    flex:1 1 auto; width:100%; min-width:0; box-sizing:border-box;
+    padding:.6rem 1.1rem; border-radius:999px; border:2px solid var(--coq-wine);
+    background:#111827; color:#f9fafb; font-size:1.0rem; font-weight:600; text-align:center;
+    cursor:grab; user-select:none; box-shadow:0 3px 8px rgba(15,23,42,.25);
+    transition:transform .14s ease, box-shadow .14s ease, background .14s ease, color .14s ease, border-color .14s ease;
+  }
+  .cheese-order-card:active{ cursor:grabbing; }
+  .cheese-order-card.is-dragging{ transform:scale(1.04); box-shadow:0 10px 22px rgba(15,23,42,.25); }
+  .cheese-order-slot, .cheese-order-top-slot{
+    min-width:130px; min-height:46px; border-radius:999px; border:2px dashed var(--coq-gray);
+    background:#fff; display:flex; align-items:center; justify-content:center; font-size:1.2rem; color:#9ca3af;
+    box-sizing:border-box;
+    transition:border-color .12s ease, background .12s ease, transform .1s ease;
+  }
+  .cheese-order-top-slot{ flex:1 1 calc(50% - .85rem); min-width:calc(50% - .85rem); }
+  .cheese-order-slot{ flex:1 1 100%; min-width:100%; }
+  .cheese-order-slot.has-card{ border-style:solid; border-color:#cbd5f5; background:#eef2ff; color:transparent; }
+  .cheese-order-slot.is-over{ border-color:#6366f1; background:#e0e7ff; transform:translateY(-2px); }
+  .cheese-order-controls{ display:flex; flex-wrap:wrap; gap:.8rem; justify-content:flex-end; align-items:center; margin-top:.9rem; }
+  .cheese-order-btn{
+    padding:.7rem 1.5rem; border-radius:999px; border:none; font-size:1.2rem; font-weight:600; cursor:pointer;
+    display:inline-flex; align-items:center; gap:.4rem; white-space:nowrap;
+    box-shadow:0 4px 10px rgba(15,23,42,.18);
+    transition:transform .12s ease, box-shadow .12s ease, opacity .12s ease;
+  }
+  .cheese-order-btn:not(.secondary){ background:#dc2626; color:#fff; }
+  .cheese-order-btn.secondary{ background:#e5e7eb; color:#111827; }
+  .cheese-order-result{ flex:1; font-size:1.5rem; color:#4b5563; }
+  .cheese-order-result.ok{ color:#15803d; font-weight:600; }
+  .cheese-order-result.bad{ color:#b91c1c; font-weight:600; }
+  .cheese-order-guide{ display:flex; flex-direction:column; align-items:center; gap:.2rem; margin:.4rem 0 .7rem; font-size:1.2rem; color:#6b7280; }
+  .cheese-order-guide-arrow{ font-size:2rem; line-height:1.5rem; }
+  .cheese-order-slot-arrow{ text-align:center; font-size:1.2rem; line-height:1; color:#d1d5db; margin:.1rem 0; }
+</style>
+
+<script>
+(function () {
+  const items = ${itemsJson};
+  const correctOrder = ${correctJson};
+
+  const root = document.getElementById("${id}");
+  if (!root) return;
+
+  root.innerHTML = \`
+    <div class="cheese-order-title">${safeTitle}</div>
+    <div class="cheese-order-sub">${safeSub}</div>
+
+    <div class="cheese-order-section cheese-order-section-top">
+      <div class="cheese-order-section-label">보기</div>
+      <div class="cheese-order-top" data-top></div>
+    </div>
+
+    <div class="cheese-order-guide">
+      <div class="cheese-order-guide-arrow">⬇</div>
+      <div class="cheese-order-guide-text">카드를 아래 순서 영역으로 드래그해서 옮겨 보세요.</div>
+    </div>
+
+    <div class="cheese-order-section cheese-order-section-bottom">
+      <div class="cheese-order-section-label">정답</div>
+      <div class="cheese-order-bottom" data-bottom></div>
+    </div>
+
+    <div class="cheese-order-controls">
+      <div class="cheese-order-result" id="${id}-result"></div>
+      <button type="button" class="cheese-order-btn secondary" id="${id}-reset">↺ 초기화</button>
+      <button type="button" class="cheese-order-btn" id="${id}-check">✅ 채점하기</button>
+    </div>
+  \`;
+
+  const topRow    = root.querySelector("[data-top]");
+  const bottomRow = root.querySelector("[data-bottom]");
+  const resultEl  = document.getElementById("${id}-result");
+  const btnCheck  = document.getElementById("${id}-check");
+  const btnReset  = document.getElementById("${id}-reset");
+
+  const slotCount = correctOrder.length;
+
+  const topSlots = [];
+  for (let i = 0; i < slotCount; i++) {
+    const topSlot = document.createElement("div");
+    topSlot.className = "cheese-order-top-slot";
+    topRow.appendChild(topSlot);
+    topSlots.push(topSlot);
+  }
+
+  for (let i = 0; i < slotCount; i++) {
+    const slot = document.createElement("div");
+    slot.className = "cheese-order-slot";
+    slot.dataset.slotIndex = String(i);
+    slot.textContent = (i + 1) + "번";
+    bottomRow.appendChild(slot);
+
+    if (i < slotCount - 1) {
+      const arrow = document.createElement("div");
+      arrow.className = "cheese-order-slot-arrow";
+      arrow.textContent = "↓";
+      bottomRow.appendChild(arrow);
+    }
+  }
+
+  function placeInTop(cardEl) {
+    let target = null;
+    for (const slot of topSlots) {
+      if (!slot.querySelector(".cheese-order-card")) { target = slot; break; }
+    }
+    if (!target) target = topSlots[0];
+    target.appendChild(cardEl);
+  }
+
+  items.forEach((item, index) => {
+    const card = document.createElement("div");
+    card.className = "cheese-order-card";
+    card.draggable = true;
+    card.dataset.itemId = item.id;
+    card.textContent = item.label;
+
+    (topSlots[index] || topSlots[0]).appendChild(card);
+  });
+
+  let draggingCard = null;
+
+  root.addEventListener("dragstart", (e) => {
+    const card = e.target.closest(".cheese-order-card");
+    if (!card) return;
+    draggingCard = card;
+    card.classList.add("is-dragging");
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+  });
+
+  root.addEventListener("dragend", (e) => {
+    const card = e.target.closest(".cheese-order-card");
+    if (card) card.classList.remove("is-dragging");
+    draggingCard = null;
+    root.querySelectorAll(".cheese-order-slot.is-over").forEach((el)=>el.classList.remove("is-over"));
+  });
+
+  root.addEventListener("dragover", (e) => {
+    if (!draggingCard) return;
+    const slot = e.target.closest(".cheese-order-slot");
+    const topArea = e.target.closest("[data-top]");
+    if (!slot && !topArea) return;
+    e.preventDefault();
+    root.querySelectorAll(".cheese-order-slot.is-over").forEach((el)=>el.classList.remove("is-over"));
+    if (slot) slot.classList.add("is-over");
+  });
+
+  root.addEventListener("drop", (e) => {
+    if (!draggingCard) return;
+    const slot = e.target.closest(".cheese-order-slot");
+    const topArea = e.target.closest("[data-top]");
+    if (!slot && !topArea) return;
+    e.preventDefault();
+
+    if (slot) {
+      root.querySelectorAll(".cheese-order-slot.is-over").forEach((el)=>el.classList.remove("is-over"));
+      const existing = slot.querySelector(".cheese-order-card");
+      if (existing) placeInTop(existing);
+
+      slot.innerHTML = "";
+      slot.appendChild(draggingCard);
+      slot.classList.add("has-card");
+
+      resultEl.textContent = "";
+      resultEl.className = "cheese-order-result";
+      return;
+    }
+
+    if (topArea) {
+      placeInTop(draggingCard);
+      resultEl.textContent = "";
+      resultEl.className = "cheese-order-result";
+      bottomRow.querySelectorAll(".cheese-order-slot").forEach((s) => {
+        if (!s.querySelector(".cheese-order-card")) {
+          s.classList.remove("has-card");
+          s.textContent = (Number(s.dataset.slotIndex) + 1) + "번";
+        }
+      });
+    }
+  });
+
+  btnCheck.addEventListener("click", () => {
+    const slotEls = bottomRow.querySelectorAll(".cheese-order-slot");
+    const userOrder = [];
+    let filledCount = 0;
+
+    slotEls.forEach((slot) => {
+      const card = slot.querySelector(".cheese-order-card");
+      if (card) { userOrder.push(card.dataset.itemId || null); filledCount++; }
+      else userOrder.push(null);
+    });
+
+    if (filledCount < correctOrder.length) {
+      resultEl.textContent = "아직 빈 칸이 있어요. 모든 칸에 카드를 배치해 주세요.";
+      resultEl.className = "cheese-order-result bad";
+      return;
+    }
+
+    let allCorrect = true;
+    userOrder.forEach((id, idx) => { if (id !== correctOrder[idx]) allCorrect = false; });
+
+    if (allCorrect) {
+      resultEl.textContent = "정답! 아주 잘했습니다 👍";
+      resultEl.className = "cheese-order-result ok";
+    } else {
+      resultEl.textContent = "순서가 일부 다릅니다. 다시 한 번 조정해 보세요.";
+      resultEl.className = "cheese-order-result bad";
+    }
+  });
+
+  btnReset.addEventListener("click", () => {
+    bottomRow.querySelectorAll(".cheese-order-slot").forEach((slot) => {
+      slot.classList.remove("has-card", "is-over");
+      slot.textContent = (Number(slot.dataset.slotIndex) + 1) + "번";
+      const card = slot.querySelector(".cheese-order-card");
+      if (card) card.remove();
+    });
+    topSlots.forEach((slot) => {
+      const card = slot.querySelector(".cheese-order-card");
+      if (card) card.remove();
+    });
+    items.forEach((item, index) => {
+      const card = document.createElement("div");
+      card.className = "cheese-order-card";
+      card.draggable = true;
+      card.dataset.itemId = item.id;
+      card.textContent = item.label;
+      (topSlots[index] || topSlots[0]).appendChild(card);
+    });
+    resultEl.textContent = "";
+    resultEl.className = "cheese-order-result";
+  });
+})();
+<\/script>`;
+    }
+
+    // ---------- UI wiring ----------
+    const tabFlash = $('tabFlash');
+    const tabOrder = $('tabOrder');
+    const secFlash = $('secFlash');
+    const secOrder = $('secOrder');
+
+    tabFlash.onclick = ()=>{
+      tabFlash.classList.add('on'); tabOrder.classList.remove('on');
+      secFlash.classList.remove('hide'); secOrder.classList.add('hide');
+    };
+    tabOrder.onclick = ()=>{
+      tabOrder.classList.add('on'); tabFlash.classList.remove('on');
+      secOrder.classList.remove('hide'); secFlash.classList.add('hide');
+    };
+
+    // Flashcard buttons
+    $('btnGen').onclick = ()=>{
+      const pairs = parsePairs_($('fcData').value);
+      if(pairs.length === 0){
+        $('out').value = '';
+        setMsg($('msg'), '카드 데이터가 비어있거나 형식이 맞지 않아요. (앞면[TAB]뒷면)', false);
+        return;
+      }
+      $('out').value = buildFlashcardSnippet_(pairs);
+      setMsg($('msg'), `생성 완료 (${pairs.length}장)`, true);
+    };
+    $('btnCopy').onclick = async ()=>{
+      const text = $('out').value || '';
+      if(!text) return setMsg($('msg'), '먼저 생성하세요.', false);
+      await copy_(text);
+      setMsg($('msg'), '복사 완료 ✅', true);
+    };
+    $('btnClear').onclick = ()=>{
+      $('fcData').value = '';
+      $('out').value = '';
+      setMsg($('msg'), '', true);
+    };
+
+    // Order buttons
+    $('btnGen2').onclick = ()=>{
+      const labels = String($('oqItems').value||'').split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+      if(labels.length < 2){
+        $('out2').value = '';
+        setMsg($('msg2'), '보기 항목은 2개 이상 입력해 주세요.', false);
+        return;
+      }
+      const chk = parseOrderNums_($('oqOrder').value, labels.length);
+      if(!chk.ok){
+        $('out2').value = '';
+        setMsg($('msg2'), chk.msg, false);
+        return;
+      }
+      $('out2').value = buildOrderSnippet_({
+        title: $('oqTitle').value,
+        sub: $('oqSub').value,
+        labels,
+        orderNums: chk.nums
+      });
+      setMsg($('msg2'), `생성 완료 (${labels.length}개)`, true);
+    };
+    $('btnCopy2').onclick = async ()=>{
+      const text = $('out2').value || '';
+      if(!text) return setMsg($('msg2'), '먼저 생성하세요.', false);
+      await copy_(text);
+      setMsg($('msg2'), '복사 완료 ✅', true);
+    };
+    $('btnClear2').onclick = ()=>{
+      $('oqTitle').value = '';
+      $('oqSub').value = '';
+      $('oqItems').value = '';
+      $('oqOrder').value = '';
+      $('out2').value = '';
+      setMsg($('msg2'), '', true);
+    };
+  </script>
+</body>
+</html>
