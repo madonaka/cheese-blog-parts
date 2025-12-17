@@ -1,0 +1,978 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>급여 지급 · Cheese Admin</title>
+  <style>
+    :root{
+      --bg:#f3f4f6; --card:#fff; --text:#0f172a; --muted:#64748b; --line:rgba(15,23,42,.10);
+      --shadow:0 10px 28px rgba(15,23,42,.10); --primary:#111827; --accent:#7B2C39;
+      --ok:#16a34a; --bad:#ef4444; --warn:#f59e0b;
+      --r:18px;
+    }
+    *{box-sizing:border-box;}
+    body{margin:0;background:var(--bg);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text);}
+    .wrap{max-width:1180px;margin:0 auto;padding:18px 18px 32px;}
+    .topbar{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-bottom:12px;}
+    .brand{display:flex;align-items:baseline;gap:10px;}
+    .brand h1{font-size:18px;margin:0;font-weight:800;letter-spacing:-.02em}
+    .brand .sub{font-size:12px;color:var(--muted)}
+    .pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:8px 10px;background:#fff;}
+    .pill input{border:none;outline:none;font-size:13px;width:220px}
+    .btn{border:none;cursor:pointer;border-radius:12px;padding:10px 12px;font-weight:700;background:var(--primary);color:#fff}
+    .btn:disabled{opacity:.55;cursor:not-allowed}
+    .btn.ghost{background:#fff;color:var(--text);border:1px solid var(--line)}
+    .btn.danger{background:var(--bad)}
+    .btn.ok{background:var(--ok)}
+    .btn.warn{background:var(--warn);color:#111827}
+    .grid{display:grid;grid-template-columns:1.1fr .9fr;gap:14px;}
+    @media (max-width: 980px){.grid{grid-template-columns:1fr;}}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden;}
+    .card .h{padding:14px 14px 10px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:10px;}
+    .card .h .t{font-size:14px;font-weight:800;margin:0}
+    .card .h .d{font-size:12px;color:var(--muted)}
+    .card .b{padding:14px;}
+    .row{display:grid;grid-template-columns:140px 1fr;gap:10px;align-items:center;margin-bottom:10px;}
+    .row label{font-size:12px;color:var(--muted)}
+    .in{width:100%;border:1px solid var(--line);border-radius:12px;padding:10px 10px;background:#fff;outline:none}
+    select.in{padding:10px}
+    .mini{font-size:12px;color:var(--muted);line-height:1.45}
+    .tabs{display:flex;gap:8px;flex-wrap:wrap}
+    .tab{border:1px solid var(--line);background:#fff;border-radius:999px;padding:8px 10px;font-weight:800;font-size:12px;cursor:pointer}
+    .tab.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th,td{border-bottom:1px solid var(--line);padding:10px 8px;text-align:left;vertical-align:middle}
+    th{color:var(--muted);font-size:12px;font-weight:800}
+    .right{text-align:right}
+    .stack{display:flex;gap:8px;flex-wrap:wrap}
+    .badge{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:6px 10px;background:#fff;font-size:12px;color:var(--muted)}
+    .status{font-weight:900}
+    .status.draft{color:var(--muted)}
+    .status.submitted{color:#2563eb}
+    .status.approved{color:var(--ok)}
+    .status.rejected{color:var(--bad)}
+    .hr{height:1px;background:var(--line);margin:12px 0}
+    .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#111827;color:#fff;padding:10px 12px;border-radius:999px;font-weight:700;font-size:13px;box-shadow:0 10px 22px rgba(0,0,0,.2);display:none;z-index:50}
+    .modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;z-index:60;padding:18px}
+    .modal .box{width:min(720px,100%);background:#fff;border-radius:18px;border:1px solid var(--line);box-shadow:var(--shadow);overflow:hidden}
+    .modal .mh{padding:14px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
+    .modal .mh .t{font-weight:900}
+    .modal .mb{padding:14px}
+    .krow{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+    .krow input{flex:1}
+    .muted{color:var(--muted)}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
+  </style>
+</head>
+
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand">
+      <h1>급여 지급</h1>
+      <div class="sub">PAYROLL_RUNS / PAYROLL_LINES / PAYROLL_EARNINGS / PAYROLL_DEDUCTIONS</div>
+    </div>
+    <div class="stack">
+      <span class="pill">
+        <span class="mini">actor</span>
+        <input id="actor" placeholder="예: FIN@COMPANY.COM" />
+      </span>
+      <button class="btn ghost" id="btnSaveActor">저장</button>
+      <button class="btn" id="btnReload">새로고침</button>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:14px;">
+    <div class="h">
+      <div>
+        <div class="t">화면</div>
+        <div class="d">RUN 생성 → 직원별 라인 저장 → RUN 제출/결재</div>
+      </div>
+      <div class="tabs">
+        <button class="tab active" data-tab="build">급여 작성</button>
+        <button class="tab" data-tab="myruns">내 RUN</button>
+        <button class="tab" data-tab="inbox">결재함</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="tab-build" class="grid">
+    <!-- LEFT: RUN + 라인 작성 -->
+    <div class="card">
+      <div class="h">
+        <div>
+          <div class="t">1) 급여 RUN</div>
+          <div class="d">PAYROLL_RUNS</div>
+        </div>
+        <div class="stack">
+          <span class="badge">RUN: <b id="runId" class="mono">-</b></span>
+          <span class="badge">status: <b id="runStatus" class="status draft">draft</b></span>
+        </div>
+      </div>
+      <div class="b">
+        <div class="row">
+          <label>대상월(YYYY-MM)</label>
+          <input class="in" id="ym" placeholder="예: 2025-12" />
+        </div>
+        <div class="row">
+          <label>기간 시작</label>
+          <input class="in" id="periodStart" type="date" />
+        </div>
+        <div class="row">
+          <label>기간 종료</label>
+          <input class="in" id="periodEnd" type="date" />
+        </div>
+        <div class="row">
+          <label>지급일</label>
+          <input class="in" id="payDate" type="date" />
+        </div>
+        <div class="row">
+          <label>메모</label>
+          <input class="in" id="runNote" placeholder="예: 12월 급여 / 연말정산 반영 전" />
+        </div>
+
+        <div class="stack" style="margin-top:10px;">
+          <button class="btn" id="btnCreateRun">RUN 생성/불러오기</button>
+          <button class="btn ghost" id="btnOpenLineModal">결재선 설정</button>
+          <button class="btn warn" id="btnSubmitRun">RUN 제출</button>
+        </div>
+
+        <div class="hr"></div>
+
+        <div>
+          <div style="font-weight:900;margin-bottom:8px;">2) 직원 급여 라인</div>
+          <div class="row">
+            <label>직원</label>
+            <select class="in" id="employeeSelect"></select>
+          </div>
+          <div class="row">
+            <label>부서</label>
+            <input class="in" id="deptView" readonly />
+          </div>
+
+          <div class="row">
+            <label>기본급(월)</label>
+            <input class="in right" id="baseSalary" type="number" min="0" />
+          </div>
+
+          <div class="hr"></div>
+
+          <div style="font-weight:900;margin-bottom:6px;">수당(earnings)</div>
+          <table id="earnTable">
+            <thead>
+              <tr>
+                <th style="width:120px;">코드</th>
+                <th>항목명</th>
+                <th class="right" style="width:160px;">금액</th>
+                <th style="width:80px;"></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <div class="stack" style="margin-top:8px;">
+            <button class="btn ghost" id="btnAddEarn">수당 추가</button>
+          </div>
+
+          <div class="hr"></div>
+
+          <div style="font-weight:900;margin-bottom:6px;">공제(deductions)</div>
+          <table id="dedTable">
+            <thead>
+              <tr>
+                <th style="width:120px;">코드</th>
+                <th>항목명</th>
+                <th class="right" style="width:160px;">금액</th>
+                <th style="width:80px;"></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <div class="stack" style="margin-top:8px;">
+            <button class="btn ghost" id="btnAddDed">공제 추가</button>
+          </div>
+
+          <div class="hr"></div>
+
+          <div class="row">
+            <label>총지급(gross)</label>
+            <input class="in right" id="gross" readonly />
+          </div>
+          <div class="row">
+            <label>총공제</label>
+            <input class="in right" id="dedTotal" readonly />
+          </div>
+          <div class="row">
+            <label>실수령(net)</label>
+            <input class="in right" id="net" readonly />
+          </div>
+          <div class="row">
+            <label>라인 메모</label>
+            <input class="in" id="lineNote" placeholder="예: 교통비 포함 / 휴직 공제" />
+          </div>
+
+          <div class="stack" style="margin-top:10px;">
+            <button class="btn ok" id="btnSaveLine">라인 저장</button>
+            <button class="btn ghost" id="btnLoadRunLines">RUN 라인 불러오기</button>
+          </div>
+
+          <div class="mini" style="margin-top:10px;">
+            저장 시: PAYROLL_LINES / PAYROLL_EARNINGS / PAYROLL_DEDUCTIONS 로 기록(서버 구현 필요)
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: RUN 요약 -->
+    <div class="card">
+      <div class="h">
+        <div>
+          <div class="t">RUN 요약</div>
+          <div class="d">라인 합계 기반</div>
+        </div>
+        <button class="btn ghost" id="btnRefreshSummary">요약 갱신</button>
+      </div>
+      <div class="b">
+        <div class="row">
+          <label>총지급 합계</label>
+          <input class="in right" id="sumGross" readonly />
+        </div>
+        <div class="row">
+          <label>총공제 합계</label>
+          <input class="in right" id="sumDed" readonly />
+        </div>
+        <div class="row">
+          <label>총실수령 합계</label>
+          <input class="in right" id="sumNet" readonly />
+        </div>
+
+        <div class="hr"></div>
+
+        <div style="font-weight:900;margin-bottom:8px;">RUN 라인</div>
+        <div class="mini muted" style="margin-bottom:8px;">(직원별 gross/net 확인용)</div>
+        <table id="runLinesTable">
+          <thead>
+            <tr>
+              <th style="width:140px;">employeeId</th>
+              <th>이름</th>
+              <th class="right" style="width:120px;">gross</th>
+              <th class="right" style="width:120px;">ded</th>
+              <th class="right" style="width:120px;">net</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+
+        <div class="mini" style="margin-top:10px;">
+          RUN 제출 후 결재함에서 step 승인/반려를 처리하도록 설계(서버 구현 필요)
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB: 내 RUN -->
+  <div id="tab-myruns" style="display:none;">
+    <div class="card">
+      <div class="h">
+        <div>
+          <div class="t">내 RUN 목록</div>
+          <div class="d">작성자(actor) 기준</div>
+        </div>
+        <div class="stack">
+          <input class="in" id="myYm" placeholder="YYYY-MM (비우면 전체)" style="width:220px" />
+          <button class="btn" id="btnLoadMyRuns">조회</button>
+        </div>
+      </div>
+      <div class="b">
+        <table id="myRunsTable">
+          <thead>
+            <tr>
+              <th>payrollRunId</th>
+              <th>period</th>
+              <th>payDate</th>
+              <th>status</th>
+              <th class="right">totalNet</th>
+              <th style="width:220px;">작업</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="mini muted" style="margin-top:10px;">
+          이 탭은 서버에서 "작성자(actor)" 필터를 어떻게 둘지에 따라 구현 방식이 달라질 수 있음(현재는 API 스펙만 맞춰둠).
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB: 결재함 -->
+  <div id="tab-inbox" style="display:none;">
+    <div class="card">
+      <div class="h">
+        <div>
+          <div class="t">결재함</div>
+          <div class="d">current_approver = actor</div>
+        </div>
+        <button class="btn" id="btnLoadInbox">조회</button>
+      </div>
+      <div class="b">
+        <table id="inboxTable">
+          <thead>
+            <tr>
+              <th>payrollRunId</th>
+              <th>period</th>
+              <th>payDate</th>
+              <th>status</th>
+              <th class="right">totalNet</th>
+              <th style="width:260px;">결재</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="mini muted" style="margin-top:10px;">
+          approve_step / approve / reject 로그를 APPROVAL_LOGS에 남기는 방식으로 예산/지출과 동일한 진행률 로직을 그대로 재사용 가능.
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- 결재선 모달 -->
+<div class="modal" id="lineModal">
+  <div class="box">
+    <div class="mh">
+      <div class="t">결재선(approval_line_json)</div>
+      <button class="btn ghost" id="btnCloseLineModal">닫기</button>
+    </div>
+    <div class="mb">
+      <div class="mini muted" style="margin-bottom:10px;">
+        입력 예: FIN@COMPANY.COM → MGR@COMPANY.COM → ADMIN@COMPANY.COM
+      </div>
+
+      <div class="krow">
+        <input class="in" id="lineInput" placeholder="결재자 ID/메일 (대문자 권장)" />
+        <button class="btn ghost" id="btnAddLine">추가</button>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th style="width:60px;">#</th>
+            <th>결재자</th>
+            <th style="width:90px;"></th>
+          </tr>
+        </thead>
+        <tbody id="lineList"></tbody>
+      </table>
+
+      <div class="hr"></div>
+
+      <div class="stack">
+        <button class="btn" id="btnSaveLineJson">저장</button>
+        <span class="badge">json: <span id="lineJsonView" class="mono">[]</span></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  /***********************
+   * 실행 방식
+   *  - Apps Script HTMLService: google.script.run 사용 (권장)
+   *  - 외부 호스팅: fetch 사용(대부분 CORS 이슈 발생 가능)
+   ***********************/
+  const STATE = {
+    actor: '',
+    payrollRunId: '',
+    runStatus: 'draft',
+    approvalSteps: [],
+    employees: [],      // {employeeId,nameKor,deptId,deptNameKor}
+    payInfoMap: {},     // { [employeeId]: {baseSalaryMonthly, ...} }
+  };
+
+  // 외부호스팅(fetch) 쓰려면 여기에 /exec URL 넣기
+  const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxmKUfIbHUkrX5SdQXeELy4mKB3iydXlQiuKJ0Iyt1EAZATg8UV2KvIO1jXeL7xqMzf/exec'; // 예: 'https://script.google.com/macros/s/XXXX/exec'
+
+  const $ = (id) => document.getElementById(id);
+  const toast = (msg) => {
+    const t = $('toast');
+    t.textContent = msg;
+    t.style.display = 'block';
+    clearTimeout(toast._t);
+    toast._t = setTimeout(()=> t.style.display='none', 2200);
+  };
+  const fmt = (n) => (Number(n||0)).toLocaleString('ko-KR');
+  const num = (v) => {
+    const x = Number(v);
+    return isNaN(x) ? 0 : x;
+  };
+
+  function setStatusBadge(st){
+    const el = $('runStatus');
+    el.textContent = st || 'draft';
+    el.className = 'status ' + (st || 'draft');
+  }
+
+  function setRunId(id){
+    $('runId').textContent = id || '-';
+  }
+
+  function getActor(){
+    const a = String($('actor').value || '').trim().toUpperCase();
+    return a;
+  }
+
+  // google.script.run -> Promise 래퍼
+  function gasRun(fnName, ...args){
+    return new Promise((resolve, reject) => {
+      if (!(window.google && google.script && google.script.run)) {
+        reject(new Error('google.script.run 을 사용할 수 없습니다. (HTMLService에서 실행하세요)'));
+        return;
+      }
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(err => reject(new Error(err && err.message ? err.message : String(err))))
+        [fnName](...args);
+    });
+  }
+
+  // 외부호스팅 fetch (CORS 가능 시)
+  async function gasFetch(mode, params={}, isPost=false){
+    if (!GAS_WEBAPP_URL) throw new Error('GAS_WEBAPP_URL 이 비어 있습니다.');
+    const usp = new URLSearchParams({ mode, ...params });
+    const url = GAS_WEBAPP_URL + (isPost ? '' : ('?' + usp.toString()));
+    const opt = isPost ? {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+      body: usp.toString()
+    } : { method: 'GET' };
+
+    const res = await fetch(url, opt);
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || 'API error');
+    return json.data;
+  }
+
+  // 공통 API 호출 (HTMLService 우선)
+  async function api(mode, params={}, isPost=false){
+    // 1) HTMLService
+    if (window.google && google.script && google.script.run) {
+      return await gasRun('payrollApi', mode, params, isPost);
+    }
+    // 2) fetch
+    return await gasFetch(mode, params, isPost);
+  }
+
+  // 탭
+  document.querySelectorAll('.tab').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+      btn.classList.add('active');
+
+      const tab = btn.dataset.tab;
+      ['build','myruns','inbox'].forEach(t=>{
+        $('tab-'+t).style.display = (t===tab) ? '' : 'none';
+      });
+    });
+  });
+
+  // actor 저장
+  $('btnSaveActor').addEventListener('click', ()=>{
+    const a = getActor();
+    if (!a) return toast('actor를 입력해 주세요');
+    localStorage.setItem('cheese_actor', a);
+    STATE.actor = a;
+    toast('actor 저장됨');
+  });
+  $('btnReload').addEventListener('click', ()=> location.reload());
+
+  // 날짜 자동 채우기(대상월)
+  $('ym').addEventListener('change', ()=>{
+    const ym = String($('ym').value||'').trim();
+    const m = ym.match(/^(\d{4})-(\d{2})$/);
+    if (!m) return;
+
+    const y = Number(m[1]), mm = Number(m[2]);
+    const start = new Date(y, mm-1, 1);
+    const end = new Date(y, mm, 0); // 말일
+
+    $('periodStart').value = toISODate(start);
+    $('periodEnd').value = toISODate(end);
+
+    // 지급일 기본: 말일
+    $('payDate').value = toISODate(end);
+  });
+
+  function toISODate(d){
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth()+1).padStart(2,'0');
+    const dd = String(d.getDate()).padStart(2,'0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  // 결재선 모달
+  function openLineModal(){
+    $('lineModal').style.display = 'flex';
+    renderLineList();
+    $('lineJsonView').textContent = JSON.stringify({ steps: STATE.approvalSteps }, null, 0);
+  }
+  function closeLineModal(){
+    $('lineModal').style.display = 'none';
+  }
+  $('btnOpenLineModal').addEventListener('click', openLineModal);
+  $('btnCloseLineModal').addEventListener('click', closeLineModal);
+
+  $('btnAddLine').addEventListener('click', ()=>{
+    const v = String($('lineInput').value||'').trim().toUpperCase();
+    if (!v) return;
+    if (STATE.approvalSteps.includes(v)) return toast('이미 추가됨');
+    STATE.approvalSteps.push(v);
+    $('lineInput').value = '';
+    renderLineList();
+    $('lineJsonView').textContent = JSON.stringify({ steps: STATE.approvalSteps }, null, 0);
+  });
+
+  function renderLineList(){
+    const tb = $('lineList');
+    tb.innerHTML = '';
+    STATE.approvalSteps.forEach((x, i)=>{
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${i+1}</td>
+        <td class="mono">${escapeHtml(x)}</td>
+        <td class="right"><button class="btn ghost" data-del="${i}">삭제</button></td>
+      `;
+      tb.appendChild(tr);
+    });
+
+    tb.querySelectorAll('button[data-del]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const idx = Number(btn.dataset.del);
+        STATE.approvalSteps.splice(idx, 1);
+        renderLineList();
+        $('lineJsonView').textContent = JSON.stringify({ steps: STATE.approvalSteps }, null, 0);
+      });
+    });
+  }
+
+  $('btnSaveLineJson').addEventListener('click', ()=>{
+    toast('결재선 저장됨');
+    closeLineModal();
+  });
+
+  // 직원/급여정보 로딩
+  async function loadEmployees(){
+    const actor = getActor();
+    if (!actor) { toast('actor를 먼저 입력'); return; }
+
+    try{
+      // 서버에서 employees + dept + payInfo를 합쳐서 내려주는 것을 권장
+      // 응답 예:
+      // { employees:[{employeeId,nameKor,deptId,deptNameKor}], payInfoMap:{[id]:{baseSalaryMonthly}} }
+      const data = await api('payrollBootstrap', { actor }, false);
+      STATE.employees = data.employees || [];
+      STATE.payInfoMap = data.payInfoMap || {};
+      buildEmployeeSelect();
+      toast('직원 목록 로드 완료');
+    }catch(e){
+      console.error(e);
+      toast('직원 목록 로드 실패: ' + e.message);
+      // 최소 폴백(화면 테스트용)
+      STATE.employees = [{employeeId:'CL25-0001',nameKor:'홍길동',deptId:'D001',deptNameKor:'기획'}];
+      STATE.payInfoMap = { 'CL25-0001': { baseSalaryMonthly: 3000000 } };
+      buildEmployeeSelect();
+    }
+  }
+
+  function buildEmployeeSelect(){
+    const sel = $('employeeSelect');
+    sel.innerHTML = '';
+    (STATE.employees || []).forEach(emp=>{
+      const opt = document.createElement('option');
+      opt.value = emp.employeeId;
+      opt.textContent = `${emp.employeeId} · ${emp.nameKor || ''}`;
+      sel.appendChild(opt);
+    });
+    onEmployeeChanged();
+  }
+
+  function onEmployeeChanged(){
+    const id = $('employeeSelect').value;
+    const emp = (STATE.employees || []).find(x=>x.employeeId===id);
+    $('deptView').value = emp ? `${emp.deptId || ''} · ${emp.deptNameKor || ''}` : '';
+    const pi = STATE.payInfoMap[id] || {};
+    $('baseSalary').value = num(pi.baseSalaryMonthly || 0);
+    resetEarningsDeductions();
+    recalc();
+  }
+
+  $('employeeSelect').addEventListener('change', onEmployeeChanged);
+  $('baseSalary').addEventListener('input', recalc);
+
+  // earnings/deductions 테이블
+  function resetEarningsDeductions(){
+    // 기본급은 baseSalary로 별도, earnings는 비움(원하면 기본 수당 한 줄 넣어도 됨)
+    $('earnTable').querySelector('tbody').innerHTML = '';
+    $('dedTable').querySelector('tbody').innerHTML = '';
+  }
+
+  function addEarnRow(code='', name='', amount=0){
+    const tb = $('earnTable').querySelector('tbody');
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input class="in mono" value="${escapeAttr(code)}" placeholder="E001" /></td>
+      <td><input class="in" value="${escapeAttr(name)}" placeholder="예: 교통비" /></td>
+      <td><input class="in right" type="number" min="0" value="${num(amount)}" /></td>
+      <td class="right"><button class="btn ghost">삭제</button></td>
+    `;
+    tb.appendChild(tr);
+    tr.querySelectorAll('input').forEach(inp=>inp.addEventListener('input', recalc));
+    tr.querySelector('button').addEventListener('click', ()=>{
+      tr.remove(); recalc();
+    });
+  }
+
+  function addDedRow(code='', name='', amount=0){
+    const tb = $('dedTable').querySelector('tbody');
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input class="in mono" value="${escapeAttr(code)}" placeholder="D001" /></td>
+      <td><input class="in" value="${escapeAttr(name)}" placeholder="예: 국민연금" /></td>
+      <td><input class="in right" type="number" min="0" value="${num(amount)}" /></td>
+      <td class="right"><button class="btn ghost">삭제</button></td>
+    `;
+    tb.appendChild(tr);
+    tr.querySelectorAll('input').forEach(inp=>inp.addEventListener('input', recalc));
+    tr.querySelector('button').addEventListener('click', ()=>{
+      tr.remove(); recalc();
+    });
+  }
+
+  $('btnAddEarn').addEventListener('click', ()=> addEarnRow('', '', 0));
+  $('btnAddDed').addEventListener('click', ()=> addDedRow('', '', 0));
+
+  function readEarnRows(){
+    const out = [];
+    $('earnTable').querySelectorAll('tbody tr').forEach(tr=>{
+      const ins = tr.querySelectorAll('input');
+      const code = String(ins[0].value||'').trim();
+      const name = String(ins[1].value||'').trim();
+      const amount = num(ins[2].value);
+      if (!code && !name && amount===0) return;
+      out.push({ earningCode: code, earningName: name, amount });
+    });
+    return out;
+  }
+  function readDedRows(){
+    const out = [];
+    $('dedTable').querySelectorAll('tbody tr').forEach(tr=>{
+      const ins = tr.querySelectorAll('input');
+      const code = String(ins[0].value||'').trim();
+      const name = String(ins[1].value||'').trim();
+      const amount = num(ins[2].value);
+      if (!code && !name && amount===0) return;
+      out.push({ deductionCode: code, deductionName: name, amount });
+    });
+    return out;
+  }
+
+  function recalc(){
+    const base = num($('baseSalary').value);
+    const earn = readEarnRows().reduce((s,x)=> s + num(x.amount), 0);
+    const ded = readDedRows().reduce((s,x)=> s + num(x.amount), 0);
+
+    const gross = base + earn;
+    const net = gross - ded;
+
+    $('gross').value = fmt(gross);
+    $('dedTotal').value = fmt(ded);
+    $('net').value = fmt(net);
+  }
+
+  // RUN 생성/불러오기
+  $('btnCreateRun').addEventListener('click', async ()=>{
+    const actor = getActor();
+    if (!actor) return toast('actor 필요');
+
+    const ym = String($('ym').value||'').trim();
+    const periodStart = $('periodStart').value;
+    const periodEnd = $('periodEnd').value;
+    const payDate = $('payDate').value;
+    const note = String($('runNote').value||'').trim();
+
+    if (!ym) return toast('대상월(YYYY-MM) 필요');
+    if (!periodStart || !periodEnd || !payDate) return toast('기간/지급일 필요');
+
+    try{
+      const data = await api('upsertPayrollRun', {
+        actor, ym, periodStart, periodEnd, payDate, note
+      }, true);
+
+      STATE.payrollRunId = data.payrollRunId;
+      STATE.runStatus = data.status || 'draft';
+      setRunId(STATE.payrollRunId);
+      setStatusBadge(STATE.runStatus);
+      toast('RUN 준비 완료');
+    }catch(e){
+      console.error(e);
+      toast('RUN 실패: ' + e.message);
+    }
+  });
+
+  // RUN 제출
+  $('btnSubmitRun').addEventListener('click', async ()=>{
+    const actor = getActor();
+    if (!actor) return toast('actor 필요');
+    if (!STATE.payrollRunId) return toast('RUN 먼저 생성');
+
+    if (!STATE.approvalSteps.length) return toast('결재선을 먼저 설정');
+
+    const approval_line_json = JSON.stringify({ steps: STATE.approvalSteps });
+
+    try{
+      const data = await api('submitPayrollRun', {
+        actor,
+        payrollRunId: STATE.payrollRunId,
+        approval_line_json
+      }, true);
+
+      STATE.runStatus = data.status || 'submitted';
+      setStatusBadge(STATE.runStatus);
+      toast('RUN 제출 완료');
+    }catch(e){
+      console.error(e);
+      toast('제출 실패: ' + e.message);
+    }
+  });
+
+  // 라인 저장
+  $('btnSaveLine').addEventListener('click', async ()=>{
+    const actor = getActor();
+    if (!actor) return toast('actor 필요');
+    if (!STATE.payrollRunId) return toast('RUN 먼저 생성');
+
+    const employeeId = $('employeeSelect').value;
+    const emp = (STATE.employees || []).find(x=>x.employeeId===employeeId);
+    const deptId = emp ? (emp.deptId || '') : '';
+
+    const base = num($('baseSalary').value);
+    const earns = readEarnRows();
+    const deds = readDedRows();
+
+    const gross = base + earns.reduce((s,x)=>s+num(x.amount),0);
+    const dedTotal = deds.reduce((s,x)=>s+num(x.amount),0);
+    const net = gross - dedTotal;
+
+    try{
+      await api('upsertPayrollLine', {
+        actor,
+        payrollRunId: STATE.payrollRunId,
+        employeeId,
+        deptId,
+        grossPay: gross,
+        totalDeductions: dedTotal,
+        netPay: net,
+        lineNote: String($('lineNote').value||'').trim(),
+        earnings: JSON.stringify(earns),
+        deductions: JSON.stringify(deds),
+        baseSalaryMonthly: base
+      }, true);
+
+      toast('라인 저장 완료');
+      await loadRunLinesAndSummary(); // 즉시 갱신
+    }catch(e){
+      console.error(e);
+      toast('라인 저장 실패: ' + e.message);
+    }
+  });
+
+  $('btnLoadRunLines').addEventListener('click', loadRunLinesAndSummary);
+  $('btnRefreshSummary').addEventListener('click', loadRunLinesAndSummary);
+
+  async function loadRunLinesAndSummary(){
+    const actor = getActor();
+    if (!actor) return toast('actor 필요');
+    if (!STATE.payrollRunId) return toast('RUN 필요');
+
+    try{
+      const data = await api('getPayrollRunDetail', {
+        actor,
+        payrollRunId: STATE.payrollRunId
+      }, false);
+
+      // data: { run, lines:[{employeeId,nameKor,grossPay,totalDeductions,netPay}], totals:{gross,ded,net} }
+      const totals = data.totals || {};
+      $('sumGross').value = fmt(totals.totalGross || 0);
+      $('sumDed').value = fmt(totals.totalDeductions || 0);
+      $('sumNet').value = fmt(totals.totalNet || 0);
+
+      // RUN 상태 동기화
+      if (data.run && data.run.status){
+        STATE.runStatus = data.run.status;
+        setStatusBadge(STATE.runStatus);
+      }
+
+      // 라인 테이블
+      const tb = $('runLinesTable').querySelector('tbody');
+      tb.innerHTML = '';
+      (data.lines || []).forEach(x=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="mono">${escapeHtml(x.employeeId || '')}</td>
+          <td>${escapeHtml(x.nameKor || '')}</td>
+          <td class="right">${fmt(x.grossPay || 0)}</td>
+          <td class="right">${fmt(x.totalDeductions || 0)}</td>
+          <td class="right"><b>${fmt(x.netPay || 0)}</b></td>
+        `;
+        tb.appendChild(tr);
+      });
+
+      toast('요약 갱신 완료');
+    }catch(e){
+      console.error(e);
+      toast('요약 실패: ' + e.message);
+    }
+  }
+
+  // 내 RUN 목록
+  $('btnLoadMyRuns').addEventListener('click', async ()=>{
+    const actor = getActor();
+    if (!actor) return toast('actor 필요');
+
+    const ym = String($('myYm').value||'').trim();
+
+    try{
+      const data = await api('getMyPayrollRuns', { actor, ym }, false);
+      const tb = $('myRunsTable').querySelector('tbody');
+      tb.innerHTML = '';
+
+      (data.items || []).forEach(x=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="mono">${escapeHtml(x.payrollRunId||'')}</td>
+          <td class="mono">${escapeHtml(x.periodStart||'')} ~ ${escapeHtml(x.periodEnd||'')}</td>
+          <td class="mono">${escapeHtml(x.payDate||'')}</td>
+          <td><span class="status ${escapeAttr(x.status||'draft')}">${escapeHtml(x.status||'')}</span></td>
+          <td class="right">${fmt(x.totalNet||0)}</td>
+          <td class="right">
+            <button class="btn ghost" data-open="${escapeAttr(x.payrollRunId||'')}">열기</button>
+          </td>
+        `;
+        tb.appendChild(tr);
+      });
+
+      tb.querySelectorAll('button[data-open]').forEach(btn=>{
+        btn.addEventListener('click', async ()=>{
+          const runId = btn.dataset.open;
+          // 빌드 탭으로 이동 + RUN 로드
+          document.querySelector('.tab[data-tab="build"]').click();
+          STATE.payrollRunId = runId;
+          setRunId(runId);
+          toast('RUN 선택됨: ' + runId);
+          await loadRunLinesAndSummary();
+        });
+      });
+
+      toast('조회 완료');
+    }catch(e){
+      console.error(e);
+      toast('조회 실패: ' + e.message);
+    }
+  });
+
+  // 결재함
+  $('btnLoadInbox').addEventListener('click', async ()=>{
+    const actor = getActor();
+    if (!actor) return toast('actor 필요');
+
+    try{
+      const data = await api('payrollInbox', { actor }, false);
+      const tb = $('inboxTable').querySelector('tbody');
+      tb.innerHTML = '';
+
+      (data.items || []).forEach(x=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="mono">${escapeHtml(x.payrollRunId||'')}</td>
+          <td class="mono">${escapeHtml(x.periodStart||'')} ~ ${escapeHtml(x.periodEnd||'')}</td>
+          <td class="mono">${escapeHtml(x.payDate||'')}</td>
+          <td><span class="status ${escapeAttr(x.status||'submitted')}">${escapeHtml(x.status||'')}</span></td>
+          <td class="right">${fmt(x.totalNet||0)}</td>
+          <td class="right">
+            <button class="btn ok" data-appr="${escapeAttr(x.payrollRunId||'')}">승인</button>
+            <button class="btn danger" data-rej="${escapeAttr(x.payrollRunId||'')}">반려</button>
+          </td>
+        `;
+        tb.appendChild(tr);
+      });
+
+      tb.querySelectorAll('button[data-appr]').forEach(btn=>{
+        btn.addEventListener('click', async ()=>{
+          const runId = btn.dataset.appr;
+          try{
+            await api('approvePayrollRun', { actor, payrollRunId: runId }, false);
+            toast('승인 처리됨');
+            $('btnLoadInbox').click();
+          }catch(e){
+            console.error(e);
+            toast('승인 실패: ' + e.message);
+          }
+        });
+      });
+
+      tb.querySelectorAll('button[data-rej]').forEach(btn=>{
+        btn.addEventListener('click', async ()=>{
+          const runId = btn.dataset.rej;
+          const reason = prompt('반려 사유를 입력해 주세요') || '';
+          if (!reason.trim()) return;
+
+          try{
+            await api('rejectPayrollRun', { actor, payrollRunId: runId, reason }, false);
+            toast('반려 처리됨');
+            $('btnLoadInbox').click();
+          }catch(e){
+            console.error(e);
+            toast('반려 실패: ' + e.message);
+          }
+        });
+      });
+
+      toast('결재함 로드 완료');
+    }catch(e){
+      console.error(e);
+      toast('결재함 실패: ' + e.message);
+    }
+  });
+
+  // escape
+  function escapeHtml(s){
+    return String(s||'')
+      .replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')
+      .replaceAll('"','&quot;').replaceAll("'","&#039;");
+  }
+  function escapeAttr(s){ return escapeHtml(s).replaceAll('\n',' '); }
+
+  // 초기화
+  (function init(){
+    const a = (localStorage.getItem('cheese_actor') || '').trim().toUpperCase();
+    if (a) { $('actor').value = a; STATE.actor = a; }
+
+    // 기본: 대상월 자동(현재 월)
+    const d = new Date();
+    const ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    $('ym').value = ym;
+    $('ym').dispatchEvent(new Event('change'));
+
+    // 직원 목록 자동 로드
+    loadEmployees().then(()=> {
+      // 기본 수당/공제 한 줄씩 예시로 넣고 싶으면 아래 주석 해제
+      // addEarnRow('E001','교통비',0);
+      // addDedRow('D001','국민연금',0);
+      recalc();
+    });
+  })();
+</script>
+</body>
+</html>
