@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>급여명세서 · 직원 포털</title>
+  <style>
+    :root{
+      --bg:#f3f4f6;
+      --card:#ffffff;
+      --text:#0f172a;
+      --muted:#64748b;
+      --line:rgba(15,23,42,.10);
+      --shadow:0 10px 28px rgba(15,23,42,.10);
+      --primary:#111827;
+      --accent:#7B2C39;
+      --ok:#16a34a;
+      --bad:#ef4444;
+      --radius:18px;
+    }
+    *{box-sizing:border-box;}
+    body{
+      margin:0;
+      background:var(--bg);
+      color:var(--text);
+      font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    }
+    .wrap{max-width:980px;margin:0 auto;padding:18px 18px 40px;}
+    .top{
+      display:flex; align-items:center; justify-content:space-between;
+      gap:10px; margin-bottom:14px;
+    }
+    .brand{
+      display:flex; flex-direction:column; gap:2px;
+    }
+    .brand h1{margin:0;font-size:18px;letter-spacing:-.02em;}
+    .brand .sub{font-size:13px;color:var(--muted);}
+    .right{display:flex;gap:10px;align-items:center;}
+    .btn{
+      border:1px solid var(--line);
+      background:#fff;
+      padding:10px 12px;
+      border-radius:14px;
+      cursor:pointer;
+      font-weight:600;
+      color:var(--primary);
+    }
+    .btn:active{transform:translateY(1px);}
+    .btn.accent{background:var(--primary); color:#fff; border-color:transparent;}
+    .card{
+      background:var(--card);
+      border:1px solid var(--line);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      overflow:hidden;
+      margin-top:12px;
+    }
+    .card-h{
+      padding:14px 14px;
+      display:flex; align-items:center; justify-content:space-between; gap:10px;
+      border-bottom:1px solid var(--line);
+    }
+    .card-h .title{font-size:15px;font-weight:700;margin:0;}
+    .card-h .hint{font-size:12px;color:var(--muted);}
+    .card-b{padding:14px;}
+    .row{
+      display:flex; align-items:center; justify-content:space-between;
+      gap:12px; padding:12px 0;
+      border-bottom:1px dashed var(--line);
+    }
+    .row:last-child{border-bottom:none;}
+    .meta{display:flex;flex-direction:column;gap:4px;min-width:0;}
+    .meta .run{font-weight:800;letter-spacing:-.01em;}
+    .meta .desc{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .actions{display:flex;gap:8px;flex-shrink:0;}
+    .chip{
+      display:inline-flex; align-items:center; gap:6px;
+      padding:6px 10px; border-radius:999px;
+      font-size:12px; font-weight:700;
+      border:1px solid var(--line);
+      background:#fff;
+      color:var(--text);
+    }
+    .chip.ok{color:var(--ok); border-color:rgba(22,163,74,.25); background:rgba(22,163,74,.06);}
+    .chip.bad{color:var(--bad); border-color:rgba(239,68,68,.25); background:rgba(239,68,68,.06);}
+    .empty{
+      padding:18px;
+      color:var(--muted);
+      font-size:13px;
+      line-height:1.5;
+    }
+    .toast{
+      position:fixed; left:50%; bottom:18px; transform:translateX(-50%);
+      background:#111827; color:#fff; padding:10px 12px; border-radius:12px;
+      font-size:13px; box-shadow:0 10px 26px rgba(0,0,0,.18);
+      opacity:0; pointer-events:none; transition:.18s ease;
+      max-width:92vw;
+    }
+    .toast.show{opacity:1;}
+    .muted{color:var(--muted);}
+    .small{font-size:12px;}
+    .loading{padding:18px;color:var(--muted);font-size:13px;}
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div class="brand">
+        <h1>급여명세서</h1>
+        <div class="sub" id="meLine">로그인 확인 중…</div>
+      </div>
+      <div class="right">
+        <button class="btn" id="btn-refresh" type="button">새로고침</button>
+        <button class="btn accent" id="btn-logout" type="button">로그아웃</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">
+        <div>
+          <p class="title">내 급여명세서 목록</p>
+          <div class="hint">내 계정(사번) 기준으로 접근 가능한 명세서만 표시됩니다.</div>
+        </div>
+        <div class="chip" id="countChip">0건</div>
+      </div>
+      <div class="card-b" id="listArea">
+        <div class="loading">목록을 불러오는 중…</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">
+        <p class="title">안내</p>
+        <div class="hint">보안/열람 관련</div>
+      </div>
+      <div class="card-b">
+        <div class="small muted">
+          - “열람” 버튼은 (1) Drive 공유 링크로 열거나, (2) 서버에서 PDF를 받아 새 창으로 띄우는 방식 중 하나로 동작합니다.<br/>
+          - 현재 페이지는 직원 공용 1장이며, 로그인한 사람의 사번으로 서버가 권한 체크를 합니다.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+/** ============================
+ *  0) 설정(필수)
+ *  ============================ */
+const GAS_WEBAPP_URL = "PASTE_YOUR_WEBAPP_URL_HERE"; // ← 여기에 Apps Script 배포 URL 넣기
+const TOKEN_KEY = "EMP_AUTH_TOKEN"; // 로그인 성공 시 저장해둔 토큰 키(localStorage)
+const LOGIN_PAGE = "./employee-login.html"; // 로그인 페이지가 없으면 적당히 바꿔도 됨
+
+/** ============================
+ *  1) 공통 유틸
+ *  ============================ */
+function qs(sel){ return document.querySelector(sel); }
+
+function toast(msg){
+  const el = qs("#toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(()=>el.classList.remove("show"), 1800);
+}
+
+function getToken(){
+  return localStorage.getItem(TOKEN_KEY) || "";
+}
+
+function logout(){
+  localStorage.removeItem(TOKEN_KEY);
+  location.href = LOGIN_PAGE;
+}
+
+async function apiPost(params){
+  // params: {mode: "...", token: "...", ...}
+  const body = new URLSearchParams(params);
+  const res = await fetch(GAS_WEBAPP_URL, {
+    method: "POST",
+    headers: {"Content-Type":"application/x-www-form-urlencoded;charset=UTF-8"},
+    body
+  });
+  const text = await res.text();
+
+  // Apps Script가 ContentService로 JSON을 주는 형태 가정
+  let json;
+  try { json = JSON.parse(text); }
+  catch(e){
+    throw new Error("서버 응답이 JSON이 아님: " + text.slice(0, 160));
+  }
+
+  // 아래 중 아무 스타일이든 대응하도록 방어적으로 처리
+  if (json && json.ok === false) throw new Error(json.message || "요청 실패");
+  if (json && json.success === false) throw new Error(json.message || "요청 실패");
+  if (json && json.error) throw new Error(json.error.message || json.error || "요청 실패");
+
+  return json;
+}
+
+function fmtYmd(iso){
+  if (!iso) return "";
+  // iso가 "2025-12-18T..." 또는 "2025-12-18" 둘 다 대비
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return String(iso);
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,"0");
+  const day = String(d.getDate()).padStart(2,"0");
+  return `${y}-${m}-${day}`;
+}
+
+function numberOrDash(v){
+  const n = Number(v);
+  return isFinite(n) ? n.toLocaleString() : "—";
+}
+
+/** ============================
+ *  2) 서버 계약(이 HTML이 기대하는 API)
+ *  ============================
+ *  (A) 내 정보
+ *    mode: "employeeMe"
+ *    -> { employeeId, employeeName, email? }
+ *
+ *  (B) 내 명세서 목록
+ *    mode: "employeeListPayslips"
+ *    -> { items: [
+ *        { runId, periodLabel?, createdAt?, netPay?, status?, fileUrl?, fileId? }
+ *      ]}
+ *
+ *  (C) 단건 열람(옵션 1: Drive 링크로 열기)
+ *    목록에 fileUrl이 있으면 그걸 새창으로 열어줌.
+ *
+ *  (D) 단건 열람(옵션 2: PDF base64로 받기)
+ *    mode: "employeeGetPayslipPdf"
+ *    -> { mimeType:"application/pdf", base64:"JVBERi0xL..." }
+ *
+ *  ✅ 지금은 (1) fileUrl 우선 / 없으면 (2) base64 방식으로 폴백.
+ *  ============================ */
+
+/** ============================
+ *  3) 화면 로직
+ *  ============================ */
+async function loadMe(){
+  const token = getToken();
+  if (!token) {
+    // 토큰이 없으면 로그인 페이지로
+    location.href = LOGIN_PAGE;
+    return null;
+  }
+  const me = await apiPost({ mode:"employeeMe", token });
+  const empId = me.employeeId || me.empId || me.employee_id || "UNKNOWN";
+  const empName = me.employeeName || me.name || me.empName || "";
+  qs("#meLine").textContent = empName ? `${empName} (${empId})` : `사번 ${empId}`;
+  return me;
+}
+
+function renderList(items){
+  const area = qs("#listArea");
+  qs("#countChip").textContent = `${items.length}건`;
+
+  if (!items.length){
+    area.innerHTML = `
+      <div class="empty">
+        표시할 급여명세서가 없습니다.<br/>
+        <span class="small">- 아직 RUN이 생성되지 않았거나, 해당 RUN의 공유/권한이 설정되지 않았을 수 있습니다.</span>
+      </div>
+    `;
+    return;
+  }
+
+  area.innerHTML = "";
+  items.forEach(item=>{
+    const runId = item.runId || item.run_id || "";
+    const period = item.periodLabel || item.period || "";
+    const createdAt = fmtYmd(item.createdAt || item.created_at || "");
+    const status = String(item.status || "READY").toUpperCase();
+    const netPay = item.netPay ?? item.net_pay ?? item.amountNet ?? null;
+
+    const chipClass = (status === "READY" || status === "PUBLISHED" || status === "OK") ? "ok" : (status === "ERROR" ? "bad" : "");
+    const chipText = status || "—";
+    const desc = [
+      period ? `기간: ${period}` : "",
+      createdAt ? `생성: ${createdAt}` : "",
+      (netPay !== null && netPay !== undefined) ? `실수령: ${numberOrDash(netPay)}원` : ""
+    ].filter(Boolean).join(" · ");
+
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML = `
+      <div class="meta">
+        <div class="run">${runId}</div>
+        <div class="desc">${desc || '<span class="muted">상세 정보 없음</span>'}</div>
+      </div>
+      <div class="actions">
+        <span class="chip ${chipClass}">${chipText}</span>
+        <button class="btn" type="button" data-action="open" data-runid="${encodeURIComponent(runId)}">열람</button>
+      </div>
+    `;
+    area.appendChild(row);
+  });
+
+  // 이벤트 바인딩(열람)
+  area.querySelectorAll('button[data-action="open"]').forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const runId = decodeURIComponent(btn.getAttribute("data-runid") || "");
+      if (!runId) return;
+      await openPayslip(runId);
+    });
+  });
+}
+
+async function loadPayslips(){
+  const token = getToken();
+  qs("#listArea").innerHTML = `<div class="loading">목록을 불러오는 중…</div>`;
+  const res = await apiPost({ mode:"employeeListPayslips", token });
+  const items = res.items || res.data || res.list || [];
+  renderList(items);
+  return items;
+}
+
+function openPdfBase64(base64, mimeType="application/pdf"){
+  const bin = atob(base64);
+  const len = bin.length;
+  const bytes = new Uint8Array(len);
+  for (let i=0; i<len; i++) bytes[i] = bin.charCodeAt(i);
+  const blob = new Blob([bytes], {type:mimeType});
+  const url = URL.createObjectURL(blob);
+  window.open(url, "_blank", "noopener,noreferrer");
+  setTimeout(()=>URL.revokeObjectURL(url), 60_000);
+}
+
+async function openPayslip(runId){
+  const token = getToken();
+  toast("명세서 열람 준비 중…");
+
+  // 1) 목록에서 fileUrl이 내려온다면, 서버를 한 번 더 호출하지 않고도 열 수 있지만
+  //    지금은 안전하게 “단건 조회”를 먼저 시도(있으면 fileUrl로, 없으면 base64로)
+  try{
+    // 옵션: 단건 메타+url
+    const meta = await apiPost({ mode:"employeeGetPayslipMeta", token, runId });
+    const fileUrl = meta.fileUrl || meta.payslipFileUrl || meta.url || "";
+    if (fileUrl){
+      window.open(fileUrl, "_blank", "noopener,noreferrer");
+      toast("Drive에서 열었습니다.");
+      return;
+    }
+  }catch(e){
+    // meta API가 없을 수 있으니 조용히 폴백
+  }
+
+  // 2) PDF base64 폴백
+  const pdf = await apiPost({ mode:"employeeGetPayslipPdf", token, runId });
+  const base64 = pdf.base64 || pdf.pdfBase64 || "";
+  const mimeType = pdf.mimeType || "application/pdf";
+  if (!base64) throw new Error("PDF 데이터(base64)가 없습니다.");
+  openPdfBase64(base64, mimeType);
+  toast("새 창에서 열었습니다.");
+}
+
+/** ============================
+ *  4) 초기화
+ *  ============================ */
+async function init(){
+  qs("#btn-logout").addEventListener("click", logout);
+  qs("#btn-refresh").addEventListener("click", async ()=>{
+    try{
+      await loadPayslips();
+      toast("새로고침 완료");
+    }catch(e){
+      toast("새로고침 실패");
+      console.error(e);
+    }
+  });
+
+  if (!GAS_WEBAPP_URL || GAS_WEBAPP_URL.includes("https://script.google.com/macros/s/AKfycbxmKUfIbHUkrX5SdQXeELy4mKB3iydXlQiuKJ0Iyt1EAZATg8UV2KvIO1jXeL7xqMzf/exec
+")){
+    qs("#listArea").innerHTML = `
+      <div class="empty">
+        <b>설정 필요</b><br/>
+        <span class="small">employee-payslips.html 안의 GAS_WEBAPP_URL을 Apps Script 웹앱 URL로 바꿔주세요.</span>
+      </div>
+    `;
+    return;
+  }
+
+  try{
+    await loadMe();
+
+    const items = await loadPayslips();
+
+    // ?runId=PR-2025-12 로 바로 열기
+    const sp = new URLSearchParams(location.search);
+    const runId = sp.get("runId");
+    if (runId){
+      // 목록에 있는지 확인 후 자동 열람(없어도 시도는 함)
+      const exists = items.some(it => (it.runId || it.run_id) === runId);
+      if (!exists) toast("목록에 없지만 열람을 시도합니다…");
+      await openPayslip(runId);
+    }
+
+  }catch(err){
+    console.error(err);
+    toast("인증/조회 실패");
+    // 토큰 만료나 오류 시 로그인으로 보내기
+    setTimeout(()=>logout(), 600);
+  }
+}
+
+init();
+</script>
+</body>
+</html>
