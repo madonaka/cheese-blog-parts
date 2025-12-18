@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>급여 · RUN 승인 (Step 3)</title>
+
+  <link rel="stylesheet" href="./admin.css" />
+
+  <style>
+    :root{
+      --bg:#f3f4f6; --card:#fff; --text:#0f172a; --muted:#64748b; --line:rgba(15,23,42,.10);
+      --shadow:0 10px 28px rgba(15,23,42,.10); --primary:#111827; --ok:#16a34a; --bad:#ef4444;
+      --r:18px;
+    }
+    *{box-sizing:border-box;}
+    body{margin:0;background:var(--bg);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text);}
+    .wrap{max-width:1180px;margin:0 auto;padding:18px 18px 32px;}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden;margin-bottom:14px;}
+    .h{padding:14px 14px 10px;border-bottom:1px solid var(--line);display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+    .t{font-size:14px;font-weight:900;margin:0}
+    .d{font-size:12px;color:var(--muted)}
+    .b{padding:14px;}
+    .stack{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .pill{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:8px 10px;background:#fff;}
+    .mini{font-size:12px;color:var(--muted);line-height:1.45}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
+    .btn{border:none;cursor:pointer;border-radius:12px;padding:10px 12px;font-weight:800;background:var(--primary);color:#fff}
+    .btn.ghost{background:#fff;color:var(--text);border:1px solid var(--line)}
+    .btn.ok{background:var(--ok)}
+    .btn.danger{background:var(--bad)}
+    .btn:disabled{opacity:.55;cursor:not-allowed}
+    .warn{border:1px solid rgba(239,68,68,.35); background:rgba(239,68,68,.06); border-radius:14px; padding:12px;}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+    @media (max-width:900px){ .grid{grid-template-columns:1fr;} }
+    .kv{display:grid;grid-template-columns:140px 1fr;gap:10px;align-items:center;margin-bottom:8px;}
+    .kv .k{font-size:12px;color:var(--muted)}
+    .kv .v{font-size:13px}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th,td{border-bottom:1px solid var(--line);padding:10px 8px;text-align:left;vertical-align:middle}
+    th{color:var(--muted);font-size:12px;font-weight:900}
+    .right{text-align:right}
+    .in{width:100%;border:1px solid var(--line);border-radius:12px;padding:10px 10px;background:#fff;outline:none}
+    .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#111827;color:#fff;padding:10px 12px;border-radius:999px;font-weight:800;font-size:13px;box-shadow:0 10px 22px rgba(0,0,0,.2);display:none;z-index:50}
+  </style>
+</head>
+
+<body>
+  <div class="admin-shell">
+    <!-- ✅ 헤더 슬롯 -->
+    <div id="admin-header-slot"></div>
+
+    <div class="admin-main">
+      <!-- ✅ 메뉴 슬롯 -->
+      <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+
+      <!-- ✅ 본문 -->
+      <main class="admin-content">
+        <div class="wrap">
+
+          <!-- 상단 -->
+          <div class="card">
+            <div class="h">
+              <div>
+                <div class="t">급여 (Step 3) RUN 승인/반려</div>
+                <div class="d">POST mode=approvePayroll · 단건 RUN 처리</div>
+              </div>
+              <div class="stack">
+                <a class="btn ghost" id="btnBackDetail" href="./payroll_step2_detail.html" style="text-decoration:none;">← 상세</a>
+                <a class="btn ghost" href="./payroll_step1_run.html" style="text-decoration:none;">RUN 목록</a>
+                <button class="btn ghost" id="btnReload">새로고침</button>
+                <a class="btn ok" id="btnGoPayslip" href="./payroll_step4_payslip.html" style="text-decoration:none;">명세서(다음 Step)</a>
+              </div>
+            </div>
+            <div class="b">
+              <div class="stack">
+                <span class="pill"><span class="mini">RUN</span><b id="viewRunId" class="mono">-</b></span>
+                <span class="pill"><span class="mini">사번</span><b id="viewEmpNo" class="mono">-</b></span>
+                <span class="pill"><span class="mini">이름</span><b id="viewName">-</b></span>
+                <span class="pill"><span class="mini">상태</span><b id="viewStatus" class="mono">-</b></span>
+              </div>
+
+              <div id="loginWarn" class="warn mini" style="margin-top:10px; display:none;">
+                로그인 세션이 없습니다. 먼저 로그인 후 다시 시도하세요.
+                (<span class="mono">cheese_admin_token</span>, <span class="mono">cheese_admin_emp_no</span>)
+              </div>
+              <div id="runWarn" class="warn mini" style="margin-top:10px; display:none;">
+                URL에 <span class="mono">runId</span> 또는 <span class="mono">payrollRunId</span>가 없습니다.
+                Step1 목록에서 들어오세요.
+              </div>
+            </div>
+          </div>
+
+          <!-- 요약 -->
+          <div class="grid">
+            <div class="card">
+              <div class="h">
+                <div>
+                  <div class="t">RUN 요약</div>
+                  <div class="d">기간/지급일/합계</div>
+                </div>
+                <button class="btn ghost" id="btnLoad">상세 불러오기</button>
+              </div>
+              <div class="b">
+                <div class="kv"><div class="k">기간</div><div class="v" id="mPeriod">-</div></div>
+                <div class="kv"><div class="k">지급일</div><div class="v" id="mPayDate">-</div></div>
+                <div class="kv"><div class="k">총 지급</div><div class="v"><b id="mGross" class="mono">0</b></div></div>
+                <div class="kv"><div class="k">총 공제</div><div class="v"><b id="mDed" class="mono">0</b></div></div>
+                <div class="kv"><div class="k">총 실수령</div><div class="v"><b id="mNet" class="mono">0</b></div></div>
+                <div class="kv"><div class="k">대상 인원</div><div class="v"><b id="mCnt" class="mono">0</b> 명</div></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="h">
+                <div>
+                  <div class="t">승인/반려 처리</div>
+                  <div class="d">결재 코멘트 포함</div>
+                </div>
+              </div>
+              <div class="b">
+                <div class="mini" style="margin-bottom:8px;">코멘트(반려 시 필수로 쓰는 걸 추천)</div>
+                <textarea id="comment" class="in" rows="5" placeholder="예: 공제 항목 확인 필요로 반려합니다."></textarea>
+
+                <div class="stack" style="margin-top:10px;">
+                  <button class="btn ok" id="btnApprove">승인</button>
+                  <button class="btn danger" id="btnReject">반려</button>
+                </div>
+
+                <div class="mini" style="margin-top:10px;">
+                  * 백엔드 구현 차이 대비로, 승인/반려는 <span class="mono">action/status/decision</span> 등을 함께 전송합니다.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 라인 미리보기(상위 20건) -->
+          <div class="card">
+            <div class="h">
+              <div>
+                <div class="t">라인 미리보기</div>
+                <div class="d">상위 20건만 표시</div>
+              </div>
+            </div>
+            <div class="b">
+              <table>
+                <thead>
+                  <tr>
+                    <th style="width:120px;">empNo</th>
+                    <th style="width:160px;">name</th>
+                    <th class="right" style="width:140px;">gross</th>
+                    <th class="right" style="width:140px;">deductions</th>
+                    <th class="right" style="width:140px;">net</th>
+                  </tr>
+                </thead>
+                <tbody id="linesTbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="toast" id="toast"></div>
+      </main>
+    </div>
+  </div>
+
+  <!-- ✅ 공통 스크립트 -->
+  <script src="./admin-common.js"></script>
+
+  <script>
+    /************************************************************
+     * ✅ 너의 Apps Script WebApp /exec URL 로 교체
+     ************************************************************/
+    const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxmKUfIbHUkrX5SdQXeELy4mKB3iydXlQiuKJ0Iyt1EAZATg8UV2KvIO1jXeL7xqMzf/exec';
+
+    const $ = (id) => document.getElementById(id);
+
+    const toast = (msg) => {
+      const t = $('toast');
+      t.textContent = msg;
+      t.style.display = 'block';
+      clearTimeout(toast._t);
+      toast._t = setTimeout(()=> t.style.display='none', 2200);
+    };
+
+    const fmt = (n) => (Number(n||0)).toLocaleString('ko-KR');
+
+    function getSession() {
+      return {
+        token: (sessionStorage.getItem('cheese_admin_token') || '').trim(),
+        empNo: (sessionStorage.getItem('cheese_admin_emp_no') || '').trim(),
+        displayName: (sessionStorage.getItem('cheese_admin_display_name') || '').trim(),
+        loginId: (sessionStorage.getItem('cheese_admin_login_id') || '').trim(),
+      };
+    }
+
+    function ensureLogin() {
+      const s = getSession();
+      const ok = !!(s.token && s.empNo);
+      $('loginWarn').style.display = ok ? 'none' : 'block';
+      $('btnLoad').disabled = !ok;
+      $('btnApprove').disabled = !ok;
+      $('btnReject').disabled = !ok;
+      return { ok, ...s };
+    }
+
+    function getRunIdFromUrl() {
+      const u = new URL(location.href);
+      return (u.searchParams.get('runId') || u.searchParams.get('payrollRunId') || '').trim();
+    }
+
+    async function apiGet(mode, params = {}) {
+      if (!GAS_WEBAPP_URL || GAS_WEBAPP_URL.includes('XXXX')) {
+        throw new Error('GAS_WEBAPP_URL을 먼저 /exec 주소로 교체하세요.');
+      }
+      const s = getSession();
+      const usp = new URLSearchParams({
+        mode,
+        actor: s.empNo,
+        token: s.token,
+        ...params
+      });
+      const res = await fetch(GAS_WEBAPP_URL + '?' + usp.toString(), { method:'GET' });
+      const json = await res.json().catch(()=>null);
+      if (!json) throw new Error('JSON 파싱 실패(응답이 JSON이 아님)');
+      if (!json.ok) throw new Error(json.error || 'API error');
+      return json.data;
+    }
+
+    async function apiPost(mode, params = {}) {
+      if (!GAS_WEBAPP_URL || GAS_WEBAPP_URL.includes('XXXX')) {
+        throw new Error('GAS_WEBAPP_URL을 먼저 /exec 주소로 교체하세요.');
+      }
+      const s = getSession();
+      const usp = new URLSearchParams({
+        mode,
+        actor: s.empNo,
+        token: s.token,
+        ...params
+      });
+
+      const res = await fetch(GAS_WEBAPP_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+        body: usp.toString(),
+      });
+
+      const json = await res.json().catch(()=>null);
+      if (!json) throw new Error('JSON 파싱 실패(응답이 JSON이 아님)');
+      if (!json.ok) throw new Error(json.error || 'API error');
+      return json.data;
+    }
+
+    function pick(obj, keys, fallback='') {
+      for (const k of keys) {
+        if (obj && obj[k] !== undefined && obj[k] !== null && String(obj[k]).trim() !== '') return obj[k];
+      }
+      return fallback;
+    }
+
+    function normalizeDetail(data) {
+      const run = data?.run || data?.detail || data || {};
+      const lines = data?.lines || run?.lines || data?.items || [];
+      return { run, lines: Array.isArray(lines) ? lines : [] };
+    }
+
+    function setStatusText(st) {
+      const s = String(st || '').trim();
+      $('viewStatus').textContent = s || '-';
+      return s;
+    }
+
+    function updateActionLockByStatus(status) {
+      // 상태 문자열은 백엔드마다 다를 수 있어 넓게 잡음
+      const st = String(status || '').toLowerCase();
+      const done = st.includes('approved') || st.includes('승인') || st.includes('reject') || st.includes('반려');
+      if (done) {
+        $('btnApprove').disabled = true;
+        $('btnReject').disabled = true;
+      }
+    }
+
+    function renderSummary(run, lines) {
+      const ps = pick(run, ['periodStart','startDate','from','ps']);
+      const pe = pick(run, ['periodEnd','endDate','to','pe']);
+      $('mPeriod').textContent = (ps || pe) ? `${ps || ''} ~ ${pe || ''}` : '-';
+      $('mPayDate').textContent = pick(run, ['payDate','paymentDate','pay_date'], '-') || '-';
+
+      $('mGross').textContent = fmt(pick(run, ['totalGross','grossTotal','sumGross'], 0));
+      $('mDed').textContent   = fmt(pick(run, ['totalDeductions','totalDed','dedTotal','sumDed'], 0));
+      $('mNet').textContent   = fmt(pick(run, ['totalNet','netTotal','sumNet'], 0));
+      $('mCnt').textContent   = String(lines.length);
+
+      const status = pick(run, ['status','state'], '');
+      setStatusText(status);
+      updateActionLockByStatus(status);
+
+      // 라인 미리보기 (상위 20)
+      const tb = $('linesTbody');
+      tb.innerHTML = '';
+      const preview = lines.slice(0, 20);
+
+      if (!preview.length) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td colspan="5" class="mini">라인 데이터가 없습니다.</td>`;
+        tb.appendChild(tr);
+        return;
+      }
+
+      preview.forEach(x => {
+        const empNo = pick(x, ['empNo','employeeNo','employeeId','emp_no'], '');
+        const name  = pick(x, ['name','empName','displayName','employeeName'], '');
+        const gross = pick(x, ['gross','grossAmount','amountGross','totalGross'], 0);
+        const ded   = pick(x, ['deductions','dedAmount','amountDed','totalDeductions','totalDed'], 0);
+        const net   = pick(x, ['net','netAmount','amountNet','totalNet'], 0);
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="mono">${empNo}</td>
+          <td>${name}</td>
+          <td class="right">${fmt(gross)}</td>
+          <td class="right">${fmt(ded)}</td>
+          <td class="right"><b>${fmt(net)}</b></td>
+        `;
+        tb.appendChild(tr);
+      });
+    }
+
+    async function loadDetail() {
+      const s = ensureLogin();
+      if (!s.ok) return;
+
+      const runId = getRunIdFromUrl();
+      $('runWarn').style.display = runId ? 'none' : 'block';
+      if (!runId) return;
+
+      $('btnLoad').disabled = true;
+      try {
+        const data = await apiGet('payrollRunDetail', { payrollRunId: runId, runId });
+        const { run, lines } = normalizeDetail(data);
+        renderSummary(run, lines);
+        toast('상세 로드 완료');
+        console.log('[payrollRunDetail]', data);
+      } catch (e) {
+        console.error(e);
+        toast('상세 로드 실패: ' + (e.message || e));
+      } finally {
+        $('btnLoad').disabled = false;
+      }
+    }
+
+    async function approveOrReject(decision) {
+      const s = ensureLogin();
+      if (!s.ok) return;
+
+      const runId = getRunIdFromUrl();
+      if (!runId) { toast('runId가 없습니다'); return; }
+
+      const comment = String($('comment').value || '').trim();
+
+      if (decision === 'reject' && !comment) {
+        toast('반려 코멘트를 입력해 주세요');
+        return;
+      }
+
+      $('btnApprove').disabled = true;
+      $('btnReject').disabled = true;
+
+      try {
+        // ✅ 백엔드 구현 차이를 흡수하기 위해 여러 키를 함께 전달
+        const payload = {
+          payrollRunId: runId,
+          runId: runId,
+
+          // decision/action/status 모두 같이 보냄
+          decision: decision,                 // 'approve' | 'reject'
+          action: decision,                   // 'approve' | 'reject'
+          status: (decision === 'approve') ? 'APPROVED' : 'REJECTED',
+          approved: (decision === 'approve') ? 'true' : 'false',
+
+          comment: comment
+        };
+
+        const data = await apiPost('approvePayroll', payload);
+        console.log('[approvePayroll]', data);
+
+        toast(decision === 'approve' ? '승인 처리 완료' : '반려 처리 완료');
+
+        // 상태 갱신을 위해 상세 재조회
+        await loadDetail();
+
+      } catch (e) {
+        console.error(e);
+        toast('처리 실패: ' + (e.message || e));
+        // 실패했으면 버튼 다시 활성화
+        $('btnApprove').disabled = false;
+        $('btnReject').disabled = false;
+      }
+    }
+
+    $('btnReload').addEventListener('click', () => location.reload());
+    $('btnLoad').addEventListener('click', loadDetail);
+    $('btnApprove').addEventListener('click', () => approveOrReject('approve'));
+    $('btnReject').addEventListener('click', () => approveOrReject('reject'));
+
+    (function init(){
+      const s = ensureLogin();
+      const runId = getRunIdFromUrl();
+
+      $('viewEmpNo').textContent = s.empNo || '-';
+      $('viewName').textContent = s.displayName || s.loginId || '-';
+      $('viewRunId').textContent = runId || '-';
+
+      // 링크들에 runId 유지
+      $('btnBackDetail').href = `./payroll_step2_detail.html?runId=${encodeURIComponent(runId || '')}`;
+      $('btnGoPayslip').href  = `./payroll_step4_payslip.html?runId=${encodeURIComponent(runId || '')}`;
+
+      $('runWarn').style.display = runId ? 'none' : 'block';
+
+      // 자동 로드
+      if (s.ok && runId) loadDetail();
+    })();
+  </script>
+</body>
+</html>
