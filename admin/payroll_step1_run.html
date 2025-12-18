@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>급여 · RUN 실행/목록 (Step 1)</title>
+
+  <!-- 기존 관리자 공통 CSS 그대로 사용 -->
+  <link rel="stylesheet" href="./admin.css" />
+
+  <style>
+    :root{
+      --bg:#f3f4f6; --card:#fff; --text:#0f172a; --muted:#64748b; --line:rgba(15,23,42,.10);
+      --shadow:0 10px 28px rgba(15,23,42,.10); --primary:#111827; --ok:#16a34a; --bad:#ef4444;
+      --r:18px;
+    }
+    *{box-sizing:border-box;}
+    body{margin:0;background:var(--bg);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text);}
+    .wrap{max-width:1180px;margin:0 auto;padding:18px 18px 32px;}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden;margin-bottom:14px;}
+    .h{padding:14px 14px 10px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:10px;}
+    .t{font-size:14px;font-weight:900;margin:0}
+    .d{font-size:12px;color:var(--muted)}
+    .b{padding:14px;}
+    .row{display:grid;grid-template-columns:140px 1fr;gap:10px;align-items:center;margin-bottom:10px;}
+    .row label{font-size:12px;color:var(--muted)}
+    .in{width:100%;border:1px solid var(--line);border-radius:12px;padding:10px 10px;background:#fff;outline:none}
+    .btn{border:none;cursor:pointer;border-radius:12px;padding:10px 12px;font-weight:800;background:var(--primary);color:#fff}
+    .btn.ghost{background:#fff;color:var(--text);border:1px solid var(--line)}
+    .btn.ok{background:var(--ok)}
+    .btn.danger{background:var(--bad)}
+    .btn:disabled{opacity:.55;cursor:not-allowed}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th,td{border-bottom:1px solid var(--line);padding:10px 8px;text-align:left;vertical-align:middle}
+    th{color:var(--muted);font-size:12px;font-weight:900}
+    .right{text-align:right}
+    .stack{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .pill{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:8px 10px;background:#fff;}
+    .mini{font-size:12px;color:var(--muted);line-height:1.45}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
+    .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#111827;color:#fff;padding:10px 12px;border-radius:999px;font-weight:800;font-size:13px;box-shadow:0 10px 22px rgba(0,0,0,.2);display:none;z-index:50}
+    .kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;font-size:12px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:2px 8px}
+  </style>
+</head>
+
+<body>
+  <div class="admin-shell">
+    <!-- ✅ 헤더가 들어갈 자리 -->
+    <div id="admin-header-slot"></div>
+
+    <div class="admin-main">
+      <!-- ✅ 메뉴가 들어갈 자리 -->
+      <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+
+      <!-- ✅ 페이지 본문 -->
+      <main class="admin-content">
+        <div class="wrap">
+
+          <!-- 상단: actor + URL -->
+          <div class="card">
+            <div class="h">
+              <div>
+                <div class="t">급여 (Step 1) RUN 실행 / RUN 목록</div>
+                <div class="d">runPayroll → payrollRunList 연결부터 확실히 잡기</div>
+              </div>
+              <div class="stack">
+                <span class="pill">
+                  <span class="mini">actor</span>
+                  <input id="actor" class="in" style="width:220px;border:none;padding:0" placeholder="예: FIN@COMPANY.COM" />
+                </span>
+                <button class="btn ghost" id="btnSaveActor">저장</button>
+                <button class="btn ghost" id="btnTestList">연결 테스트</button>
+                <button class="btn" id="btnReload">새로고침</button>
+              </div>
+            </div>
+            <div class="b">
+              <div class="mini">
+                - WebApp URL: <span class="kbd">GAS_WEBAPP_URL</span> 만 너의 exec 주소로 맞추면 됨<br/>
+                - 권한 에러가 나면: 로그인 DB의 actor(메일/사번)가 <span class="kbd">RUN_PAYROLL</span>, <span class="kbd">VIEW_ALL_PAYROLL</span> 등의 권한을 가지고 있는지부터 확인
+              </div>
+            </div>
+          </div>
+
+          <!-- 1) RUN 실행 -->
+          <div class="card">
+            <div class="h">
+              <div>
+                <div class="t">1) RUN 실행</div>
+                <div class="d">POST mode=runPayroll</div>
+              </div>
+              <div class="stack">
+                <span class="mini">생성된 RUN:</span>
+                <b id="createdRunId" class="mono">-</b>
+              </div>
+            </div>
+            <div class="b">
+              <div class="row">
+                <label>기간 시작</label>
+                <input class="in" id="periodStart" type="date" />
+              </div>
+              <div class="row">
+                <label>기간 종료</label>
+                <input class="in" id="periodEnd" type="date" />
+              </div>
+              <div class="row">
+                <label>지급일</label>
+                <input class="in" id="payDate" type="date" />
+              </div>
+              <div class="row">
+                <label>메모</label>
+                <input class="in" id="note" placeholder="예: 2025-12 급여 RUN" />
+              </div>
+
+              <div class="stack" style="margin-top:10px;">
+                <button class="btn ok" id="btnRunPayroll">RUN 실행(자동 산출)</button>
+                <button class="btn ghost" id="btnLoadRuns">RUN 목록 새로고침</button>
+              </div>
+
+              <div class="mini" style="margin-top:10px;">
+                * 이 버튼이 성공하면 PAYROLL_RUNS 생성 + PAYROLL_LINES 재생성(자동 산출)까지 백엔드에서 수행되는 구조.
+              </div>
+            </div>
+          </div>
+
+          <!-- 2) RUN 목록 -->
+          <div class="card">
+            <div class="h">
+              <div>
+                <div class="t">2) RUN 목록</div>
+                <div class="d">GET mode=payrollRunList</div>
+              </div>
+              <div class="stack">
+                <span class="mini">page</span>
+                <input id="page" class="in" style="width:90px" type="number" value="1" min="1" />
+                <span class="mini">size</span>
+                <input id="size" class="in" style="width:90px" type="number" value="20" min="1" />
+              </div>
+            </div>
+
+            <div class="b">
+              <table>
+                <thead>
+                  <tr>
+                    <th style="width:140px;">payrollRunId</th>
+                    <th>period</th>
+                    <th style="width:120px;">payDate</th>
+                    <th style="width:110px;">status</th>
+                    <th class="right" style="width:130px;">totalGross</th>
+                    <th class="right" style="width:130px;">totalDed</th>
+                    <th class="right" style="width:130px;">totalNet</th>
+                    <th style="width:220px;">작업</th>
+                  </tr>
+                </thead>
+                <tbody id="runsTbody"></tbody>
+              </table>
+
+              <div class="mini" style="margin-top:10px;">
+                다음 Step 2에서는 “상세보기( payollRunDetail )” 화면을 만들 거라, 여기 작업 버튼은 일단 <b>상세 페이지 링크</b>만 달아둠.
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="toast" id="toast"></div>
+      </main>
+    </div>
+  </div>
+
+  <!-- 공통 스크립트(헤더/메뉴 로딩 등) -->
+  <script src="./admin-common.js"></script>
+
+  <script>
+    /************************************************************
+     * ✅ 너의 Apps Script WebApp /exec URL 로 교체
+     ************************************************************/
+    const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxmKUfIbHUkrX5SdQXeELy4mKB3iydXlQiuKJ0Iyt1EAZATg8UV2KvIO1jXeL7xqMzf/exec
+';
+
+    const $ = (id) => document.getElementById(id);
+
+    const toast = (msg) => {
+      const t = $('toast');
+      t.textContent = msg;
+      t.style.display = 'block';
+      clearTimeout(toast._t);
+      toast._t = setTimeout(()=> t.style.display='none', 2200);
+    };
+
+    const fmt = (n) => (Number(n||0)).toLocaleString('ko-KR');
+
+    function getActor() {
+      return String($('actor').value || '').trim().toUpperCase();
+    }
+
+    function ensureActor() {
+      const a = getActor();
+      if (!a) throw new Error('actor가 비어 있습니다. (상단 actor 입력 후 저장)');
+      return a;
+    }
+
+    // GET 호출: .../exec?mode=...&actor=...
+    async function apiGet(mode, params = {}) {
+      if (!GAS_WEBAPP_URL || GAS_WEBAPP_URL.includes('XXXX')) {
+        throw new Error('GAS_WEBAPP_URL을 먼저 /exec 주소로 교체하세요.');
+      }
+      const usp = new URLSearchParams({ mode, ...params });
+      const res = await fetch(GAS_WEBAPP_URL + '?' + usp.toString(), { method: 'GET' });
+
+      // 백엔드 응답: { ok:true, data:... } 형태를 기대
+      const json = await res.json().catch(() => null);
+      if (!json) throw new Error('JSON 파싱 실패(응답이 JSON이 아님)');
+      if (!json.ok) throw new Error(json.error || 'API error');
+      return json.data;
+    }
+
+    // POST 호출: x-www-form-urlencoded
+    async function apiPost(mode, params = {}) {
+      if (!GAS_WEBAPP_URL || GAS_WEBAPP_URL.includes('XXXX')) {
+        throw new Error('GAS_WEBAPP_URL을 먼저 /exec 주소로 교체하세요.');
+      }
+      const usp = new URLSearchParams({ mode, ...params });
+      const res = await fetch(GAS_WEBAPP_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+        body: usp.toString(),
+      });
+
+      const json = await res.json().catch(() => null);
+      if (!json) throw new Error('JSON 파싱 실패(응답이 JSON이 아님)');
+      if (!json.ok) throw new Error(json.error || 'API error');
+      return json.data;
+    }
+
+    function loadActorFromStorage() {
+      const saved = localStorage.getItem('cheese_actor') || '';
+      if (saved) $('actor').value = saved;
+    }
+
+    $('btnSaveActor').addEventListener('click', () => {
+      const a = getActor();
+      if (!a) return toast('actor를 입력해 주세요');
+      localStorage.setItem('cheese_actor', a);
+      toast('actor 저장 완료');
+    });
+
+    $('btnReload').addEventListener('click', () => location.reload());
+
+    $('btnTestList').addEventListener('click', async () => {
+      try {
+        const actor = ensureActor();
+        const data = await apiGet('payrollRunList', { actor, page: 1, size: 5 });
+        toast('연결 OK (payrollRunList)');
+        console.log('[payrollRunList]', data);
+        renderRuns(data.items || []);
+      } catch (e) {
+        console.error(e);
+        toast('연결 실패: ' + (e.message || e));
+      }
+    });
+
+    $('btnRunPayroll').addEventListener('click', async () => {
+      try {
+        const actor = ensureActor();
+        const periodStart = $('periodStart').value;
+        const periodEnd   = $('periodEnd').value;
+        const payDate     = $('payDate').value;
+        const note        = $('note').value;
+
+        if (!periodStart || !periodEnd) {
+          toast('기간 시작/종료를 입력해 주세요');
+          return;
+        }
+
+        $('btnRunPayroll').disabled = true;
+
+        const data = await apiPost('runPayroll', {
+          actor,
+          periodStart,
+          periodEnd,
+          payDate,
+          note
+        });
+
+        const runId = data && data.payrollRunId ? data.payrollRunId : '';
+        $('createdRunId').textContent = runId || '-';
+
+        toast('RUN 실행 완료');
+        await loadRuns(); // 실행 후 목록 갱신
+      } catch (e) {
+        console.error(e);
+        toast('RUN 실패: ' + (e.message || e));
+      } finally {
+        $('btnRunPayroll').disabled = false;
+      }
+    });
+
+    $('btnLoadRuns').addEventListener('click', loadRuns);
+
+    async function loadRuns() {
+      const actor = ensureActor();
+      const page = Math.max(1, parseInt($('page').value, 10) || 1);
+      const size = Math.max(1, parseInt($('size').value, 10) || 20);
+      const data = await apiGet('payrollRunList', { actor, page, size });
+      renderRuns(data.items || []);
+      toast('RUN 목록 로드 완료');
+    }
+
+    function renderRuns(items) {
+      const tb = $('runsTbody');
+      tb.innerHTML = '';
+
+      if (!items.length) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td colspan="8" class="mini">데이터가 없습니다.</td>`;
+        tb.appendChild(tr);
+        return;
+      }
+
+      items.forEach(r => {
+        const tr = document.createElement('tr');
+
+        const runId = r.payrollRunId || '';
+        const period = `${r.periodStart || ''} ~ ${r.periodEnd || ''}`;
+        const payDate = r.payDate || '';
+        const status = r.status || '';
+        const tg = fmt(r.totalGross);
+        const td = fmt(r.totalDeductions);
+        const tn = fmt(r.totalNet);
+
+        // Step2 페이지(다음 단계에서 만들 예정)
+        const detailHref = `./payroll_step2_detail.html?runId=${encodeURIComponent(runId)}`;
+
+        tr.innerHTML = `
+          <td class="mono">${runId}</td>
+          <td>${period}</td>
+          <td>${payDate}</td>
+          <td>${status}</td>
+          <td class="right">${tg}</td>
+          <td class="right">${td}</td>
+          <td class="right"><b>${tn}</b></td>
+          <td>
+            <a class="btn ghost" style="text-decoration:none;display:inline-block" href="${detailHref}">
+              상세(다음 Step)
+            </a>
+          </td>
+        `;
+        tb.appendChild(tr);
+      });
+    }
+
+    // 초기 실행
+    (function init(){
+      loadActorFromStorage();
+      // 여기서는 자동 로드 안 걸어둠(일단 연결 테스트부터)
+    })();
+  </script>
+</body>
+</html>
