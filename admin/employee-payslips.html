@@ -379,106 +379,42 @@ async function loadMe(){
   els.meLine.textContent = `${name} / ${empNo} / ${role} / ${actor}`;
 }
 
-// ✅ 급여명세 목록 로드 (API: myPayslips / getMyPayslips 호환 + 응답 포맷 보정)
-async function loadPage(reset = false) {
-  if (state.pending) return;
+async function loadPage(reset=false){
+  if (state.loading) return;
+  state.loading = true;
+  setUiState({loading:true, error:null});
 
-  // 초기화(새로고침)
-  if (reset) {
-    state.page = 1;
-    state.items = [];
-    state.total = 0;
-  }
-
-  setUiState({ pending: true, error: null });
-
-  try {
-    // ✅ 1) 기본 모드로 먼저 시도
-    const tryFetch = async (modeName) => {
-      const res = await apiGet({
-        mode: modeName,
-        page: state.page,
-        size: state.size,
-
-        // 혹시 백엔드가 actor_id 외에 employeeId를 따로 보길 때를 대비(무해)
-        employeeId: getActor(),
-        employee_id: getActor(),
-      });
-
-      // ✅ 응답 포맷 다양성 대응
-      // - { ok:true, items:[...], total:n }
-      // - { ok:true, data:{ items:[...], total:n } }
-      // - { items:[...], total:n } (ok 없을 수도)
-      const box = (res && res.data && (res.data.items || res.data.total != null)) ? res.data : res;
-
-      const rawItems = Array.isArray(box?.items) ? box.items : [];
-      const rawTotal = (box?.total != null) ? box.total : null;
-
-      return { rawItems, rawTotal };
-    };
-
-    let fetched = await tryFetch("myPayslips");
-
-    // ✅ 2) 백엔드가 다른 mode명을 쓰는 경우 대비(스펙에 getMyPayslips가 보였던 케이스)
-    if (fetched.rawItems.length === 0) {
-      const alt = await tryFetch("getMyPayslips");
-      if (alt.rawItems.length > 0) fetched = alt;
+  try{
+    const actor = getActor();
+    if (!actor){
+      throw new Error('로그인 정보(login_id)가 없습니다. 로그인 페이지로 이동합니다.');
     }
 
-    // ✅ 아이템 정규화(백엔드가 camelCase로 주더라도 화면(render)이 snake_case를 기대)
-    const normalize = (r) => {
-      const payrollRunId = r?.payroll_run_id ?? r?.payrollRunId ?? r?.payroll_runId ?? r?.runId ?? r?.payrollrunid ?? "";
-      return {
-        // render()가 쓰는 snake_case들
-        payroll_run_id: payrollRunId,
-        pay_date: r?.pay_date ?? r?.payDate ?? r?.calculatedAt ?? r?.paidAt ?? "",
-        period_start: r?.period_start ?? r?.periodStart ?? "",
-        period_end: r?.period_end ?? r?.periodEnd ?? "",
-        gross_pay: r?.gross_pay ?? r?.grossPay ?? 0,
-        total_deductions: r?.total_deductions ?? r?.totalDeductions ?? 0,
-        net_pay: r?.net_pay ?? r?.netPay ?? 0,
-        status: r?.status ?? r?.payStatus ?? r?.pay_status ?? "",
-
-        // 상세보기/다운로드에서 쓸 수 있는 원본 필드도 보존(있으면)
-        employee_id: r?.employee_id ?? r?.employeeId ?? "",
-        dept_id: r?.dept_id ?? r?.deptId ?? "",
-        payslip_file_id: r?.payslip_file_id ?? r?.payslipFileId ?? "",
-        payslip_file_url: r?.payslip_file_url ?? r?.payslipFileUrl ?? "",
-        _raw: r
-      };
-    };
-
-    const items = fetched.rawItems.map(normalize);
-
-    // ✅ 누적 + 중복 제거(같은 payroll_run_id가 여러 번 섞여 들어오는 경우 대비)
-    const merged = (reset ? items : state.items.concat(items));
-    const seen = new Set();
-    state.items = merged.filter((it) => {
-      const key = String(it.payroll_run_id || "");
-      if (!key) return true; // key가 없으면 그냥 살림
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-
-    // ✅ total 처리(없으면 "더보기"가 안 뜨도록 보수적으로)
-    const totalNum = (fetched.rawTotal == null) ? null : Number(fetched.rawTotal);
-    if (totalNum == null || Number.isNaN(totalNum)) {
-      // total이 없고, 이번 페이지가 size보다 적게 오면 더 없음으로 간주
-      state.total = (items.length < state.size) ? state.items.length : Math.max(state.items.length, state.total);
-    } else {
-      state.total = totalNum;
+    if (reset){
+      state.page = 1;
+      state.items = [];
+      state.total = 0;
     }
 
-  } catch (err) {
-    const msg = (err && err.message) ? err.message : String(err);
-    setUiState({ error: msg });
-  } finally {
-    setUiState({ pending: false });
+    const data = await apiGet({ mode:'myPayslips', actor, page:String(state.page), size:String(state.size) });
+
+    if (!data || data.ok === false){
+      throw new Error(data?.message || 'API 오류');
+    }
+
+    state.total = Number(data.total || 0);
+    const items = Array.isArray(data.items) ? data.items : [];
+
+    // append
+    if (reset) state.items = items;
+    else state.items = state.items.concat(items);
+
     render();
+  } finally {
+    state.loading = false;
+    setUiState({loading:false, error:null});
   }
 }
-
 async function openDetail(runId, item){
   const actor = getActor();
   const empNo = getEmpNo();
