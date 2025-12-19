@@ -100,7 +100,9 @@
     .muted{color:var(--muted);}
     .small{font-size:12px;}
     .loading{padding:18px;color:var(--muted);font-size:13px;}
-  </style>
+  
+  .more{display:flex; justify-content:center; padding:10px 0 0;}
+</style>
 </head>
 
 
@@ -158,82 +160,98 @@
         <div class="toast" id="toast"></div>
       </main>
 <script>
-/** ============================
- *  0) 설정(필수)
- *  ============================ */
-const GAS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbxmKUfIbHUkrX5SdQXeELy4mKB3iydXlQiuKJ0Iyt1EAZATg8UV2KvIO1jXeL7xqMzf/exec"; // ← 여기에 Apps Script 배포 URL 넣기
-// 로그인 페이지가 sessionStorage에 저장하는 키와 동일하게 맞춘다
-const TOKEN_KEY = "cheese_admin_token";
-const ROLE_KEY  = "cheese_admin_role";
-const EMPNO_KEY = "cheese_admin_emp_no";
+/* =========================================================
+ * 급여명세서(직원) 화면 — API.txt 스펙 기준
+ *
+ * ✅ 사용 API (GAS Web App)
+ *  - GET  : mode=myPayslips&actor=...&limit=...&cursor=...
+ *  - POST : mode=generatePayslip (actor + payslipId)
+ *
+ * ⚠️ actor는 "사번/이메일/로그인토큰" 중, 백엔드가 식별 가능한 값이어야 합니다.
+ *    이 화면은 우선 session/localStorage에 저장된 값(EMPNO → token 순)으로 전송합니다.
+ * ========================================================= */
 
-const LOGIN_PAGE = "../index.html"; // 너 구조에 맞게 유지
+const GAS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbzPwih6oigD9Wdvv2rw4YBC0iZwEoQ2lc1Kk2kD1_K89Edv2SQimG_9gXG5YjGKJCw/exec";
+const LOGIN_PAGE = "./login.html"; // 필요 시 경로 수정
 
-/** ============================
- *  1) 공통 유틸
- *  ============================ */
-function qs(sel){ return document.querySelector(sel); }
+// 스토리지 키 (기존 페이지들과 호환)
+const TOKEN_KEY  = "cheese_admin_token";     // 로그인 토큰(또는 이메일 등)
+const EMPNO_KEY  = "cheese_admin_empNo";     // 사번(가능하면 이 값을 actor로 사용)
+const NAME_KEY   = "cheese_admin_name";
+const ROLE_KEY   = "cheese_admin_role";
 
-function toast(msg){
-  const el = qs("#toast");
-  el.textContent = msg;
-  el.classList.add("show");
-  clearTimeout(toast._t);
-  toast._t = setTimeout(()=>el.classList.remove("show"), 1800);
+const PAGE_SIZE = 30;
+
+const qs = (sel, el=document) => el.querySelector(sel);
+
+function setStatus(msg){
+  const el = qs("#statusLine");
+  if (el) el.textContent = msg || "";
 }
 
-function getToken(){
-  // sessionStorage 우선 + (선택) localStorage 폴백
-  return sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY) || "";
+function showToast(msg){
+  const t = qs("#toast");
+  if (!t) return;
+  t.textContent = msg || "";
+  t.classList.add("show");
+  clearTimeout(showToast._tm);
+  showToast._tm = setTimeout(()=>t.classList.remove("show"), 2200);
+}
+
+function getActor(){
+  const empNo = (sessionStorage.getItem(EMPNO_KEY) || localStorage.getItem(EMPNO_KEY) || "").trim();
+  if (empNo) return empNo;
+
+  const token = (sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY) || "").trim();
+  return token;
+}
+
+function getMeLabel(){
+  const name = (sessionStorage.getItem(NAME_KEY) || localStorage.getItem(NAME_KEY) || "").trim();
+  const role = (sessionStorage.getItem(ROLE_KEY) || localStorage.getItem(ROLE_KEY) || "").trim();
+  const actor = getActor();
+  return [
+    name ? `이름: ${name}` : "",
+    role ? `역할: ${role}` : "",
+    actor ? `actor: ${actor}` : ""
+  ].filter(Boolean).join(" · ");
 }
 
 function logout(){
-  // session/local 둘 다 지우면 꼬임이 줄어듦
-  const keys = [
-    "cheese_admin_token",
-    "cheese_admin_login_id",
-    "cheese_admin_display_name",
-    "cheese_admin_role",
-    "cheese_admin_emp_no",
-  ];
-  keys.forEach(k => {
+  [TOKEN_KEY, EMPNO_KEY, NAME_KEY, ROLE_KEY].forEach(k=>{
     sessionStorage.removeItem(k);
     localStorage.removeItem(k);
   });
-
   location.href = LOGIN_PAGE;
 }
 
+async function apiGet(params){
+  const url = GAS_WEBAPP_URL + "?" + new URLSearchParams(params).toString();
+  const res = await fetch(url, { method: "GET" });
+  const json = await res.json().catch(()=>null);
+  if (!json) throw new Error("서버 응답을 JSON으로 해석할 수 없습니다.");
+  if (json.ok === false) throw new Error(json.message || "요청 실패");
+  // {ok:true, data:{...}} 형태를 우선 지원
+  return json.data ?? json.result ?? json;
+}
+
 async function apiPost(params){
-  // params: {mode: "...", token: "...", ...}
   const body = new URLSearchParams(params);
   const res = await fetch(GAS_WEBAPP_URL, {
     method: "POST",
-    headers: {"Content-Type":"application/x-www-form-urlencoded;charset=UTF-8"},
+    headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
     body
   });
-  const text = await res.text();
-
-  // Apps Script가 ContentService로 JSON을 주는 형태 가정
-  let json;
-  try { json = JSON.parse(text); }
-  catch(e){
-    throw new Error("서버 응답이 JSON이 아님: " + text.slice(0, 160));
-  }
-
-  // 아래 중 아무 스타일이든 대응하도록 방어적으로 처리
-  if (json && json.ok === false) throw new Error(json.message || "요청 실패");
-  if (json && json.success === false) throw new Error(json.message || "요청 실패");
-  if (json && json.error) throw new Error(json.error.message || json.error || "요청 실패");
-
-  return json;
+  const json = await res.json().catch(()=>null);
+  if (!json) throw new Error("서버 응답을 JSON으로 해석할 수 없습니다.");
+  if (json.ok === false) throw new Error(json.message || "요청 실패");
+  return json.data ?? json.result ?? json;
 }
 
-function fmtYmd(iso){
-  if (!iso) return "";
-  // iso가 "2025-12-18T..." 또는 "2025-12-18" 둘 다 대비
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return String(iso);
+function fmtYmd(dt){
+  if (!dt) return "";
+  const d = new Date(dt);
+  if (isNaN(d.getTime())) return String(dt);
   const y = d.getFullYear();
   const m = String(d.getMonth()+1).padStart(2,"0");
   const day = String(d.getDate()).padStart(2,"0");
@@ -241,207 +259,229 @@ function fmtYmd(iso){
 }
 
 function numberOrDash(v){
+  if (v === null || v === undefined || v === "") return "—";
   const n = Number(v);
-  return isFinite(n) ? n.toLocaleString() : "—";
+  if (Number.isFinite(n)) return n.toLocaleString("ko-KR");
+  return String(v);
 }
 
-/** ============================
- *  2) 서버 계약(이 HTML이 기대하는 API)
- *  ============================
- *  (A) 내 정보
- *    mode: "employeeMe"
- *    -> { employeeId, employeeName, email? }
- *
- *  (B) 내 명세서 목록
- *    mode: "employeeListPayslips"
- *    -> { items: [
- *        { runId, periodLabel?, createdAt?, netPay?, status?, fileUrl?, fileId? }
- *      ]}
- *
- *  (C) 단건 열람(옵션 1: Drive 링크로 열기)
- *    목록에 fileUrl이 있으면 그걸 새창으로 열어줌.
- *
- *  (D) 단건 열람(옵션 2: PDF base64로 받기)
- *    mode: "employeeGetPayslipPdf"
- *    -> { mimeType:"application/pdf", base64:"JVBERi0xL..." }
- *
- *  ✅ 지금은 (1) fileUrl 우선 / 없으면 (2) base64 방식으로 폴백.
- *  ============================ */
+let state = {
+  items: [],
+  nextCursor: null,
+  loading: false
+};
 
-/** ============================
- *  3) 화면 로직
- *  ============================ */
-async function loadMe(){
-  const token = getToken();
-  if (!token) {
-    qs("#meLine").textContent = "로그인이 필요합니다.";
-    qs("#listArea").innerHTML = `
-      <div class="empty">
-        이 페이지는 급여명세서 열람을 위해 로그인이 필요합니다.<br/>
-        <button class="btn accent" type="button" onclick="location.href='${LOGIN_PAGE}'">로그인 페이지로</button>
-      </div>
-    `;
-    return null;
-  }
-  const me = await apiPost({ mode:"employeeMe", token });
-  const empId = me.employeeId || me.empId || me.employee_id || "UNKNOWN";
-  const empName = me.employeeName || me.name || me.empName || "";
-  qs("#meLine").textContent = empName ? `${empName} (${empId})` : `사번 ${empId}`;
-  return me;
+function normalizeListPayload(payload){
+  // payload 자체가 배열인 경우도 대비
+  if (Array.isArray(payload)) return { items: payload, nextCursor: null };
+
+  const items =
+    payload.items ||
+    payload.payslips ||
+    payload.list ||
+    payload.rows ||
+    payload.data ||
+    [];
+
+  const nextCursor =
+    payload.nextCursor ??
+    payload.cursor ??
+    payload.next ??
+    null;
+
+  return { items: Array.isArray(items) ? items : [], nextCursor };
 }
 
-function renderList(items){
+function renderList(){
   const area = qs("#listArea");
-  qs("#countChip").textContent = `${items.length}건`;
+  const chip = qs("#countChip");
+  const items = state.items;
+
+  if (chip) chip.textContent = `${items.length}건`;
 
   if (!items.length){
     area.innerHTML = `
       <div class="empty">
         표시할 급여명세서가 없습니다.<br/>
-        <span class="small">- 아직 RUN이 생성되지 않았거나, 해당 RUN의 공유/권한이 설정되지 않았을 수 있습니다.</span>
+        <span class="small">- 아직 RUN이 생성되지 않았거나, 권한/공유 설정이 되어있지 않을 수 있습니다.</span>
       </div>
     `;
     return;
   }
 
   area.innerHTML = "";
-  items.forEach(item=>{
-    const runId = item.runId || item.run_id || "";
-    const period = item.periodLabel || item.period || "";
-    const createdAt = fmtYmd(item.createdAt || item.created_at || "");
-    const status = String(item.status || "READY").toUpperCase();
-    const netPay = item.netPay ?? item.net_pay ?? item.amountNet ?? null;
 
-    const chipClass = (status === "READY" || status === "PUBLISHED" || status === "OK") ? "ok" : (status === "ERROR" ? "bad" : "");
+  items.forEach((item, idx)=>{
+    const payslipId = item.payslipId || item.payslip_id || item.id || item.payslipIdStr || "";
+    const runId = item.runId || item.run_id || item.payrollRunId || "";
+    const period = item.periodLabel || item.period || item.payPeriod || "";
+    const createdAt = fmtYmd(item.createdAt || item.created_at || item.created || "");
+    const statusRaw = item.status || item.state || "READY";
+    const status = String(statusRaw).toUpperCase();
+
+    const netPay = item.netPay ?? item.net_pay ?? item.amountNet ?? item.net ?? null;
+
+    const url = item.payslipFileUrl || item.fileUrl || item.url || item.pdfUrl || "";
+
+    const okStatuses = new Set(["READY","PUBLISHED","PUBLISH","OK","DONE","SUCCESS"]);
+    const badStatuses = new Set(["ERROR","FAILED","FAIL"]);
+    const chipClass = okStatuses.has(status) ? "ok" : (badStatuses.has(status) ? "bad" : "");
     const chipText = status || "—";
+
     const desc = [
       period ? `기간: ${period}` : "",
       createdAt ? `생성: ${createdAt}` : "",
-      (netPay !== null && netPay !== undefined) ? `실수령: ${numberOrDash(netPay)}원` : ""
+      (netPay !== null && netPay !== undefined) ? `실수령: ${numberOrDash(netPay)}원` : "",
+      runId ? `run: ${runId}` : ""
     ].filter(Boolean).join(" · ");
 
-    const row = document.createElement("div");
-    row.className = "row";
-    row.innerHTML = `
-      <div class="meta">
-        <div class="run">${runId}</div>
-        <div class="desc">${desc || '<span class="muted">상세 정보 없음</span>'}</div>
+    const card = document.createElement("div");
+    card.className = "row";
+    card.innerHTML = `
+      <div class="row-top">
+        <div class="row-title">${period || ("급여명세서 #" + (idx+1))}</div>
+        <div class="chip ${chipClass}">${chipText}</div>
       </div>
-      <div class="actions">
-        <span class="chip ${chipClass}">${chipText}</span>
-        <button class="btn" type="button" data-action="open" data-runid="${encodeURIComponent(runId)}">열람</button>
+      <div class="row-desc">${desc || "—"}</div>
+      <div class="row-actions">
+        <button class="btn btn-soft" data-action="open" ${url ? "" : "data-gen='1'"}>열기</button>
+        ${url ? `<a class="btn btn-ghost" href="${url}" target="_blank" rel="noopener">링크</a>` : ""}
+        <div class="small mono">${payslipId ? "payslipId: "+payslipId : ""}</div>
       </div>
     `;
-    area.appendChild(row);
+
+    card.querySelector('[data-action="open"]').addEventListener("click", ()=>openPayslip(item));
+    area.appendChild(card);
   });
 
-  // 이벤트 바인딩(열람)
-  area.querySelectorAll('button[data-action="open"]').forEach(btn=>{
-    btn.addEventListener("click", async ()=>{
-      const runId = decodeURIComponent(btn.getAttribute("data-runid") || "");
-      if (!runId) return;
-      await openPayslip(runId);
-    });
-  });
+  // Load more
+  if (state.nextCursor){
+    const more = document.createElement("div");
+    more.className = "more";
+    more.innerHTML = `<button class="btn" id="btn-more">더 보기</button>`;
+    area.appendChild(more);
+    qs("#btn-more").addEventListener("click", ()=>loadPayslips({ append:true }));
+  }
 }
 
-async function loadPayslips(){
-  const token = getToken();
-  qs("#listArea").innerHTML = `<div class="loading">목록을 불러오는 중…</div>`;
-  const res = await apiPost({ mode:"employeeListPayslips", token });
-  const items = res.items || res.data || res.list || [];
-  renderList(items);
-  return items;
-}
-
-function openPdfBase64(base64, mimeType="application/pdf"){
-  const bin = atob(base64);
-  const len = bin.length;
-  const bytes = new Uint8Array(len);
-  for (let i=0; i<len; i++) bytes[i] = bin.charCodeAt(i);
-  const blob = new Blob([bytes], {type:mimeType});
-  const url = URL.createObjectURL(blob);
-  window.open(url, "_blank", "noopener,noreferrer");
-  setTimeout(()=>URL.revokeObjectURL(url), 60_000);
-}
-
-async function openPayslip(runId){
-  const token = getToken();
-  toast("명세서 열람 준비 중…");
-
-  // 1) 목록에서 fileUrl이 내려온다면, 서버를 한 번 더 호출하지 않고도 열 수 있지만
-  //    지금은 안전하게 “단건 조회”를 먼저 시도(있으면 fileUrl로, 없으면 base64로)
-  try{
-    // 옵션: 단건 메타+url
-    const meta = await apiPost({ mode:"employeeGetPayslipMeta", token, runId });
-    const fileUrl = meta.fileUrl || meta.payslipFileUrl || meta.url || "";
-    if (fileUrl){
-      window.open(fileUrl, "_blank", "noopener,noreferrer");
-      toast("Drive에서 열었습니다.");
-      return;
-    }
-  }catch(e){
-    // meta API가 없을 수 있으니 조용히 폴백
+async function openPayslip(item){
+  const actor = getActor();
+  if (!actor){
+    showToast("로그인이 필요합니다.");
+    location.href = LOGIN_PAGE;
+    return;
   }
 
-  // 2) PDF base64 폴백
-  const pdf = await apiPost({ mode:"employeeGetPayslipPdf", token, runId });
-  const base64 = pdf.base64 || pdf.pdfBase64 || "";
-  const mimeType = pdf.mimeType || "application/pdf";
-  if (!base64) throw new Error("PDF 데이터(base64)가 없습니다.");
-  openPdfBase64(base64, mimeType);
-  toast("새 창에서 열었습니다.");
-}
+  const directUrl = item.payslipFileUrl || item.fileUrl || item.url || item.pdfUrl || "";
+  if (directUrl){
+    window.open(directUrl, "_blank", "noopener");
+    return;
+  }
 
-/** ============================
- *  4) 초기화
- *  ============================ */
-async function init(){
-  qs("#btn-logout").addEventListener("click", logout);
-  qs("#btn-refresh").addEventListener("click", async ()=>{
-    try{
-      await loadPayslips();
-      toast("새로고침 완료");
-    }catch(e){
-      toast("새로고침 실패");
-      console.error(e);
-    }
-  });
+  const payslipId = item.payslipId || item.payslip_id || item.id || "";
+  const runId = item.runId || item.run_id || item.payrollRunId || "";
 
-  if (!GAS_WEBAPP_URL || GAS_WEBAPP_URL.includes("PASTE_YOUR_WEBAPP_URL_HERE")){
-    qs("#listArea").innerHTML = `
-      <div class="empty">
-        <b>설정 필요</b><br/>
-        <span class="small">employee-payslips.html 안의 GAS_WEBAPP_URL을 Apps Script 웹앱 URL로 바꿔주세요.</span>
-      </div>
-    `;
+  if (!payslipId && !runId){
+    showToast("payslipId/runId가 없어 생성 요청을 할 수 없습니다.");
     return;
   }
 
   try{
-    await loadMe();
+    setStatus("PDF 생성 중…");
+    const payload = {
+      mode: "generatePayslip",
+      actor,
+      // 백엔드가 payslipId를 요구하는 스펙이므로 우선 payslipId 중심으로 보냄
+      payslipId: payslipId || "",
+      // 혹시 runId 기반으로 구현된 경우 대비 (백엔드에서 무시해도 무방)
+      runId: runId || ""
+    };
 
-    const items = await loadPayslips();
+    const data = await apiPost(payload);
 
-    // ?runId=PR-2025-12 로 바로 열기
-    const sp = new URLSearchParams(location.search);
-    const runId = sp.get("runId");
-    if (runId){
-      // 목록에 있는지 확인 후 자동 열람(없어도 시도는 함)
-      const exists = items.some(it => (it.runId || it.run_id) === runId);
-      if (!exists) toast("목록에 없지만 열람을 시도합니다…");
-      await openPayslip(runId);
+    const url =
+      data.payslipFileUrl ||
+      data.fileUrl ||
+      data.url ||
+      data.pdfUrl ||
+      "";
+
+    if (!url){
+      console.error("generatePayslip response:", data);
+      showToast("생성 결과에 URL이 없습니다.");
+      setStatus("");
+      return;
     }
 
+    window.open(url, "_blank", "noopener");
+    setStatus("");
   }catch(err){
     console.error(err);
-    toast("인증/조회 실패");
-    // 토큰 만료나 오류 시 로그인으로 보내기
-   // setTimeout(()=>logout(), 600);
+    showToast(err.message || String(err));
+    setStatus("");
   }
 }
 
-init();
+async function loadPayslips(opts={ reset:true, append:false }){
+  if (state.loading) return;
+  state.loading = true;
+
+  const actor = getActor();
+  if (!actor){
+    showToast("로그인이 필요합니다.");
+    location.href = LOGIN_PAGE;
+    return;
+  }
+
+  const reset = !!opts.reset && !opts.append;
+  if (reset){
+    state.items = [];
+    state.nextCursor = null;
+  }
+
+  try{
+    setStatus("급여명세서 불러오는 중…");
+    const params = {
+      mode: "myPayslips",
+      actor,
+      limit: String(PAGE_SIZE)
+    };
+    if (opts.append && state.nextCursor){
+      params.cursor = String(state.nextCursor);
+    }
+    const payload = await apiGet(params);
+    const norm = normalizeListPayload(payload);
+
+    state.items = opts.append ? state.items.concat(norm.items) : norm.items;
+    state.nextCursor = norm.nextCursor;
+
+    renderList();
+    qs("#meLine").textContent = getMeLabel();
+    setStatus("");
+  }catch(err){
+    console.error(err);
+    showToast(err.message || String(err));
+    setStatus("");
+  }finally{
+    state.loading = false;
+  }
+}
+
+// 초기화
+(function init(){
+  // 버튼
+  qs("#btn-refresh")?.addEventListener("click", ()=>loadPayslips({ reset:true }));
+  qs("#btn-logout")?.addEventListener("click", logout);
+
+  // 로그인 체크
+  if (!getActor()){
+    location.href = LOGIN_PAGE;
+    return;
+  }
+
+  qs("#meLine").textContent = getMeLabel();
+  loadPayslips({ reset:true });
+})();
 </script>
 </body>
 </html>
