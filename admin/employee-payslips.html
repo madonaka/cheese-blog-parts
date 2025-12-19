@@ -334,11 +334,18 @@ function fmtDate(s){
 }
 function statusLabel(st){
   const v = String(st || '').trim();
-  if (v === 'approved') return '확정';
-  if (v === 'draft') return '임시';
-  if (v === 'locked') return '잠금';
-  if (v === 'rejected') return '반려';
-  return v || '-';
+  const map = {
+    paid: '지급완료',
+    pending: '대기',
+    payslip_ready: '명세서 준비',
+    calculated: '계산완료',
+    // (과거 결재 시스템 키워드도 혹시 남아있을 수 있어 함께 매핑)
+    approved: '확정',
+    draft: '임시',
+    locked: '잠금',
+    rejected: '반려',
+  };
+  return map[v] || (v || '-');
 }
 
 function setUiState({loading=false, error=null}){
@@ -362,21 +369,24 @@ function render(){
   els.btnMore.style.display = canMore ? 'inline-flex' : 'none';
 
   for (const it of state.items){
+    // API(v0.5): payrollRunId, grossPay, totalDeductions, netPay, payStatus, payslipFileUrl, calculatedAt
+    const runId = it.payrollRunId || it.runId || it.payroll_run_id || '-';
+
     const card = document.createElement('div');
     card.className = 'payslip-item';
 
     const title = document.createElement('div');
     title.className = 'payslip-item__title';
-    title.textContent = `${fmtDate(it.period_start)} ~ ${fmtDate(it.period_end)}`;
+    title.textContent = `${runId}`;
 
     const meta = document.createElement('div');
     meta.className = 'payslip-item__meta';
     meta.innerHTML = `
-      <div><span class="k">지급일</span><span class="v">${fmtDate(it.pay_date)}</span></div>
-      <div><span class="k">상태</span><span class="v">${statusLabel(it.status)}</span></div>
-      <div><span class="k">총지급</span><span class="v">${money(it.gross_pay)}</span></div>
-      <div><span class="k">공제합</span><span class="v">${money(it.total_deductions)}</span></div>
-      <div><span class="k">실수령</span><span class="v"><b>${money(it.net_pay)}</b></span></div>
+      <div><span class="k">계산일</span><span class="v">${fmtDate(it.calculatedAt)}</span></div>
+      <div><span class="k">상태</span><span class="v">${statusLabel(it.payStatus)}</span></div>
+      <div><span class="k">총지급</span><span class="v">${money(it.grossPay)}</span></div>
+      <div><span class="k">공제합</span><span class="v">${money(it.totalDeductions)}</span></div>
+      <div><span class="k">실수령</span><span class="v"><b>${money(it.netPay)}</b></span></div>
     `;
 
     const actions = document.createElement('div');
@@ -386,13 +396,13 @@ function render(){
     btnDetail.type = 'button';
     btnDetail.className = 'payslip-btn payslip-btn--ghost';
     btnDetail.textContent = '상세';
-    btnDetail.addEventListener('click', () => openDetail(it.payroll_run_id, it));
+    btnDetail.addEventListener('click', () => openDetail(runId, it));
 
     const btnPdf = document.createElement('button');
     btnPdf.type = 'button';
     btnPdf.className = 'payslip-btn payslip-btn--primary';
     btnPdf.textContent = 'PDF';
-    btnPdf.addEventListener('click', () => generatePdf(it.payroll_run_id));
+    btnPdf.addEventListener('click', () => generatePdf(runId));
 
     actions.append(btnDetail, btnPdf);
     card.append(title, meta, actions);
@@ -415,7 +425,7 @@ async function loadPage(reset=false){
 
   try{
     const actor = getActor();
-    debugActor('before myPayslips');  // ✅ 여기 추가
+    debugActor('before myPayslips');  // ✅ actor 확인
 
     if (!actor){
       throw new Error('로그인 정보(login_id)가 없습니다. 로그인 페이지로 이동합니다.');
@@ -427,23 +437,28 @@ async function loadPage(reset=false){
       state.total = 0;
     }
 
-    const data = await apiGet({ mode:'myPayslips', actor, page:String(state.page), size:String(state.size) });
+    const res = await apiGet({ mode:'myPayslips', actor, page:String(state.page), size:String(state.size) });
 
-    if (!data || data.ok === false){
-      throw new Error(data?.message || 'API 오류');
+    if (!res || res.ok === false){
+      throw new Error(res?.message || 'API 오류');
     }
 
-    state.total = Number(data.total || 0);
-    const items = Array.isArray(data.items) ? data.items : [];
+    // ✅ 응답은 { ok:true, data:{ items, total, page, size } } 형태
+    const payload = res.data || {};
+    state.total = Number(payload.total || 0);
+
+    const items = Array.isArray(payload.items) ? payload.items : [];
 
     // append
     if (reset) state.items = items;
     else state.items = state.items.concat(items);
 
     render();
+    setUiState({loading:false, error:null});
+  } catch(err){
+    setUiState({loading:false, error: err.message || String(err)});
   } finally {
     state.loading = false;
-    setUiState({loading:false, error:null});
   }
 }
 async function openDetail(runId, item){
@@ -452,29 +467,50 @@ async function openDetail(runId, item){
 
   setUiState({loading:true, error:null});
   try{
-    const data = await apiGet({ mode:'payrollRunDetail', actor, runId:String(runId) });
-    if (!data || data.ok === false) throw new Error(data?.message || '상세 조회 실패');
+    const res = await apiGet({ mode:'payrollRunDetail', actor, runId:String(runId) });
+    if (!res || res.ok === false) throw new Error(res?.message || '상세 조회 실패');
+
+    // ✅ 응답은 { ok:true, data:{ run, lines } } 형태
+    const payload = res.data || {};
+    const run = payload.run || {};
+    const lines = Array.isArray(payload.lines) ? payload.lines : [];
 
     // employee 권한이면 lines가 1개(본인)만 오도록 설계되어 있지만,
     // 혹시 대비해서 사번 필터도 수행
-    const lines = Array.isArray(data.lines) ? data.lines : [];
     const mine = empNo ? lines.find(x => String(x.employeeId) === String(empNo)) : (lines[0] || null);
 
-    els.modalSub.textContent = `${fmtDate(item?.period_start)} ~ ${fmtDate(item?.period_end)} / 지급일 ${fmtDate(item?.pay_date)}`;
+    // 서브 타이틀: RUN 정보가 있으면 기간/지급일 표시, 없으면 runId/계산일 표시
+    const periodStart = run.periodStart || run.period_start;
+    const periodEnd = run.periodEnd || run.period_end;
+    const payDate = run.payDate || run.pay_date;
+
+    if (periodStart || periodEnd || payDate){
+      els.modalSub.textContent = `${fmtDate(periodStart)} ~ ${fmtDate(periodEnd)} / 지급일 ${fmtDate(payDate)}`;
+    } else {
+      els.modalSub.textContent = `${runId} / 계산일 ${fmtDate(item?.calculatedAt)}`;
+    }
+
     els.modalBody.innerHTML = '';
+
+    // 상단 요약: 상세(line)가 있으면 line 기준, 없으면 목록(item) 기준
+    const gross = mine?.grossPay ?? item?.grossPay;
+    const ded   = mine?.deductionTotal ?? item?.totalDeductions;
+    const net   = mine?.netPay ?? item?.netPay;
+    const st    = mine?.payStatus ?? item?.payStatus;
 
     const kv = document.createElement('div');
     kv.className = 'payslip-kv';
     kv.innerHTML = `
-      <div class="kv"><div class="k">총지급</div><div class="v">${money(item?.gross_pay)}</div></div>
-      <div class="kv"><div class="k">공제합</div><div class="v">${money(item?.total_deductions)}</div></div>
-      <div class="kv"><div class="k">실수령</div><div class="v">${money(item?.net_pay)}</div></div>
-      <div class="kv"><div class="k">상태</div><div class="v">${statusLabel(item?.status)}</div></div>
+      <div class="kv"><div class="k">총지급</div><div class="v">${money(gross)}</div></div>
+      <div class="kv"><div class="k">공제합</div><div class="v">${money(ded)}</div></div>
+      <div class="kv"><div class="k">실수령</div><div class="v">${money(net)}</div></div>
+      <div class="kv"><div class="k">상태</div><div class="v">${statusLabel(st)}</div></div>
     `;
     els.modalBody.appendChild(kv);
 
     const lineBox = document.createElement('div');
     lineBox.className = 'payslip-line';
+
     if (mine){
       const rows = [
         ['기본급', mine.basePay],
@@ -489,26 +525,28 @@ async function openDetail(runId, item){
         r.innerHTML = `<div class="label">${label}</div><div class="value">${money(val)}</div>`;
         lineBox.appendChild(r);
       }
-      els.modalPdf.href = mine.payslipFileUrl ? mine.payslipFileUrl : '#';
-      els.modalPdf.style.display = mine.payslipFileUrl ? 'inline-flex' : 'none';
+
+      const pdfUrl = mine.payslipFileUrl || item?.payslipFileUrl || '';
+      els.modalPdf.href = pdfUrl ? pdfUrl : '#';
+      els.modalPdf.style.display = pdfUrl ? 'inline-flex' : 'none';
     } else {
       lineBox.textContent = '상세 항목을 찾지 못했습니다.';
       els.modalPdf.href = '#';
       els.modalPdf.style.display = 'none';
     }
-    els.modalBody.appendChild(lineBox);
 
+    els.modalBody.appendChild(lineBox);
     openModal(true);
+    setUiState({loading:false, error:null});
   } catch(err){
     setUiState({loading:false, error: err.message || String(err)});
-  } finally {
-    setUiState({loading:false, error:null});
   }
 }
 
 async function generatePdf(runId){
   const actor = getActor();
   const employeeId = getEmpNo();
+
   if (!employeeId){
     setUiState({loading:false, error:'사번(emp_no)이 없습니다. (cheese_admin_emp_no)'});
     return;
@@ -516,17 +554,19 @@ async function generatePdf(runId){
 
   setUiState({loading:true, error:null});
   try{
-    const data = await apiGet({ mode:'generatePayslip', actor, runId:String(runId), employeeId:String(employeeId) });
-    if (!data || data.ok === false) throw new Error(data?.message || 'PDF 생성 실패');
+    const res = await apiGet({ mode:'generatePayslip', actor, runId:String(runId), employeeId:String(employeeId) });
+    if (!res || res.ok === false) throw new Error(res?.message || 'PDF 생성 실패');
 
-    const url = data.payslipFileUrl;
+    // ✅ 응답은 { ok:true, data:{ payslipFileUrl, ... } } 형태
+    const payload = res.data || {};
+    const url = payload.payslipFileUrl || payload.fileUrl || payload.url || '';
+
     if (!url) throw new Error('payslipFileUrl이 비어 있습니다.');
 
     window.open(url, '_blank', 'noopener');
+    setUiState({loading:false, error:null});
   } catch(err){
     setUiState({loading:false, error: err.message || String(err)});
-  } finally {
-    setUiState({loading:false, error:null});
   }
 }
 
