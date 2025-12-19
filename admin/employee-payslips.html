@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>급여명세서 · 직원 포털</title>
+  <link rel="stylesheet" href="./admin.css" />
   <style>
     :root{
       --bg:#f3f4f6;
@@ -102,7 +103,49 @@
     .loading{padding:18px;color:var(--muted);font-size:13px;}
   
   .more{display:flex; justify-content:center; padding:10px 0 0;}
+
+/* modal */
+.payslip-modal{ position:fixed; inset:0; display:none; z-index:9999; }
+.payslip-modal[aria-hidden="false"]{ display:block; }
+.payslip-modal__backdrop{ position:absolute; inset:0; background:rgba(15,23,42,.45); }
+.payslip-modal__panel{
+  position:relative; max-width:720px; margin:8vh auto 0; background:#fff;
+  border:1px solid rgba(15,23,42,.10); border-radius:18px; box-shadow:0 18px 48px rgba(15,23,42,.25);
+  overflow:hidden;
+}
+.payslip-modal__head{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:14px 14px; border-bottom:1px solid rgba(15,23,42,.10); }
+.payslip-modal__title{ font-weight:700; font-size:1.05rem; }
+.payslip-modal__sub{ font-size:.88rem; color:#64748b; margin-top:2px; }
+.payslip-modal__close{ border:1px solid rgba(15,23,42,.12); background:#fff; border-radius:12px; width:38px; height:38px; font-size:20px; line-height:1; cursor:pointer; }
+.payslip-modal__body{ padding:14px; }
+.payslip-modal__foot{ display:flex; justify-content:flex-end; gap:10px; padding:12px 14px 14px; border-top:1px solid rgba(15,23,42,.10); }
+.payslip-kv{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+.payslip-kv .kv{ border:1px solid rgba(15,23,42,.10); border-radius:14px; padding:10px 12px; }
+.payslip-kv .k{ font-size:.78rem; color:#64748b; }
+.payslip-kv .v{ margin-top:4px; font-weight:650; }
+.payslip-line{ margin-top:12px; border:1px dashed rgba(15,23,42,.20); border-radius:14px; padding:10px 12px; background:rgba(15,23,42,.02); }
+.payslip-line .row{ display:flex; justify-content:space-between; gap:10px; padding:6px 0; border-bottom:1px solid rgba(15,23,42,.08); }
+.payslip-line .row:last-child{ border-bottom:0; }
+.payslip-line .label{ color:#64748b; font-size:.85rem; }
+.payslip-line .value{ font-weight:650; }
+
+.payslip-more-wrap{display:flex; justify-content:center; padding:10px 0 4px;}
+
+/* list area */
+.payslip-list{ display:grid; gap:12px; }
+.error{ margin-top:10px; padding:10px 12px; border:1px solid rgba(239,68,68,.35); background:rgba(239,68,68,.08); border-radius:14px; color:#7f1d1d; }
+.empty{ margin-top:10px; padding:10px 12px; border:1px dashed rgba(15,23,42,.18); border-radius:14px; color:#64748b; background:rgba(15,23,42,.02); }
+.payslip-item{ border:1px solid rgba(15,23,42,.10); border-radius:16px; padding:12px 12px; background:#fff; }
+.payslip-item__title{ font-weight:700; margin:0 0 8px; }
+.payslip-item__meta{ display:grid; grid-template-columns:1fr 1fr; gap:8px 12px; font-size:.92rem; color:#0f172a; }
+.payslip-item__meta .k{ color:#64748b; margin-right:6px; }
+.payslip-item__actions{ display:flex; justify-content:flex-end; gap:8px; margin-top:10px; }
+.payslip-btn{ border:1px solid rgba(15,23,42,.12); background:#fff; border-radius:12px; padding:9px 12px; cursor:pointer; font-weight:650; }
+.payslip-btn--primary{ background:#111827; color:#fff; border-color:#111827; text-decoration:none; display:inline-flex; align-items:center; }
+.payslip-btn--ghost{ background:#fff; }
+.payslip-more-wrap{ display:flex; justify-content:center; padding:10px 0 4px; }
 </style>
+  <script src="./admin-common.js" defer></script>
 </head>
 
 
@@ -126,8 +169,7 @@
             </div>
             <div class="right">
               <button class="btn" id="btn-refresh" type="button">새로고침</button>
-              <button class="btn accent" id="btn-logout" type="button">로그아웃</button>
-            </div>
+</div>
           </div>
       
           <div class="card">
@@ -139,7 +181,16 @@
               <div class="chip" id="countChip">0건</div>
             </div>
             <div class="card-b" id="listArea">
-              <div class="loading">목록을 불러오는 중…</div>
+              <div id="loadingBox" class="loading">목록을 불러오는 중…</div>
+              <div id="errorBox" class="error" style="display:none;">
+                <b>오류:</b> <span id="errorText"></span>
+              </div>
+              <div id="emptyBox" class="empty" style="display:none;">표시할 급여명세가 없습니다.</div>
+              <div id="payslipList" class="payslip-list"></div>
+              <div class="payslip-more-wrap">
+                <button type="button" id="btn-more" class="payslip-btn payslip-btn--ghost">더보기</button>
+              </div>
+</div>
             </div>
           </div>
       
@@ -159,329 +210,353 @@
       
         <div class="toast" id="toast"></div>
       </main>
-<script>
-/* =========================================================
- * 급여명세서(직원) 화면 — API.txt 스펙 기준
- *
- * ✅ 사용 API (GAS Web App)
- *  - GET  : mode=myPayslips&actor=...&limit=...&cursor=...
- *  - POST : mode=generatePayslip (actor + payslipId)
- *
- * ⚠️ actor는 "사번/이메일/로그인토큰" 중, 백엔드가 식별 가능한 값이어야 합니다.
- *    이 화면은 우선 session/localStorage에 저장된 값(EMPNO → token 순)으로 전송합니다.
- * ========================================================= */
 
-const GAS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbzPwih6oigD9Wdvv2rw4YBC0iZwEoQ2lc1Kk2kD1_K89Edv2SQimG_9gXG5YjGKJCw/exec";
-const LOGIN_PAGE = "./login.html"; // 필요 시 경로 수정
 
-// 스토리지 키 (기존 페이지들과 호환)
-const TOKEN_KEY  = "cheese_admin_token";     // 로그인 토큰(또는 이메일 등)
-const EMPNO_KEY  = "cheese_admin_empNo";     // 사번(가능하면 이 값을 actor로 사용)
-const NAME_KEY   = "cheese_admin_name";
-const ROLE_KEY   = "cheese_admin_role";
+  <script>
+/* =========================
+ * Employee Payslips (API 스펙 v0.5 대응)
+ * - GET  : mode=myPayslips&actor=...&page=1&size=20
+ * - GET  : mode=payrollRunDetail&actor=...&runId=...
+ * - GET  : mode=generatePayslip&actor=...&runId=...&employeeId=...
+ * ========================= */
 
-const PAGE_SIZE = 30;
+const API_BASE = window.CHEESE_ADMIN_API_BASE
+  || 'https://script.google.com/macros/s/AKfycbxmKUfIbHUkrX5SdQXeELy4mKB3iydXlQiuKJ0Iyt1EAZATg8UV2KvIO1jXeL7xqMzf/exec';
+window.CHEESE_ADMIN_API_BASE = API_BASE;
 
-const qs = (sel, el=document) => el.querySelector(sel);
+// 로그인 저장키(기존 시스템 공통)
+const KEY_LOGIN_ID = 'cheese_admin_login_id';     // 보통 이메일
+const KEY_ROLE     = 'cheese_admin_role';
+const KEY_EMP_NO   = 'cheese_admin_emp_no';
+const KEY_NAME     = 'cheese_admin_display_name';
+const KEY_TOKEN    = 'cheese_admin_token';        // 페이지/모드에 따라 쓸 수 있음(없어도 동작하도록 설계)
 
-function setStatus(msg){
-  const el = qs("#statusLine");
-  if (el) el.textContent = msg || "";
-}
+const LOGIN_PAGE = './login.html';
 
-function showToast(msg){
-  const t = qs("#toast");
-  if (!t) return;
-  t.textContent = msg || "";
-  t.classList.add("show");
-  clearTimeout(showToast._tm);
-  showToast._tm = setTimeout(()=>t.classList.remove("show"), 2200);
-}
+const els = {
+  meLine: document.getElementById('meLine'),
+  btnRefresh: document.getElementById('btn-refresh'),
+  countChip: document.getElementById('countChip'),
+  list: document.getElementById('payslipList'),
+  empty: document.getElementById('emptyBox'),
+  loading: document.getElementById('loadingBox'),
+  error: document.getElementById('errorBox'),
+  errorText: document.getElementById('errorText'),
+  btnMore: document.getElementById('btn-more'),
+
+  modal: document.getElementById('payslip-modal'),
+  modalSub: document.getElementById('payslip-modal-sub'),
+  modalBody: document.getElementById('payslip-modal-body'),
+  modalPdf: document.getElementById('payslip-modal-pdf'),
+};
+
+const state = {
+  page: 1,
+  size: 20,
+  total: 0,
+  loading: false,
+  items: [],
+};
+
+function ssGet(k){ try { return (sessionStorage.getItem(k) || '').trim(); } catch(_) { return ''; } }
+function ssDel(k){ try { sessionStorage.removeItem(k); } catch(_){} }
 
 function getActor(){
-  const empNo = (sessionStorage.getItem(EMPNO_KEY) || localStorage.getItem(EMPNO_KEY) || "").trim();
-  if (empNo) return empNo;
-
-  const token = (sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY) || "").trim();
-  return token;
+  // ✅ API 스펙상 actor는 "누가 요청했는지" 식별자(보통 login_id/email)로 사용됨
+  return ssGet(KEY_LOGIN_ID) || (window.CHEESE_ADMIN_LOGIN_ID || '').toString().trim();
 }
-
-function getMeLabel(){
-  const name = (sessionStorage.getItem(NAME_KEY) || localStorage.getItem(NAME_KEY) || "").trim();
-  const role = (sessionStorage.getItem(ROLE_KEY) || localStorage.getItem(ROLE_KEY) || "").trim();
-  const actor = getActor();
-  return [
-    name ? `이름: ${name}` : "",
-    role ? `역할: ${role}` : "",
-    actor ? `actor: ${actor}` : ""
-  ].filter(Boolean).join(" · ");
+function getEmpNo(){
+  return ssGet(KEY_EMP_NO);
+}
+function getRole(){
+  return ssGet(KEY_ROLE);
+}
+function getName(){
+  return ssGet(KEY_NAME);
+}
+function isLoggedIn(){
+  // 최소 기준: login_id가 있으면 로그인으로 간주(기존 페이지들과 동일)
+  return !!getActor();
 }
 
 function logout(){
-  [TOKEN_KEY, EMPNO_KEY, NAME_KEY, ROLE_KEY].forEach(k=>{
-    sessionStorage.removeItem(k);
-    localStorage.removeItem(k);
-  });
+  [KEY_LOGIN_ID, KEY_ROLE, KEY_EMP_NO, KEY_NAME, KEY_TOKEN].forEach(ssDel);
   location.href = LOGIN_PAGE;
 }
 
 async function apiGet(params){
-  const url = GAS_WEBAPP_URL + "?" + new URLSearchParams(params).toString();
-  const res = await fetch(url, { method: "GET" });
-  const json = await res.json().catch(()=>null);
-  if (!json) throw new Error("서버 응답을 JSON으로 해석할 수 없습니다.");
-  if (json.ok === false) throw new Error(json.message || "요청 실패");
-  // {ok:true, data:{...}} 형태를 우선 지원
-  return json.data ?? json.result ?? json;
+  const qs = new URLSearchParams(params).toString();
+  const url = API_BASE + (qs ? ('?' + qs) : '');
+  const res = await fetch(url);
+  const txt = await res.text();
+  let data;
+  try { data = JSON.parse(txt); } catch(_) { data = { ok:false, message:'JSON 파싱 실패', raw: txt }; }
+  return data;
 }
 
-async function apiPost(params){
-  const body = new URLSearchParams(params);
-  const res = await fetch(GAS_WEBAPP_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-    body
-  });
-  const json = await res.json().catch(()=>null);
-  if (!json) throw new Error("서버 응답을 JSON으로 해석할 수 없습니다.");
-  if (json.ok === false) throw new Error(json.message || "요청 실패");
-  return json.data ?? json.result ?? json;
+function money(n){
+  const x = Number(n || 0);
+  return x.toLocaleString('ko-KR') + '원';
+}
+function fmtDate(s){
+  if(!s) return '-';
+  // 2025-12-31 같은 형태 가정
+  return String(s).slice(0, 10);
+}
+function statusLabel(st){
+  const v = String(st || '').trim();
+  if (v === 'approved') return '확정';
+  if (v === 'draft') return '임시';
+  if (v === 'locked') return '잠금';
+  if (v === 'rejected') return '반려';
+  return v || '-';
 }
 
-function fmtYmd(dt){
-  if (!dt) return "";
-  const d = new Date(dt);
-  if (isNaN(d.getTime())) return String(dt);
-  const y = d.getFullYear();
-  const m = String(d.getMonth()+1).padStart(2,"0");
-  const day = String(d.getDate()).padStart(2,"0");
-  return `${y}-${m}-${day}`;
+function setUiState({loading=false, error=null}){
+  els.loading.style.display = loading ? 'block' : 'none';
+  els.error.style.display = error ? 'block' : 'none';
+  if (error) els.errorText.textContent = String(error);
 }
 
-function numberOrDash(v){
-  if (v === null || v === undefined || v === "") return "—";
-  const n = Number(v);
-  if (Number.isFinite(n)) return n.toLocaleString("ko-KR");
-  return String(v);
-}
+function render(){
+  els.countChip.textContent = `${state.items.length}/${state.total || 0}`;
+  els.list.innerHTML = '';
 
-let state = {
-  items: [],
-  nextCursor: null,
-  loading: false
-};
-
-function normalizeListPayload(payload){
-  // payload 자체가 배열인 경우도 대비
-  if (Array.isArray(payload)) return { items: payload, nextCursor: null };
-
-  const items =
-    payload.items ||
-    payload.payslips ||
-    payload.list ||
-    payload.rows ||
-    payload.data ||
-    [];
-
-  const nextCursor =
-    payload.nextCursor ??
-    payload.cursor ??
-    payload.next ??
-    null;
-
-  return { items: Array.isArray(items) ? items : [], nextCursor };
-}
-
-function renderList(){
-  const area = qs("#listArea");
-  const chip = qs("#countChip");
-  const items = state.items;
-
-  if (chip) chip.textContent = `${items.length}건`;
-
-  if (!items.length){
-    area.innerHTML = `
-      <div class="empty">
-        표시할 급여명세서가 없습니다.<br/>
-        <span class="small">- 아직 RUN이 생성되지 않았거나, 권한/공유 설정이 되어있지 않을 수 있습니다.</span>
-      </div>
-    `;
+  if (!state.items.length){
+    els.empty.style.display = 'block';
+    els.btnMore.style.display = 'none';
     return;
   }
+  els.empty.style.display = 'none';
 
-  area.innerHTML = "";
+  const canMore = (state.items.length < (state.total || 0));
+  els.btnMore.style.display = canMore ? 'inline-flex' : 'none';
 
-  items.forEach((item, idx)=>{
-    const payslipId = item.payslipId || item.payslip_id || item.id || item.payslipIdStr || "";
-    const runId = item.runId || item.run_id || item.payrollRunId || "";
-    const period = item.periodLabel || item.period || item.payPeriod || "";
-    const createdAt = fmtYmd(item.createdAt || item.created_at || item.created || "");
-    const statusRaw = item.status || item.state || "READY";
-    const status = String(statusRaw).toUpperCase();
+  for (const it of state.items){
+    const card = document.createElement('div');
+    card.className = 'payslip-item';
 
-    const netPay = item.netPay ?? item.net_pay ?? item.amountNet ?? item.net ?? null;
+    const title = document.createElement('div');
+    title.className = 'payslip-item__title';
+    title.textContent = `${fmtDate(it.period_start)} ~ ${fmtDate(it.period_end)}`;
 
-    const url = item.payslipFileUrl || item.fileUrl || item.url || item.pdfUrl || "";
-
-    const okStatuses = new Set(["READY","PUBLISHED","PUBLISH","OK","DONE","SUCCESS"]);
-    const badStatuses = new Set(["ERROR","FAILED","FAIL"]);
-    const chipClass = okStatuses.has(status) ? "ok" : (badStatuses.has(status) ? "bad" : "");
-    const chipText = status || "—";
-
-    const desc = [
-      period ? `기간: ${period}` : "",
-      createdAt ? `생성: ${createdAt}` : "",
-      (netPay !== null && netPay !== undefined) ? `실수령: ${numberOrDash(netPay)}원` : "",
-      runId ? `run: ${runId}` : ""
-    ].filter(Boolean).join(" · ");
-
-    const card = document.createElement("div");
-    card.className = "row";
-    card.innerHTML = `
-      <div class="row-top">
-        <div class="row-title">${period || ("급여명세서 #" + (idx+1))}</div>
-        <div class="chip ${chipClass}">${chipText}</div>
-      </div>
-      <div class="row-desc">${desc || "—"}</div>
-      <div class="row-actions">
-        <button class="btn btn-soft" data-action="open" ${url ? "" : "data-gen='1'"}>열기</button>
-        ${url ? `<a class="btn btn-ghost" href="${url}" target="_blank" rel="noopener">링크</a>` : ""}
-        <div class="small mono">${payslipId ? "payslipId: "+payslipId : ""}</div>
-      </div>
+    const meta = document.createElement('div');
+    meta.className = 'payslip-item__meta';
+    meta.innerHTML = `
+      <div><span class="k">지급일</span><span class="v">${fmtDate(it.pay_date)}</span></div>
+      <div><span class="k">상태</span><span class="v">${statusLabel(it.status)}</span></div>
+      <div><span class="k">총지급</span><span class="v">${money(it.gross_pay)}</span></div>
+      <div><span class="k">공제합</span><span class="v">${money(it.total_deductions)}</span></div>
+      <div><span class="k">실수령</span><span class="v"><b>${money(it.net_pay)}</b></span></div>
     `;
 
-    card.querySelector('[data-action="open"]').addEventListener("click", ()=>openPayslip(item));
-    area.appendChild(card);
-  });
+    const actions = document.createElement('div');
+    actions.className = 'payslip-item__actions';
 
-  // Load more
-  if (state.nextCursor){
-    const more = document.createElement("div");
-    more.className = "more";
-    more.innerHTML = `<button class="btn" id="btn-more">더 보기</button>`;
-    area.appendChild(more);
-    qs("#btn-more").addEventListener("click", ()=>loadPayslips({ append:true }));
+    const btnDetail = document.createElement('button');
+    btnDetail.type = 'button';
+    btnDetail.className = 'payslip-btn payslip-btn--ghost';
+    btnDetail.textContent = '상세';
+    btnDetail.addEventListener('click', () => openDetail(it.payroll_run_id, it));
+
+    const btnPdf = document.createElement('button');
+    btnPdf.type = 'button';
+    btnPdf.className = 'payslip-btn payslip-btn--primary';
+    btnPdf.textContent = 'PDF';
+    btnPdf.addEventListener('click', () => generatePdf(it.payroll_run_id));
+
+    actions.append(btnDetail, btnPdf);
+    card.append(title, meta, actions);
+    els.list.appendChild(card);
   }
 }
 
-async function openPayslip(item){
-  const actor = getActor();
-  if (!actor){
-    showToast("로그인이 필요합니다.");
-    location.href = LOGIN_PAGE;
-    return;
-  }
-
-  const directUrl = item.payslipFileUrl || item.fileUrl || item.url || item.pdfUrl || "";
-  if (directUrl){
-    window.open(directUrl, "_blank", "noopener");
-    return;
-  }
-
-  const payslipId = item.payslipId || item.payslip_id || item.id || "";
-  const runId = item.runId || item.run_id || item.payrollRunId || "";
-
-  if (!payslipId && !runId){
-    showToast("payslipId/runId가 없어 생성 요청을 할 수 없습니다.");
-    return;
-  }
-
-  try{
-    setStatus("PDF 생성 중…");
-    const payload = {
-      mode: "generatePayslip",
-      actor,
-      // 백엔드가 payslipId를 요구하는 스펙이므로 우선 payslipId 중심으로 보냄
-      payslipId: payslipId || "",
-      // 혹시 runId 기반으로 구현된 경우 대비 (백엔드에서 무시해도 무방)
-      runId: runId || ""
-    };
-
-    const data = await apiPost(payload);
-
-    const url =
-      data.payslipFileUrl ||
-      data.fileUrl ||
-      data.url ||
-      data.pdfUrl ||
-      "";
-
-    if (!url){
-      console.error("generatePayslip response:", data);
-      showToast("생성 결과에 URL이 없습니다.");
-      setStatus("");
-      return;
-    }
-
-    window.open(url, "_blank", "noopener");
-    setStatus("");
-  }catch(err){
-    console.error(err);
-    showToast(err.message || String(err));
-    setStatus("");
-  }
+async function loadMe(){
+  const name = getName() || '(이름 미등록)';
+  const role = getRole() || '(ROLE 미등록)';
+  const empNo = getEmpNo() || '(사번 미등록)';
+  const actor = getActor() || '(login_id 미등록)';
+  els.meLine.textContent = `${name} / ${empNo} / ${role} / ${actor}`;
 }
 
-async function loadPayslips(opts={ reset:true, append:false }){
+async function loadPage(reset=false){
   if (state.loading) return;
   state.loading = true;
-
-  const actor = getActor();
-  if (!actor){
-    showToast("로그인이 필요합니다.");
-    location.href = LOGIN_PAGE;
-    return;
-  }
-
-  const reset = !!opts.reset && !opts.append;
-  if (reset){
-    state.items = [];
-    state.nextCursor = null;
-  }
+  setUiState({loading:true, error:null});
 
   try{
-    setStatus("급여명세서 불러오는 중…");
-    const params = {
-      mode: "myPayslips",
-      actor,
-      limit: String(PAGE_SIZE)
-    };
-    if (opts.append && state.nextCursor){
-      params.cursor = String(state.nextCursor);
+    const actor = getActor();
+    if (!actor){
+      throw new Error('로그인 정보(login_id)가 없습니다. 로그인 페이지로 이동합니다.');
     }
-    const payload = await apiGet(params);
-    const norm = normalizeListPayload(payload);
 
-    state.items = opts.append ? state.items.concat(norm.items) : norm.items;
-    state.nextCursor = norm.nextCursor;
+    if (reset){
+      state.page = 1;
+      state.items = [];
+      state.total = 0;
+    }
 
-    renderList();
-    qs("#meLine").textContent = getMeLabel();
-    setStatus("");
-  }catch(err){
-    console.error(err);
-    showToast(err.message || String(err));
-    setStatus("");
-  }finally{
+    const data = await apiGet({ mode:'myPayslips', actor, page:String(state.page), size:String(state.size) });
+
+    if (!data || data.ok === false){
+      throw new Error(data?.message || 'API 오류');
+    }
+
+    state.total = Number(data.total || 0);
+    const items = Array.isArray(data.items) ? data.items : [];
+
+    // append
+    if (reset) state.items = items;
+    else state.items = state.items.concat(items);
+
+    render();
+  } finally {
     state.loading = false;
+    setUiState({loading:false, error:null});
   }
 }
 
-// 초기화
-(function init(){
-  // 버튼
-  qs("#btn-refresh")?.addEventListener("click", ()=>loadPayslips({ reset:true }));
-  qs("#btn-logout")?.addEventListener("click", logout);
+async function openDetail(runId, item){
+  const actor = getActor();
+  const empNo = getEmpNo();
 
-  // 로그인 체크
-  if (!getActor()){
-    location.href = LOGIN_PAGE;
+  setUiState({loading:true, error:null});
+  try{
+    const data = await apiGet({ mode:'payrollRunDetail', actor, runId:String(runId) });
+    if (!data || data.ok === false) throw new Error(data?.message || '상세 조회 실패');
+
+    // employee 권한이면 lines가 1개(본인)만 오도록 설계되어 있지만,
+    // 혹시 대비해서 사번 필터도 수행
+    const lines = Array.isArray(data.lines) ? data.lines : [];
+    const mine = empNo ? lines.find(x => String(x.employeeId) === String(empNo)) : (lines[0] || null);
+
+    els.modalSub.textContent = `${fmtDate(item?.period_start)} ~ ${fmtDate(item?.period_end)} / 지급일 ${fmtDate(item?.pay_date)}`;
+    els.modalBody.innerHTML = '';
+
+    const kv = document.createElement('div');
+    kv.className = 'payslip-kv';
+    kv.innerHTML = `
+      <div class="kv"><div class="k">총지급</div><div class="v">${money(item?.gross_pay)}</div></div>
+      <div class="kv"><div class="k">공제합</div><div class="v">${money(item?.total_deductions)}</div></div>
+      <div class="kv"><div class="k">실수령</div><div class="v">${money(item?.net_pay)}</div></div>
+      <div class="kv"><div class="k">상태</div><div class="v">${statusLabel(item?.status)}</div></div>
+    `;
+    els.modalBody.appendChild(kv);
+
+    const lineBox = document.createElement('div');
+    lineBox.className = 'payslip-line';
+    if (mine){
+      const rows = [
+        ['기본급', mine.basePay],
+        ['수당합', mine.allowanceTotal],
+        ['공제합', mine.deductionTotal],
+        ['총지급', mine.grossPay],
+        ['실수령', mine.netPay],
+      ];
+      for (const [label, val] of rows){
+        const r = document.createElement('div');
+        r.className = 'row';
+        r.innerHTML = `<div class="label">${label}</div><div class="value">${money(val)}</div>`;
+        lineBox.appendChild(r);
+      }
+      els.modalPdf.href = mine.payslipFileUrl ? mine.payslipFileUrl : '#';
+      els.modalPdf.style.display = mine.payslipFileUrl ? 'inline-flex' : 'none';
+    } else {
+      lineBox.textContent = '상세 항목을 찾지 못했습니다.';
+      els.modalPdf.href = '#';
+      els.modalPdf.style.display = 'none';
+    }
+    els.modalBody.appendChild(lineBox);
+
+    openModal(true);
+  } catch(err){
+    setUiState({loading:false, error: err.message || String(err)});
+  } finally {
+    setUiState({loading:false, error:null});
+  }
+}
+
+async function generatePdf(runId){
+  const actor = getActor();
+  const employeeId = getEmpNo();
+  if (!employeeId){
+    setUiState({loading:false, error:'사번(emp_no)이 없습니다. (cheese_admin_emp_no)'});
     return;
   }
 
-  qs("#meLine").textContent = getMeLabel();
-  loadPayslips({ reset:true });
-})();
+  setUiState({loading:true, error:null});
+  try{
+    const data = await apiGet({ mode:'generatePayslip', actor, runId:String(runId), employeeId:String(employeeId) });
+    if (!data || data.ok === false) throw new Error(data?.message || 'PDF 생성 실패');
+
+    const url = data.payslipFileUrl;
+    if (!url) throw new Error('payslipFileUrl이 비어 있습니다.');
+
+    window.open(url, '_blank', 'noopener');
+  } catch(err){
+    setUiState({loading:false, error: err.message || String(err)});
+  } finally {
+    setUiState({loading:false, error:null});
+  }
+}
+
+/* modal */
+function openModal(open){
+  if (!els.modal) return;
+  els.modal.setAttribute('aria-hidden', open ? 'false' : 'true');
+}
+function bindModal(){
+  if (!els.modal) return;
+  els.modal.addEventListener('click', (e) => {
+    if (e.target && e.target.matches('[data-close-modal]')) openModal(false);
+  });
+  document.addEventListener('keydown', (e)=> {
+    if (e.key === 'Escape' && els.modal.getAttribute('aria-hidden') === 'false') openModal(false);
+  });
+}
+
+/* init */
+window.addEventListener('DOMContentLoaded', async () => {
+  // ✅ 헤더/메뉴 슬롯 렌더링은 admin-common.js가 담당 (필수)
+  if (!isLoggedIn()){
+    // 로그인 없는 상태에서 페이지 접근하면 화면 깨지지 않게 안내 후 이동
+    setUiState({loading:false, error:'로그인 세션이 없습니다. 로그인 페이지로 이동합니다.'});
+    setTimeout(()=> location.href = LOGIN_PAGE, 500);
+    return;
+  }
+
+  // 헤더의 로그아웃 버튼도 동작하게 연결(중복 리스너여도 문제 없음)
+  const headerLogoutBtn = document.getElementById('btn-logout');
+  if (headerLogoutBtn) headerLogoutBtn.addEventListener('click', logout);
+
+  bindModal();
+  await loadMe();
+
+  els.btnRefresh.addEventListener('click', () => loadPage(true));
+  els.btnMore.addEventListener('click', () => { state.page += 1; loadPage(false); });
+
+  await loadPage(true);
+});
 </script>
+
+<!-- Payslip detail modal -->
+  <div id="payslip-modal" class="payslip-modal" aria-hidden="true">
+    <div class="payslip-modal__backdrop" data-close-modal></div>
+    <div class="payslip-modal__panel" role="dialog" aria-modal="true" aria-labelledby="payslip-modal-title">
+      <div class="payslip-modal__head">
+        <div>
+          <div id="payslip-modal-title" class="payslip-modal__title">급여 상세</div>
+          <div id="payslip-modal-sub" class="payslip-modal__sub"></div>
+        </div>
+        <button type="button" class="payslip-modal__close" data-close-modal aria-label="닫기">×</button>
+      </div>
+      <div id="payslip-modal-body" class="payslip-modal__body"></div>
+      <div class="payslip-modal__foot">
+        <button type="button" class="payslip-btn payslip-btn--ghost" data-close-modal>닫기</button>
+        <a id="payslip-modal-pdf" class="payslip-btn payslip-btn--primary" href="#" target="_blank" rel="noopener">PDF 열기</a>
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>
