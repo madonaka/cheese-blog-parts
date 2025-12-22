@@ -1,3 +1,4 @@
+<!-- post_builder.html -->
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -5,10 +6,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>게시글 블록 에디터 · Cheese Lab Admin</title>
 
-  <!-- Drag & Drop -->
+  <!-- ✅ 페이지 메타(공통 스크립트가 읽음) -->
+  <script>
+    // 이 페이지에서 활성 메뉴 하이라이트용(※ admin-menu.html의 data-page 값과 맞추면 더 깔끔)
+    window.CHEESE_ADMIN_ACTIVE_PAGE  = "post_builder";
+    window.CHEESE_ADMIN_PAGE_SUBTITLE = "게시글 블록 에디터";
+    window.CHEESE_ADMIN_PAGE_BADGE    = "v0.1";
+
+    // 필요하면 권한 제한도 가능
+    // window.CHEESE_ADMIN_REQUIRED_ROLES = ["ADMIN","MGR"];
+  </script>
+
+  <!-- Drag & Drop (블록 목록 정렬) -->
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
 
-  <!-- ✅ 메인 관리자 CSS 재사용 -->
+  <!-- 메인 관리자 CSS 재사용 -->
   <link rel="stylesheet" href="./admin.css" />
 
   <style>
@@ -28,9 +40,7 @@
     }
     *{box-sizing:border-box;}
     body{
-      margin:0;
-      background:var(--bg);
-      color:var(--text);
+      margin:0; background:var(--bg); color:var(--text);
       font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
     }
     a{ color:inherit; text-decoration:none; }
@@ -43,8 +53,6 @@
       display:flex;
       flex-direction:column;
     }
-
-    /* 헤더 슬롯은 common.js가 주입 */
     #admin-header-slot{
       position:sticky;
       top:0;
@@ -58,7 +66,7 @@
       min-height:calc(100vh - var(--headerH));
     }
 
-    /* ✅ 메뉴 슬롯(좌측 사이드바) - 데스크탑 기본 */
+    /* ✅ 메뉴 슬롯(좌측 사이드바) */
     .admin-sidebar{
       width:var(--sidebarW);
       flex:0 0 var(--sidebarW);
@@ -69,7 +77,6 @@
       top:var(--headerH);
       height:calc(100vh - var(--headerH));
       overflow:auto;
-      z-index:40;
     }
 
     /* ✅ 본문 */
@@ -79,47 +86,11 @@
       padding:14px 14px 28px;
     }
 
-    /* ✅ 에디터 레이아웃은 980 기준으로 1열로만 변경(사이드바 숨김 X) */
     @media (max-width: 980px){
+      /* 모바일은 왼쪽 고정 사이드바 숨기고,
+         헤더의 햄버거 → 드로어(= admin-common.js)로 메뉴 사용 */
+      .admin-sidebar{ display:none; }
       .admin-content{ padding:12px 12px 24px; }
-    }
-
-    /* =========================
-       ✅ Mobile Drawer (admin-common.js 기준: 860px)
-       - common.js는 body에 admin-nav-open 토글
-       - overlay는 #admin-mobile-overlay 를 동적으로 생성
-       ========================= */
-    @media (max-width: 860px){
-      /* flex 레이아웃은 content가 꽉 차게 */
-      .admin-main{ display:block; }
-
-      /* 사이드바는 화면 밖(오프캔버스) */
-      .admin-sidebar{
-        position:fixed;
-        top:var(--headerH);
-        left:0;
-        height:calc(100vh - var(--headerH));
-        width:min(86vw, var(--sidebarW));
-        transform:translateX(-110%);
-        transition:transform .18s ease;
-        box-shadow: 10px 0 30px rgba(15,23,42,.12);
-        z-index:90;
-      }
-      body.admin-nav-open .admin-sidebar{
-        transform:translateX(0);
-      }
-
-      /* common.js가 생성하는 overlay */
-      #admin-mobile-overlay.admin-mobile-overlay{
-        display:none;
-        position:fixed;
-        inset:0;
-        background:rgba(15,23,42,.45);
-        z-index:80;
-      }
-      body.admin-nav-open #admin-mobile-overlay{
-        display:block;
-      }
     }
 
     /* =========================
@@ -168,13 +139,14 @@
     .btn:hover{ border-color:rgba(15,23,42,.28); }
     .btn.primary{ background:var(--primary); border-color:var(--primary); color:#fff; }
     .btn.small{ padding:7px 9px; border-radius:11px; }
+    .btn.danger{ border-color:rgba(239,68,68,.35); color:#991b1b; }
 
     .row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
     .row.right{ justify-content:flex-end; }
 
     .field{ display:flex; flex-direction:column; gap:6px; margin-bottom:10px; }
     label{ font-size:12px; color:var(--muted); font-weight:900; }
-    input[type="text"], textarea, select{
+    input[type="text"], textarea, select, input[type="number"]{
       width:100%;
       border:1px solid var(--line);
       border-radius:12px;
@@ -298,16 +270,37 @@
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
       font-size:12px;
     }
+
+    /* 인터랙티브 미리보기 iframe */
+    .pv-embed-wrap{
+      border:1px dashed rgba(15,23,42,.18);
+      border-radius:16px;
+      padding:10px;
+      background:#fff;
+      margin:12px 0;
+    }
+    .pv-embed-caption{
+      font-size:12px;
+      color:var(--muted);
+      margin:0 0 8px;
+      font-weight:900;
+    }
+    .pv-iframe{
+      width:100%;
+      border:0;
+      border-radius:14px;
+      background:#fff;
+    }
   </style>
 </head>
 
 <body>
   <div class="admin-shell">
-    <!-- ✅ 헤더 슬롯 (admin-common.js가 admin-header.html 주입) -->
+    <!-- ✅ 헤더 슬롯(공통 admin-common.js가 ./admin-header.html 주입) -->
     <div id="admin-header-slot"></div>
 
     <div class="admin-main">
-      <!-- ✅ 메뉴 슬롯 (admin-common.js가 admin-menu.html 주입) -->
+      <!-- ✅ 메뉴 슬롯(공통 admin-common.js가 ./admin-menu.html 주입) -->
       <aside id="admin-menu-slot" class="admin-sidebar"></aside>
 
       <!-- ✅ 본문 -->
@@ -317,7 +310,7 @@
           <div class="topbar">
             <div>
               <div class="page-title">게시글 블록 에디터</div>
-              <div class="sub">오른쪽 블록을 드래그로 재정렬하면, 왼쪽 최종 HTML이 즉시 재생성됩니다.</div>
+              <div class="sub">오른쪽 블록을 드래그로 재정렬하면, 왼쪽 최종 HTML이 즉시 재생성됩니다. (인터랙티브 블록은 미리보기에서 실제로 동작)</div>
             </div>
             <div class="row right">
               <button class="btn small" id="btnReset">초기화</button>
@@ -394,6 +387,11 @@
                   <button class="btn small" id="btnAddSummary">요약</button>
                   <button class="btn small" id="btnAddImage">이미지</button>
                   <button class="btn small" id="btnAddAd">광고</button>
+
+                  <!-- ✅ 인터랙티브 블록 -->
+                  <button class="btn small" id="btnAddFlash">플래시카드</button>
+                  <button class="btn small" id="btnAddOrder">드래그 순서</button>
+                  <button class="btn small" id="btnAddQuiz">랜덤 퀴즈</button>
                 </div>
               </div>
 
@@ -413,11 +411,12 @@
                   <div class="field">
                     <label>블록 타입 / ID</label>
                     <div class="row">
-                      <input id="edType" type="text" readonly class="mono" style="max-width:140px;" />
+                      <input id="edType" type="text" readonly class="mono" style="max-width:170px;" />
                       <input id="edId" type="text" readonly class="mono" />
                     </div>
                   </div>
 
+                  <!-- 공통: 제목/내용 -->
                   <div class="field" id="edTitleWrap">
                     <label>제목</label>
                     <input id="edTitle" type="text" placeholder="예: 본론 1. 임시정부" />
@@ -428,18 +427,93 @@
                     <textarea id="edBody" placeholder="내용을 입력하세요 (줄바꿈은 자동으로 <p> 처리)"></textarea>
                   </div>
 
+                  <!-- 이미지 -->
                   <div class="field" id="edUrlWrap" style="display:none;">
                     <label>이미지 URL</label>
                     <input id="edUrl" type="text" placeholder="https://..." />
                   </div>
 
+                  <!-- 광고 -->
                   <div class="field" id="edAdWrap" style="display:none;">
                     <label>광고 문구(표시용)</label>
                     <input id="edAdLabel" type="text" placeholder="예: 배너 A / 슬롯 A" />
                   </div>
 
-                  <div class="row right">
-                    <button class="btn small" id="btnDeleteBlock">삭제</button>
+                  <!-- ✅ 플래시카드 -->
+                  <div id="edFlashWrap" style="display:none;">
+                    <div class="field">
+                      <label>카드(일괄 입력)</label>
+                      <div class="mini">한 줄에 1장: <span class="mono">앞면[TAB]뒷면</span> 또는 <span class="mono">앞면 | 뒷면</span></div>
+                      <textarea id="edFlashBulk" placeholder="예)&#10;을사늑약	1905년 체결&#10;한성조약 | 1882년(임오군란)"></textarea>
+                    </div>
+                    <div class="row">
+                      <button class="btn small" id="btnFlashFromBlock">블록 → 텍스트</button>
+                      <button class="btn small" id="btnFlashToBlock">텍스트 → 블록</button>
+                    </div>
+                  </div>
+
+                  <!-- ✅ 드래그 순서 퀴즈 -->
+                  <div id="edOrderWrap" style="display:none;">
+                    <div class="field">
+                      <label>문제 제목</label>
+                      <input id="edOrderTitle" type="text" placeholder="예: 잘 알고 있나 확인해보기!" />
+                    </div>
+                    <div class="field">
+                      <label>보조 문구(옵션)</label>
+                      <input id="edOrderSub" type="text" placeholder="예: 아래 항목을 올바른 순서로 배치하세요." />
+                    </div>
+                    <div class="field">
+                      <label>옵션</label>
+                      <div class="row">
+                        <label class="mini"><input type="checkbox" id="edOrderShuffle" checked /> 보기 섞기</label>
+                      </div>
+                    </div>
+                    <div class="field">
+                      <label>항목(일괄 입력)</label>
+                      <div class="mini">한 줄에 1개 항목(최소 2개)</div>
+                      <textarea id="edOrderItems" placeholder="예)&#10;대한제국 선포&#10;을사늑약&#10;한일병합"></textarea>
+                    </div>
+                    <div class="field">
+                      <label>정답 순서(옵션)</label>
+                      <div class="mini">
+                        미입력 시 “입력한 항목 순서”가 정답. 숫자 콤마: <span class="mono">1,3,2</span>
+                      </div>
+                      <input id="edOrderAnswer" type="text" placeholder="예: 1,2,3" />
+                    </div>
+                  </div>
+
+                  <!-- ✅ 랜덤 퀴즈(치즈 퀴즈 스니펫 임베드) -->
+                  <div id="edQuizWrap" style="display:none;">
+                    <div class="field">
+                      <label>examKey</label>
+                      <input id="edQuizKey" type="text" class="mono" placeholder="예: khs-era-01" />
+                      <div class="mini">questions.html / exam_sets 시트에서 쓰는 키(블로그에선 data-exam-key로 사용)</div>
+                    </div>
+                    <div class="field">
+                      <label>표시 제목</label>
+                      <input id="edQuizTitle" type="text" placeholder="예: 한국사 시대 순서 연습문제 ①" />
+                    </div>
+                    <div class="row">
+                      <div class="field" style="flex:1 1 120px; min-width:120px;">
+                        <label>limit</label>
+                        <input id="edQuizLimit" type="number" min="1" max="50" value="5" />
+                      </div>
+                      <div class="field" style="flex:1 1 160px; min-width:160px;">
+                        <label>period(옵션)</label>
+                        <input id="edQuizPeriod" type="text" placeholder="예: 한국사-통사" />
+                      </div>
+                    </div>
+                    <div class="field">
+                      <label>topic(옵션)</label>
+                      <input id="edQuizTopic" type="text" placeholder="예: 시대순서" />
+                    </div>
+                    <div class="mini">
+                      ※ 이 블록은 “스니펫 삽입” 타입이라, 블로그에서 치즈 퀴즈 스크립트가 로드되어 있어야 동작합니다.
+                    </div>
+                  </div>
+
+                  <div class="row right" style="margin-top:10px;">
+                    <button class="btn small danger" id="btnDeleteBlock">삭제</button>
                     <button class="btn small primary" id="btnApplyBlock">적용</button>
                   </div>
                 </div>
@@ -452,24 +526,71 @@
     </div>
   </div>
 
-  <!-- ✅ 공통 스크립트: 헤더/메뉴 주입 + 모바일 드로어 토글 -->
+  <!-- ✅ 공통 스크립트: 헤더/메뉴 로딩 + 모바일 드로어 -->
   <script src="./admin-common.js"></script>
 
   <script>
     /************************************************************
-     * ✅ Block Editor
+     * ✅ Block Editor (post_builder)
+     * - content_html: 블로그/DB 저장용 “최종 HTML”
+     * - 미리보기는 인터랙티브 블록을 iframe(srcdoc)으로 실제 실행
      ************************************************************/
+
     const $ = (id) => document.getElementById(id);
 
     const state = { blocks: [], selectedId: null };
     const uid = () => 'b' + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(2,6);
 
+    // ✅ HTML 파서가 <script> 내부 문자열의 </script>를 만나면 태그가 끊기는 문제 방지용
+    const CLOSE_SCRIPT = '</scr' + 'ipt>';
+
+    /* ------------------------------
+       블록 생성기
+    ------------------------------ */
     const makeSection = () => ({ id: uid(), type:'section', data:{ title:'소제목', body:'내용을 입력하세요.\n두번째 줄도 가능합니다.' } });
     const makeSummary = () => ({ id: uid(), type:'summary', data:{ title:'핵심 요약', body:'- 요약 1\n- 요약 2\n- 요약 3' } });
-    const makeImage = () => ({ id: uid(), type:'image', data:{ title:'이미지', url:'https://picsum.photos/800/420', alt:'이미지' } });
-    const makeAd = () => ({ id: uid(), type:'ad', data:{ label:'광고 슬롯 A' } });
+    const makeImage   = () => ({ id: uid(), type:'image',   data:{ title:'이미지', url:'https://picsum.photos/800/420', alt:'이미지' } });
+    const makeAd      = () => ({ id: uid(), type:'ad',      data:{ label:'광고 슬롯 A' } });
+
+    // ✅ 인터랙티브 블록
+    const makeFlash   = () => ({
+      id: uid(),
+      type:'flashcard',
+      data:{
+        title:'플래시카드',
+        cards:[
+          { front:'을사늑약', back:'1905년 체결' },
+          { front:'한일병합', back:'1910년' },
+        ]
+      }
+    });
+
+    const makeOrder   = () => ({
+      id: uid(),
+      type:'order_quiz',
+      data:{
+        title:'잘 알고 있나 확인해보기!',
+        sub:'아래 항목을 올바른 순서로 배치하세요.',
+        shuffle:true,
+        items:['대한제국 선포','을사늑약','한일병합'],
+        answerNums:'' // 비면 입력 순서가 정답
+      }
+    });
+
+    const makeQuiz    = () => ({
+      id: uid(),
+      type:'quiz_embed',
+      data:{
+        examKey:'khs-era-01',
+        title:'한국사 시대 순서 연습문제 ①',
+        limit:5,
+        period:'한국사-통사',
+        topic:'시대순서'
+      }
+    });
 
     const blockList = $('blockList');
+    let sortable = null;
 
     function escapeHtml(s){
       return String(s ?? '')
@@ -486,6 +607,9 @@
       if (type==='summary') return 'SUMMARY';
       if (type==='image') return 'IMAGE';
       if (type==='ad') return 'AD';
+      if (type==='flashcard') return 'FLASH';
+      if (type==='order_quiz') return 'ORDER';
+      if (type==='quiz_embed') return 'QUIZ';
       return 'BLOCK';
     }
     function blockTitle(b){
@@ -493,12 +617,19 @@
       if (b.type==='summary') return b.data?.title || '요약';
       if (b.type==='image') return b.data?.title || '이미지';
       if (b.type==='ad') return b.data?.label || '광고';
+      if (b.type==='flashcard') return (b.data?.title || '플래시카드') + ` (${(b.data?.cards||[]).length}장)`;
+      if (b.type==='order_quiz') return (b.data?.title || '드래그 순서') + ` (${(b.data?.items||[]).length}개)`;
+      if (b.type==='quiz_embed') return (b.data?.title || '랜덤 퀴즈') + ` (${b.data?.examKey||''})`;
       return b.type;
     }
+
     function currentBlock(){
       return state.blocks.find(b => b.id===state.selectedId) || null;
     }
 
+    /* ------------------------------
+       텍스트 → <p>/<ul> 변환(기존 유지)
+    ------------------------------ */
     function parasFromText(text){
       const lines = String(text || '').split(/\r?\n/);
       const ps = [];
@@ -542,7 +673,390 @@
       return out.join('\n');
     }
 
-    function renderBlockToHtml(b){
+    /* ------------------------------
+       ✅ 인터랙티브 스니펫 빌더
+       (finalHtml에 들어갈 “그대로 붙여넣는 코드”)
+    ------------------------------ */
+
+    function buildFlashcardSnippet(b){
+      const id = `cheese-fc-${b.id}`;
+      const cards = Array.isArray(b.data?.cards) ? b.data.cards : [];
+      const data = JSON.stringify(cards);
+
+      // 주의: </script>는 CLOSE_SCRIPT로 분리
+      return [
+`<!-- ▼ 플래시카드 -->
+<div id="${id}" class="cheese-flashcard-wrapper"></div>
+
+<style>
+  .cheese-flashcard-wrapper{display:flex;flex-direction:column;align-items:center;gap:1.2rem;margin:1.5rem 0;}
+  .cheese-flashcard{background:none;border:none;padding:0;width:380px;height:230px;perspective:1000px;cursor:pointer;position:relative;border-radius:22px;overflow:hidden;box-shadow:0 14px 30px rgba(15,23,42,.2);}
+  .cheese-flashcard.is-flipped .cheese-flashcard-inner{transform:rotateY(180deg);}
+  .cheese-flashcard-inner{width:100%;height:100%;position:relative;border-radius:22px;background:#fff;transform-style:preserve-3d;transition:transform .35s ease;}
+  .cheese-flashcard-face{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:1.2rem 1.4rem;box-sizing:border-box;backface-visibility:hidden;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:1.15rem;text-align:center;line-height:1.5;border-radius:22px;}
+  .cheese-flashcard-front{background:#111827;color:#f9fafb;font-weight:800;}
+  .cheese-flashcard-back{background:#e0f2fe;color:#111827;transform:rotateY(180deg);font-weight:800;}
+  .cheese-flashcard-hint{position:absolute;right:.9rem;bottom:.6rem;font-size:.75rem;opacity:.85;pointer-events:none;}
+  @media(max-width:600px){
+    .cheese-flashcard{width:84vw;max-width:340px;height:210px;}
+  }
+</style>
+
+<script>
+(function(){
+  var root = document.getElementById(${JSON.stringify(id)});
+  if(!root) return;
+
+  var cards = ${data};
+
+  function esc(s){
+    return String(s==null?"":s)
+      .replace(/&/g,"&amp;")
+      .replace(/</g,"&lt;")
+      .replace(/>/g,"&gt;")
+      .replace(/"/g,"&quot;")
+      .replace(/'/g,"&#39;");
+  }
+
+  cards.forEach(function(item, idx){
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "cheese-flashcard";
+    btn.setAttribute("aria-label", "카드 " + (idx+1));
+    btn.setAttribute("aria-pressed","false");
+
+    btn.innerHTML =
+      '<div class="cheese-flashcard-inner">' +
+        '<div class="cheese-flashcard-face cheese-flashcard-front">' +
+          '<div>' + esc(item.front) + '</div>' +
+          '<div class="cheese-flashcard-hint">👉 뒤집기</div>' +
+        '</div>' +
+        '<div class="cheese-flashcard-face cheese-flashcard-back">' +
+          '<div>' + esc(item.back) + '</div>' +
+          '<div class="cheese-flashcard-hint">👉 뒤집기</div>' +
+        '</div>' +
+      '</div>';
+
+    btn.addEventListener("click", function(){
+      btn.classList.toggle("is-flipped");
+      btn.setAttribute("aria-pressed", btn.classList.contains("is-flipped") ? "true" : "false");
+    });
+
+    root.appendChild(btn);
+  });
+})();
+` + CLOSE_SCRIPT
+      ].join('\n');
+    }
+
+    function parseOrderNums(text, n){
+      const raw = String(text||'').trim();
+      if(!raw) return null;
+      const nums = raw.split(',')
+        .map(s => s.trim())
+        .filter(Boolean)
+        .map(s => Number(s));
+
+      if(nums.length !== n) return { ok:false, msg:`정답 순서 숫자 개수(${nums.length})가 항목(${n})과 달라요.` };
+      const seen = new Set();
+      for(const x of nums){
+        if(!Number.isInteger(x) || x<1 || x>n) return { ok:false, msg:`정답 순서에 1~${n} 범위 밖 숫자가 있어요: ${x}` };
+        if(seen.has(x)) return { ok:false, msg:'정답 순서에 중복 숫자가 있어요.' };
+        seen.add(x);
+      }
+      return { ok:true, nums };
+    }
+
+    function buildOrderQuizSnippet(b){
+      const id = `cheese-oq-${b.id}`;
+      const title = String(b.data?.title || '잘 알고 있나 확인해보기!').trim();
+      const sub   = String(b.data?.sub || '').trim();
+      const items = Array.isArray(b.data?.items) ? b.data.items.filter(x => String(x||'').trim()) : [];
+      const shuffle = !!b.data?.shuffle;
+
+      const n = items.length;
+      const parsed = parseOrderNums(b.data?.answerNums || '', n);
+      if(parsed && parsed.ok === false){
+        // 편집 중 오류는 “스니펫은 만들어 주되, 안내 문구로 표시”
+        // (사용자가 바로 고칠 수 있게)
+      }
+
+      const correctNums = (parsed && parsed.ok && parsed.nums) ? parsed.nums : null;
+
+      // 입력 순서 기반 id: i1..iN
+      const baseItems = items.map((label, i) => ({ id:`i${i+1}`, label }));
+      const correctOrder = correctNums ? correctNums.map(x => `i${x}`) : baseItems.map(x => x.id);
+
+      // 보기만 섞기(정답은 correctOrder 기준)
+      const viewItems = shuffle ? shuffleCopy(baseItems) : baseItems;
+
+      const viewJson = JSON.stringify(viewItems);
+      const correctJson = JSON.stringify(correctOrder);
+
+      return [
+`<!-- ▼ 드래그 순서 퀴즈 -->
+<div id="${id}" class="cheese-order-quiz"></div>
+
+<style>
+  .cheese-order-quiz{max-width:720px;margin:1.8rem auto;padding:1.2rem 1.1rem;border-radius:16px;background:#f9fafb;box-shadow:0 8px 22px rgba(15,23,42,.10);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;box-sizing:border-box;}
+  .cheese-order-title{font-size:1.35rem;font-weight:900;margin:0 0 .6rem;}
+  .cheese-order-sub{font-size:.95rem;color:#6b7280;margin:0 0 1rem;}
+  .cheese-order-top{display:flex;flex-wrap:wrap;gap:.6rem;padding:.6rem;border:1px dashed rgba(15,23,42,.18);border-radius:14px;background:#fff;}
+  .cheese-order-bottom{display:grid;grid-template-columns:repeat(2,1fr);gap:.7rem;margin-top:.9rem;}
+  @media(min-width:720px){ .cheese-order-bottom{grid-template-columns:repeat(4,1fr);} }
+  .cheese-order-slot{min-height:44px;border-radius:999px;border:2px dashed #d1d5db;background:#fff;display:flex;align-items:center;justify-content:center;font-size:.95rem;color:#9ca3af;box-sizing:border-box;transition:.12s ease;}
+  .cheese-order-slot.is-over{border-color:#6366f1;background:#e0e7ff;transform:translateY(-1px);}
+  .cheese-order-card{border:2px solid #7B2C39;border-radius:999px;padding:.55rem .9rem;background:#111827;color:#f9fafb;font-weight:900;font-size:.95rem;cursor:grab;user-select:none;box-shadow:0 3px 8px rgba(15,23,42,.20);}
+  .cheese-order-card:active{cursor:grabbing;}
+  .cheese-order-controls{display:flex;gap:.6rem;flex-wrap:wrap;justify-content:flex-end;align-items:center;margin-top:1rem;}
+  .cheese-order-btn{border:0;border-radius:999px;padding:.7rem 1.1rem;font-weight:900;cursor:pointer;box-shadow:0 4px 10px rgba(15,23,42,.12);}
+  .cheese-order-btn.check{background:#dc2626;color:#fff;}
+  .cheese-order-btn.reset{background:#e5e7eb;color:#111827;}
+  .cheese-order-result{flex:1;color:#4b5563;font-weight:900;}
+  .cheese-order-result.ok{color:#15803d;}
+  .cheese-order-result.bad{color:#b91c1c;}
+  .cheese-order-help{color:#6b7280;font-size:.85rem;margin-top:.7rem;line-height:1.45;}
+</style>
+
+<script>
+(function(){
+  var root = document.getElementById(${JSON.stringify(id)});
+  if(!root) return;
+
+  var items = ${viewJson};
+  var correct = ${correctJson};
+
+  function esc(s){
+    return String(s==null?"":s)
+      .replace(/&/g,"&amp;")
+      .replace(/</g,"&lt;")
+      .replace(/>/g,"&gt;")
+      .replace(/"/g,"&quot;")
+      .replace(/'/g,"&#39;");
+  }
+
+  root.innerHTML =
+    '<div class="cheese-order-title">' + esc(${JSON.stringify(title)}) + '</div>' +
+    (${JSON.stringify(sub)} ? '<div class="cheese-order-sub">' + esc(${JSON.stringify(sub)}) + '</div>' : '') +
+    '<div class="cheese-order-top" data-top="1"></div>' +
+    '<div class="cheese-order-bottom" data-bottom="1"></div>' +
+    '<div class="cheese-order-controls">' +
+      '<div class="cheese-order-result"></div>' +
+      '<button type="button" class="cheese-order-btn reset">초기화</button>' +
+      '<button type="button" class="cheese-order-btn check">채점하기</button>' +
+    '</div>' +
+    '<div class="cheese-order-help">💡 PC는 드래그&드롭, 모바일은 “카드 탭 → 빈 슬롯에 자동 배치” 방식으로도 풀 수 있어요.</div>';
+
+  var top = root.querySelector(".cheese-order-top");
+  var bottom = root.querySelector(".cheese-order-bottom");
+  var resultEl = root.querySelector(".cheese-order-result");
+  var btnReset = root.querySelector(".cheese-order-btn.reset");
+  var btnCheck = root.querySelector(".cheese-order-btn.check");
+
+  function makeSlots(n){
+    bottom.innerHTML = "";
+    for(var i=0;i<n;i++){
+      var s=document.createElement("div");
+      s.className="cheese-order-slot";
+      s.dataset.slotIndex=String(i);
+      s.textContent=(i+1) + "번";
+      bottom.appendChild(s);
+    }
+  }
+
+  function placeToTop(cardEl){
+    if(!cardEl) return;
+    top.appendChild(cardEl);
+  }
+
+  function placeToFirstEmpty(cardEl){
+    var slots = Array.from(bottom.querySelectorAll(".cheese-order-slot"));
+    for(var i=0;i<slots.length;i++){
+      if(!slots[i].querySelector(".cheese-order-card")){
+        slots[i].textContent="";
+        slots[i].appendChild(cardEl);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function resetAll(){
+    resultEl.textContent="";
+    resultEl.className="cheese-order-result";
+    top.innerHTML="";
+    makeSlots(items.length);
+
+    items.forEach(function(it){
+      var c=document.createElement("div");
+      c.className="cheese-order-card";
+      c.draggable=true;
+      c.dataset.itemId=it.id;
+      c.textContent=it.label;
+      top.appendChild(c);
+    });
+  }
+
+  // Desktop DnD
+  var dragging=null;
+
+  root.addEventListener("dragstart", function(e){
+    var card = e.target.closest(".cheese-order-card");
+    if(!card) return;
+    dragging = card;
+    if(e.dataTransfer){
+      e.dataTransfer.effectAllowed = "move";
+      try{ e.dataTransfer.setData("text/plain", card.dataset.itemId||""); }catch(_){}
+    }
+  });
+
+  root.addEventListener("dragover", function(e){
+    if(!dragging) return;
+    var slot = e.target.closest(".cheese-order-slot");
+    var isTop = e.target.closest("[data-top]");
+    if(!slot && !isTop) return;
+    e.preventDefault();
+    Array.from(root.querySelectorAll(".cheese-order-slot")).forEach(function(x){ x.classList.remove("is-over"); });
+    if(slot) slot.classList.add("is-over");
+  });
+
+  root.addEventListener("drop", function(e){
+    if(!dragging) return;
+    var slot = e.target.closest(".cheese-order-slot");
+    var isTop = e.target.closest("[data-top]");
+    if(!slot && !isTop) return;
+    e.preventDefault();
+
+    Array.from(root.querySelectorAll(".cheese-order-slot")).forEach(function(x){ x.classList.remove("is-over"); });
+
+    if(isTop){
+      placeToTop(dragging);
+    }else{
+      var existing = slot.querySelector(".cheese-order-card");
+      if(existing) placeToTop(existing);
+      slot.textContent="";
+      slot.appendChild(dragging);
+    }
+    dragging=null;
+    resultEl.textContent="";
+    resultEl.className="cheese-order-result";
+  });
+
+  root.addEventListener("dragend", function(){
+    dragging=null;
+    Array.from(root.querySelectorAll(".cheese-order-slot")).forEach(function(x){ x.classList.remove("is-over"); });
+  });
+
+  // Mobile / click fallback
+  root.addEventListener("click", function(e){
+    var card = e.target.closest(".cheese-order-card");
+    if(!card) return;
+
+    // 슬롯에 있던 카드는 탭하면 상단으로
+    var inSlot = card.parentElement && card.parentElement.classList.contains("cheese-order-slot");
+    if(inSlot){
+      placeToTop(card);
+      resultEl.textContent="";
+      resultEl.className="cheese-order-result";
+      // 슬롯 텍스트 복구
+      Array.from(bottom.querySelectorAll(".cheese-order-slot")).forEach(function(s){
+        if(!s.querySelector(".cheese-order-card")){
+          s.textContent=(Number(s.dataset.slotIndex)+1)+"번";
+        }
+      });
+      return;
+    }
+
+    // 상단 카드 탭하면 빈 슬롯에 자동 배치
+    var ok = placeToFirstEmpty(card);
+    if(!ok){
+      // 빈 슬롯 없으면 아무 것도 안 함
+      return;
+    }
+    resultEl.textContent="";
+    resultEl.className="cheese-order-result";
+  });
+
+  btnCheck.addEventListener("click", function(){
+    var slots = Array.from(bottom.querySelectorAll(".cheese-order-slot"));
+    var user = slots.map(function(s){
+      var c = s.querySelector(".cheese-order-card");
+      return c ? (c.dataset.itemId||null) : null;
+    });
+
+    if(user.some(function(x){ return !x; })){
+      resultEl.textContent="아직 빈 칸이 있어요. 모든 칸에 배치해 주세요.";
+      resultEl.className="cheese-order-result bad";
+      return;
+    }
+
+    var ok=true;
+    for(var i=0;i<correct.length;i++){
+      if(user[i] !== correct[i]){ ok=false; break; }
+    }
+
+    if(ok){
+      resultEl.textContent="정답! 아주 잘했습니다 👍";
+      resultEl.className="cheese-order-result ok";
+    }else{
+      resultEl.textContent="순서가 일부 다릅니다. 다시 풀어보세요.";
+      resultEl.className="cheese-order-result bad";
+    }
+  });
+
+  btnReset.addEventListener("click", resetAll);
+
+  // init
+  resetAll();
+})();
+` + CLOSE_SCRIPT
+      ].join('\n');
+    }
+
+    function buildQuizEmbedSnippet(b){
+      const d = b.data || {};
+      const examKey = String(d.examKey||'').trim();
+      const title = String(d.title||'연습문제').trim();
+      const limit = Number(d.limit||5) || 5;
+      const period = String(d.period||'').trim();
+      const topic = String(d.topic||'').trim();
+
+      // admin-common.js의 updateSnippet() 형태를 그대로 재현
+      const lines = [
+        '<div',
+        '  class="cheese-quiz"',
+        `  data-exam-key="${escapeAttr(examKey)}"`,
+        '  data-source="sheet"',
+        `  data-limit="${escapeAttr(String(limit))}"`,
+        period ? `  data-period="${escapeAttr(period)}"` : '',
+        topic ? `  data-topic="${escapeAttr(topic)}"` : '',
+        '>',
+        `  <h3>${escapeHtml(title)}</h3>`,
+        '  <ol class="cheese-quiz-list"></ol>',
+        '  <div class="cheese-quiz-buttons">',
+        '    <button type="button" class="cheese-quiz-check">채점하기</button>',
+        '    <button type="button" class="cheese-quiz-reset">다시 풀기</button>',
+        '  </div>',
+        '  <div class="cheese-quiz-result"></div>',
+        '</div>',
+      ].filter(Boolean);
+
+      return `<!-- ▼ 랜덤 퀴즈(치즈 퀴즈) -->\n` + lines.join('\n');
+    }
+
+    function shuffleCopy(arr){
+      const a = arr.slice();
+      for(let i=a.length-1;i>0;i--){
+        const j = Math.floor(Math.random()*(i+1));
+        const t=a[i]; a[i]=a[j]; a[j]=t;
+      }
+      return a;
+    }
+
+    /* ------------------------------
+       블록 → HTML 변환(최종 저장용)
+    ------------------------------ */
+    function renderBlockToFinalHtml(b){
       if (b.type==='section'){
         const id = 'sec-' + b.id;
         return `
@@ -550,7 +1064,7 @@
             <h2>${escapeHtml(b.data?.title || '소제목')}</h2>
             ${parasFromText(b.data?.body || '')}
           </section>
-        `;
+        `.trim();
       }
       if (b.type==='summary'){
         return `
@@ -558,7 +1072,7 @@
             <h3>${escapeHtml(b.data?.title || '핵심 요약')}</h3>
             ${parasFromText(b.data?.body || '')}
           </div>
-        `;
+        `.trim();
       }
       if (b.type==='image'){
         const url = b.data?.url || '';
@@ -568,7 +1082,7 @@
             <div class="mini" style="margin:0 0 8px; font-weight:900;">${escapeHtml(b.data?.title || '이미지')}</div>
             <img src="${escapeAttr(url)}" alt="${escapeAttr(alt)}" />
           </div>
-        `;
+        `.trim();
       }
       if (b.type==='ad'){
         return `
@@ -576,8 +1090,14 @@
             광고 블록 · ${escapeHtml(b.data?.label || '광고')}
             <div class="mini" style="margin-top:6px; color:#6b0f22;">(운영 환경에 맞춰 배너/슬롯 HTML로 교체)</div>
           </div>
-        `;
+        `.trim();
       }
+
+      // ✅ 인터랙티브 블록은 “스니펫”을 그대로 출력
+      if (b.type==='flashcard') return buildFlashcardSnippet(b).trim();
+      if (b.type==='order_quiz') return buildOrderQuizSnippet(b).trim();
+      if (b.type==='quiz_embed') return buildQuizEmbedSnippet(b).trim();
+
       return `<div class="blk">Unknown block</div>`;
     }
 
@@ -595,7 +1115,7 @@
           <div class="t">목차</div>
           <ul style="margin:0; padding-left:18px;">${items.join('\n')}</ul>
         </nav>
-      `;
+      `.trim();
     }
 
     function wrapTemplate(templateId, title, innerHtml){
@@ -609,7 +1129,7 @@
             <div class="divider"></div>
             ${innerHtml}
           </article>
-        `;
+        `.trim();
       }
       if (templateId === 'timeline'){
         return `
@@ -621,11 +1141,12 @@
             <div class="divider"></div>
             ${innerHtml}
           </article>
-        `;
+        `.trim();
       }
       return `<article class="post post--default">${innerHtml}</article>`;
     }
 
+    // ✅ 최종 HTML 생성(저장/복사용)
     function buildFinalHtml(){
       const title = $('postTitle').value.trim();
       const templateId = $('templateSelect').value;
@@ -634,7 +1155,7 @@
 
       const bodyParts = [];
       if (optTOC) bodyParts.push(buildTOC(state.blocks));
-      bodyParts.push(...state.blocks.map(renderBlockToHtml));
+      bodyParts.push(...state.blocks.map(renderBlockToFinalHtml));
 
       if (optSources){
         bodyParts.push(`
@@ -645,20 +1166,132 @@
               <li>예시 출처 2</li>
             </ul>
           </div>
-        `);
+        `.trim());
       }
-      return wrapTemplate(templateId, title, bodyParts.join('\n')).trim();
+
+      return wrapTemplate(templateId, title, bodyParts.filter(Boolean).join('\n\n')).trim();
     }
 
+    /* ------------------------------
+       ✅ 미리보기 렌더(인터랙티브는 iframe로 실행)
+       - pvBody: 실행 가능한 형태로 렌더
+       - finalHtml textarea: 실제 저장할 최종 HTML(스니펫 포함)
+    ------------------------------ */
     function renderPreview(){
       const title = $('postTitle').value.trim() || '제목이 여기에 표시됩니다';
       $('pvTitle').textContent = title;
       $('pvCount').textContent = String(state.blocks.length);
       $('pvTemplate').textContent = $('templateSelect').value;
 
-      const html = buildFinalHtml();
-      $('pvBody').innerHTML = html;
-      $('finalHtml').value = html;
+      // 1) 최종 HTML(저장용)
+      const final = buildFinalHtml();
+      $('finalHtml').value = final;
+
+      // 2) 미리보기용: 인터랙티브 블록은 iframe 래퍼로 표시
+      const templateId = $('templateSelect').value;
+      const optTOC = $('optTOC').checked;
+      const optSources = $('optSources').checked;
+
+      const parts = [];
+      if (optTOC) parts.push(buildTOC(state.blocks));
+
+      state.blocks.forEach((b) => {
+        if (b.type === 'flashcard' || b.type === 'order_quiz'){
+          // 실행형 미리보기(iframe)
+          const caption = (b.type==='flashcard') ? '플래시카드(미리보기 실행)' : '드래그 순서 퀴즈(미리보기 실행)';
+          const h = (b.type==='flashcard') ? 320 : 520;
+
+          parts.push(`
+            <div class="pv-embed-wrap" data-embed-id="${escapeAttr(b.id)}" data-embed-type="${escapeAttr(b.type)}" data-embed-height="${h}">
+              <div class="pv-embed-caption">${escapeHtml(caption)}</div>
+              <iframe class="pv-iframe" title="${escapeAttr(caption)}"></iframe>
+            </div>
+          `.trim());
+          return;
+        }
+
+        if (b.type === 'quiz_embed'){
+          // 이건 블로그 전용 스크립트에 의존하므로 미리보기는 안내만
+          const d = b.data || {};
+          parts.push(`
+            <div class="summary-box">
+              <div style="font-weight:900; margin-bottom:6px;">랜덤 퀴즈(임베드)</div>
+              <div class="mini mono">examKey: ${escapeHtml(d.examKey||'')}</div>
+              <div class="mini">※ 블로그에서 치즈 퀴즈 스크립트가 로드되면 동작합니다.</div>
+            </div>
+          `.trim());
+          return;
+        }
+
+        // 일반 블록은 최종 HTML 그대로 보여주면 됨
+        parts.push(renderBlockToFinalHtml(b));
+      });
+
+      if (optSources){
+        parts.push(`
+          <div class="sources">
+            <div style="font-weight:900;">출처</div>
+            <ul>
+              <li>예시 출처 1</li>
+              <li>예시 출처 2</li>
+            </ul>
+          </div>
+        `.trim());
+      }
+
+      $('pvBody').innerHTML = wrapTemplate(templateId, title, parts.filter(Boolean).join('\n\n'));
+
+      // 3) iframe에 실제 스니펫 실행
+      hydrateEmbeds();
+    }
+
+    function hydrateEmbeds(){
+      const wraps = Array.from(document.querySelectorAll('[data-embed-id]'));
+      wraps.forEach((wrap) => {
+        const id = wrap.getAttribute('data-embed-id');
+        const type = wrap.getAttribute('data-embed-type');
+        const h = Number(wrap.getAttribute('data-embed-height')||320);
+        const iframe = wrap.querySelector('iframe');
+        if(!iframe) return;
+
+        const b = state.blocks.find(x => x.id === id);
+        if(!b) return;
+
+        let snippet = '';
+        if(type === 'flashcard') snippet = buildFlashcardSnippet(b);
+        if(type === 'order_quiz') snippet = buildOrderQuizSnippet(b);
+
+        // iframe로 실행: srcdoc
+        iframe.style.height = h + 'px';
+        iframe.srcdoc = `
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>body{margin:0;padding:10px;background:#fff;}</style>
+</head>
+<body>
+${snippet}
+</body>
+</html>
+        `.trim();
+      });
+    }
+
+    /* ------------------------------
+       블록 리스트 렌더(정렬 포함)
+    ------------------------------ */
+    function ensureSortable(){
+      if(sortable) return;
+      sortable = Sortable.create(blockList, {
+        animation:150,
+        onEnd: () => {
+          const ids = Array.from(blockList.querySelectorAll('.block-item')).map(n => n.dataset.id);
+          state.blocks = ids.map(id => state.blocks.find(b => b.id===id)).filter(Boolean);
+          renderAll();
+        }
+      });
     }
 
     function renderBlockList(){
@@ -695,14 +1328,7 @@
         blockList.appendChild(el);
       });
 
-      Sortable.create(blockList, {
-        animation:150,
-        onEnd: () => {
-          const ids = Array.from(blockList.querySelectorAll('.block-item')).map(n => n.dataset.id);
-          state.blocks = ids.map(id => state.blocks.find(b => b.id===id)).filter(Boolean);
-          renderAll();
-        }
-      });
+      ensureSortable();
     }
 
     function moveBlock(id, delta){
@@ -720,50 +1346,137 @@
       state.selectedId = id;
       renderBlockList();
       fillEditor();
+      renderPreview();
+    }
+
+    /* ------------------------------
+       편집 패널 채우기(타입별)
+    ------------------------------ */
+    function show(el, on){
+      if(!el) return;
+      el.style.display = on ? '' : 'none';
     }
 
     function fillEditor(){
       const b = currentBlock();
-      $('editorEmpty').style.display = b ? 'none' : '';
-      $('editorPanel').style.display = b ? '' : 'none';
+      show($('editorEmpty'), !b);
+      show($('editorPanel'), !!b);
       if (!b) return;
 
       $('edType').value = b.type;
       $('edId').value = b.id;
 
-      $('edTitleWrap').style.display = (b.type==='ad') ? 'none' : '';
-      $('edBodyWrap').style.display = (b.type==='image' || b.type==='ad') ? 'none' : '';
-      $('edUrlWrap').style.display  = (b.type==='image') ? '' : 'none';
-      $('edAdWrap').style.display   = (b.type==='ad') ? '' : 'none';
+      // 기본 래퍼 숨김
+      show($('edTitleWrap'), false);
+      show($('edBodyWrap'), false);
+      show($('edUrlWrap'), false);
+      show($('edAdWrap'), false);
+      show($('edFlashWrap'), false);
+      show($('edOrderWrap'), false);
+      show($('edQuizWrap'), false);
 
+      // 타입별 표시
       if (b.type==='section' || b.type==='summary'){
+        show($('edTitleWrap'), true);
+        show($('edBodyWrap'), true);
         $('edTitle').value = b.data?.title || '';
         $('edBody').value  = b.data?.body || '';
       } else if (b.type==='image'){
+        show($('edTitleWrap'), true);
+        show($('edUrlWrap'), true);
         $('edTitle').value = b.data?.title || '';
         $('edUrl').value   = b.data?.url || '';
       } else if (b.type==='ad'){
+        show($('edAdWrap'), true);
         $('edAdLabel').value = b.data?.label || '';
+      } else if (b.type==='flashcard'){
+        show($('edTitleWrap'), true);
+        show($('edFlashWrap'), true);
+        $('edTitle').value = b.data?.title || '플래시카드';
+        // bulk는 버튼으로 동기화
+      } else if (b.type==='order_quiz'){
+        show($('edOrderWrap'), true);
+        $('edOrderTitle').value = b.data?.title || '';
+        $('edOrderSub').value = b.data?.sub || '';
+        $('edOrderShuffle').checked = !!b.data?.shuffle;
+        $('edOrderItems').value = (Array.isArray(b.data?.items) ? b.data.items : []).join('\n');
+        $('edOrderAnswer').value = b.data?.answerNums || '';
+      } else if (b.type==='quiz_embed'){
+        show($('edQuizWrap'), true);
+        $('edQuizKey').value = b.data?.examKey || '';
+        $('edQuizTitle').value = b.data?.title || '';
+        $('edQuizLimit').value = String(b.data?.limit || 5);
+        $('edQuizPeriod').value = b.data?.period || '';
+        $('edQuizTopic').value = b.data?.topic || '';
       }
     }
 
-    function renderAll(){
-      renderBlockList();
-      renderPreview();
-      fillEditor();
+    /* ------------------------------
+       플래시카드 bulk <-> block 변환
+    ------------------------------ */
+    function flashBlockToBulk(){
+      const b = currentBlock();
+      if(!b || b.type!=='flashcard') return;
+      const cards = Array.isArray(b.data?.cards) ? b.data.cards : [];
+      $('edFlashBulk').value = cards.map(c => `${c.front}\t${c.back}`).join('\n');
+    }
+    function flashBulkToBlock(){
+      const b = currentBlock();
+      if(!b || b.type!=='flashcard') return;
+
+      const lines = String($('edFlashBulk').value||'').split(/\r?\n/);
+      const cards = [];
+      lines.forEach(line => {
+        const t = line.trim();
+        if(!t) return;
+
+        // TAB 우선, 없으면 " | " 또는 "|" 구분
+        let front='', back='';
+        if(t.includes('\t')){
+          const parts = t.split('\t');
+          front = (parts[0]||'').trim();
+          back  = parts.slice(1).join('\t').trim();
+        }else if(t.includes('|')){
+          const parts = t.split('|');
+          front = (parts[0]||'').trim();
+          back  = parts.slice(1).join('|').trim();
+        }else{
+          front = t;
+          back = '';
+        }
+
+        if(front) cards.push({ front, back });
+      });
+
+      b.data.cards = cards.length ? cards : [{front:'앞면', back:'뒷면'}];
     }
 
-    // 버튼 바인딩
+    /* ------------------------------
+       전체 렌더
+    ------------------------------ */
+    function renderAll(){
+      renderBlockList();
+      fillEditor();
+      renderPreview();
+    }
+
+    /* ------------------------------
+       버튼 바인딩
+    ------------------------------ */
+    function addBlock(b){
+      state.blocks.push(b);
+      state.selectedId = b.id;
+      renderAll();
+    }
+
     $('btnAddSection').addEventListener('click', () => addBlock(makeSection()));
     $('btnAddSummary').addEventListener('click', () => addBlock(makeSummary()));
     $('btnAddImage').addEventListener('click', () => addBlock(makeImage()));
     $('btnAddAd').addEventListener('click', () => addBlock(makeAd()));
 
-    function addBlock(b){
-      state.blocks.push(b);
-      selectBlock(b.id);
-      renderPreview();
-    }
+    $('btnAddFlash').addEventListener('click', () => addBlock(makeFlash()));
+    $('btnAddOrder').addEventListener('click', () => addBlock(makeOrder()));
+    $('btnAddQuiz').addEventListener('click', () => addBlock(makeQuiz()));
 
     $('btnApplyBlock').addEventListener('click', () => {
       const b = currentBlock();
@@ -778,7 +1491,45 @@
         b.data.alt   = b.data.title;
       } else if (b.type==='ad'){
         b.data.label = $('edAdLabel').value.trim() || '광고';
+      } else if (b.type==='flashcard'){
+        b.data.title = $('edTitle').value.trim() || '플래시카드';
+        // bulk가 편집됐을 수도 있으니 자동 반영
+        flashBulkToBlock();
+      } else if (b.type==='order_quiz'){
+        const items = String($('edOrderItems').value||'')
+          .split(/\r?\n/)
+          .map(s => s.trim())
+          .filter(Boolean);
+
+        if(items.length < 2){
+          alert('드래그 순서 항목은 최소 2개 이상 입력해 주세요.');
+          return;
+        }
+
+        const parsed = parseOrderNums($('edOrderAnswer').value, items.length);
+        if(parsed && parsed.ok === false){
+          alert(parsed.msg);
+          return;
+        }
+
+        b.data.title = $('edOrderTitle').value.trim() || '잘 알고 있나 확인해보기!';
+        b.data.sub = $('edOrderSub').value.trim();
+        b.data.shuffle = $('edOrderShuffle').checked;
+        b.data.items = items;
+        b.data.answerNums = $('edOrderAnswer').value.trim();
+      } else if (b.type==='quiz_embed'){
+        const examKey = $('edQuizKey').value.trim();
+        if(!examKey){
+          alert('examKey는 필수입니다.');
+          return;
+        }
+        b.data.examKey = examKey;
+        b.data.title = $('edQuizTitle').value.trim() || '연습문제';
+        b.data.limit = Math.max(1, Number($('edQuizLimit').value||5) || 5);
+        b.data.period = $('edQuizPeriod').value.trim();
+        b.data.topic = $('edQuizTopic').value.trim();
       }
+
       renderAll();
     });
 
@@ -794,6 +1545,10 @@
     $('optTOC').addEventListener('change', renderPreview);
     $('optSources').addEventListener('change', renderPreview);
     $('postTitle').addEventListener('input', renderPreview);
+
+    // 플래시카드 bulk 버튼
+    $('btnFlashFromBlock').addEventListener('click', flashBlockToBulk);
+    $('btnFlashToBlock').addEventListener('click', () => { flashBulkToBlock(); renderAll(); });
 
     // 저장/불러오기(localStorage 더미)
     $('btnSave').addEventListener('click', () => {
@@ -817,7 +1572,7 @@
       $('optTOC').checked = !!p.options?.toc;
       $('optSources').checked = !!p.options?.sources;
       state.blocks = Array.isArray(p.blocks_json) ? p.blocks_json : [];
-      state.selectedId = null;
+      state.selectedId = state.blocks[0]?.id || null;
       renderAll();
     });
 
@@ -845,7 +1600,9 @@
 
     $('btnReset').addEventListener('click', initDemo);
 
-    // Demo
+    /* ------------------------------
+       Demo 초기 데이터
+    ------------------------------ */
     function initDemo(){
       $('postTitle').value = '김구, 임시정부의 중심에 선 이유';
       $('templateSelect').value = 'profile';
@@ -854,15 +1611,36 @@
 
       state.blocks = [
         { id: uid(), type:'summary', data:{ title:'핵심 요약', body:'- 김구의 정치적 중심성\n- 임시정부의 정통성 논쟁\n- 해방 이후의 역할과 한계' } },
+
         { id: uid(), type:'section', data:{ title:'1. 상해 임시정부의 구심점', body:'김구는 임시정부 내에서 조직 운영과 대외 활동을 조율했다.\n\n특히 독립운동 노선과 자금 문제에서 영향력을 가졌다.' } },
+
+        makeFlash(),
+
         { id: uid(), type:'ad', data:{ label:'배너 A' } },
-        { id: uid(), type:'section', data:{ title:'2. 독립운동 노선과 정통성', body:'무장 투쟁·외교 노선의 균형 속에서 내부 갈등이 반복됐다.\n김구는 통합을 강조했지만, 노선 차이는 지속됐다.' } },
+
+        makeOrder(),
+
         { id: uid(), type:'image', data:{ title:'관련 이미지', url:'https://picsum.photos/900/480', alt:'관련 이미지' } },
+
+        { id: uid(), type:'section', data:{ title:'2. 독립운동 노선과 정통성', body:'무장 투쟁·외교 노선의 균형 속에서 내부 갈등이 반복됐다.\n김구는 통합을 강조했지만, 노선 차이는 지속됐다.' } },
+
+        makeQuiz(),
+
         { id: uid(), type:'section', data:{ title:'3. 해방 이후: 정치의 한복판', body:'해방 이후에는 남북·좌우 구도 속에서 선택지가 제한됐다.\n결과적으로 정치적 상징성과 현실 정치의 간극이 커졌다.' } },
       ];
+
       state.selectedId = state.blocks[0]?.id || null;
       renderAll();
+
+      // 플래시카드 블록 선택 시 bulk 기본 표시
+      const fc = state.blocks.find(x => x.type==='flashcard');
+      if(fc){
+        state.selectedId = fc.id;
+        renderAll();
+        flashBlockToBulk();
+      }
     }
+
     initDemo();
   </script>
 </body>
