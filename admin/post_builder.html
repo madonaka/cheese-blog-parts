@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>게시글 블록 에디터 · Cheese Lab Admin</title>
+
+  <!-- Drag & Drop -->
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
+
+  <style>
+    :root{
+      --bg:#f3f4f6;
+      --card:#ffffff;
+      --text:#0f172a;
+      --muted:#64748b;
+      --line:rgba(15,23,42,.12);
+      --shadow:0 10px 28px rgba(15,23,42,.10);
+      --primary:#111827;
+      --soft:#e0f2fe;
+      --radius:18px;
+
+      --headerH:56px;
+      --sidebarW:280px;
+    }
+    *{box-sizing:border-box;}
+    body{ margin:0; background:var(--bg); color:var(--text);
+      font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    a{ color:inherit; text-decoration:none; }
+
+    /* =========================
+       ✅ Admin Shell (slot 기반)
+       ========================= */
+    .admin-shell{
+      min-height:100vh;
+      display:flex;
+      flex-direction:column;
+    }
+    /* 헤더 슬롯은 외부에서 주입될 예정이므로, 여기선 높이만 가정 */
+    #admin-header-slot{
+      position:sticky;
+      top:0;
+      z-index:50;
+      min-height:var(--headerH);
+    }
+
+    .admin-main{
+      display:flex;
+      flex:1 1 auto;
+      min-height:calc(100vh - var(--headerH));
+    }
+
+    /* ✅ 메뉴 슬롯(좌측 사이드바) */
+    .admin-sidebar{
+      width:var(--sidebarW);
+      flex:0 0 var(--sidebarW);
+      background:#fff;
+      border-right:1px solid var(--line);
+      padding:12px;
+      position:sticky;
+      top:var(--headerH);
+      height:calc(100vh - var(--headerH));
+      overflow:auto;
+    }
+
+    /* ✅ 본문 */
+    .admin-content{
+      flex:1 1 auto;
+      min-width:0;
+      padding:14px 14px 28px;
+    }
+
+    @media (max-width: 980px){
+      .admin-sidebar{ display:none; }
+      .admin-content{ padding:12px 12px 24px; }
+    }
+
+    /* =========================
+       ✅ Page UI (Editor)
+       ========================= */
+    .wrap{ max-width:1200px; margin:0 auto; }
+    .topbar{
+      display:flex; gap:10px; align-items:center; justify-content:space-between;
+      margin-bottom:12px;
+    }
+    .page-title{ font-size:18px; font-weight:900; letter-spacing:-.02em; }
+    .sub{ color:var(--muted); font-size:12px; }
+
+    .grid{
+      display:grid;
+      grid-template-columns: 1.4fr 0.9fr;
+      gap:12px;
+    }
+    @media (max-width: 980px){ .grid{ grid-template-columns:1fr; } }
+
+    .card{
+      background:var(--card);
+      border:1px solid var(--line);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      overflow:hidden;
+    }
+    .card-h{
+      padding:12px 14px;
+      display:flex; align-items:center; justify-content:space-between; gap:10px;
+      border-bottom:1px solid var(--line);
+    }
+    .card-h .h1{ font-weight:900; font-size:14px; }
+    .card-h .hint{ font-size:12px; color:var(--muted); }
+    .card-b{ padding:14px; }
+
+    .btn{
+      border:1px solid var(--line);
+      background:#fff;
+      border-radius:12px;
+      padding:8px 10px;
+      font-weight:900;
+      font-size:12px;
+      cursor:pointer;
+    }
+    .btn:hover{ border-color:rgba(15,23,42,.28); }
+    .btn.primary{ background:var(--primary); border-color:var(--primary); color:#fff; }
+    .btn.small{ padding:7px 9px; border-radius:11px; }
+
+    .row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .row.right{ justify-content:flex-end; }
+
+    .field{ display:flex; flex-direction:column; gap:6px; margin-bottom:10px; }
+    label{ font-size:12px; color:var(--muted); font-weight:900; }
+    input[type="text"], textarea, select{
+      width:100%;
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:10px 10px;
+      font-size:13px;
+      outline:none;
+      background:#fff;
+    }
+    textarea{ min-height:120px; resize:vertical; line-height:1.45; }
+    .mini{ font-size:12px; color:var(--muted); }
+
+    /* 오른쪽 블록 리스트 */
+    .block-list{ display:flex; flex-direction:column; gap:8px; padding:12px; }
+    .block-item{
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:10px 10px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      cursor:grab;
+      background:#fff;
+    }
+    .block-item:active{ cursor:grabbing; }
+    .block-item.selected{
+      border-color: rgba(17,24,39,.55);
+      box-shadow:0 8px 22px rgba(17,24,39,.12);
+    }
+    .block-left{ display:flex; align-items:center; gap:10px; min-width:0; }
+    .badge{
+      font-size:11px;
+      font-weight:900;
+      padding:4px 8px;
+      border-radius:999px;
+      background:var(--soft);
+      border:1px solid rgba(15,23,42,.08);
+      flex:0 0 auto;
+    }
+    .btitle{
+      font-weight:900;
+      font-size:12px;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      max-width:240px;
+    }
+    .bmeta{ font-size:11px; color:var(--muted); }
+    .block-actions{ display:flex; gap:6px; flex:0 0 auto; }
+    .icon-btn{
+      width:32px; height:32px;
+      border-radius:12px;
+      border:1px solid var(--line);
+      background:#fff;
+      cursor:pointer;
+      font-weight:900;
+      line-height:1;
+    }
+    .icon-btn:hover{ border-color:rgba(15,23,42,.28); }
+
+    /* 왼쪽 미리보기 */
+    .preview .frame{
+      border:1px dashed rgba(15,23,42,.20);
+      border-radius:16px;
+      padding:14px;
+      background:#fff;
+    }
+    .preview .frame .p-title{
+      font-size:18px;
+      font-weight:900;
+      letter-spacing:-.02em;
+      margin:0 0 10px;
+    }
+    .preview .frame .p-meta{
+      margin:0 0 14px;
+      color:var(--muted);
+      font-size:12px;
+    }
+    .preview article{ line-height:1.62; font-size:14px; }
+    .preview h2{ margin:18px 0 8px; font-size:16px; letter-spacing:-.01em; }
+    .preview h3{ margin:14px 0 6px; font-size:14px; }
+
+    .summary-box{
+      border:1px solid rgba(15,23,42,.12);
+      background:rgba(224,242,254,.55);
+      border-radius:16px;
+      padding:12px;
+      margin:12px 0;
+    }
+    .ad-box{
+      border:1px dashed rgba(123,44,57,.40);
+      border-radius:16px;
+      padding:12px;
+      margin:12px 0;
+      background:rgba(123,44,57,.03);
+      color:#6b0f22;
+      font-weight:900;
+      font-size:12px;
+    }
+    .divider{ height:1px; background:rgba(15,23,42,.10); margin:16px 0; }
+    .img-wrap img{ max-width:100%; border-radius:14px; border:1px solid rgba(15,23,42,.10); }
+    .toc{
+      border:1px solid rgba(15,23,42,.10);
+      border-radius:16px;
+      padding:10px 12px;
+      margin:10px 0 14px;
+      background:#fff;
+    }
+    .toc .t{ font-weight:900; font-size:12px; margin-bottom:6px; }
+    .toc a{ color:var(--text); text-decoration:none; }
+    .toc a:hover{ text-decoration:underline; }
+    .sources{
+      margin-top:18px; padding-top:14px;
+      border-top:1px solid rgba(15,23,42,.10);
+      color:var(--muted);
+      font-size:12px;
+    }
+    .sources ul{ margin:8px 0 0; padding-left:18px; }
+
+    .mono{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size:12px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="admin-shell">
+    <!-- ✅ 헤더 슬롯 -->
+    <div id="admin-header-slot"></div>
+
+    <div class="admin-main">
+      <!-- ✅ 메뉴 슬롯 -->
+      <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+
+      <!-- ✅ 본문 -->
+      <main class="admin-content">
+        <div class="wrap">
+
+          <div class="topbar">
+            <div>
+              <div class="page-title">게시글 블록 에디터</div>
+              <div class="sub">오른쪽 블록을 드래그로 재정렬하면, 왼쪽 최종 HTML이 즉시 재생성됩니다.</div>
+            </div>
+            <div class="row right">
+              <button class="btn small" id="btnReset">초기화</button>
+              <button class="btn small" id="btnLoad">불러오기</button>
+              <button class="btn small primary" id="btnSave">저장</button>
+            </div>
+          </div>
+
+          <div class="grid">
+            <!-- LEFT: Preview -->
+            <div class="card">
+              <div class="card-h">
+                <div>
+                  <div class="h1">미리보기(최종 HTML 렌더)</div>
+                  <div class="hint">DB에는 이 HTML을 content_html로 저장하는 구조를 권장</div>
+                </div>
+                <div class="row">
+                  <button class="btn small" id="btnCopyHtml">HTML 복사</button>
+                  <button class="btn small" id="btnDownloadHtml">HTML 저장</button>
+                </div>
+              </div>
+
+              <div class="card-b preview">
+                <div class="field">
+                  <label>글 제목</label>
+                  <input id="postTitle" type="text" placeholder="예: 김구, 임시정부의 중심에 선 이유" />
+                </div>
+
+                <div class="field">
+                  <label>템플릿</label>
+                  <select id="templateSelect">
+                    <option value="default">기본(심플)</option>
+                    <option value="profile">인물 프로필형</option>
+                    <option value="timeline">연표형</option>
+                  </select>
+                </div>
+
+                <div class="field">
+                  <label>옵션</label>
+                  <div class="row">
+                    <label class="mini"><input type="checkbox" id="optTOC" checked /> 목차(TOC)</label>
+                    <label class="mini"><input type="checkbox" id="optSources" checked /> 출처 섹션</label>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label>미리보기</label>
+                  <div class="frame">
+                    <div class="p-title" id="pvTitle">제목이 여기에 표시됩니다</div>
+                    <div class="p-meta">
+                      <span class="mono">blocks:</span> <span id="pvCount">0</span>
+                      &nbsp;·&nbsp; <span class="mono">template:</span> <span id="pvTemplate">default</span>
+                    </div>
+                    <div id="pvBody"></div>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label>최종 HTML(읽기전용)</label>
+                  <textarea id="finalHtml" class="mono" readonly></textarea>
+                </div>
+              </div>
+            </div>
+
+            <!-- RIGHT: Blocks -->
+            <div class="card">
+              <div class="card-h">
+                <div>
+                  <div class="h1">블록(드래그로 순서 변경)</div>
+                  <div class="hint">블록 클릭 → 아래 편집 패널에서 내용 수정</div>
+                </div>
+                <div class="row">
+                  <button class="btn small" id="btnAddSection">섹션</button>
+                  <button class="btn small" id="btnAddSummary">요약</button>
+                  <button class="btn small" id="btnAddImage">이미지</button>
+                  <button class="btn small" id="btnAddAd">광고</button>
+                </div>
+              </div>
+
+              <div class="block-list" id="blockList"></div>
+
+              <div class="card-b">
+                <div class="field">
+                  <label>선택 블록 편집</label>
+                  <div class="mini">오른쪽 목록에서 블록을 클릭하세요.</div>
+                </div>
+
+                <div id="editorEmpty" class="mini" style="padding:12px; border:1px dashed rgba(15,23,42,.18); border-radius:14px;">
+                  아직 선택된 블록이 없습니다.
+                </div>
+
+                <div id="editorPanel" style="display:none;">
+                  <div class="field">
+                    <label>블록 타입 / ID</label>
+                    <div class="row">
+                      <input id="edType" type="text" readonly class="mono" style="max-width:140px;" />
+                      <input id="edId" type="text" readonly class="mono" />
+                    </div>
+                  </div>
+
+                  <div class="field" id="edTitleWrap">
+                    <label>제목</label>
+                    <input id="edTitle" type="text" placeholder="예: 본론 1. 임시정부" />
+                  </div>
+
+                  <div class="field" id="edBodyWrap">
+                    <label>내용</label>
+                    <textarea id="edBody" placeholder="내용을 입력하세요 (줄바꿈은 자동으로 <p> 처리)"></textarea>
+                  </div>
+
+                  <div class="field" id="edUrlWrap" style="display:none;">
+                    <label>이미지 URL</label>
+                    <input id="edUrl" type="text" placeholder="https://..." />
+                  </div>
+
+                  <div class="field" id="edAdWrap" style="display:none;">
+                    <label>광고 문구(표시용)</label>
+                    <input id="edAdLabel" type="text" placeholder="예: 배너 A / 슬롯 A" />
+                  </div>
+
+                  <div class="row right">
+                    <button class="btn small" id="btnDeleteBlock">삭제</button>
+                    <button class="btn small primary" id="btnApplyBlock">적용</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div><!-- grid -->
+
+        </div><!-- wrap -->
+      </main>
+    </div>
+  </div>
+
+  <script>
+    /************************************************************
+     * ✅ 헤더/메뉴 슬롯 주입(더미)
+     * - 실제 환경에선 여기 부분을 "기존 include 로직"으로 교체하면 됨
+     ************************************************************/
+    const headerSlot = document.getElementById('admin-header-slot');
+    const menuSlot = document.getElementById('admin-menu-slot');
+
+    headerSlot.innerHTML = `
+      <header style="
+        height:var(--headerH);
+        display:flex; align-items:center; justify-content:space-between; gap:10px;
+        padding:0 12px; background:#fff;
+        border-bottom:1px solid var(--line);
+        box-shadow:0 6px 18px rgba(15,23,42,.06);
+      ">
+        <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+          <div style="font-weight:900; letter-spacing:-.02em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:520px;">
+            <a href="https://admin.cheesehistory.com/">Cheese Lab Admin</a>
+            <span style="color:var(--muted); font-weight:800; margin-left:8px;">블록 에디터</span>
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-size:12px; font-weight:900; padding:6px 10px; border-radius:999px; border:1px solid rgba(15,23,42,.12); color:var(--muted);">v0.1</span>
+          <button id="btnLogout" style="border:1px solid var(--line); background:#fff; border-radius:14px; padding:8px 10px; font-weight:900; font-size:12px; cursor:pointer;">
+            로그아웃
+          </button>
+        </div>
+      </header>
+    `;
+
+    menuSlot.innerHTML = `
+      <div style="font-weight:900; margin-bottom:10px;">메뉴</div>
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <a href="./new_dashboard.html" class="btn" style="text-align:left;">대시보드</a>
+        <a href="./posts.html" class="btn" style="text-align:left;">게시글 목록</a>
+        <a href="./block_editor.html" class="btn primary" style="text-align:left;">블록 에디터</a>
+      </div>
+      <div style="height:12px;"></div>
+      <div class="mini">※ 이 영역을 네 기존 admin-menu.html로 교체하면 끝</div>
+    `;
+
+    document.getElementById('btnLogout')?.addEventListener('click', () => {
+      alert('로그아웃(더미) - 실제 로직에 연결하세요');
+    });
+
+    /************************************************************
+     * ✅ Block Editor
+     ************************************************************/
+    const $ = (id) => document.getElementById(id);
+
+    const state = { blocks: [], selectedId: null };
+    const uid = () => 'b' + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(2,6);
+
+    const makeSection = () => ({ id: uid(), type:'section', data:{ title:'소제목', body:'내용을 입력하세요.\n두번째 줄도 가능합니다.' } });
+    const makeSummary = () => ({ id: uid(), type:'summary', data:{ title:'핵심 요약', body:'- 요약 1\n- 요약 2\n- 요약 3' } });
+    const makeImage = () => ({ id: uid(), type:'image', data:{ title:'이미지', url:'https://picsum.photos/800/420', alt:'이미지' } });
+    const makeAd = () => ({ id: uid(), type:'ad', data:{ label:'광고 슬롯 A' } });
+
+    const blockList = $('blockList');
+
+    function escapeHtml(s){
+      return String(s ?? '')
+        .replaceAll('&','&amp;')
+        .replaceAll('<','&lt;')
+        .replaceAll('>','&gt;')
+        .replaceAll('"','&quot;')
+        .replaceAll("'",'&#39;');
+    }
+    function escapeAttr(s){ return escapeHtml(s).replaceAll('\n',' '); }
+
+    function blockLabel(type){
+      if (type==='section') return 'SECTION';
+      if (type==='summary') return 'SUMMARY';
+      if (type==='image') return 'IMAGE';
+      if (type==='ad') return 'AD';
+      return 'BLOCK';
+    }
+    function blockTitle(b){
+      if (b.type==='section') return b.data?.title || '섹션';
+      if (b.type==='summary') return b.data?.title || '요약';
+      if (b.type==='image') return b.data?.title || '이미지';
+      if (b.type==='ad') return b.data?.label || '광고';
+      return b.type;
+    }
+    function currentBlock(){
+      return state.blocks.find(b => b.id===state.selectedId) || null;
+    }
+
+    function parasFromText(text){
+      const lines = String(text || '').split(/\r?\n/);
+      const ps = [];
+      let buf = [];
+      for (const line of lines){
+        const trimmed = line.trim();
+        if (!trimmed){
+          if (buf.length){
+            ps.push('<p>' + escapeHtml(buf.join(' ')) + '</p>');
+            buf = [];
+          }
+          continue;
+        }
+        if (trimmed.startsWith('- ')){
+          if (buf.length){
+            ps.push('<p>' + escapeHtml(buf.join(' ')) + '</p>');
+            buf = [];
+          }
+          ps.push('__UL_START__');
+          ps.push('<li>' + escapeHtml(trimmed.slice(2)) + '</li>');
+          ps.push('__UL_END__');
+          continue;
+        }
+        buf.push(trimmed);
+      }
+      if (buf.length) ps.push('<p>' + escapeHtml(buf.join(' ')) + '</p>');
+
+      const out = [];
+      let inUl = false;
+      for (const item of ps){
+        if (item === '__UL_START__'){
+          if (!inUl){ out.push('<ul>'); inUl = true; }
+          continue;
+        }
+        if (item === '__UL_END__'){ continue; }
+        if (item.startsWith('<li')){ out.push(item); continue; }
+        if (inUl){ out.push('</ul>'); inUl = false; }
+        out.push(item);
+      }
+      if (inUl) out.push('</ul>');
+      return out.join('\n');
+    }
+
+    function renderBlockToHtml(b){
+      if (b.type==='section'){
+        const id = 'sec-' + b.id;
+        return `
+          <section class="blk blk--section" id="${escapeAttr(id)}">
+            <h2>${escapeHtml(b.data?.title || '소제목')}</h2>
+            ${parasFromText(b.data?.body || '')}
+          </section>
+        `;
+      }
+      if (b.type==='summary'){
+        return `
+          <div class="summary-box blk blk--summary">
+            <h3>${escapeHtml(b.data?.title || '핵심 요약')}</h3>
+            ${parasFromText(b.data?.body || '')}
+          </div>
+        `;
+      }
+      if (b.type==='image'){
+        const url = b.data?.url || '';
+        const alt = b.data?.alt || '이미지';
+        return `
+          <div class="img-wrap blk blk--image">
+            <div class="mini" style="margin:0 0 8px; font-weight:900;">${escapeHtml(b.data?.title || '이미지')}</div>
+            <img src="${escapeAttr(url)}" alt="${escapeAttr(alt)}" />
+          </div>
+        `;
+      }
+      if (b.type==='ad'){
+        return `
+          <div class="ad-box blk blk--ad">
+            광고 블록 · ${escapeHtml(b.data?.label || '광고')}
+            <div class="mini" style="margin-top:6px; color:#6b0f22;">(운영 환경에 맞춰 배너/슬롯 HTML로 교체)</div>
+          </div>
+        `;
+      }
+      return `<div class="blk">Unknown block</div>`;
+    }
+
+    function buildTOC(blocks){
+      const items = blocks
+        .filter(b => b.type==='section')
+        .map(b => {
+          const id = 'sec-' + b.id;
+          const t = b.data?.title || '소제목';
+          return `<li><a href="#${escapeAttr(id)}">${escapeHtml(t)}</a></li>`;
+        });
+      if (!items.length) return '';
+      return `
+        <nav class="toc">
+          <div class="t">목차</div>
+          <ul style="margin:0; padding-left:18px;">${items.join('\n')}</ul>
+        </nav>
+      `;
+    }
+
+    function wrapTemplate(templateId, title, innerHtml){
+      if (templateId === 'profile'){
+        return `
+          <article class="post post--profile">
+            <header class="post__head">
+              <h1 style="margin:0 0 6px; font-size:20px; letter-spacing:-.02em;">${escapeHtml(title || '')}</h1>
+              <div style="color:rgba(100,116,139,1); font-size:12px;">인물 프로필 템플릿</div>
+            </header>
+            <div class="divider"></div>
+            ${innerHtml}
+          </article>
+        `;
+      }
+      if (templateId === 'timeline'){
+        return `
+          <article class="post post--timeline">
+            <header class="post__head">
+              <h1 style="margin:0 0 6px; font-size:20px; letter-spacing:-.02em;">${escapeHtml(title || '')}</h1>
+              <div style="color:rgba(100,116,139,1); font-size:12px;">연표 템플릿</div>
+            </header>
+            <div class="divider"></div>
+            ${innerHtml}
+          </article>
+        `;
+      }
+      return `<article class="post post--default">${innerHtml}</article>`;
+    }
+
+    function buildFinalHtml(){
+      const title = $('postTitle').value.trim();
+      const templateId = $('templateSelect').value;
+      const optTOC = $('optTOC').checked;
+      const optSources = $('optSources').checked;
+
+      const bodyParts = [];
+      if (optTOC) bodyParts.push(buildTOC(state.blocks));
+      bodyParts.push(...state.blocks.map(renderBlockToHtml));
+
+      if (optSources){
+        bodyParts.push(`
+          <div class="sources">
+            <div style="font-weight:900;">출처</div>
+            <ul>
+              <li>예시 출처 1</li>
+              <li>예시 출처 2</li>
+            </ul>
+          </div>
+        `);
+      }
+      return wrapTemplate(templateId, title, bodyParts.join('\n')).trim();
+    }
+
+    function renderPreview(){
+      const title = $('postTitle').value.trim() || '제목이 여기에 표시됩니다';
+      $('pvTitle').textContent = title;
+      $('pvCount').textContent = String(state.blocks.length);
+      $('pvTemplate').textContent = $('templateSelect').value;
+
+      const html = buildFinalHtml();
+      $('pvBody').innerHTML = html;
+      $('finalHtml').value = html;
+    }
+
+    function renderBlockList(){
+      blockList.innerHTML = '';
+      state.blocks.forEach((b, idx) => {
+        const el = document.createElement('div');
+        el.className = 'block-item' + (state.selectedId===b.id ? ' selected':'');
+        el.dataset.id = b.id;
+
+        el.innerHTML = `
+          <div class="block-left">
+            <span class="badge">${blockLabel(b.type)}</span>
+            <div style="min-width:0;">
+              <div class="btitle" title="${escapeAttr(blockTitle(b))}">${escapeHtml(blockTitle(b))}</div>
+              <div class="bmeta">#${idx+1} · ${escapeHtml(b.type)}</div>
+            </div>
+          </div>
+          <div class="block-actions">
+            <button class="icon-btn" data-act="up" title="위로">↑</button>
+            <button class="icon-btn" data-act="down" title="아래로">↓</button>
+          </div>
+        `;
+
+        el.addEventListener('click', (e) => {
+          const act = e.target?.dataset?.act;
+          if (act === 'up' || act === 'down'){
+            e.stopPropagation();
+            moveBlock(b.id, act==='up' ? -1 : 1);
+            return;
+          }
+          selectBlock(b.id);
+        });
+
+        blockList.appendChild(el);
+      });
+
+      Sortable.create(blockList, {
+        animation:150,
+        onEnd: () => {
+          const ids = Array.from(blockList.querySelectorAll('.block-item')).map(n => n.dataset.id);
+          state.blocks = ids.map(id => state.blocks.find(b => b.id===id)).filter(Boolean);
+          renderAll();
+        }
+      });
+    }
+
+    function moveBlock(id, delta){
+      const i = state.blocks.findIndex(b => b.id===id);
+      if (i < 0) return;
+      const j = i + delta;
+      if (j < 0 || j >= state.blocks.length) return;
+      const tmp = state.blocks[i];
+      state.blocks[i] = state.blocks[j];
+      state.blocks[j] = tmp;
+      renderAll();
+    }
+
+    function selectBlock(id){
+      state.selectedId = id;
+      renderBlockList();
+      fillEditor();
+    }
+
+    function fillEditor(){
+      const b = currentBlock();
+      $('editorEmpty').style.display = b ? 'none' : '';
+      $('editorPanel').style.display = b ? '' : 'none';
+      if (!b) return;
+
+      $('edType').value = b.type;
+      $('edId').value = b.id;
+
+      $('edTitleWrap').style.display = (b.type==='ad') ? 'none' : '';
+      $('edBodyWrap').style.display = (b.type==='image' || b.type==='ad') ? 'none' : '';
+      $('edUrlWrap').style.display  = (b.type==='image') ? '' : 'none';
+      $('edAdWrap').style.display   = (b.type==='ad') ? '' : 'none';
+
+      if (b.type==='section' || b.type==='summary'){
+        $('edTitle').value = b.data?.title || '';
+        $('edBody').value  = b.data?.body || '';
+      } else if (b.type==='image'){
+        $('edTitle').value = b.data?.title || '';
+        $('edUrl').value   = b.data?.url || '';
+      } else if (b.type==='ad'){
+        $('edAdLabel').value = b.data?.label || '';
+      }
+    }
+
+    function renderAll(){
+      renderBlockList();
+      renderPreview();
+      fillEditor();
+    }
+
+    // 버튼 바인딩
+    $('btnAddSection').addEventListener('click', () => addBlock(makeSection()));
+    $('btnAddSummary').addEventListener('click', () => addBlock(makeSummary()));
+    $('btnAddImage').addEventListener('click', () => addBlock(makeImage()));
+    $('btnAddAd').addEventListener('click', () => addBlock(makeAd()));
+
+    function addBlock(b){
+      state.blocks.push(b);
+      selectBlock(b.id);
+      renderPreview();
+    }
+
+    $('btnApplyBlock').addEventListener('click', () => {
+      const b = currentBlock();
+      if (!b) return;
+
+      if (b.type==='section' || b.type==='summary'){
+        b.data.title = $('edTitle').value.trim() || (b.type==='section' ? '소제목' : '핵심 요약');
+        b.data.body  = $('edBody').value || '';
+      } else if (b.type==='image'){
+        b.data.title = $('edTitle').value.trim() || '이미지';
+        b.data.url   = $('edUrl').value.trim() || 'https://picsum.photos/800/420';
+        b.data.alt   = b.data.title;
+      } else if (b.type==='ad'){
+        b.data.label = $('edAdLabel').value.trim() || '광고';
+      }
+      renderAll();
+    });
+
+    $('btnDeleteBlock').addEventListener('click', () => {
+      const b = currentBlock();
+      if (!b) return;
+      state.blocks = state.blocks.filter(x => x.id !== b.id);
+      state.selectedId = null;
+      renderAll();
+    });
+
+    $('templateSelect').addEventListener('change', renderPreview);
+    $('optTOC').addEventListener('change', renderPreview);
+    $('optSources').addEventListener('change', renderPreview);
+    $('postTitle').addEventListener('input', renderPreview);
+
+    // 저장/불러오기(localStorage 더미)
+    $('btnSave').addEventListener('click', () => {
+      const payload = {
+        title: $('postTitle').value.trim(),
+        template_id: $('templateSelect').value,
+        options: { toc: $('optTOC').checked, sources: $('optSources').checked },
+        blocks_json: JSON.parse(JSON.stringify(state.blocks)),
+        content_html: $('finalHtml').value
+      };
+      localStorage.setItem('blk_editor_draft', JSON.stringify(payload));
+      alert('저장됨(localStorage). 다음 단계에서 Apps Script 저장 API로 교체하면 됩니다.');
+    });
+
+    $('btnLoad').addEventListener('click', () => {
+      const raw = localStorage.getItem('blk_editor_draft');
+      if (!raw){ alert('저장된 데이터가 없습니다'); return; }
+      const p = JSON.parse(raw);
+      $('postTitle').value = p.title || '';
+      $('templateSelect').value = p.template_id || 'default';
+      $('optTOC').checked = !!p.options?.toc;
+      $('optSources').checked = !!p.options?.sources;
+      state.blocks = Array.isArray(p.blocks_json) ? p.blocks_json : [];
+      state.selectedId = null;
+      renderAll();
+    });
+
+    $('btnCopyHtml').addEventListener('click', async () => {
+      try{
+        await navigator.clipboard.writeText($('finalHtml').value || '');
+        alert('HTML 복사 완료');
+      }catch(e){
+        alert('복사 실패(권한 확인)');
+      }
+    });
+
+    $('btnDownloadHtml').addEventListener('click', () => {
+      const html = $('finalHtml').value || '';
+      const blob = new Blob([html], {type:'text/html;charset=utf-8'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'post_content_html.html';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    });
+
+    $('btnReset').addEventListener('click', initDemo);
+
+    // Demo
+    function initDemo(){
+      $('postTitle').value = '김구, 임시정부의 중심에 선 이유';
+      $('templateSelect').value = 'profile';
+      $('optTOC').checked = true;
+      $('optSources').checked = true;
+
+      state.blocks = [
+        { id: uid(), type:'summary', data:{ title:'핵심 요약', body:'- 김구의 정치적 중심성\n- 임시정부의 정통성 논쟁\n- 해방 이후의 역할과 한계' } },
+        { id: uid(), type:'section', data:{ title:'1. 상해 임시정부의 구심점', body:'김구는 임시정부 내에서 조직 운영과 대외 활동을 조율했다.\n\n특히 독립운동 노선과 자금 문제에서 영향력을 가졌다.' } },
+        { id: uid(), type:'ad', data:{ label:'배너 A' } },
+        { id: uid(), type:'section', data:{ title:'2. 독립운동 노선과 정통성', body:'무장 투쟁·외교 노선의 균형 속에서 내부 갈등이 반복됐다.\n김구는 통합을 강조했지만, 노선 차이는 지속됐다.' } },
+        { id: uid(), type:'image', data:{ title:'관련 이미지', url:'https://picsum.photos/900/480', alt:'관련 이미지' } },
+        { id: uid(), type:'section', data:{ title:'3. 해방 이후: 정치의 한복판', body:'해방 이후에는 남북·좌우 구도 속에서 선택지가 제한됐다.\n결과적으로 정치적 상징성과 현실 정치의 간극이 커졌다.' } },
+      ];
+      state.selectedId = state.blocks[0]?.id || null;
+      renderAll();
+    }
+    initDemo();
+  </script>
+</body>
+</html>
