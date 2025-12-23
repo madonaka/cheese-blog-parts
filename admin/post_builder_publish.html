@@ -41,6 +41,9 @@
     }
     a{ color:inherit; text-decoration:none; }
 
+    /* =========================
+       ✅ Admin Shell (slot 기반)
+       ========================= */
     .admin-shell{
       min-height:100vh;
       display:flex;
@@ -59,6 +62,7 @@
       min-height:calc(100vh - var(--headerH));
     }
 
+    /* ✅ 메뉴 슬롯(좌측 사이드바) */
     .admin-sidebar{
       width:var(--sidebarW);
       flex:0 0 var(--sidebarW);
@@ -71,6 +75,7 @@
       overflow:auto;
     }
 
+    /* ✅ 본문 */
     .admin-content{
       flex:1 1 auto;
       min-width:0;
@@ -82,6 +87,9 @@
       .admin-content{ padding:12px 12px 24px; }
     }
 
+    /* =========================
+       ✅ Page UI (Editor)
+       ========================= */
     .wrap{ max-width:1200px; margin:0 auto; }
     .topbar{
       display:flex; gap:10px; align-items:center; justify-content:space-between;
@@ -144,6 +152,7 @@
     textarea{ min-height:120px; resize:vertical; line-height:1.45; }
     .mini{ font-size:12px; color:var(--muted); }
 
+    /* 오른쪽 블록 리스트 */
     .block-list{ display:flex; flex-direction:column; gap:8px; padding:12px; }
     .block-item{
       border:1px solid var(--line);
@@ -192,6 +201,7 @@
     }
     .icon-btn:hover{ border-color:rgba(15,23,42,.28); }
 
+    /* 왼쪽 미리보기 */
     .preview .frame{
       border:1px dashed rgba(15,23,42,.20);
       border-radius:16px;
@@ -255,23 +265,26 @@
       font-size:12px;
     }
 
-    .seg{
-      display:flex; gap:8px; flex-wrap:wrap; align-items:center;
-      padding:10px 12px; border:1px dashed rgba(15,23,42,.16); border-radius:14px;
+    /* 인터랙티브 미리보기 iframe */
+    .pv-embed-wrap{
+      border:1px dashed rgba(15,23,42,.18);
+      border-radius:16px;
+      padding:10px;
       background:#fff;
+      margin:12px 0;
     }
-    .seg .mini{ margin:0; }
-    .chip{
-      display:inline-flex; align-items:center; gap:6px;
-      padding:6px 10px; border-radius:999px;
-      border:1px solid rgba(15,23,42,.12);
-      background:#fff;
+    .pv-embed-caption{
       font-size:12px;
+      color:var(--muted);
+      margin:0 0 8px;
       font-weight:900;
-      cursor:pointer;
-      user-select:none;
     }
-    .chip input{ width:16px; height:16px; }
+    .pv-iframe{
+      width:100%;
+      border:0;
+      border-radius:14px;
+      background:#fff;
+    }
   </style>
 </head>
 
@@ -291,7 +304,7 @@
           <div class="topbar">
             <div>
               <div class="page-title">게시글 블록 에디터</div>
-              <div class="sub">오른쪽 블록을 드래그로 재정렬하면, 왼쪽 최종 HTML이 즉시 재생성됩니다.</div>
+              <div class="sub">오른쪽 블록을 드래그로 재정렬하면, 왼쪽 최종 HTML이 즉시 재생성됩니다. (인터랙티브 블록은 미리보기에서 실제로 동작)</div>
             </div>
             <div class="row right">
               <button class="btn small" id="btnReset">초기화</button>
@@ -339,6 +352,7 @@
                   <div class="mini">※ “초안”은 Blogger에서 공개되지 않은 상태로 생성됩니다(서버 구현에 따라 동작).</div>
                 </div>
 
+
                 <div class="field">
                   <label>옵션</label>
                   <div class="row">
@@ -381,6 +395,7 @@
                     </div>
                   </div>
                 </details>
+
               </div>
             </div>
 
@@ -396,9 +411,10 @@
                   <button class="btn small" id="btnAddSummary">요약</button>
                   <button class="btn small" id="btnAddImage">이미지</button>
                   <button class="btn small" id="btnAddAd">광고</button>
-                  <button class="btn small" id="btnAddFlash">플래시</button>
-                  <button class="btn small" id="btnAddOrder">드래그문제</button>
-                  <button class="btn small" id="btnAddQuiz">랜덤문제</button>
+
+                  <button class="btn small" id="btnAddFlash">플래시카드</button>
+                  <button class="btn small" id="btnAddOrder">드래그 순서</button>
+                  <button class="btn small" id="btnAddQuiz">랜덤 퀴즈</button>
                 </div>
               </div>
 
@@ -418,12 +434,11 @@
                   <div class="field">
                     <label>블록 타입 / ID</label>
                     <div class="row">
-                      <input id="edType" type="text" readonly class="mono" style="max-width:140px;" />
+                      <input id="edType" type="text" readonly class="mono" style="max-width:170px;" />
                       <input id="edId" type="text" readonly class="mono" />
                     </div>
                   </div>
 
-                  <!-- 공통(섹션/요약/이미지) -->
                   <div class="field" id="edTitleWrap">
                     <label>제목</label>
                     <input id="edTitle" type="text" placeholder="예: 본론 1. 임시정부" />
@@ -444,45 +459,54 @@
                     <input id="edAdLabel" type="text" placeholder="예: 배너 A / 슬롯 A" />
                   </div>
 
-                  <!-- flashcard 편집 -->
+                  <!-- 플래시카드 -->
                   <div id="edFlashWrap" style="display:none;">
                     <div class="field">
-                      <label>표시 제목</label>
-                      <input id="edFlashTitle" type="text" placeholder="예: 플래시카드" />
+                      <label>카드(일괄 입력)</label>
+                      <div class="mini">한 줄에 1장: <span class="mono">앞면[TAB]뒷면</span> 또는 <span class="mono">앞면 | 뒷면</span></div>
+                      <textarea id="edFlashBulk" placeholder="예)&#10;을사늑약	1905년 체결&#10;한성조약 | 1882년(임오군란)"></textarea>
                     </div>
-                    <div class="field">
-                      <label>카드 목록 (한 줄 = 앞면[TAB]뒷면 또는 앞면|뒷면)</label>
-                      <textarea id="edFlashBulk" placeholder="예) 을사늑약&#9;1905&#10;한일병합|1910"></textarea>
+                    <div class="row">
+                      <button class="btn small" id="btnFlashFromBlock">블록 → 텍스트</button>
+                      <button class="btn small" id="btnFlashToBlock">텍스트 → 블록</button>
                     </div>
-                    <div class="mini">※ 이 블록은 블로그에서 플래시카드 스크립트가 로드되어 있어야 동작합니다.</div>
                   </div>
 
-                  <!-- order quiz 편집 -->
+                  <!-- 드래그 순서 -->
                   <div id="edOrderWrap" style="display:none;">
                     <div class="field">
-                      <label>표시 제목</label>
+                      <label>문제 제목</label>
                       <input id="edOrderTitle" type="text" placeholder="예: 잘 알고 있나 확인해보기!" />
                     </div>
                     <div class="field">
-                      <label>설명(옵션)</label>
+                      <label>보조 문구(옵션)</label>
                       <input id="edOrderSub" type="text" placeholder="예: 아래 항목을 올바른 순서로 배치하세요." />
                     </div>
                     <div class="field">
-                      <label>항목(한 줄 = 1개)</label>
-                      <textarea id="edOrderItems" placeholder="예) 대한제국 선포&#10;을사늑약&#10;한일병합"></textarea>
+                      <label>옵션</label>
+                      <div class="row">
+                        <label class="mini"><input type="checkbox" id="edOrderShuffle" checked /> 보기 섞기</label>
+                      </div>
                     </div>
                     <div class="field">
-                      <label>정답 순서(선택, 예: 2,1,3)</label>
-                      <input id="edOrderAnswer" type="text" placeholder="비우면 '현재 입력 순서'가 정답으로 사용" />
+                      <label>항목(일괄 입력)</label>
+                      <div class="mini">한 줄에 1개 항목(최소 2개)</div>
+                      <textarea id="edOrderItems" placeholder="예)&#10;대한제국 선포&#10;을사늑약&#10;한일병합"></textarea>
                     </div>
-                    <div class="row">
-                      <label class="mini"><input type="checkbox" id="edOrderShuffle" checked /> 표시 시 섞기</label>
+                    <div class="field">
+                      <label>정답 순서(옵션)</label>
+                      <div class="mini">미입력 시 “입력한 항목 순서”가 정답. 숫자 콤마: <span class="mono">1,3,2</span></div>
+                      <input id="edOrderAnswer" type="text" placeholder="예: 1,2,3" />
                     </div>
-                    <div class="mini">※ 이 블록은 블로그에서 드래그퀴즈 스크립트가 로드되어 있어야 동작합니다.</div>
                   </div>
 
-                  <!-- random quiz 편집 -->
+                  <!-- 랜덤 퀴즈 임베드 -->
                   <div id="edQuizWrap" style="display:none;">
+                    <div class="field">
+                      <label>examKey</label>
+                      <input id="edQuizKey" type="text" class="mono" placeholder="예: khs-era-01" />
+                      <div class="mini">questions.html / exam_sets 시트에서 쓰는 키(블로그에선 data-exam-key로 사용)</div>
+                    </div>
                     <div class="field">
                       <label>표시 제목</label>
                       <input id="edQuizTitle" type="text" placeholder="예: 한국사 시대 순서 연습문제 ①" />
@@ -531,6 +555,7 @@
     const state = { blocks: [], selectedId: null };
     const uid = () => 'b' + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(2,6);
 
+    // ✅ 스크립트 종료태그 문자열은 "쪼개서" 만든다 (HTML 파서 보호)
     const CLOSE_SCRIPT = '</scr' + 'ipt>';
 
     const makeSection = () => ({ id: uid(), type:'section', data:{ title:'소제목', body:'내용을 입력하세요.\n두번째 줄도 가능합니다.' } });
@@ -564,16 +589,18 @@
 
     const makeQuiz    = () => ({
       id: uid(),
-      type:'random_quiz',
+      type:'quiz_embed',
       data:{
-        title:'랜덤 문제',
+        examKey:'khs-era-01',
+        title:'한국사 시대 순서 연습문제 ①',
         limit:5,
-        period:'',
-        topic:'',
+        period:'한국사-통사',
+        topic:'시대순서'
       }
     });
 
     const blockList = $('blockList');
+    let sortable = null;
 
     function escapeHtml(s){
       return String(s ?? '')
@@ -592,7 +619,7 @@
       if (type==='ad') return 'AD';
       if (type==='flashcard') return 'FLASH';
       if (type==='order_quiz') return 'ORDER';
-      if (type==='random_quiz') return 'QUIZ';
+      if (type==='quiz_embed') return 'QUIZ';
       return 'BLOCK';
     }
     function blockTitle(b){
@@ -600,9 +627,9 @@
       if (b.type==='summary') return b.data?.title || '요약';
       if (b.type==='image') return b.data?.title || '이미지';
       if (b.type==='ad') return b.data?.label || '광고';
-      if (b.type==='flashcard') return b.data?.title || '플래시카드';
-      if (b.type==='order_quiz') return b.data?.title || '드래그 문제';
-      if (b.type==='random_quiz') return b.data?.title || '랜덤 문제';
+      if (b.type==='flashcard') return (b.data?.title || '플래시카드') + ` (${(b.data?.cards||[]).length}장)`;
+      if (b.type==='order_quiz') return (b.data?.title || '드래그 순서') + ` (${(b.data?.items||[]).length}개)`;
+      if (b.type==='quiz_embed') return (b.data?.title || '랜덤 퀴즈') + ` (${b.data?.examKey||''})`;
       return b.type;
     }
     function currentBlock(){
@@ -652,96 +679,400 @@
       return out.join('\n');
     }
 
-    function renderBlockToHtml(b){
+    function shuffleCopy(arr){
+      const a = arr.slice();
+      for(let i=a.length-1;i>0;i--){
+        const j = Math.floor(Math.random()*(i+1));
+        const t=a[i]; a[i]=a[j]; a[j]=t;
+      }
+      return a;
+    }
+
+    function parseOrderNums(text, n){
+      const raw = String(text||'').trim();
+      if(!raw) return null;
+      const nums = raw.split(',')
+        .map(s => s.trim())
+        .filter(Boolean)
+        .map(s => Number(s));
+
+      if(nums.length !== n) return { ok:false, msg:`정답 순서 숫자 개수(${nums.length})가 항목(${n})과 달라요.` };
+      const seen = new Set();
+      for(const x of nums){
+        if(!Number.isInteger(x) || x<1 || x>n) return { ok:false, msg:`정답 순서에 1~${n} 범위 밖 숫자가 있어요: ${x}` };
+        if(seen.has(x)) return { ok:false, msg:'정답 순서에 중복 숫자가 있어요.' };
+        seen.add(x);
+      }
+      return { ok:true, nums };
+    }
+
+    /* ===========================
+       ✅ 인터랙티브 스니펫 생성
+       =========================== */
+    function buildFlashcardSnippet(b){
+      const id = `cheese-fc-${b.id}`;
+      const cards = Array.isArray(b.data?.cards) ? b.data.cards : [];
+      const data = JSON.stringify(cards);
+
+      return [
+`<!-- ▼ 플래시카드 -->
+<div id="${id}" class="cheese-flashcard-wrapper"></div>
+
+<style>
+  .cheese-flashcard-wrapper{display:flex;flex-direction:column;align-items:center;gap:1.2rem;margin:1.5rem 0;}
+  .cheese-flashcard{background:none;border:none;padding:0;width:380px;height:230px;perspective:1000px;cursor:pointer;position:relative;border-radius:22px;overflow:hidden;box-shadow:0 14px 30px rgba(15,23,42,.2);}
+  .cheese-flashcard.is-flipped .cheese-flashcard-inner{transform:rotateY(180deg);}
+  .cheese-flashcard-inner{width:100%;height:100%;position:relative;border-radius:22px;background:#fff;transform-style:preserve-3d;transition:transform .35s ease;}
+  .cheese-flashcard-face{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:1.2rem 1.4rem;box-sizing:border-box;backface-visibility:hidden;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:1.15rem;text-align:center;line-height:1.5;border-radius:22px;}
+  .cheese-flashcard-front{background:#111827;color:#f9fafb;font-weight:800;}
+  .cheese-flashcard-back{background:#e0f2fe;color:#111827;transform:rotateY(180deg);font-weight:800;}
+  .cheese-flashcard-hint{position:absolute;right:.9rem;bottom:.6rem;font-size:.75rem;opacity:.85;pointer-events:none;}
+  @media(max-width:600px){
+    .cheese-flashcard{width:84vw;max-width:340px;height:210px;}
+  }
+</style>
+
+<script>
+(function(){
+  var root = document.getElementById(${JSON.stringify(id)});
+  if(!root) return;
+
+  var cards = ${data};
+
+  function esc(s){
+    return String(s==null?"":s)
+      .replace(/&/g,"&amp;")
+      .replace(/</g,"&lt;")
+      .replace(/>/g,"&gt;")
+      .replace(/"/g,"&quot;")
+      .replace(/'/g,"&#39;");
+  }
+
+  cards.forEach(function(item, idx){
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "cheese-flashcard";
+    btn.setAttribute("aria-label", "카드 " + (idx+1));
+    btn.setAttribute("aria-pressed","false");
+
+    btn.innerHTML =
+      '<div class="cheese-flashcard-inner">' +
+        '<div class="cheese-flashcard-face cheese-flashcard-front">' +
+          '<div>' + esc(item.front) + '</div>' +
+          '<div class="cheese-flashcard-hint">👉 뒤집기</div>' +
+        '</div>' +
+        '<div class="cheese-flashcard-face cheese-flashcard-back">' +
+          '<div>' + esc(item.back) + '</div>' +
+          '<div class="cheese-flashcard-hint">👉 뒤집기</div>' +
+        '</div>' +
+      '</div>';
+
+    btn.addEventListener("click", function(){
+      btn.classList.toggle("is-flipped");
+      btn.setAttribute("aria-pressed", btn.classList.contains("is-flipped") ? "true" : "false");
+    });
+
+    root.appendChild(btn);
+  });
+})();
+` + CLOSE_SCRIPT
+      ].join('\n');
+    }
+
+    function buildOrderQuizSnippet(b){
+      const id = `cheese-oq-${b.id}`;
+      const title = String(b.data?.title || '잘 알고 있나 확인해보기!').trim();
+      const sub   = String(b.data?.sub || '').trim();
+      const items = Array.isArray(b.data?.items) ? b.data.items.filter(x => String(x||'').trim()) : [];
+      const shuffle = !!b.data?.shuffle;
+
+      const n = items.length;
+      const parsed = parseOrderNums(b.data?.answerNums || '', n);
+      const correctNums = (parsed && parsed.ok && parsed.nums) ? parsed.nums : null;
+
+      const baseItems = items.map((label, i) => ({ id:`i${i+1}`, label }));
+      const correctOrder = correctNums ? correctNums.map(x => `i${x}`) : baseItems.map(x => x.id);
+      const viewItems = shuffle ? shuffleCopy(baseItems) : baseItems;
+
+      const viewJson = JSON.stringify(viewItems);
+      const correctJson = JSON.stringify(correctOrder);
+
+      return [
+`<!-- ▼ 드래그 순서 퀴즈 -->
+<div id="${id}" class="cheese-order-quiz"></div>
+
+<style>
+  .cheese-order-quiz{max-width:720px;margin:1.8rem auto;padding:1.2rem 1.1rem;border-radius:16px;background:#f9fafb;box-shadow:0 8px 22px rgba(15,23,42,.10);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;box-sizing:border-box;}
+  .cheese-order-title{font-size:1.35rem;font-weight:900;margin:0 0 .6rem;}
+  .cheese-order-sub{font-size:.95rem;color:#6b7280;margin:0 0 1rem;}
+  .cheese-order-top{display:flex;flex-wrap:wrap;gap:.6rem;padding:.6rem;border:1px dashed rgba(15,23,42,.18);border-radius:14px;background:#fff;}
+  .cheese-order-bottom{display:grid;grid-template-columns:repeat(2,1fr);gap:.7rem;margin-top:.9rem;}
+  @media(min-width:720px){ .cheese-order-bottom{grid-template-columns:repeat(4,1fr);} }
+  .cheese-order-slot{min-height:44px;border-radius:999px;border:2px dashed #d1d5db;background:#fff;display:flex;align-items:center;justify-content:center;font-size:.95rem;color:#9ca3af;box-sizing:border-box;transition:.12s ease;}
+  .cheese-order-slot.is-over{border-color:#6366f1;background:#e0e7ff;transform:translateY(-1px);}
+  .cheese-order-card{border:2px solid #7B2C39;border-radius:999px;padding:.55rem .9rem;background:#111827;color:#f9fafb;font-weight:900;font-size:.95rem;cursor:grab;user-select:none;box-shadow:0 3px 8px rgba(15,23,42,.20);}
+  .cheese-order-card:active{cursor:grabbing;}
+  .cheese-order-controls{display:flex;gap:.6rem;flex-wrap:wrap;justify-content:flex-end;align-items:center;margin-top:1rem;}
+  .cheese-order-btn{border:0;border-radius:999px;padding:.7rem 1.1rem;font-weight:900;cursor:pointer;box-shadow:0 4px 10px rgba(15,23,42,.12);}
+  .cheese-order-btn.check{background:#dc2626;color:#fff;}
+  .cheese-order-btn.reset{background:#e5e7eb;color:#111827;}
+  .cheese-order-result{flex:1;color:#4b5563;font-weight:900;}
+  .cheese-order-result.ok{color:#15803d;}
+  .cheese-order-result.bad{color:#b91c1c;}
+  .cheese-order-help{color:#6b7280;font-size:.85rem;margin-top:.7rem;line-height:1.45;}
+</style>
+
+<script>
+(function(){
+  var root = document.getElementById(${JSON.stringify(id)});
+  if(!root) return;
+
+  var items = ${viewJson};
+  var correct = ${correctJson};
+
+  function esc(s){
+    return String(s==null?"":s)
+      .replace(/&/g,"&amp;")
+      .replace(/</g,"&lt;")
+      .replace(/>/g,"&gt;")
+      .replace(/"/g,"&quot;")
+      .replace(/'/g,"&#39;");
+  }
+
+  root.innerHTML =
+    '<div class="cheese-order-title">' + esc(${JSON.stringify(title)}) + '</div>' +
+    (${JSON.stringify(sub)} ? '<div class="cheese-order-sub">' + esc(${JSON.stringify(sub)}) + '</div>' : '') +
+    '<div class="cheese-order-top" data-top="1"></div>' +
+    '<div class="cheese-order-bottom" data-bottom="1"></div>' +
+    '<div class="cheese-order-controls">' +
+      '<div class="cheese-order-result"></div>' +
+      '<button type="button" class="cheese-order-btn reset">초기화</button>' +
+      '<button type="button" class="cheese-order-btn check">채점하기</button>' +
+    '</div>' +
+    '<div class="cheese-order-help">💡 PC는 드래그&드롭, 모바일은 “카드 탭 → 빈 슬롯 자동 배치” 방식으로도 풀 수 있어요.</div>';
+
+  var top = root.querySelector(".cheese-order-top");
+  var bottom = root.querySelector(".cheese-order-bottom");
+  var resultEl = root.querySelector(".cheese-order-result");
+  var btnReset = root.querySelector(".cheese-order-btn.reset");
+  var btnCheck = root.querySelector(".cheese-order-btn.check");
+
+  function makeSlots(n){
+    bottom.innerHTML = "";
+    for(var i=0;i<n;i++){
+      var s=document.createElement("div");
+      s.className="cheese-order-slot";
+      s.dataset.slotIndex=String(i);
+      s.textContent=(i+1) + "번";
+      bottom.appendChild(s);
+    }
+  }
+
+  function placeToTop(cardEl){
+    if(!cardEl) return;
+    top.appendChild(cardEl);
+  }
+
+  function placeToFirstEmpty(cardEl){
+    var slots = Array.from(bottom.querySelectorAll(".cheese-order-slot"));
+    for(var i=0;i<slots.length;i++){
+      if(!slots[i].querySelector(".cheese-order-card")){
+        slots[i].textContent="";
+        slots[i].appendChild(cardEl);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function resetAll(){
+    resultEl.textContent="";
+    resultEl.className="cheese-order-result";
+    top.innerHTML="";
+    makeSlots(items.length);
+
+    items.forEach(function(it){
+      var c=document.createElement("div");
+      c.className="cheese-order-card";
+      c.draggable=true;
+      c.dataset.itemId=it.id;
+      c.textContent=it.label;
+      top.appendChild(c);
+    });
+  }
+
+  var dragging=null;
+
+  root.addEventListener("dragstart", function(e){
+    var card = e.target.closest(".cheese-order-card");
+    if(!card) return;
+    dragging = card;
+    if(e.dataTransfer){
+      e.dataTransfer.effectAllowed = "move";
+      try{ e.dataTransfer.setData("text/plain", card.dataset.itemId||""); }catch(_){}
+    }
+  });
+
+  root.addEventListener("dragover", function(e){
+    if(!dragging) return;
+    var slot = e.target.closest(".cheese-order-slot");
+    var isTop = e.target.closest("[data-top]");
+    if(!slot && !isTop) return;
+    e.preventDefault();
+    Array.from(root.querySelectorAll(".cheese-order-slot")).forEach(function(x){ x.classList.remove("is-over"); });
+    if(slot) slot.classList.add("is-over");
+  });
+
+  root.addEventListener("drop", function(e){
+    if(!dragging) return;
+    var slot = e.target.closest(".cheese-order-slot");
+    var isTop = e.target.closest("[data-top]");
+    if(!slot && !isTop) return;
+    e.preventDefault();
+
+    Array.from(root.querySelectorAll(".cheese-order-slot")).forEach(function(x){ x.classList.remove("is-over"); });
+
+    if(isTop){
+      placeToTop(dragging);
+    }else{
+      var existing = slot.querySelector(".cheese-order-card");
+      if(existing) placeToTop(existing);
+      slot.textContent="";
+      slot.appendChild(dragging);
+    }
+    dragging=null;
+    resultEl.textContent="";
+    resultEl.className="cheese-order-result";
+  });
+
+  root.addEventListener("dragend", function(){
+    dragging=null;
+    Array.from(root.querySelectorAll(".cheese-order-slot")).forEach(function(x){ x.classList.remove("is-over"); });
+  });
+
+  root.addEventListener("click", function(e){
+    var card = e.target.closest(".cheese-order-card");
+    if(!card) return;
+
+    var inSlot = card.parentElement && card.parentElement.classList.contains("cheese-order-slot");
+    if(inSlot){
+      placeToTop(card);
+      resultEl.textContent="";
+      resultEl.className="cheese-order-result";
+      Array.from(bottom.querySelectorAll(".cheese-order-slot")).forEach(function(s){
+        if(!s.querySelector(".cheese-order-card")){
+          s.textContent=(Number(s.dataset.slotIndex)+1)+"번";
+        }
+      });
+      return;
+    }
+
+    var ok = placeToFirstEmpty(card);
+    if(!ok) return;
+    resultEl.textContent="";
+    resultEl.className="cheese-order-result";
+  });
+
+  btnCheck.addEventListener("click", function(){
+    var slots = Array.from(bottom.querySelectorAll(".cheese-order-slot"));
+    var user = slots.map(function(s){
+      var c = s.querySelector(".cheese-order-card");
+      return c ? (c.dataset.itemId||null) : null;
+    });
+
+    if(user.some(function(x){ return !x; })){
+      resultEl.textContent="아직 빈 칸이 있어요. 모든 칸에 배치해 주세요.";
+      resultEl.className="cheese-order-result bad";
+      return;
+    }
+
+    var ok=true;
+    for(var i=0;i<correct.length;i++){
+      if(user[i] !== correct[i]){ ok=false; break; }
+    }
+
+    if(ok){
+      resultEl.textContent="정답! 아주 잘했습니다 👍";
+      resultEl.className="cheese-order-result ok";
+    }else{
+      resultEl.textContent="순서가 일부 다릅니다. 다시 풀어보세요.";
+      resultEl.className="cheese-order-result bad";
+    }
+  });
+
+  btnReset.addEventListener("click", resetAll);
+
+  resetAll();
+})();
+` + CLOSE_SCRIPT
+      ].join('\n');
+    }
+
+    function buildQuizEmbedSnippet(b){
+      const d = b.data || {};
+      const examKey = String(d.examKey||'').trim();
+      const title = String(d.title||'연습문제').trim();
+      const limit = Number(d.limit||5) || 5;
+      const period = String(d.period||'').trim();
+      const topic = String(d.topic||'').trim();
+
+      const lines = [
+        '<div',
+        '  class="cheese-quiz"',
+        `  data-exam-key="${escapeAttr(examKey)}"`,
+        '  data-source="sheet"',
+        `  data-limit="${escapeAttr(String(limit))}"`,
+        period ? `  data-period="${escapeAttr(period)}"` : '',
+        topic ? `  data-topic="${escapeAttr(topic)}"` : '',
+        '>',
+        `  <h3>${escapeHtml(title)}</h3>`,
+        '  <ol class="cheese-quiz-list"></ol>',
+        '  <div class="cheese-quiz-buttons">',
+        '    <button type="button" class="cheese-quiz-check">채점하기</button>',
+        '    <button type="button" class="cheese-quiz-reset">다시 풀기</button>',
+        '  </div>',
+        '  <div class="cheese-quiz-result"></div>',
+        '</div>',
+      ].filter(Boolean);
+
+      return `<!-- ▼ 랜덤 퀴즈(치즈 퀴즈) -->\n` + lines.join('\n');
+    }
+
+    function renderBlockToFinalHtml(b){
       if (b.type==='section'){
         const id = 'sec-' + b.id;
         return `
-          <section class="blk blk--section" id="${escapeAttr(id)}">
-            <h2>${escapeHtml(b.data?.title || '소제목')}</h2>
-            ${parasFromText(b.data?.body || '')}
-          </section>
-        `;
+<section class="blk blk--section" id="${escapeAttr(id)}">
+  <h2>${escapeHtml(b.data?.title || '소제목')}</h2>
+  ${parasFromText(b.data?.body || '')}
+</section>`.trim();
       }
       if (b.type==='summary'){
         return `
-          <div class="summary-box blk blk--summary">
-            <h3>${escapeHtml(b.data?.title || '핵심 요약')}</h3>
-            ${parasFromText(b.data?.body || '')}
-          </div>
-        `;
+<div class="summary-box blk blk--summary">
+  <h3>${escapeHtml(b.data?.title || '핵심 요약')}</h3>
+  ${parasFromText(b.data?.body || '')}
+</div>`.trim();
       }
       if (b.type==='image'){
         const url = b.data?.url || '';
         const alt = b.data?.alt || '이미지';
         return `
-          <div class="img-wrap blk blk--image">
-            <div class="mini" style="margin:0 0 8px; font-weight:900;">${escapeHtml(b.data?.title || '이미지')}</div>
-            <img src="${escapeAttr(url)}" alt="${escapeAttr(alt)}" />
-          </div>
-        `;
+<div class="img-wrap blk blk--image">
+  <div class="mini" style="margin:0 0 8px; font-weight:900;">${escapeHtml(b.data?.title || '이미지')}</div>
+  <img src="${escapeAttr(url)}" alt="${escapeAttr(alt)}" />
+</div>`.trim();
       }
       if (b.type==='ad'){
         return `
-          <div class="ad-box blk blk--ad">
-            광고 블록 · ${escapeHtml(b.data?.label || '광고')}
-            <div class="mini" style="margin-top:6px; color:#6b0f22;">(운영 환경에 맞춰 배너/슬롯 HTML로 교체)</div>
-          </div>
-        `;
+<div class="ad-box blk blk--ad">
+  광고 블록 · ${escapeHtml(b.data?.label || '광고')}
+  <div class="mini" style="margin-top:6px; color:#6b0f22;">(운영 환경에 맞춰 배너/슬롯 HTML로 교체)</div>
+</div>`.trim();
       }
-
-      if (b.type==='flashcard'){
-        const data = b.data || {};
-        const title = data.title || '플래시카드';
-        const cards = Array.isArray(data.cards) ? data.cards : [];
-        const json = escapeAttr(JSON.stringify(cards));
-
-        return `
-          <div class="blk blk--flashcard" data-cheese-flashcards="${json}">
-            <div class="mini" style="margin:0 0 6px; font-weight:900;">${escapeHtml(title)}</div>
-            <div class="mini">※ 블로그에서 플래시카드 스크립트가 로드되면 이 자리에 카드가 표시됩니다.</div>
-          </div>
-        `;
-      }
-
-      if (b.type==='order_quiz'){
-        const d = b.data || {};
-        const title = d.title || '드래그 문제';
-        const sub = d.sub || '';
-        const items = Array.isArray(d.items) ? d.items : [];
-        const answerNums = (d.answerNums || '').trim();
-        const shuffle = !!d.shuffle;
-
-        const payload = {
-          title, sub, items,
-          answerNums,
-          shuffle
-        };
-        const json = escapeAttr(JSON.stringify(payload));
-
-        return `
-          <div class="blk blk--orderquiz" data-cheese-order-quiz="${json}">
-            <div class="mini" style="margin:0 0 6px; font-weight:900;">${escapeHtml(title)}</div>
-            <div class="mini">※ 블로그에서 드래그퀴즈 스크립트가 로드되면 이 자리에 퀴즈가 표시됩니다.</div>
-          </div>
-        `;
-      }
-
-      if (b.type==='random_quiz'){
-        const d = b.data || {};
-        const title = d.title || '랜덤 문제';
-        const limit = Number(d.limit || 5);
-        const period = d.period || '';
-        const topic = d.topic || '';
-        const payload = { title, limit, period, topic };
-        const json = escapeAttr(JSON.stringify(payload));
-
-        return `
-          <div class="blk blk--randomquiz" data-cheese-random-quiz="${json}">
-            <div class="mini" style="margin:0 0 6px; font-weight:900;">${escapeHtml(title)}</div>
-            <div class="mini">※ 블로그에서 치즈 퀴즈 스크립트가 로드되어 있어야 동작합니다.</div>
-          </div>
-        `;
-      }
+      if (b.type==='flashcard') return buildFlashcardSnippet(b).trim();
+      if (b.type==='order_quiz') return buildOrderQuizSnippet(b).trim();
+      if (b.type==='quiz_embed') return buildQuizEmbedSnippet(b).trim();
 
       return `<div class="blk">Unknown block</div>`;
     }
@@ -756,37 +1087,34 @@
         });
       if (!items.length) return '';
       return `
-        <nav class="toc">
-          <div class="t">목차</div>
-          <ul style="margin:0; padding-left:18px;">${items.join('\n')}</ul>
-        </nav>
-      `;
+<nav class="toc">
+  <div class="t">목차</div>
+  <ul style="margin:0; padding-left:18px;">${items.join('\n')}</ul>
+</nav>`.trim();
     }
 
     function wrapTemplate(templateId, title, innerHtml){
       if (templateId === 'profile'){
         return `
-          <article class="post post--profile">
-            <header class="post__head">
-              <h1 style="margin:0 0 6px; font-size:20px; letter-spacing:-.02em;">${escapeHtml(title || '')}</h1>
-              <div style="color:rgba(100,116,139,1); font-size:12px;">인물 프로필 템플릿</div>
-            </header>
-            <div class="divider"></div>
-            ${innerHtml}
-          </article>
-        `;
+<article class="post post--profile">
+  <header class="post__head">
+    <h1 style="margin:0 0 6px; font-size:20px; letter-spacing:-.02em;">${escapeHtml(title || '')}</h1>
+    <div style="color:rgba(100,116,139,1); font-size:12px;">인물 프로필 템플릿</div>
+  </header>
+  <div class="divider"></div>
+  ${innerHtml}
+</article>`.trim();
       }
       if (templateId === 'timeline'){
         return `
-          <article class="post post--timeline">
-            <header class="post__head">
-              <h1 style="margin:0 0 6px; font-size:20px; letter-spacing:-.02em;">${escapeHtml(title || '')}</h1>
-              <div style="color:rgba(100,116,139,1); font-size:12px;">연표 템플릿</div>
-            </header>
-            <div class="divider"></div>
-            ${innerHtml}
-          </article>
-        `;
+<article class="post post--timeline">
+  <header class="post__head">
+    <h1 style="margin:0 0 6px; font-size:20px; letter-spacing:-.02em;">${escapeHtml(title || '')}</h1>
+    <div style="color:rgba(100,116,139,1); font-size:12px;">연표 템플릿</div>
+  </header>
+  <div class="divider"></div>
+  ${innerHtml}
+</article>`.trim();
       }
       return `<article class="post post--default">${innerHtml}</article>`;
     }
@@ -799,20 +1127,20 @@
 
       const bodyParts = [];
       if (optTOC) bodyParts.push(buildTOC(state.blocks));
-      bodyParts.push(...state.blocks.map(renderBlockToHtml));
+      bodyParts.push(...state.blocks.map(renderBlockToFinalHtml));
 
       if (optSources){
         bodyParts.push(`
-          <div class="sources">
-            <div style="font-weight:900;">출처</div>
-            <ul>
-              <li>예시 출처 1</li>
-              <li>예시 출처 2</li>
-            </ul>
-          </div>
-        `);
+<div class="sources">
+  <div style="font-weight:900;">출처</div>
+  <ul>
+    <li>예시 출처 1</li>
+    <li>예시 출처 2</li>
+  </ul>
+</div>`.trim());
       }
-      return wrapTemplate(templateId, title, bodyParts.join('\n')).trim();
+
+      return wrapTemplate(templateId, title, bodyParts.filter(Boolean).join('\n\n')).trim();
     }
 
     function renderPreview(){
@@ -821,35 +1149,123 @@
       $('pvCount').textContent = String(state.blocks.length);
       $('pvTemplate').textContent = $('templateSelect').value;
 
-      const html = buildFinalHtml();
-      $('pvBody').innerHTML = html;
-      $('finalHtml').value = html;
+      const final = buildFinalHtml();
+      $('finalHtml').value = final;
+
+      const templateId = $('templateSelect').value;
+      const optTOC = $('optTOC').checked;
+      const optSources = $('optSources').checked;
+
+      const parts = [];
+      if (optTOC) parts.push(buildTOC(state.blocks));
+
+      state.blocks.forEach((b) => {
+        if (b.type === 'flashcard' || b.type === 'order_quiz'){
+          const caption = (b.type==='flashcard') ? '플래시카드(미리보기 실행)' : '드래그 순서 퀴즈(미리보기 실행)';
+          const h = (b.type==='flashcard') ? 320 : 520;
+
+          parts.push(`
+<div class="pv-embed-wrap" data-embed-id="${escapeAttr(b.id)}" data-embed-type="${escapeAttr(b.type)}" data-embed-height="${h}">
+  <div class="pv-embed-caption">${escapeHtml(caption)}</div>
+  <iframe class="pv-iframe" title="${escapeAttr(caption)}"></iframe>
+</div>`.trim());
+          return;
+        }
+
+        if (b.type==='quiz_embed'){
+          const d = b.data || {};
+          parts.push(`
+<div class="summary-box">
+  <div style="font-weight:900; margin-bottom:6px;">랜덤 퀴즈(임베드)</div>
+  <div class="mini mono">examKey: ${escapeHtml(d.examKey||'')}</div>
+  <div class="mini">※ 블로그에서 치즈 퀴즈 스크립트가 로드되면 동작합니다.</div>
+</div>`.trim());
+          return;
+        }
+
+        parts.push(renderBlockToFinalHtml(b));
+      });
+
+      if (optSources){
+        parts.push(`
+<div class="sources">
+  <div style="font-weight:900;">출처</div>
+  <ul>
+    <li>예시 출처 1</li>
+    <li>예시 출처 2</li>
+  </ul>
+</div>`.trim());
+      }
+
+      $('pvBody').innerHTML = wrapTemplate(templateId, title, parts.filter(Boolean).join('\n\n'));
+      hydrateEmbeds();
+    подчерк;
     }
 
-    // ✅ Sortable 인스턴스 유지/재생성 이슈 대응
-    let sortableInstance = null;
+    function hydrateEmbeds(){
+      const wraps = Array.from(document.querySelectorAll('[data-embed-id]'));
+      wraps.forEach((wrap) => {
+        const id = wrap.getAttribute('data-embed-id');
+        const type = wrap.getAttribute('data-embed-type');
+        const h = Number(wrap.getAttribute('data-embed-height')||320);
+        const iframe = wrap.querySelector('iframe');
+        if(!iframe) return;
 
-    function ensureSortable_(){
-      if (sortableInstance){ return; }
-      sortableInstance = Sortable.create(blockList, {
-        animation:150,
+        const b = state.blocks.find(x => x.id === id);
+        if(!b) return;
+
+        let snippet = '';
+        if(type === 'flashcard') snippet = buildFlashcardSnippet(b);
+        if(type === 'order_quiz') snippet = buildOrderQuizSnippet(b);
+
+        iframe.style.height = h + 'px';
+        iframe.srcdoc = `
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>body{margin:0;padding:10px;background:#fff;}</style>
+</head>
+<body>
+${snippet}
+</body>
+</html>`.trim();
+      });
+    }
+
+    function ensureSortable(){
+      if (sortable) return;
+
+      // ✅ 드래그가 1번만 되고 죽는 현상 방지:
+      // - draggable 명시
+      // - handle 지정(버튼/클릭 충돌 최소화)
+      // - forceFallback 로 브라우저별 HTML5 drag 이슈 회피
+      sortable = new Sortable(blockList, {
+        animation: 150,
+        draggable: '.block-item',
+        handle: '.block-left',
+        filter: '.icon-btn, button, a, input, textarea, select, label',
+        preventOnFilter: false,
+        forceFallback: true,
+        fallbackOnBody: true,
+        fallbackTolerance: 5,
+        delayOnTouchOnly: true,
+        delay: 150,
+        touchStartThreshold: 5,
         onEnd: () => {
+          // Sortable 내부 정리(ghost 등) 끝나기 전에 DOM을 갈아엎으면
+          // 다음 드래그가 막힐 수 있어서, 다음 tick에 렌더.
           const ids = Array.from(blockList.querySelectorAll('.block-item')).map(n => n.dataset.id);
           state.blocks = ids.map(id => state.blocks.find(b => b.id===id)).filter(Boolean);
-          renderAll();
+          setTimeout(() => renderAll(), 0);
         }
       });
     }
 
-    function rebuildSortable_(){
-      if (sortableInstance){
-        try{ sortableInstance.destroy(); }catch(e){}
-        sortableInstance = null;
-      }
-      ensureSortable_();
-    }
-
     function renderBlockList(){
+      // ✅ 리스트를 통째로 재생성할 때는 Sortable을 먼저 정리
+      if (sortable){ sortable.destroy(); sortable = null; }
       blockList.innerHTML = '';
       state.blocks.forEach((b, idx) => {
         const el = document.createElement('div');
@@ -857,18 +1273,17 @@
         el.dataset.id = b.id;
 
         el.innerHTML = `
-          <div class="block-left">
-            <span class="badge">${blockLabel(b.type)}</span>
-            <div style="min-width:0;">
-              <div class="btitle" title="${escapeAttr(blockTitle(b))}">${escapeHtml(blockTitle(b))}</div>
-              <div class="bmeta">#${idx+1} · ${escapeHtml(b.type)}</div>
-            </div>
-          </div>
-          <div class="block-actions">
-            <button class="icon-btn" data-act="up" title="위로">↑</button>
-            <button class="icon-btn" data-act="down" title="아래로">↓</button>
-          </div>
-        `;
+<div class="block-left">
+  <span class="badge">${blockLabel(b.type)}</span>
+  <div style="min-width:0;">
+    <div class="btitle" title="${escapeAttr(blockTitle(b))}">${escapeHtml(blockTitle(b))}</div>
+    <div class="bmeta">#${idx+1} · ${escapeHtml(b.type)}</div>
+  </div>
+</div>
+<div class="block-actions">
+  <button class="icon-btn" data-act="up" title="위로">↑</button>
+  <button class="icon-btn" data-act="down" title="아래로">↓</button>
+</div>`;
 
         el.addEventListener('click', (e) => {
           const act = e.target?.dataset?.act;
@@ -883,8 +1298,7 @@
         blockList.appendChild(el);
       });
 
-      // ✅ renderBlockList가 다시 그려질 때마다 Sortable은 'destroy → create' 방식으로 재연결
-      rebuildSortable_();
+      ensureSortable();
     }
 
     function moveBlock(id, delta){
@@ -902,61 +1316,112 @@
       state.selectedId = id;
       renderBlockList();
       fillEditor();
+      renderPreview();
+    }
+
+    function show(el, on){
+      if(!el) return;
+      el.style.display = on ? '' : 'none';
     }
 
     function fillEditor(){
       const b = currentBlock();
-      $('editorEmpty').style.display = b ? 'none' : '';
-      $('editorPanel').style.display = b ? '' : 'none';
+      show($('editorEmpty'), !b);
+      show($('editorPanel'), !!b);
       if (!b) return;
 
       $('edType').value = b.type;
       $('edId').value = b.id;
 
-      // 기본
-      $('edTitleWrap').style.display = (b.type==='ad') ? 'none' : '';
-      $('edBodyWrap').style.display = (b.type==='image' || b.type==='ad' || b.type==='flashcard' || b.type==='order_quiz' || b.type==='random_quiz') ? 'none' : '';
-      $('edUrlWrap').style.display  = (b.type==='image') ? '' : 'none';
-      $('edAdWrap').style.display   = (b.type==='ad') ? '' : 'none';
-
-      // 특수 블록
-      $('edFlashWrap').style.display = (b.type==='flashcard') ? '' : 'none';
-      $('edOrderWrap').style.display = (b.type==='order_quiz') ? '' : 'none';
-      $('edQuizWrap').style.display  = (b.type==='random_quiz') ? '' : 'none';
+      show($('edTitleWrap'), false);
+      show($('edBodyWrap'), false);
+      show($('edUrlWrap'), false);
+      show($('edAdWrap'), false);
+      show($('edFlashWrap'), false);
+      show($('edOrderWrap'), false);
+      show($('edQuizWrap'), false);
 
       if (b.type==='section' || b.type==='summary'){
+        show($('edTitleWrap'), true);
+        show($('edBodyWrap'), true);
         $('edTitle').value = b.data?.title || '';
         $('edBody').value  = b.data?.body || '';
       } else if (b.type==='image'){
+        show($('edTitleWrap'), true);
+        show($('edUrlWrap'), true);
         $('edTitle').value = b.data?.title || '';
         $('edUrl').value   = b.data?.url || '';
       } else if (b.type==='ad'){
+        show($('edAdWrap'), true);
         $('edAdLabel').value = b.data?.label || '';
       } else if (b.type==='flashcard'){
-        $('edFlashTitle').value = b.data?.title || '';
-        const cards = Array.isArray(b.data?.cards) ? b.data.cards : [];
-        $('edFlashBulk').value = cards.map(c => `${c.front ?? ''}\t${c.back ?? ''}`).join('\n');
+        show($('edTitleWrap'), true);
+        show($('edFlashWrap'), true);
+        $('edTitle').value = b.data?.title || '플래시카드';
       } else if (b.type==='order_quiz'){
+        show($('edOrderWrap'), true);
         $('edOrderTitle').value = b.data?.title || '';
-        $('edOrderSub').value   = b.data?.sub || '';
+        $('edOrderSub').value = b.data?.sub || '';
+        $('edOrderShuffle').checked = !!b.data?.shuffle;
         $('edOrderItems').value = (Array.isArray(b.data?.items) ? b.data.items : []).join('\n');
         $('edOrderAnswer').value = b.data?.answerNums || '';
-        $('edOrderShuffle').checked = !!b.data?.shuffle;
-      } else if (b.type==='random_quiz'){
+      } else if (b.type==='quiz_embed'){
+        show($('edQuizWrap'), true);
+        $('edQuizKey').value = b.data?.examKey || '';
         $('edQuizTitle').value = b.data?.title || '';
         $('edQuizLimit').value = String(b.data?.limit || 5);
         $('edQuizPeriod').value = b.data?.period || '';
-        $('edQuizTopic').value  = b.data?.topic || '';
+        $('edQuizTopic').value = b.data?.topic || '';
       }
+    }
+
+    function flashBlockToBulk(){
+      const b = currentBlock();
+      if(!b || b.type!=='flashcard') return;
+      const cards = Array.isArray(b.data?.cards) ? b.data.cards : [];
+      $('edFlashBulk').value = cards.map(c => `${c.front}\t${c.back}`).join('\n');
+    }
+    function flashBulkToBlock(){
+      const b = currentBlock();
+      if(!b || b.type!=='flashcard') return;
+
+      const lines = String($('edFlashBulk').value||'').split(/\r?\n/);
+      const cards = [];
+      lines.forEach(line => {
+        const t = line.trim();
+        if(!t) return;
+
+        let front='', back='';
+        if(t.includes('\t')){
+          const parts = t.split('\t');
+          front = (parts[0]||'').trim();
+          back  = parts.slice(1).join('\t').trim();
+        }else if(t.includes('|')){
+          const parts = t.split('|');
+          front = (parts[0]||'').trim();
+          back  = parts.slice(1).join('|').trim();
+        }else{
+          front = t;
+          back = '';
+        }
+        if(front) cards.push({ front, back });
+      });
+
+      b.data.cards = cards.length ? cards : [{front:'앞면', back:'뒷면'}];
     }
 
     function renderAll(){
       renderBlockList();
-      renderPreview();
       fillEditor();
+      renderPreview();
     }
 
-    // 버튼 바인딩
+    function addBlock(b){
+      state.blocks.push(b);
+      state.selectedId = b.id;
+      renderAll();
+    }
+
     $('btnAddSection').addEventListener('click', () => addBlock(makeSection()));
     $('btnAddSummary').addEventListener('click', () => addBlock(makeSummary()));
     $('btnAddImage').addEventListener('click', () => addBlock(makeImage()));
@@ -965,11 +1430,8 @@
     $('btnAddOrder').addEventListener('click', () => addBlock(makeOrder()));
     $('btnAddQuiz').addEventListener('click', () => addBlock(makeQuiz()));
 
-    function addBlock(b){
-      state.blocks.push(b);
-      selectBlock(b.id);
-      renderPreview();
-    }
+    $('btnFlashFromBlock').addEventListener('click', flashBlockToBulk);
+    $('btnFlashToBlock').addEventListener('click', () => { flashBulkToBlock(); renderAll(); });
 
     $('btnApplyBlock').addEventListener('click', () => {
       const b = currentBlock();
@@ -985,26 +1447,41 @@
       } else if (b.type==='ad'){
         b.data.label = $('edAdLabel').value.trim() || '광고';
       } else if (b.type==='flashcard'){
-        b.data.title = ($('edFlashTitle').value || '').trim() || '플래시카드';
-        const bulk = $('edFlashBulk').value || '';
-        const cards = bulk.split(/\r?\n/).map(line => line.trim()).filter(Boolean).map(line => {
-          const parts = line.includes('\t') ? line.split('\t') : line.split('|');
-          const front = (parts[0] ?? '').trim();
-          const back  = (parts[1] ?? '').trim();
-          return { front, back };
-        }).filter(c => c.front || c.back);
-        b.data.cards = cards;
+        b.data.title = $('edTitle').value.trim() || '플래시카드';
+        flashBulkToBlock();
       } else if (b.type==='order_quiz'){
-        b.data.title = ($('edOrderTitle').value || '').trim() || '드래그 문제';
-        b.data.sub   = ($('edOrderSub').value || '').trim();
-        b.data.items = ($('edOrderItems').value || '').split(/\r?\n/).map(x => x.trim()).filter(Boolean);
-        b.data.answerNums = ($('edOrderAnswer').value || '').trim();
-        b.data.shuffle = !!$('edOrderShuffle').checked;
-      } else if (b.type==='random_quiz'){
-        b.data.title = ($('edQuizTitle').value || '').trim() || '랜덤 문제';
-        b.data.limit = Math.max(1, Math.min(50, Number($('edQuizLimit').value || 5)));
-        b.data.period = ($('edQuizPeriod').value || '').trim();
-        b.data.topic  = ($('edQuizTopic').value || '').trim();
+        const items = String($('edOrderItems').value||'')
+          .split(/\r?\n/)
+          .map(s => s.trim())
+          .filter(Boolean);
+
+        if(items.length < 2){
+          alert('드래그 순서 항목은 최소 2개 이상 입력해 주세요.');
+          return;
+        }
+
+        const parsed = parseOrderNums($('edOrderAnswer').value, items.length);
+        if(parsed && parsed.ok === false){
+          alert(parsed.msg);
+          return;
+        }
+
+        b.data.title = $('edOrderTitle').value.trim() || '잘 알고 있나 확인해보기!';
+        b.data.sub = $('edOrderSub').value.trim();
+        b.data.shuffle = $('edOrderShuffle').checked;
+        b.data.items = items;
+        b.data.answerNums = $('edOrderAnswer').value.trim();
+      } else if (b.type==='quiz_embed'){
+        const examKey = $('edQuizKey').value.trim();
+        if(!examKey){
+          alert('examKey는 필수입니다.');
+          return;
+        }
+        b.data.examKey = examKey;
+        b.data.title = $('edQuizTitle').value.trim() || '연습문제';
+        b.data.limit = Math.max(1, Number($('edQuizLimit').value||5) || 5);
+        b.data.period = $('edQuizPeriod').value.trim();
+        b.data.topic = $('edQuizTopic').value.trim();
       }
 
       renderAll();
@@ -1023,12 +1500,10 @@
     $('optSources').addEventListener('change', renderPreview);
     $('postTitle').addEventListener('input', renderPreview);
 
-    // 저장/불러오기(localStorage 더미)
     $('btnSave').addEventListener('click', () => {
       const payload = {
         title: $('postTitle').value.trim(),
         template_id: $('templateSelect').value,
-        publish_state: $('publishState').value,
         options: { toc: $('optTOC').checked, sources: $('optSources').checked },
         blocks_json: JSON.parse(JSON.stringify(state.blocks)),
         content_html: $('finalHtml').value
@@ -1043,11 +1518,10 @@
       const p = JSON.parse(raw);
       $('postTitle').value = p.title || '';
       $('templateSelect').value = p.template_id || 'default';
-      $('publishState').value = p.publish_state || 'draft';
       $('optTOC').checked = !!p.options?.toc;
       $('optSources').checked = !!p.options?.sources;
       state.blocks = Array.isArray(p.blocks_json) ? p.blocks_json : [];
-      state.selectedId = null;
+      state.selectedId = state.blocks[0]?.id || null;
       renderAll();
     });
 
@@ -1085,19 +1559,16 @@
     function getPublishConfig_(){
       let saved = {};
       try{ saved = JSON.parse(localStorage.getItem(LS_PUBCFG) || '{}') || {}; }catch(e){}
-    
-      // ✅ 여러 버전 키 호환 (apiBase, api_base, base 다 허용)
-      const apiBase =
-        (saved.api_base || saved.apiBase || saved.base ||
-         window.CHEESE_BLOG_API_BASE || window.CHEESE_ADMIN_API_BASE || '').trim();
-    
-      // ✅ 여러 버전 키 호환 (mode_publish, modePublish, mode 다 허용)
-      const mode =
-        (saved.mode_publish || saved.modePublish || saved.mode || 'bloggerPublish').trim();
-    
+
+      // ✅ UI에 직접 입력한 값도 즉시 반영(설정 저장 버튼을 누르지 않아도 동작)
+      const uiBase = (($('pubApiBase')?.value) || '').trim();
+      const uiMode = (($('pubMode')?.value) || '').trim();
+
+      const phBase = (($('pubApiBase')?.getAttribute('placeholder')) || '').trim();
+      const apiBase = (uiBase || saved.api_base || window.CHEESE_BLOG_API_BASE || window.CHEESE_ADMIN_API_BASE || phBase || '').trim();
+      const mode = (uiMode || saved.mode_publish || 'bloggerPublish').trim();
       return { api_base: apiBase, mode_publish: mode };
     }
-
 
     function applyPublishConfigToUI_(){
       const cfg = getPublishConfig_();
@@ -1145,9 +1616,10 @@
         try{ data = JSON.parse(txt); }catch(e){}
         if (!res.ok) throw new Error((data && (data.message || data.error)) || txt || ('HTTP ' + res.status));
         if (data) return data;
+        // JSON이 아닌 경우도 허용(서버가 plain text 반환)
         return { ok:true, raw: txt };
       }catch(err1){
-        // 2) form-urlencoded fallback
+        // 2) form-urlencoded fallback (GAS에서 JSON 파싱을 안 하는 구현 대비)
         const form = new URLSearchParams();
         Object.entries(payload || {}).forEach(([k,v]) => {
           if (v === undefined) return;
@@ -1169,6 +1641,7 @@
     }
 
     async function publishToBlog_(){
+      // 항상 최신 HTML 먼저 생성
       renderPreview();
 
       const title = ($('postTitle')?.value || '').trim();
@@ -1183,8 +1656,9 @@
       }
       const isDraft = ($('publishState')?.value || 'draft') === 'draft';
 
+      // 서버 호환을 위해 여러 키 동시 전달
       const payload = {
-        mode: cfg.mode_publish,
+        mode: cfg.mode_publish,           // 서버가 body.mode를 보는 경우
         title,
         html,
         content: html,
@@ -1194,6 +1668,7 @@
         template_id: ($('templateSelect')?.value || 'default'),
         blocks_json: state.blocks,
         options: { toc: $('optTOC')?.checked, sources: $('optSources')?.checked },
+        // (선택) 로그인/세션 정보가 있다면 같이 전달
         actor: sessionStorage.getItem('cheese_admin_login_id') || sessionStorage.getItem('login_id') || '',
         token: sessionStorage.getItem('cheese_admin_token') || sessionStorage.getItem('token') || '',
       };
@@ -1206,6 +1681,8 @@
       try{
         const data = await postToAppsScript_(cfg.api_base, cfg.mode_publish, payload);
 
+        // 기대 응답 예시:
+        // { ok:true, postId:'...', url:'...', status:'draft|published' }
         const ok = (data && (data.ok === true || data.success === true)) || !!data?.postId || !!data?.url;
         if (!ok){
           throw new Error(data?.message || data?.error || '응답은 받았지만 ok가 아닙니다');
@@ -1216,6 +1693,7 @@
 
         if (url){
           setPublishMsg_('발행 완료 · 링크 열기', true);
+          // 링크가 있으면 클릭으로 열 수 있게(사용자가 원할 때)
           const msgEl = $('publishMsg');
           if (msgEl){
             msgEl.style.cursor = 'pointer';
@@ -1226,6 +1704,7 @@
           setPublishMsg_('발행 완료' + (postId ? (' · id: ' + postId) : ''), true);
         }
 
+        // (선택) 마지막 발행 정보 로컬 저장
         try{
           const last = { title, postId, url, isDraft, at: new Date().toISOString() };
           localStorage.setItem('post_builder_last_publish', JSON.stringify(last));
@@ -1237,34 +1716,43 @@
       }
     }
 
+    // UI 바인딩
     $('btnPublish')?.addEventListener('click', publishToBlog_);
     $('btnSavePubConfig')?.addEventListener('click', savePublishConfigFromUI_);
     $('btnResetPubConfig')?.addEventListener('click', resetPublishConfig_);
 
-    // Demo
+
     function initDemo(){
       $('postTitle').value = '김구, 임시정부의 중심에 선 이유';
       $('templateSelect').value = 'profile';
-      $('publishState').value = 'draft';
       $('optTOC').checked = true;
       $('optSources').checked = true;
 
       state.blocks = [
         { id: uid(), type:'summary', data:{ title:'핵심 요약', body:'- 김구의 정치적 중심성\n- 임시정부의 정통성 논쟁\n- 해방 이후의 역할과 한계' } },
         { id: uid(), type:'section', data:{ title:'1. 상해 임시정부의 구심점', body:'김구는 임시정부 내에서 조직 운영과 대외 활동을 조율했다.\n\n특히 독립운동 노선과 자금 문제에서 영향력을 가졌다.' } },
+        makeFlash(),
         { id: uid(), type:'ad', data:{ label:'배너 A' } },
-        { id: uid(), type:'section', data:{ title:'2. 독립운동 노선과 정통성', body:'무장 투쟁·외교 노선의 균형 속에서 내부 갈등이 반복됐다.\n김구는 통합을 강조했지만, 노선 차이는 지속됐다.' } },
+        makeOrder(),
         { id: uid(), type:'image', data:{ title:'관련 이미지', url:'https://picsum.photos/900/480', alt:'관련 이미지' } },
-        { id: uid(), type:'section', data:{ title:'3. 해방 이후: 정치의 한복판', body:'해방 이후에는 남북·좌우 구도 속에서 선택지가 제한됐다.\n결과적으로 정치적 상징성과 현실 정치의 간극이 커졌다.' } },
-        { id: uid(), type:'flashcard', data:{ title:'플래시카드', cards:[{front:'을사늑약', back:'1905'}, {front:'한일병합', back:'1910'}] } },
-        { id: uid(), type:'order_quiz', data:{ title:'드래그 순서', sub:'올바른 순서로 배치하세요', shuffle:true, items:['대한제국 선포','을사늑약','한일병합'], answerNums:'' } },
-        { id: uid(), type:'random_quiz', data:{ title:'랜덤 문제', limit:5, period:'', topic:'' } },
+        makeQuiz(),
+        { id: uid(), type:'section', data:{ title:'2. 독립운동 노선과 정통성', body:'무장 투쟁·외교 노선의 균형 속에서 내부 갈등이 반복됐다.\n김구는 통합을 강조했지만, 노선 차이는 지속됐다.' } },
       ];
+
       state.selectedId = state.blocks[0]?.id || null;
       renderAll();
+
+      const fc = state.blocks.find(x => x.type==='flashcard');
+      if(fc){
+        state.selectedId = fc.id;
+        renderAll();
+        flashBlockToBulk();
+      }
     }
+
     initDemo();
     applyPublishConfigToUI_();
+
   </script>
 </body>
 </html>
