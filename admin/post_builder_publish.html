@@ -1,4 +1,4 @@
-<!-- post_builder.html -->
+<!-- post_builder.html (수정본: DB저장=Apps Script savePost, next post_id 조회, post_id 자동동기화, 발행은 state.postId 우선) -->
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -354,7 +354,6 @@
                   <div class="mini">※ “초안”은 Blogger에서 공개되지 않은 상태로 생성됩니다(서버 구현에 따라 동작).</div>
                 </div>
 
-
                 <div class="field">
                   <label>옵션</label>
                   <div class="row">
@@ -379,6 +378,7 @@
                   <label>최종 HTML(읽기전용)</label>
                   <textarea id="finalHtml" class="mono" readonly></textarea>
                 </div>
+
                 <details style="margin-top:10px;">
                   <summary class="mini" style="cursor:pointer; font-weight:900;">발행 API 설정(선택)</summary>
                   <div style="margin-top:10px;">
@@ -397,6 +397,7 @@
                       <input id="pubPostId" type="text" placeholder="예: P001" />
                       <div class="mini">※ Apps Script가 POSTS 시트에서 이 post_id 행을 찾아 HTML을 만든 뒤 발행합니다.</div>
                     </div>
+
                     <div class="field">
                       <label>blogUrl</label>
                       <input id="pubBlogUrl" type="text" placeholder="https://cheesetestblog.blogspot.com/" />
@@ -568,10 +569,11 @@
     /************************************************************
      * ✅ Block Editor (post_builder)
      ************************************************************/
-
     const $ = (id) => document.getElementById(id);
 
-    const state = { blocks: [], selectedId: null };
+    // ✅ 현재 편집 글의 post_id
+    const state = { blocks: [], selectedId: null, postId: '' };
+
     const uid = () => 'b' + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(2,6);
 
     // ✅ 스크립트 종료태그 문자열은 "쪼개서" 만든다 (HTML 파서 보호)
@@ -1255,10 +1257,6 @@ ${snippet}
     function ensureSortable(){
       if (sortable) return;
 
-      // ✅ 드래그가 1번만 되고 죽는 현상 방지:
-      // - draggable 명시
-      // - handle 지정(버튼/클릭 충돌 최소화)
-      // - forceFallback 로 브라우저별 HTML5 drag 이슈 회피
       sortable = new Sortable(blockList, {
         animation: 150,
         draggable: '.block-item',
@@ -1272,8 +1270,6 @@ ${snippet}
         delay: 150,
         touchStartThreshold: 5,
         onEnd: () => {
-          // Sortable 내부 정리(ghost 등) 끝나기 전에 DOM을 갈아엎으면
-          // 다음 드래그가 막힐 수 있어서, 다음 tick에 렌더.
           const ids = Array.from(blockList.querySelectorAll('.block-item')).map(n => n.dataset.id);
           state.blocks = ids.map(id => state.blocks.find(b => b.id===id)).filter(Boolean);
           setTimeout(() => renderAll(), 0);
@@ -1282,7 +1278,6 @@ ${snippet}
     }
 
     function renderBlockList(){
-      // ✅ 리스트를 통째로 재생성할 때는 Sortable을 먼저 정리
       if (sortable){ sortable.destroy(); sortable = null; }
       blockList.innerHTML = '';
       state.blocks.forEach((b, idx) => {
@@ -1518,31 +1513,6 @@ ${snippet}
     $('optSources').addEventListener('change', renderPreview);
     $('postTitle').addEventListener('input', renderPreview);
 
-    $('btnSave').addEventListener('click', () => {
-      const payload = {
-        title: $('postTitle').value.trim(),
-        template_id: $('templateSelect').value,
-        options: { toc: $('optTOC').checked, sources: $('optSources').checked },
-        blocks_json: JSON.parse(JSON.stringify(state.blocks)),
-        content_html: $('finalHtml').value
-      };
-      localStorage.setItem('post_builder_draft', JSON.stringify(payload));
-      alert('저장됨(localStorage). 다음 단계에서 Apps Script 저장 API로 교체하면 됩니다.');
-    });
-
-    $('btnLoad').addEventListener('click', () => {
-      const raw = localStorage.getItem('post_builder_draft');
-      if (!raw){ alert('저장된 데이터가 없습니다'); return; }
-      const p = JSON.parse(raw);
-      $('postTitle').value = p.title || '';
-      $('templateSelect').value = p.template_id || 'default';
-      $('optTOC').checked = !!p.options?.toc;
-      $('optSources').checked = !!p.options?.sources;
-      state.blocks = Array.isArray(p.blocks_json) ? p.blocks_json : [];
-      state.selectedId = state.blocks[0]?.id || null;
-      renderAll();
-    });
-
     $('btnCopyHtml').addEventListener('click', async () => {
       try{
         await navigator.clipboard.writeText($('finalHtml').value || '');
@@ -1568,9 +1538,7 @@ ${snippet}
     $('btnReset').addEventListener('click', initDemo);
 
     /************************************************************
-     * ✅ Blog Publish (Apps Script 연동)
-     *  - API Base / mode 는 "발행 API 설정"에서 저장 가능
-     *  - 서버 payload 키는 호환을 위해 여러 키를 같이 보냅니다.
+     * ✅ Blog Publish + DB Save (Apps Script 연동)
      ************************************************************/
     const LS_PUBCFG = 'post_builder_publish_cfg_v1';
 
@@ -1578,7 +1546,6 @@ ${snippet}
       let saved = {};
       try{ saved = JSON.parse(localStorage.getItem(LS_PUBCFG) || '{}') || {}; }catch(e){}
 
-      // ✅ UI에 직접 입력한 값도 즉시 반영(설정 저장 버튼을 누르지 않아도 동작)
       const uiBase = (($('pubApiBase')?.value) || '').trim();
       const uiMode = (($('pubMode')?.value) || '').trim();
 
@@ -1586,6 +1553,15 @@ ${snippet}
       const apiBase = (uiBase || saved.api_base || window.CHEESE_BLOG_API_BASE || window.CHEESE_ADMIN_API_BASE || phBase || '').trim();
       const mode = (uiMode || saved.mode_publish || 'publishPost').trim();
       return { api_base: apiBase, mode_publish: mode };
+    }
+
+    // ✅ 저장/조회도 같은 api_base를 쓰도록 공용 base getter
+    function getApiBase_(){
+      const cfg = getPublishConfig_();
+      if (cfg?.api_base) return cfg.api_base;
+
+      const phBase = (($('pubApiBase')?.getAttribute('placeholder')) || '').trim();
+      return (window.CHEESE_BLOG_API_BASE || window.CHEESE_ADMIN_API_BASE || phBase || '').trim();
     }
 
     function applyPublishConfigToUI_(){
@@ -1603,12 +1579,14 @@ ${snippet}
       localStorage.setItem(LS_PUBCFG, JSON.stringify(payload));
       setPublishMsg_('설정 저장 완료', true);
       applyPublishConfigToUI_();
+      refreshNextPostId_(); // ✅ base가 확정되면 next 갱신
     }
 
     function resetPublishConfig_(){
       localStorage.removeItem(LS_PUBCFG);
       setPublishMsg_('설정 초기화 완료', true);
       applyPublishConfigToUI_();
+      refreshNextPostId_();
     }
 
     function setPublishMsg_(msg, ok=false){
@@ -1617,11 +1595,23 @@ ${snippet}
       el.textContent = msg || '';
       el.style.color = ok ? 'rgba(22,163,74,1)' : 'rgba(239,68,68,1)';
       if (!msg) el.style.color = '';
+      if (!msg){
+        el.onclick = null;
+        el.style.cursor = '';
+        el.title = '';
+      }
+    }
+
+    function refreshCurPostId_(){
+      const cur = (state.postId || '').trim();
+      const el = $('curPostId');
+      if (el) el.textContent = 'post_id: ' + (cur ? cur : '(new)');
+
+      // ✅ 발행 입력칸도 같이 동기화
+      if ($('pubPostId')) $('pubPostId').value = cur;
     }
 
     async function postToAppsScript_(apiBase, mode, payload){
-      // ✅ 이 Apps Script는 e.parameter 기반이라 JSON body를 읽지 않는 경우가 많습니다.
-      //    따라서 form-urlencoded로 보내서 e.parameter에 정확히 들어가게 합니다.
       const url = mode
         ? (apiBase + (apiBase.includes('?') ? '&' : '?') + 'mode=' + encodeURIComponent(mode))
         : apiBase;
@@ -1646,15 +1636,69 @@ ${snippet}
       return data || { ok:true, raw: txt };
     }
 
+    // ✅ 다음 post_id 표시 (Apps Script: mode=getNextPostId 필요)
+    async function refreshNextPostId_(){
+      const apiBase = getApiBase_();
+      const el = $('nextPostId');
+
+      if (!apiBase){
+        if (el) el.textContent = 'next: -';
+        return;
+      }
+      try{
+        // 서버는 doPost + e.parameter 기반이므로 post로 호출
+        const data = await postToAppsScript_(apiBase, 'getNextPostId', {});
+        const nextId = (data?.next_post_id || '').trim() || '-';
+        if (el) el.textContent = 'next: ' + nextId;
+      }catch(e){
+        if (el) el.textContent = 'next: (error)';
+      }
+    }
+
+    // ✅ DB 저장: Apps Script mode=savePost 로 실제 저장
+    async function saveToDb_(){
+      const apiBase = getApiBase_();
+      if (!apiBase){
+        alert('API Base가 비어 있습니다. (발행 API 설정에서 입력하거나 window.CHEESE_BLOG_API_BASE / window.CHEESE_ADMIN_API_BASE 를 세팅하세요)');
+        return;
+      }
+
+      const title = $('postTitle').value.trim();
+      const body  = $('finalHtml').value || '';
+
+      if (!title && !body){
+        alert('title 또는 body가 비어 있습니다.');
+        return;
+      }
+
+      setPublishMsg_('DB 저장 중...', true);
+
+      try{
+        const payload = { title, intro:'', body };
+        // ✅ 수정 저장이면 post_id 포함(서버가 update 처리하도록)
+        if (state.postId) payload.post_id = state.postId;
+
+        const data = await postToAppsScript_(apiBase, 'savePost', payload);
+        if (!data || data.ok === false) throw new Error(data?.message || 'savePost 실패');
+
+        const newId = String(data.post_id || '').trim();
+        if (newId){
+          state.postId = newId;
+          refreshCurPostId_();
+        }
+
+        setPublishMsg_('DB 저장 완료', true);
+
+        // ✅ 저장 후 next 갱신
+        await refreshNextPostId_();
+      }catch(err){
+        console.error(err);
+        setPublishMsg_('DB 저장 실패: ' + (err?.message || String(err)), false);
+        alert('DB 저장 실패\n' + (err?.message || err));
+      }
+    }
+
     async function publishToBlog_(){
-      /**
-       * ✅ Apps Script 스펙(사용자 제공):
-       *  - mode=publishPost
-       *  - post_id, isDraft, blogUrl(또는 blogId) 를 e.parameter 로 전달
-       *
-       * ⚠️ 이 방식에서는 현재 화면에서 만든 finalHtml을 서버로 보내지 않습니다.
-       *     서버는 POSTS 시트의 post_id 행을 읽어서 HTML을 생성(buildHtml_) 후 발행합니다.
-       */
       const cfg = getPublishConfig_();
       if (!cfg.api_base){
         alert('API Base가 비어 있습니다. (발행 API 설정에서 입력하거나 window.CHEESE_BLOG_API_BASE / window.CHEESE_ADMIN_API_BASE 를 세팅하세요)');
@@ -1663,27 +1707,23 @@ ${snippet}
 
       const mode = (cfg.mode_publish || 'publishPost').trim() || 'publishPost';
 
-      const postId = ($('pubPostId')?.value || '').trim();
+      // ✅ state.postId 우선 사용 (입력칸보다 안전)
+      const postId = (state.postId || ($('pubPostId')?.value || '')).trim();
       if (!postId){
-        alert('post_id를 입력하세요 (예: P001)\n※ Apps Script는 post_id로 POSTS 시트 행을 찾습니다.');
+        alert('먼저 "DB 저장"을 눌러 post_id를 발급받아야 합니다.');
         return;
       }
 
       const isDraft = ($('publishState')?.value || 'draft') === 'draft';
-
       const blogUrl = ($('pubBlogUrl')?.value || '').trim();
       const blogId  = ($('pubBlogId')?.value || '').trim();
 
-      // blogId가 없으면 blogUrl은 사실상 필수(스크립트가 byurl 조회)
       if (!blogId && !blogUrl){
         alert('blogUrl 또는 blogId가 필요합니다.\n예: https://cheesetestblog.blogspot.com/');
         return;
       }
 
-      const payload = {
-        post_id: postId,
-        isDraft: isDraft,
-      };
+      const payload = { post_id: postId, isDraft: isDraft };
       if (blogId) payload.blogId = blogId;
       if (blogUrl) payload.blogUrl = blogUrl;
 
@@ -1694,7 +1734,6 @@ ${snippet}
 
       try{
         const data = await postToAppsScript_(cfg.api_base, mode, payload);
-
         if (!data || data.ok === false){
           throw new Error(data?.message || data?.error || '응답은 받았지만 ok가 아닙니다');
         }
@@ -1714,7 +1753,6 @@ ${snippet}
           setPublishMsg_('발행 완료' + (bloggerPostId ? (' · blogger_post_id: ' + bloggerPostId) : ''), true);
         }
 
-        // (선택) 마지막 발행 정보 로컬 저장
         try{
           const last = { post_id: postId, blogger_post_id: bloggerPostId, url, isDraft, at: new Date().toISOString() };
           localStorage.setItem('post_builder_last_publish', JSON.stringify(last));
@@ -1731,12 +1769,47 @@ ${snippet}
     $('btnSavePubConfig')?.addEventListener('click', savePublishConfigFromUI_);
     $('btnResetPubConfig')?.addEventListener('click', resetPublishConfig_);
 
+    // ✅ DB 저장 버튼은 Apps Script 저장으로 연결
+    $('btnSave')?.addEventListener('click', saveToDb_);
 
+    // ✅ 불러오기(로컬스토리지 draft)는 유지 (원하면 서버 loadPost로도 확장 가능)
+    $('btnLoad').addEventListener('click', () => {
+      const raw = localStorage.getItem('post_builder_draft');
+      if (!raw){ alert('저장된 데이터가 없습니다'); return; }
+      const p = JSON.parse(raw);
+      $('postTitle').value = p.title || '';
+      $('templateSelect').value = p.template_id || 'default';
+      $('optTOC').checked = !!p.options?.toc;
+      $('optSources').checked = !!p.options?.sources;
+      state.blocks = Array.isArray(p.blocks_json) ? p.blocks_json : [];
+      state.selectedId = state.blocks[0]?.id || null;
+      renderAll();
+    });
+
+    // ✅ (선택) 로컬 임시저장용: 유지하되 버튼은 없으니 단축키 등으로 쓰고 싶으면 연결 가능
+    function saveLocalDraft_(){
+      const payload = {
+        title: $('postTitle').value.trim(),
+        template_id: $('templateSelect').value,
+        options: { toc: $('optTOC').checked, sources: $('optSources').checked },
+        blocks_json: JSON.parse(JSON.stringify(state.blocks)),
+        content_html: $('finalHtml').value
+      };
+      localStorage.setItem('post_builder_draft', JSON.stringify(payload));
+    }
+
+    /************************************************************
+     * ✅ Demo Init
+     ************************************************************/
     function initDemo(){
       $('postTitle').value = '김구, 임시정부의 중심에 선 이유';
       $('templateSelect').value = 'profile';
       $('optTOC').checked = true;
       $('optSources').checked = true;
+
+      // ✅ 데모 초기화 시에는 새 글로 취급(필요하면 유지하도록 바꿀 수 있음)
+      state.postId = '';
+      refreshCurPostId_();
 
       state.blocks = [
         { id: uid(), type:'summary', data:{ title:'핵심 요약', body:'- 김구의 정치적 중심성\n- 임시정부의 정통성 논쟁\n- 해방 이후의 역할과 한계' } },
@@ -1758,10 +1831,15 @@ ${snippet}
         renderAll();
         flashBlockToBulk();
       }
+
+      // ✅ demo 로드 후 next 표시 갱신
+      refreshNextPostId_();
     }
 
     initDemo();
     applyPublishConfigToUI_();
+    refreshCurPostId_();
+    refreshNextPostId_();
 
   </script>
 </body>
