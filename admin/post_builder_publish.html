@@ -309,8 +309,8 @@
             <div class="row right">
               <button class="btn small" id="btnReset">초기화</button>
               <button class="btn small" id="btnLoad">불러오기</button>
-              <button class="btn small" id="btnSave">DB 저장</button>
-              <button class="btn small primary" id="btnPublish">블로그 발행</button>
+              <button class="btn small" id="btnSave" type="button">DB 저장</button>
+              <button class="btn small primary" id="btnPublish" type="button">블로그 발행</button>
               <span class="mini" id="publishMsg" style="margin-left:6px;"></span>
             </div>
           </div>
@@ -552,7 +552,19 @@
 
     const $ = (id) => document.getElementById(id);
 
-    const state = { blocks: [], selectedId: null };
+    
+
+    // 안전 바인딩: 요소가 없으면 전체 스크립트가 멈추지 않도록 함
+    const on = (id, evt, fn, opts) => {
+      const el = $(id);
+      if (!el){
+        console.warn('[bind] element not found:', id);
+        return null;
+      }
+      el.addEventListener(evt, fn, opts);
+      return el;
+    };
+const state = { blocks: [], selectedId: null };
     const uid = () => 'b' + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(2,6);
 
     // ✅ 스크립트 종료태그 문자열은 "쪼개서" 만든다 (HTML 파서 보호)
@@ -1421,18 +1433,18 @@ ${snippet}
       renderAll();
     }
 
-    $('btnAddSection').addEventListener('click', () => addBlock(makeSection()));
-    $('btnAddSummary').addEventListener('click', () => addBlock(makeSummary()));
-    $('btnAddImage').addEventListener('click', () => addBlock(makeImage()));
-    $('btnAddAd').addEventListener('click', () => addBlock(makeAd()));
-    $('btnAddFlash').addEventListener('click', () => addBlock(makeFlash()));
-    $('btnAddOrder').addEventListener('click', () => addBlock(makeOrder()));
-    $('btnAddQuiz').addEventListener('click', () => addBlock(makeQuiz()));
+    on('btnAddSection','click', () => addBlock(makeSection()));
+    on('btnAddSummary','click', () => addBlock(makeSummary()));
+    on('btnAddImage','click', () => addBlock(makeImage()));
+    on('btnAddAd','click', () => addBlock(makeAd()));
+    on('btnAddFlash','click', () => addBlock(makeFlash()));
+    on('btnAddOrder','click', () => addBlock(makeOrder()));
+    on('btnAddQuiz','click', () => addBlock(makeQuiz()));
 
-    $('btnFlashFromBlock').addEventListener('click', flashBlockToBulk);
-    $('btnFlashToBlock').addEventListener('click', () => { flashBulkToBlock(); renderAll(); });
+    on('btnFlashFromBlock','click', flashBlockToBulk);
+    on('btnFlashToBlock','click', () => { flashBulkToBlock(); renderAll(); });
 
-    $('btnApplyBlock').addEventListener('click', () => {
+    on('btnApplyBlock','click', () => {
       const b = currentBlock();
       if (!b) return;
 
@@ -1486,7 +1498,7 @@ ${snippet}
       renderAll();
     });
 
-    $('btnDeleteBlock').addEventListener('click', () => {
+    on('btnDeleteBlock','click', () => {
       const b = currentBlock();
       if (!b) return;
       state.blocks = state.blocks.filter(x => x.id !== b.id);
@@ -1494,12 +1506,12 @@ ${snippet}
       renderAll();
     });
 
-    $('templateSelect').addEventListener('change', renderPreview);
-    $('optTOC').addEventListener('change', renderPreview);
-    $('optSources').addEventListener('change', renderPreview);
-    $('postTitle').addEventListener('input', renderPreview);
+    on('templateSelect','change', renderPreview);
+    on('optTOC','change', renderPreview);
+    on('optSources','change', renderPreview);
+    on('postTitle','input', renderPreview);
 
-    $('btnSave').addEventListener('click', () => {
+    on('btnSave','click', () => {
       const payload = {
         title: $('postTitle').value.trim(),
         template_id: $('templateSelect').value,
@@ -1511,7 +1523,7 @@ ${snippet}
       alert('저장됨(localStorage). 다음 단계에서 Apps Script 저장 API로 교체하면 됩니다.');
     });
 
-    $('btnLoad').addEventListener('click', () => {
+    on('btnLoad','click', () => {
       const raw = localStorage.getItem('post_builder_draft');
       if (!raw){ alert('저장된 데이터가 없습니다'); return; }
       const p = JSON.parse(raw);
@@ -1524,7 +1536,7 @@ ${snippet}
       renderAll();
     });
 
-    $('btnCopyHtml').addEventListener('click', async () => {
+    on('btnCopyHtml','click', async () => {
       try{
         await navigator.clipboard.writeText($('finalHtml').value || '');
         alert('HTML 복사 완료');
@@ -1533,7 +1545,7 @@ ${snippet}
       }
     });
 
-    $('btnDownloadHtml').addEventListener('click', () => {
+    on('btnDownloadHtml','click', () => {
       const html = $('finalHtml').value || '';
       const blob = new Blob([html], {type:'text/html;charset=utf-8'});
       const url = URL.createObjectURL(blob);
@@ -1546,7 +1558,7 @@ ${snippet}
       URL.revokeObjectURL(url);
     });
 
-    $('btnReset').addEventListener('click', initDemo);
+    on('btnReset','click', initDemo);
 
     /************************************************************
      * ✅ Blog Publish (Apps Script 연동)
@@ -1641,7 +1653,13 @@ ${snippet}
 
     async function publishToBlog_(){
       // 항상 최신 HTML 먼저 생성
-      renderPreview();
+      try{
+        renderPreview();
+      }catch(e){
+        console.error(e);
+        alert('미리보기/HTML 생성 중 오류: ' + (e?.message || String(e)));
+        return;
+      }
 
       const title = ($('postTitle')?.value || '').trim();
       const html  = ($('finalHtml')?.value || '').trim();
