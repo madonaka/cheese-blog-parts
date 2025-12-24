@@ -1884,17 +1884,32 @@ ${snippet}
     }
     
     function normalizePost_(data){
-      const p = data?.post || data?.item || data?.data || data || {};
-      const options = p.options || safeJsonParse_(p.options_json) || {};
-      const blocks = p.blocks_json || p.blocks || safeJsonParse_(p.blocks_json) || safeJsonParse_(p.blocks) || [];
+      const p = data?.post || data || {};
+    
+      // blocks_json: 배열/문자열(JSON)/없음 모두 대응
+      let blocks = (p.blocks_json ?? p.blocks ?? []);
+      if (typeof blocks === 'string') blocks = safeJsonParse_(blocks) || [];
+      if (!Array.isArray(blocks)) blocks = [];
+    
+      // options_json: 객체/문자열(JSON)/없음 모두 대응
+      let opt = (p.options_json ?? p.options ?? {});
+      if (typeof opt === 'string') opt = safeJsonParse_(opt) || {};
+      if (!opt || typeof opt !== 'object') opt = {};
     
       return {
-        post_id: p.post_id || p.postId || p.id || '',
-        title: p.title || '',
-        template_id: p.template_id || p.templateId || p.template || 'default',
-        options,
-        blocks_json: Array.isArray(blocks) ? blocks : [],
-        content_html: p.content_html || p.html || '',
+        post_id: String(p.post_id || ''),
+        title: String(p.title || ''),
+        template_id: String(p.template_id || p.templateId || 'default'),
+        options_json: opt,
+        blocks_json: blocks,
+    
+        // 서버 필드명(body)도 읽어오도록 보강
+        content_html: String(p.body || p.content_html || p.html || ''),
+    
+        updated_at: p.updated_at || '',
+        status: String(p.status || ''),
+        blogger_post_id: String(p.blogger_post_id || ''),
+        blogger_url: String(p.blogger_url || '')
       };
     }
     
@@ -2108,46 +2123,38 @@ ${snippet}
 
     // ✅ DB 저장: Apps Script mode=savePost 로 실제 저장
     async function saveToDb_(){
-      const apiBase = getApiBase_();
-      if (!apiBase){
-        alert('API Base가 비어 있습니다. (발행 API 설정에서 입력하거나 window.CHEESE_BLOG_API_BASE / window.CHEESE_ADMIN_API_BASE 를 세팅하세요)');
-        return;
-      }
-
-      const title = $('postTitle').value.trim();
-      const body  = $('finalHtml').value || '';
-
-      if (!title && !body){
-        alert('title 또는 body가 비어 있습니다.');
-        return;
-      }
-
-      setPublishMsg_('DB 저장 중...', true);
-
       try{
-        const payload = { title, intro:'', body };
-        // ✅ 수정 저장이면 post_id 포함(서버가 update 처리하도록)
-        if (state.postId) payload.post_id = state.postId;
-
-        const data = await postToAppsScript_(apiBase, 'savePost', payload);
-        if (!data || data.ok === false) throw new Error(data?.message || 'savePost 실패');
-
-        const newId = String(data.post_id || '').trim();
-        if (newId){
-          state.postId = newId;
-          refreshCurPostId_();
-        }
-
-        setPublishMsg_('DB 저장 완료', true);
-
-        // ✅ 저장 후 next 갱신
-        await refreshNextPostId_();
-      }catch(err){
-        console.error(err);
-        setPublishMsg_('DB 저장 실패: ' + (err?.message || String(err)), false);
-        alert('DB 저장 실패\n' + (err?.message || err));
+        const cfg = getPublishConfig_();
+        const apiBase = (cfg?.api_base || getApiBase_?.() || '').trim();
+        if (!apiBase) throw new Error('API Base가 비어 있습니다.');
+    
+        // 최신 미리보기 HTML 갱신
+        updateFinalHtml_();
+    
+        const payload = {
+          post_id: state.postId || '',
+          title: $('title').value.trim(),
+    
+          // ✅ 블록 기반 편집 복원용
+          template_id: $('templateSelect').value || 'default',
+          options_json: state.options || {},      // 객체로 보내도 callAppsScriptFlex_가 JSON.stringify 해줌
+          blocks_json: state.blocks || [],        // 배열로 보내도 stringify 됨
+    
+          // ✅ 최종 발행/미리보기용 HTML (백업 겸)
+          body: $('finalHtml').value || ''
+        };
+    
+        const data = await callAppsScriptFlex_(apiBase, 'savePost', payload, ['POST','GET']);
+        if (!data || data.ok === false) throw new Error(data?.message || '저장 실패');
+    
+        // post_id 갱신
+        if (data.post_id) state.postId = String(data.post_id);
+        toast_('DB 저장 완료');
+      }catch(e){
+        alert('DB 저장 실패: ' + (e?.message || e));
       }
     }
+
 
     async function publishToBlog_(){
       const cfg = getPublishConfig_();
