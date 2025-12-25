@@ -711,7 +711,13 @@
     const $ = (id) => document.getElementById(id);
 
     // ✅ 현재 편집 글의 post_id
-    const state = { blocks: [], selectedId: null, postId: '' };
+    const state = {
+      blocks: [],
+      selectedId: null,
+      postId: '',
+      options: { toc:true, sources:false },
+      lastLoadedBody: ''
+    };
 
     const uid = () => 'b' + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(2,6);
 
@@ -1284,6 +1290,19 @@
       const templateId = $('templateSelect').value;
       const optTOC = $('optTOC').checked;
       const optSources = $('optSources').checked;
+
+      // ✅ fallback: blocks_json 이 비어있지만, DB에 body(html)가 남아있는 경우
+      // (예: 예전 버전에서 blocks 저장이 안 됐던 글)
+      const rawBody = String(state.lastLoadedBody || '').trim();
+      const hasBlocks = Array.isArray(state.blocks) && state.blocks.length > 0;
+      if (!hasBlocks && rawBody){
+        // body가 이미 완성 HTML(특히 <article> 또는 전체 문서) 형태면 그대로 사용
+        if (/<article[\s>]/i.test(rawBody) || /<html[\s>]/i.test(rawBody)){
+          return rawBody;
+        }
+        // content 조각이면 템플릿으로 감싸서 반환
+        return wrapTemplate(templateId, title, rawBody).trim();
+      }
 
       const bodyParts = [];
       if (optTOC) bodyParts.push(buildTOC(state.blocks));
@@ -1899,6 +1918,7 @@ ${snippet}
       return {
         post_id: String(p.post_id || ''),
         title: String(p.title || ''),
+        intro: String(p.intro || ''),
         template_id: String(p.template_id || p.templateId || 'default'),
         options_json: opt,
         blocks_json: blocks,
@@ -1942,11 +1962,13 @@ ${snippet}
     
         // ✅ 화면 복원
         $('postTitle').value = p.title || '';
+      $('postIntro').value = p.intro || '';
+      state.lastLoadedBody = String(p.content_html || '');
+      state.options = p.options_json || {};
         $('templateSelect').value = p.template_id || 'default';
-        $('optTOC').checked = !!(p.options?.toc ?? true);
-        $('optSources').checked = !!(p.options?.sources ?? true);
-    
-        state.blocks = Array.isArray(p.blocks_json) ? p.blocks_json : [];
+        $('optTOC').checked = !!((state.options && state.options.toc) ?? true);
+        $('optSources').checked = !!((state.options && state.options.sources) ?? false);
+state.blocks = Array.isArray(p.blocks_json) ? p.blocks_json : [];
         state.selectedId = state.blocks[0]?.id || null;
     
         setCurrentPostId_(p.post_id || postId);
@@ -1968,11 +1990,13 @@ ${snippet}
       const p = JSON.parse(raw);
     
       $('postTitle').value = p.title || '';
+      $('postIntro').value = p.intro || '';
+      state.lastLoadedBody = String(p.content_html || '');
+      state.options = p.options_json || {};
       $('templateSelect').value = p.template_id || 'default';
-      $('optTOC').checked = !!p.options?.toc;
-      $('optSources').checked = !!p.options?.sources;
-    
-      state.blocks = Array.isArray(p.blocks_json) ? p.blocks_json : [];
+      $('optTOC').checked = !!(p.options_json && p.options_json.toc);
+$('optSources').checked = !!(p.options_json && p.options_json.sources);
+state.blocks = Array.isArray(p.blocks_json) ? p.blocks_json : [];
       state.selectedId = state.blocks[0]?.id || null;
     
       // 로컬은 post_id가 없을 수 있으니 new 처리
@@ -2122,7 +2146,16 @@ ${snippet}
     }
 
     // ✅ DB 저장: Apps Script mode=savePost 로 실제 저장
-    async function saveToDb_(){
+    
+    // ✅ 저장 전에 finalHtml을 최신 상태로 갱신
+    function updateFinalHtml_(){
+      // ✅ 옵션 체크박스 값도 state로 동기화 (DB 저장용)
+      state.options = { toc: $('optTOC').checked, sources: $('optSources').checked };
+      // renderPreview() 내부에서 finalHtml textarea를 갱신함
+      renderPreview();
+    }
+
+async function saveToDb_(){
       try{
         const cfg = getPublishConfig_();
         const apiBase = (cfg?.api_base || getApiBase_?.() || '').trim();
@@ -2133,7 +2166,8 @@ ${snippet}
     
         const payload = {
           post_id: state.postId || '',
-          title: $('title').value.trim(),
+          title: $('postTitle').value.trim(),
+        intro: $('postIntro').value.trim(),
     
           // ✅ 블록 기반 편집 복원용
           template_id: $('templateSelect').value || 'default',
@@ -2237,6 +2271,7 @@ ${snippet}
     function saveLocalDraft_(){
       const payload = {
         title: $('postTitle').value.trim(),
+        intro: $('postIntro').value.trim(),
         template_id: $('templateSelect').value,
         options: { toc: $('optTOC').checked, sources: $('optSources').checked },
         blocks_json: JSON.parse(JSON.stringify(state.blocks)),
@@ -2250,6 +2285,7 @@ ${snippet}
     function saveLocalDraft_(){
       const payload = {
         title: $('postTitle').value.trim(),
+        intro: $('postIntro').value.trim(),
         template_id: $('templateSelect').value,
         options: { toc: $('optTOC').checked, sources: $('optSources').checked },
         blocks_json: JSON.parse(JSON.stringify(state.blocks)),
