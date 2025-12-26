@@ -1,0 +1,334 @@
+<!-- knowledge_db.html -->
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Knowledge DB · Cheese Lab Admin</title>
+
+  <!-- ✅ 페이지 메타(공통 스크립트가 읽는 구조라면 유지) -->
+  <script>
+    window.CHEESE_ADMIN_ACTIVE_PAGE   = "knowledge_db";
+    window.CHEESE_ADMIN_PAGE_SUBTITLE = "Knowledge-DB 입력/조회";
+    window.CHEESE_ADMIN_PAGE_BADGE    = "v0.1";
+  </script>
+
+  <!-- ✅ 공통 CSS -->
+  <link rel="stylesheet" href="./admin.css" />
+
+  <style>
+    /* 페이지 전용 최소 스타일(기존 admin.css 우선) */
+    .wrap{ max-width:1100px; margin:0 auto; padding:18px 18px 28px; box-sizing:border-box; }
+    .card{ background:#fff; border:1px solid rgba(15,23,42,.10); border-radius:18px; box-shadow:0 10px 28px rgba(15,23,42,.10); overflow:hidden; margin-bottom:14px; }
+    .h{ padding:14px 14px; border-bottom:1px solid rgba(15,23,42,.08); display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    .h h2{ margin:0; font-size:16px; }
+    .b{ padding:14px; }
+    .row{ display:flex; gap:10px; flex-wrap:wrap; }
+    .row > *{ flex:1 1 200px; }
+    label{ display:block; font-size:12px; color:#475569; margin:0 0 6px; }
+    input, select, textarea{
+      width:100%; box-sizing:border-box;
+      padding:10px 10px; border-radius:12px; border:1px solid rgba(15,23,42,.15);
+      font:inherit; outline:none;
+    }
+    textarea{ min-height:90px; resize:vertical; }
+    button{
+      padding:10px 14px; border-radius:12px; border:1px solid rgba(15,23,42,.25);
+      background:#111827; color:#fff; cursor:pointer;
+    }
+    button.secondary{
+      background:#fff; color:#111827;
+    }
+    .muted{ color:#64748b; font-size:12px; }
+    .pill{ display:inline-block; padding:4px 8px; border-radius:999px; background:#f1f5f9; font-size:12px; color:#334155; }
+    .list{ margin:10px 0 0; padding-left:18px; }
+    .ok{ color:#16a34a; }
+    .bad{ color:#ef4444; }
+    .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    @media (max-width: 900px){ .grid2{ grid-template-columns:1fr; } }
+    .resultBox{ padding:12px; border:1px solid rgba(15,23,42,.10); border-radius:14px; background:#fff; }
+    .miniActions{ display:flex; gap:8px; flex-wrap:wrap; }
+    .miniActions button{ padding:8px 10px; border-radius:10px; font-size:12px; }
+  </style>
+</head>
+
+<body>
+  <!-- =========================
+       ✅ 헤더 슬롯 (기존 구조에 맞춰 유지/수정)
+       ========================= -->
+  <header class="admin-header">
+    <div class="admin-logo">
+      <a href="https://admin.cheesehistory.com/">Cheese Lab Admin</a>
+      <span id="admin-login-user" class="admin-login-user"></span>
+    </div>
+
+    <div class="admin-header-right">
+      <span class="admin-badge" data-admin-page-badge>v0.1</span>
+      <!-- 모바일 햄버거 버튼이 기존에 있으면 그대로 사용 -->
+      <button class="admin-hamburger" type="button" aria-label="메뉴 열기" data-action="open-drawer">☰</button>
+      <button id="btn-logout" class="admin-logout-btn" type="button" data-action="logout">로그아웃</button>
+    </div>
+  </header>
+
+  <!-- =========================
+       ✅ 레이아웃: 사이드 메뉴 + 본문
+       ========================= -->
+  <div class="admin-layout">
+    <!-- ✅ 사이드 메뉴 슬롯 (여기에 admin-menu.html을 주입) -->
+    <aside class="admin-side" id="admin-side"></aside>
+
+    <!-- ✅ 본문 -->
+    <main class="admin-main">
+      <div class="wrap">
+
+        <!-- =========================
+             1) 자동수집(조회) 카드
+             ========================= -->
+        <section class="card">
+          <div class="h">
+            <h2>자동수집(조회) · 엔티티 → 사건 목록</h2>
+            <span class="pill">JSONP</span>
+          </div>
+
+          <div class="b">
+            <div class="row">
+              <div style="flex:2 1 320px;">
+                <label>엔티티 검색어</label>
+                <input id="q" placeholder="예: 신간회" />
+                <div class="muted" style="margin-top:6px;">엔티티명/별칭으로 검색 → 첫 결과를 자동 선택해서 사건을 불러옵니다(MVP).</div>
+              </div>
+
+              <div style="flex:0 0 160px; align-self:flex-end;">
+                <button id="btnSearch" type="button" style="width:100%;">검색</button>
+              </div>
+            </div>
+
+            <div class="grid2" style="margin-top:14px;">
+              <div class="resultBox">
+                <b>선택 엔티티</b>
+                <div id="entityBox" class="muted" style="margin-top:8px;">검색 전</div>
+              </div>
+
+              <div class="resultBox">
+                <b>관련 사건</b>
+                <div id="eventsBox" class="muted" style="margin-top:8px;">검색 전</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- =========================
+             2) 입력(쓰기) 카드
+             ========================= -->
+        <section class="card">
+          <div class="h">
+            <h2>DB 입력(쓰기) · 사건 + 엔티티 연결</h2>
+            <span class="pill">POST</span>
+          </div>
+
+          <div class="b">
+            <div class="grid2">
+              <div>
+                <label>날짜 (정렬 기준) sortStart</label>
+                <input id="in_sortStart" placeholder="YYYY-MM-DD (예: 1927-01-01)" />
+              </div>
+
+              <div>
+                <label>표시 날짜 displayDate</label>
+                <input id="in_displayDate" placeholder="예: 1927년 1월" />
+              </div>
+
+              <div style="grid-column:1 / -1;">
+                <label>사건 제목 title</label>
+                <input id="in_title" placeholder="예: 신간회 창립" />
+              </div>
+
+              <div>
+                <label>도메인 domain</label>
+                <select id="in_domain">
+                  <option value="정치">정치</option>
+                  <option value="경제">경제</option>
+                  <option value="사회">사회</option>
+                  <option value="문화">문화</option>
+                  <option value="국제">국제</option>
+                  <option value="군사">군사</option>
+                </select>
+              </div>
+
+              <div>
+                <label>엔티티(단체/인물 등) 이름</label>
+                <input id="in_entityName" placeholder="예: 신간회" />
+                <div class="muted" style="margin-top:6px;">없으면 새로 생성하고, 있으면 재사용하도록 설계할 예정.</div>
+              </div>
+
+              <div style="grid-column:1 / -1;">
+                <label>메모 memo</label>
+                <textarea id="in_memo" placeholder="간단 설명, 출처 메모, 연결 힌트 등"></textarea>
+              </div>
+            </div>
+
+            <div class="miniActions" style="margin-top:12px;">
+              <button id="btnSave" type="button">저장(사건+연결)</button>
+              <button id="btnFillDemo" type="button" class="secondary">샘플 채우기</button>
+              <span id="saveMsg" class="muted"></span>
+            </div>
+
+            <div class="muted" style="margin-top:10px;">
+              ⚠️ 아직 쓰기 API(doPost)는 다음 단계에서 붙입니다. 버튼을 누르면 지금은 “미구현” 안내가 나옵니다.
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <script>
+    /************************************************************
+     * ✅ 여기만 네 값으로 변경
+     ************************************************************/
+    const API_BASE = "YOUR_WEBAPP_URL_HERE"; // Apps Script Web App URL
+    const ADMIN_TOKEN = "CHANGE_ME";         // doPost에 토큰 검증 붙일 예정
+
+    /************************************************************
+     * JSONP 유틸
+     ************************************************************/
+    function jsonp(url) {
+      return new Promise((resolve, reject) => {
+        const cb = "cb_" + Math.random().toString(16).slice(2);
+        const s = document.createElement("script");
+        const timer = setTimeout(() => {
+          cleanup();
+          reject(new Error("JSONP timeout"));
+        }, 10000);
+
+        function cleanup() {
+          clearTimeout(timer);
+          delete window[cb];
+          s.remove();
+        }
+
+        window[cb] = (data) => {
+          cleanup();
+          resolve(data);
+        };
+
+        s.src = url + (url.includes("?") ? "&" : "?") + "cb=" + cb;
+        s.onerror = () => { cleanup(); reject(new Error("JSONP load error")); };
+        document.body.appendChild(s);
+      });
+    }
+
+    async function searchEntity(q) {
+      const url = `${API_BASE}?fn=searchEntity&q=${encodeURIComponent(q)}`;
+      return jsonp(url);
+    }
+
+    async function eventsByEntity(entityId) {
+      const url = `${API_BASE}?fn=eventsByEntity&entityId=${encodeURIComponent(entityId)}`;
+      return jsonp(url);
+    }
+
+    function renderEntity(entity) {
+      const box = document.getElementById("entityBox");
+      if (!entity) { box.innerHTML = `<span class="bad">없음</span>`; return; }
+      box.innerHTML = `
+        <div>
+          <b>${entity.name}</b>
+          <div class="muted" style="margin-top:4px;">
+            id: ${entity.id} / type: ${entity.type}<br>
+            aliases: ${(entity.aliases||[]).join(", ")}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderEvents(items) {
+      const box = document.getElementById("eventsBox");
+      if (!items || !items.length) {
+        box.innerHTML = `<span class="muted">연결된 사건 없음</span>`;
+        return;
+      }
+      box.innerHTML = `
+        <ul class="list">
+          ${items.map(ev => `
+            <li style="margin-bottom:6px;">
+              <span class="muted">${ev.displayDate}</span> — <b>${ev.title}</b>
+              <span class="muted">(${ev.domain}, ${ev.id})</span>
+            </li>
+          `).join("")}
+        </ul>
+      `;
+    }
+
+    document.getElementById("btnSearch").addEventListener("click", async () => {
+      const q = document.getElementById("q").value.trim();
+      if (!q) return;
+
+      document.getElementById("entityBox").innerHTML = "검색 중...";
+      document.getElementById("eventsBox").innerHTML = "";
+
+      try {
+        const r1 = await searchEntity(q);
+        if (!r1.ok) throw new Error(r1.message || "searchEntity failed");
+
+        const entity = (r1.items && r1.items[0]) ? r1.items[0] : null;
+        renderEntity(entity);
+        if (!entity) return;
+
+        document.getElementById("eventsBox").innerHTML = "사건 불러오는 중...";
+        const r2 = await eventsByEntity(entity.id);
+        if (!r2.ok) throw new Error(r2.message || "eventsByEntity failed");
+
+        renderEvents(r2.items);
+      } catch (e) {
+        document.getElementById("entityBox").innerHTML = `<span class="bad">에러: ${e.message}</span>`;
+      }
+    });
+
+    /************************************************************
+     * ✅ 쓰기(POST) - 다음 단계에서 Apps Script doPost 구현 예정
+     ************************************************************/
+    document.getElementById("btnSave").addEventListener("click", async () => {
+      const msg = document.getElementById("saveMsg");
+      msg.textContent = "";
+      msg.className = "muted";
+
+      // 지금은 doPost가 아직 없으니 안내만
+      msg.textContent = "아직 쓰기 API(doPost)를 붙이기 전입니다. 다음 단계에서 연결할게요.";
+    });
+
+    document.getElementById("btnFillDemo").addEventListener("click", () => {
+      document.getElementById("in_sortStart").value = "1927-01-01";
+      document.getElementById("in_displayDate").value = "1927년 1월";
+      document.getElementById("in_title").value = "신간회 창립";
+      document.getElementById("in_domain").value = "정치";
+      document.getElementById("in_entityName").value = "신간회";
+      document.getElementById("in_memo").value = "더미 입력 테스트";
+    });
+
+    /************************************************************
+     * ✅ 메뉴/공통 스크립트 로딩 (너 시스템에 맞게 수정)
+     ************************************************************/
+    async function loadAdminMenu() {
+      // 1) admin-menu.html을 fetch해서 #admin-side에 꽂는 방식 (가장 흔한 패턴)
+      // 경로가 다르면 "./admin-menu.html"만 맞춰줘.
+      try{
+        const res = await fetch("./admin-menu.html", { cache: "no-store" });
+        if (!res.ok) throw new Error("menu fetch failed");
+        const html = await res.text();
+        document.getElementById("admin-side").innerHTML = html;
+      }catch(e){
+        document.getElementById("admin-side").innerHTML =
+          `<div style="padding:12px;" class="muted">메뉴 로드 실패: 경로/구조 확인 필요</div>`;
+      }
+    }
+
+    // 페이지 시작
+    loadAdminMenu();
+  </script>
+
+  <!-- ✅ 공통 스크립트가 있으면 마지막에 로딩 (예: admin-common.js) -->
+  <!-- <script src="./admin-common.js"></script> -->
+</body>
+</html>
