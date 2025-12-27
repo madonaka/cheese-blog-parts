@@ -244,10 +244,10 @@
         </section>
 
         <script>
-          // ✅ 1) 여기 한 줄만 네 Apps Script WebApp URL로 바꾸면 됨
+          // ✅ API 주소(페이지에 직접 고정)
           const API_BASE_DEFAULT = "https://script.google.com/macros/s/AKfycbxowBj0yNZHZVjamJhn3tk9I8GoWSWMr67i2wVkjBF9aSEqNjbanbmyLa0qKYRtyZEMcw/exec";
-          
-          // ✅ 2) 우선순위: URL 파라미터(api) > 기본값 > window 변수
+
+          // ✅ 우선순위: URL 파라미터(api) > 기본값 > window 변수
           const API_BASE =
             (new URLSearchParams(location.search).get("api") || "").trim()
             || API_BASE_DEFAULT
@@ -293,15 +293,41 @@
             ui.btnRefresh.disabled = v;
           }
 
-          async function apiGet(params){
-            if (!API_BASE){
-              throw new Error("API Base가 비어 있습니다. window.CHEESE_ADMIN_API_BASE 또는 window.CHEESE_BLOG_API_BASE를 설정하세요.");
-            }
-            const usp = new URLSearchParams(params);
-            const url = `${API_BASE}?${usp.toString()}`;
-            const res = await fetch(url, { method:"GET", cache:"no-store" });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            return await res.json();
+          // ✅ JSONP 호출 (CORS/Failed to fetch 회피)
+          function jsonpGet(params){
+            return new Promise((resolve, reject) => {
+              if (!API_BASE) return reject(new Error("API Base가 비어 있습니다."));
+
+              const cbName = "__jsonp_cb_" + Date.now() + "_" + Math.random().toString(16).slice(2);
+
+              params.cb = cbName;
+              params._  = String(Date.now()); // cache bust
+
+              const qs = new URLSearchParams(params).toString();
+              const src = `${API_BASE}?${qs}`;
+
+              const s = document.createElement("script");
+              let timer = setTimeout(() => cleanup(new Error("JSONP timeout")), 12000);
+
+              function cleanup(err){
+                clearTimeout(timer);
+                timer = null;
+
+                try { delete window[cbName]; } catch(_) { window[cbName] = undefined; }
+                if (s && s.parentNode) s.parentNode.removeChild(s);
+
+                if (err) reject(err);
+              }
+
+              window[cbName] = (data) => {
+                cleanup();     // no error
+                resolve(data);
+              };
+
+              s.onerror = () => cleanup(new Error("JSONP load error"));
+              s.src = src;
+              document.head.appendChild(s);
+            });
           }
 
           function mapResponse(data){
@@ -348,7 +374,6 @@
             return it.updatedAt ?? it.updated_at ?? it.updated ?? it.modifiedAt ?? it.modified_at ?? "";
           }
           function getExcerpt(it){
-            // 있으면 사용, 없으면 빈 값
             return it.excerpt ?? it.summary ?? it.desc ?? it.description ?? "";
           }
 
@@ -366,7 +391,7 @@
               const id = String(getId(it));
               const title = String(getTitle(it));
               const category = String(getCategory(it));
-              const tags = getTags(it).slice(0, 8); // 너무 많으면 컷
+              const tags = getTags(it).slice(0, 8);
               const updated = getUpdatedAt(it) ? fmtDate(getUpdatedAt(it)) : "-";
               const excerpt = String(getExcerpt(it) || "");
 
@@ -393,7 +418,6 @@
               `;
             }).join("");
 
-            // 카드 클릭 → Editor로 이동
             ui.grid.querySelectorAll("[data-open]").forEach(el=>{
               el.addEventListener("click", () => {
                 const id = el.getAttribute("data-open");
@@ -408,8 +432,9 @@
             setLoading(true);
 
             try{
-              const data = await apiGet({
-                mode: "knowledgeList",
+              // ✅ doGet이 JSONP(cb)를 지원하므로 fn으로 호출 (CORS 회피)
+              const data = await jsonpGet({
+                fn: "knowledgeList",
                 q: state.q,
                 category: state.category,
                 sort: state.sort,
@@ -417,7 +442,7 @@
                 size: String(state.size),
               });
 
-              if (data.ok === false) throw new Error(data.message || "API 오류");
+              if (data && data.ok === false) throw new Error(data.message || "API 오류");
 
               const mapped = mapResponse(data);
               state.total = mapped.total;
