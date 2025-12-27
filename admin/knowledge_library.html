@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Knowledge DB · Library</title>
+
+  <script>
+    window.CHEESE_ADMIN_ACTIVE_PAGE   = "knowledge_library";
+    window.CHEESE_ADMIN_PAGE_SUBTITLE = "Knowledge DB";
+    window.CHEESE_ADMIN_PAGE_BADGE    = "Library";
+  </script>
+
+  <link rel="stylesheet" href="./admin.css" />
+  <script defer src="./admin-common.js"></script>
+
+  <style>
+    .card{
+      background:#fff; border:1px solid rgba(15,23,42,.10);
+      border-radius:18px; box-shadow:0 10px 28px rgba(15,23,42,.10);
+      overflow:hidden; margin-bottom:14px;
+    }
+    .h{ padding:14px 14px 12px; border-bottom:1px solid rgba(15,23,42,.10); }
+    .h-title{ margin:0; font-size:16px; font-weight:900; color:#0f172a; }
+    .h-desc{ margin:6px 0 0; font-size:12px; color:#64748b; line-height:1.4; }
+
+    .tools{
+      display:flex; flex-wrap:wrap; gap:10px;
+      padding:12px 14px; border-bottom:1px solid rgba(15,23,42,.10);
+      align-items:center;
+    }
+    .field{ display:flex; gap:8px; align-items:center; }
+    .label{ font-size:12px; font-weight:800; color:#0f172a; }
+    .input, .select{
+      height:34px; border:1px solid rgba(15,23,42,.14);
+      border-radius:12px; padding:0 10px; font-size:13px; outline:none;
+      background:#fff; color:#0f172a;
+    }
+    .input{ width: 260px; }
+    .select{ width: 160px; }
+    .btn{
+      height:34px; border-radius:12px; border:1px solid rgba(15,23,42,.14);
+      background:#fff; padding:0 12px; font-size:13px; font-weight:900;
+      cursor:pointer;
+    }
+    .btn.primary{
+      background:#111827; color:#fff; border-color:#111827;
+    }
+    .btn:disabled{ opacity:.5; cursor:not-allowed; }
+
+    .meta{
+      display:flex; justify-content:space-between; align-items:center;
+      padding:10px 14px; font-size:12px; color:#64748b;
+      border-bottom:1px solid rgba(15,23,42,.10);
+      gap:10px; flex-wrap:wrap;
+    }
+
+    .table-wrap{ overflow:auto; }
+    table{
+      width:100%; border-collapse:separate; border-spacing:0;
+      min-width: 920px;
+    }
+    th, td{
+      text-align:left; padding:10px 12px; border-bottom:1px solid rgba(15,23,42,.08);
+      font-size:13px; color:#0f172a; vertical-align:top;
+    }
+    th{
+      position:sticky; top:0; background:#fff;
+      font-size:12px; color:#475569; font-weight:900;
+      border-bottom:1px solid rgba(15,23,42,.12);
+      z-index:1;
+    }
+    .pill{
+      display:inline-flex; align-items:center; gap:6px;
+      padding:4px 8px; border-radius:999px; font-size:12px; font-weight:800;
+      background:rgba(15,23,42,.06); color:#0f172a;
+      white-space:nowrap;
+    }
+    .link{ color:#111827; font-weight:900; text-decoration:underline; cursor:pointer; }
+    .muted{ color:#64748b; font-size:12px; }
+
+    .pager{
+      display:flex; justify-content:space-between; align-items:center;
+      padding:12px 14px; gap:10px; flex-wrap:wrap;
+    }
+    .pager .left, .pager .right{ display:flex; gap:8px; align-items:center; }
+    .err{
+      padding:10px 14px; color:#b91c1c; background:rgba(185,28,28,.06);
+      border-top:1px solid rgba(185,28,28,.18);
+      font-size:12px;
+    }
+
+    /* 공통 overflow로 잘리는 것 방지 */
+    .admin-main, .notice-wrap { height:auto !important; min-height:0 !important; }
+    .notice-wrap { overflow:visible !important; padding-bottom:24px !important; }
+  </style>
+</head>
+
+<body>
+  <div class="admin-shell">
+    <div id="admin-header-slot"></div>
+
+    <div class="admin-main">
+      <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+
+      <main class="notice-wrap">
+        <section class="card">
+          <div class="h">
+            <p class="h-title">Library (목록/검색)</p>
+            <p class="h-desc">DB에서 항목을 불러와 검색/정렬/필터링합니다. (실제 출력은 API 응답 기반)</p>
+          </div>
+
+          <div class="tools">
+            <div class="field">
+              <span class="label">검색</span>
+              <input id="q" class="input" placeholder="제목/본문/태그 키워드" />
+            </div>
+
+            <div class="field">
+              <span class="label">카테고리</span>
+              <select id="category" class="select">
+                <option value="">전체</option>
+                <option value="timeline">연표</option>
+                <option value="person">인물</option>
+                <option value="event">사건</option>
+                <option value="memo">메모</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <span class="label">정렬</span>
+              <select id="sort" class="select">
+                <option value="updated_desc">최근 수정</option>
+                <option value="created_desc">최근 생성</option>
+                <option value="title_asc">제목 A→Z</option>
+              </select>
+            </div>
+
+            <button id="btnSearch" class="btn primary">검색</button>
+            <button id="btnReset" class="btn">초기화</button>
+          </div>
+
+          <div class="meta">
+            <div>
+              <span class="pill">총 <b id="total">0</b>건</span>
+              <span class="muted" id="metaHint"></span>
+            </div>
+            <div class="field">
+              <span class="label">페이지 크기</span>
+              <select id="size" class="select" style="width:110px;">
+                <option value="10">10</option>
+                <option value="20" selected>20</option>
+                <option value="50">50</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width:90px;">ID</th>
+                  <th style="min-width:260px;">제목</th>
+                  <th style="width:140px;">분류</th>
+                  <th style="min-width:220px;">태그</th>
+                  <th style="width:170px;">수정일</th>
+                </tr>
+              </thead>
+              <tbody id="tbody">
+                <tr><td colspan="5" class="muted">불러오는 중...</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="pager">
+            <div class="left">
+              <button id="btnPrev" class="btn">이전</button>
+              <button id="btnNext" class="btn">다음</button>
+              <span class="muted">Page <b id="page">1</b></span>
+            </div>
+            <div class="right">
+              <button id="btnRefresh" class="btn">새로고침</button>
+              <a class="btn" href="./knowledge_db_hub.html" style="text-decoration:none; display:inline-flex; align-items:center;">허브로</a>
+            </div>
+          </div>
+
+          <div id="err" class="err" style="display:none;"></div>
+        </section>
+
+        <script>
+          /**
+           * ✅ 여기만 네 시스템에 맞게 연결하면 "실제 DB 출력" 됨
+           * - Apps Script WebApp / doGet API 등
+           */
+          const API_BASE =
+            (window.CHEESE_ADMIN_API_BASE || window.CHEESE_BLOG_API_BASE || "").trim();
+
+          const state = {
+            page: 1,
+            size: 20,
+            q: "",
+            category: "",
+            sort: "updated_desc",
+            total: 0,
+            loading: false,
+          };
+
+          // ========== UI ==========
+          const $ = (id) => document.getElementById(id);
+          const ui = {
+            q: $("q"),
+            category: $("category"),
+            sort: $("sort"),
+            size: $("size"),
+            btnSearch: $("btnSearch"),
+            btnReset: $("btnReset"),
+            btnPrev: $("btnPrev"),
+            btnNext: $("btnNext"),
+            btnRefresh: $("btnRefresh"),
+            tbody: $("tbody"),
+            total: $("total"),
+            page: $("page"),
+            metaHint: $("metaHint"),
+            err: $("err"),
+          };
+
+          function setError(msg){
+            ui.err.style.display = msg ? "block" : "none";
+            ui.err.textContent = msg || "";
+          }
+          function setLoading(v){
+            state.loading = v;
+            ui.btnSearch.disabled = v;
+            ui.btnPrev.disabled = v;
+            ui.btnNext.disabled = v;
+            ui.btnRefresh.disabled = v;
+          }
+
+          // ========== API ==========
+          async function apiGet(params){
+            if (!API_BASE){
+              throw new Error("API Base가 비어 있습니다. window.CHEESE_ADMIN_API_BASE 또는 window.CHEESE_BLOG_API_BASE를 설정하세요.");
+            }
+            const usp = new URLSearchParams(params);
+            const url = `${API_BASE}?${usp.toString()}`;
+            const res = await fetch(url, { method:"GET", cache:"no-store" });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return await res.json();
+          }
+
+          /**
+           * ✅ 기대하는 응답 형식(권장)
+           * {
+           *   ok: true,
+           *   total: 123,
+           *   page: 1,
+           *   size: 20,
+           *   items: [
+           *     { id, title, category, tags: ["a","b"], updatedAt, createdAt }
+           *   ]
+           * }
+           *
+           * 네 API가 다르면 mapResponse()만 수정하면 됨
+           */
+          function mapResponse(data){
+            if (!data) return { total: 0, items: [] };
+
+            // 흔한 케이스: {ok,total,items}
+            if (Array.isArray(data.items)) {
+              return { total: Number(data.total || data.items.length || 0), items: data.items };
+            }
+
+            // 다른 케이스: {rows:[], totalCount: n}
+            if (Array.isArray(data.rows)) {
+              return { total: Number(data.totalCount || data.rows.length || 0), items: data.rows };
+            }
+
+            // fallback
+            return { total: 0, items: [] };
+          }
+
+          function fmtDate(iso){
+            if (!iso) return "";
+            const d = new Date(iso);
+            if (isNaN(d.getTime())) return String(iso);
+            const yy = d.getFullYear();
+            const mm = String(d.getMonth()+1).padStart(2,"0");
+            const dd = String(d.getDate()).padStart(2,"0");
+            const hh = String(d.getHours()).padStart(2,"0");
+            const mi = String(d.getMinutes()).padStart(2,"0");
+            return `${yy}-${mm}-${dd} ${hh}:${mi}`;
+          }
+
+          function render(items){
+            ui.page.textContent = String(state.page);
+            ui.total.textContent = String(state.total);
+            ui.metaHint.textContent = state.q ? `검색어: "${state.q}"` : "";
+
+            if (!items || items.length === 0){
+              ui.tbody.innerHTML = `<tr><td colspan="5" class="muted">결과가 없습니다.</td></tr>`;
+              return;
+            }
+
+            ui.tbody.innerHTML = items.map(it => {
+              const id = it.id ?? it.docId ?? it.key ?? "";
+              const title = it.title ?? it.name ?? "(제목 없음)";
+              const category = it.category ?? it.type ?? "";
+              const tagsArr = Array.isArray(it.tags) ? it.tags : (typeof it.tags === "string" ? it.tags.split(",").map(s=>s.trim()).filter(Boolean) : []);
+              const tags = tagsArr.length ? tagsArr.map(t=>`<span class="pill">${escapeHtml(t)}</span>`).join(" ") : `<span class="muted">-</span>`;
+              const updatedAt = it.updatedAt ?? it.updated_at ?? it.updated ?? it.modifiedAt ?? it.modified_at ?? "";
+              const updated = updatedAt ? fmtDate(updatedAt) : "-";
+
+              return `
+                <tr>
+                  <td>${escapeHtml(String(id))}</td>
+                  <td>
+                    <span class="link" data-open="${escapeHtml(String(id))}">${escapeHtml(String(title))}</span>
+                    <div class="muted">상세/수정 화면으로 연결 가능</div>
+                  </td>
+                  <td>${category ? `<span class="pill">${escapeHtml(String(category))}</span>` : `<span class="muted">-</span>`}</td>
+                  <td>${tags}</td>
+                  <td>${escapeHtml(updated)}</td>
+                </tr>
+              `;
+            }).join("");
+
+            // 상세 이동(예: editor로)
+            ui.tbody.querySelectorAll("[data-open]").forEach(el=>{
+              el.addEventListener("click", () => {
+                const id = el.getAttribute("data-open");
+                // ✅ 원하는 규칙으로 수정 가능 (예: editor에서 id로 로드)
+                location.href = `./knowledge_editor.html?id=${encodeURIComponent(id)}`;
+              });
+            });
+          }
+
+          function escapeHtml(s){
+            return String(s)
+              .replaceAll("&","&amp;")
+              .replaceAll("<","&lt;")
+              .replaceAll(">","&gt;")
+              .replaceAll('"',"&quot;")
+              .replaceAll("'","&#039;");
+          }
+
+          async function load(){
+            if (state.loading) return;
+            setError("");
+            setLoading(true);
+
+            try{
+              // ✅ 여기 mode 이름은 네 Apps Script doGet 구현에 맞춰 바꾸면 됨
+              const data = await apiGet({
+                mode: "knowledgeList",
+                q: state.q,
+                category: state.category,
+                sort: state.sort,
+                page: String(state.page),
+                size: String(state.size),
+              });
+
+              if (data.ok === false) throw new Error(data.message || "API 오류");
+
+              const mapped = mapResponse(data);
+              state.total = mapped.total;
+
+              render(mapped.items);
+
+              // 페이징 버튼 상태
+              const maxPage = Math.max(1, Math.ceil(state.total / state.size));
+              ui.btnPrev.disabled = state.loading || state.page <= 1;
+              ui.btnNext.disabled = state.loading || state.page >= maxPage;
+
+            }catch(e){
+              setError(e?.message || String(e));
+              ui.tbody.innerHTML = `<tr><td colspan="5" class="muted">오류가 발생했습니다.</td></tr>`;
+            }finally{
+              setLoading(false);
+            }
+          }
+
+          // ========== 이벤트 ==========
+          function applyFromUi(resetPage=true){
+            state.q = ui.q.value.trim();
+            state.category = ui.category.value;
+            state.sort = ui.sort.value;
+            state.size = Number(ui.size.value || 20);
+            if (resetPage) state.page = 1;
+          }
+
+          ui.btnSearch.addEventListener("click", () => { applyFromUi(true); load(); });
+          ui.btnReset.addEventListener("click", () => {
+            ui.q.value = "";
+            ui.category.value = "";
+            ui.sort.value = "updated_desc";
+            ui.size.value = "20";
+            applyFromUi(true);
+            load();
+          });
+          ui.btnRefresh.addEventListener("click", () => load());
+          ui.btnPrev.addEventListener("click", () => { if (state.page>1){ state.page--; load(); } });
+          ui.btnNext.addEventListener("click", () => { state.page++; load(); });
+
+          // Enter로 검색
+          ui.q.addEventListener("keydown", (e)=>{
+            if (e.key === "Enter"){
+              applyFromUi(true);
+              load();
+            }
+          });
+
+          // 초기 로드
+          applyFromUi(true);
+          load();
+        </script>
+      </main>
+    </div>
+  </div>
+</body>
+</html>
