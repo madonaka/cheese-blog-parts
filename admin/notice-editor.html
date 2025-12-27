@@ -5,6 +5,12 @@
   <title>공지 작성/수정 · Cheese Admin</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="./admin.css" />
+
+  <!-- ✅ Summernote (Lite) + jQuery (Summernote는 jQuery 필요) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/summernote@0.8.20/dist/summernote-lite.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/summernote@0.8.20/dist/summernote-lite.min.js"></script>
+
   <style>
     :root{
       --bg:#f3f4f6; --card:#ffffff; --text:#0f172a; --sub:#475569;
@@ -31,7 +37,8 @@
       border:1px solid rgba(15,23,42,0.14); background:#fff; border-radius:12px;
       padding:10px 12px; font-size:13px; font-weight:650; outline:none;
     }
-    .textarea{ min-height: 360px; resize: vertical; } /* ✅ 본문 넓고 크게 */
+    .textarea{ min-height: 360px; resize: vertical; } /* ✅ 기존 textarea 높이 */
+
     .row2{ grid-column: 1 / -1; }
 
     .btnbar{ display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; margin-top:12px; }
@@ -49,6 +56,20 @@
     .checkline{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
     .checkline .c{ display:flex; align-items:center; gap:8px; font-size:13px; font-weight:900; }
     .checkline input{ transform: scale(1.1); }
+
+    /* ✅ Summernote가 card 스타일과 어울리도록 살짝만 정리 */
+    .note-editor.note-frame{
+      border:1px solid rgba(15,23,42,0.14);
+      border-radius:12px;
+      overflow:hidden;
+    }
+    .note-toolbar{
+      border-bottom:1px solid rgba(15,23,42,0.08);
+    }
+    .note-editable{
+      font-size:13px;
+      font-weight:650;
+    }
 
     @media (max-width:760px){
       .grid{ grid-template-columns: 1fr; }
@@ -116,7 +137,9 @@
 
               <div class="field row2">
                 <label>본문</label>
+                <!-- ✅ 그대로 textarea 유지하고 Summernote가 이걸 에디터로 바꿈 -->
                 <textarea class="textarea" id="body" placeholder="공지 내용을 입력하세요."></textarea>
+                <div class="hint">* 서식(굵게/색/표/링크) 적용 가능. 저장 시 HTML로 저장됩니다.</div>
               </div>
 
               <div class="field row2">
@@ -209,10 +232,57 @@
       document.getElementById('msg').textContent = t || '';
     }
 
+    /* =======================================================
+       ✅ Summernote wrapper (초기화/값 읽기/값 세팅/잠금)
+       ======================================================= */
+    let __editorReady = false;
+
+    function initEditor_(){
+      if(__editorReady) return;
+      if(!window.jQuery || !jQuery.fn || !jQuery.fn.summernote){
+        console.warn('Summernote 로드 실패(또는 jQuery 없음)');
+        return;
+      }
+      $('#body').summernote({
+        placeholder: '공지 내용을 입력하세요.',
+        height: 360,
+        toolbar: [
+          ['style', ['style']],
+          ['font', ['bold', 'underline', 'clear']],
+          ['color', ['color']],
+          ['para', ['ul', 'ol', 'paragraph']],
+          ['table', ['table']],
+          ['insert', ['link']],          // ✅ 서버 없는 구조면 이미지 업로드는 일단 제외
+          ['view', ['codeview']]
+        ]
+      });
+      __editorReady = true;
+    }
+
+    function getBodyHtml_(){
+      if(__editorReady) return String($('#body').summernote('code') || '').trim();
+      return (document.getElementById('body').value || '').trim();
+    }
+
+    function setBodyHtml_(html){
+      const v = String(html || '');
+      if(__editorReady) $('#body').summernote('code', v);
+      else document.getElementById('body').value = v;
+    }
+
+    function lockEditor_(locked){
+      if(__editorReady){
+        if(locked) $('#body').summernote('disable');
+        else $('#body').summernote('enable');
+      }else{
+        document.getElementById('body').readOnly = locked;
+      }
+    }
+
     function readForm_(){
       return {
         title: (document.getElementById('title').value || '').trim(),
-        body: (document.getElementById('body').value || '').trim(),
+        body: getBodyHtml_(), // ✅ Summernote HTML
         level: document.getElementById('level').value,
         status: document.getElementById('status').value,
         startAt: (document.getElementById('startAt').value || '').trim(),
@@ -228,14 +298,13 @@
       }
       if(!v) return '';
       const s = String(v).trim();
-      // "2025-12-14", "2025-12-14 00:00:00", "2025-12-14T00:00:00.000Z" 모두 대응
       const m = s.match(/\d{4}-\d{2}-\d{2}/);
       return m ? m[0] : '';
-    }  
+    }
 
     function fillForm_(n){
       document.getElementById('title').value = n.title || '';
-      document.getElementById('body').value = n.body || '';
+      setBodyHtml_(n.body || ''); // ✅ Summernote 세팅
       document.getElementById('level').value = n.level || 'normal';
       document.getElementById('status').value = n.status || 'draft';
       document.getElementById('startAt').value = toYmd_(n.startAt);
@@ -250,17 +319,16 @@
 
     async function loadIfEdit_(){
       __noticeId = (qs_('id') || qs_('noticeId') || '').trim();
-     if(!__noticeId){
+      if(!__noticeId){
         document.getElementById('modePill').textContent = 'new';
-      
+
         const user = getSessionUser_();
         if(!user){
           lockForm_(true);
           setMsg_('로그인이 필요합니다.');
           return;
         }
-      
-        // ✅ 새 글 작성은 ADMIN/FIN/MGR만
+
         if(!canWrite_(user.role)){
           lockForm_(true);
           setMsg_('작성 권한이 없습니다. (읽기 전용)');
@@ -277,19 +345,19 @@
       fillForm_(j.notice || {});
 
       const user = getSessionUser_();
-        __authorEmpNo = String((j.notice && j.notice.authorEmpNo) || '').trim();
-        
-        const isAdmin = user && String(user.role||'').toUpperCase() === 'ADMIN';
-        const isAuthor = user && String(user.empNo||'').trim() === __authorEmpNo;
-        
-        __canEdit = !!(isAdmin || isAuthor);
-        
-        if(!__canEdit){
-          lockForm_(true);
-          setMsg_('이 공지는 작성자 또는 ADMIN만 수정할 수 있어요. (읽기 전용)');
-        }else{
-          lockForm_(false);
-        }
+      __authorEmpNo = String((j.notice && j.notice.authorEmpNo) || '').trim();
+
+      const isAdmin  = user && String(user.role||'').toUpperCase() === 'ADMIN';
+      const isAuthor = user && String(user.empNo||'').trim() === __authorEmpNo;
+
+      __canEdit = !!(isAdmin || isAuthor);
+
+      if(!__canEdit){
+        lockForm_(true);
+        setMsg_('이 공지는 작성자 또는 ADMIN만 수정할 수 있어요. (읽기 전용)');
+      }else{
+        lockForm_(false);
+      }
 
       document.getElementById('btnView').style.display = 'inline-flex';
       document.getElementById('btnView').onclick = ()=> location.href = "./notice.html?id=" + encodeURIComponent(__noticeId);
@@ -313,12 +381,16 @@
 
       const f = readForm_();
       if(!f.title) return alert('제목을 입력해 주세요.');
-      if(!f.body) return alert('본문을 입력해 주세요.');
+
+      // ✅ Summernote는 빈 값이어도 "<p><br></p>" 같은 게 들어올 수 있어 정리
+      const bodyText = f.body.replace(/<[^>]*>/g,'').replace(/&nbsp;/g,' ').trim();
+      if(!bodyText) return alert('본문을 입력해 주세요.');
+
       if(f.startAt && f.endAt && f.startAt > f.endAt){
         alert('게시 시작일은 종료일보다 늦을 수 없습니다.');
         return;
       }
-      
+
       setMsg_('저장 중…');
 
       const payload = Object.assign({
@@ -343,38 +415,59 @@
       const startEl = document.getElementById('startAt');
       const endEl   = document.getElementById('endAt');
       if(!startEl || !endEl) return;
-    
+
       const sync = () => {
         const s = (startEl.value || '').trim();
         const e = (endEl.value || '').trim();
-      
+
         startEl.max = e || '';
         endEl.min   = s || '';
-      
+
         if(s && e && s > e){
-          endEl.value = s; // 너 정책대로 유지
+          endEl.value = s;
           setMsg_('게시 종료일이 시작일보다 빨라 자동으로 보정했습니다.');
         }
       };
-    
-      // date input은 change만으로도 충분하지만 input도 같이 걸어두면 안정적
+
       ['change','input'].forEach(ev=>{
         startEl.addEventListener(ev, sync);
         endEl.addEventListener(ev, sync);
       });
-    
+
       sync();
     }
-    
+
+    function lockForm_(locked){
+      const ids = ['title','level','status','startAt','endAt','isPinned','allowComments'];
+      ids.forEach(id=>{
+        const el = document.getElementById(id);
+        if(!el) return;
+        if(el.tagName === 'INPUT'){
+          if(el.type === 'checkbox') el.disabled = locked;
+          else el.readOnly = locked;
+        }else{
+          el.disabled = locked;
+        }
+      });
+
+      // ✅ 본문 에디터 잠금
+      lockEditor_(locked);
+
+      const btnSave = document.getElementById('btnSave');
+      if(btnSave) btnSave.style.display = locked ? 'none' : 'inline-flex';
+    }
+
     (function init(){
       mountShell_();
       wireDateGuards_();
-      
+
+      // ✅ Summernote는 DOM 준비 후 초기화하는 게 안전
+      initEditor_();
+
       const user = getSessionUser_();
       document.getElementById('writerHint').textContent =
         user ? `작성자: ${user.empNo}${user.name ? ' · ' + user.name : ''}` : '로그인 정보 없음';
 
-      // 권한 없으면 저장 버튼 숨김(정책은 취향대로)
       const btnSave = document.getElementById('btnSave');
       if(!user){
         btnSave.style.display = 'none';
@@ -385,23 +478,6 @@
 
       loadIfEdit_().catch(err=>alert(err.message||String(err)));
     })();
-
-    function lockForm_(locked){
-      const ids = ['title','level','status','startAt','endAt','body','isPinned','allowComments'];
-      ids.forEach(id=>{
-        const el = document.getElementById(id);
-        if(!el) return;
-        if(el.tagName === 'TEXTAREA' || el.tagName === 'INPUT'){
-          if(el.type === 'checkbox') el.disabled = locked;
-          else el.readOnly = locked;
-        }else{
-          el.disabled = locked;
-        }
-      });
-    
-      const btnSave = document.getElementById('btnSave');
-      if(btnSave) btnSave.style.display = locked ? 'none' : 'inline-flex';
-    }
   </script>
 </body>
 </html>
