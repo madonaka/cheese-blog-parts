@@ -215,6 +215,21 @@
       const url = `${API_BASE}?fn=eventsByEntity&entityId=${encodeURIComponent(entityId)}`;
       return jsonp(url);
     }
+  
+    // ✅ 저장도 JSONP(GET)로 호출 (CORS/Failed to fetch 회피)
+    async function saveEventWithEntityJsonp({ sortStart, displayDate, title, domain, entityName, memo }) {
+      const url =
+        `${API_BASE}?fn=createEventWithEntity` +
+        `&token=${encodeURIComponent(ADMIN_TOKEN)}` +
+        `&sortStart=${encodeURIComponent(sortStart)}` +
+        `&displayDate=${encodeURIComponent(displayDate || "")}` +
+        `&title=${encodeURIComponent(title)}` +
+        `&domain=${encodeURIComponent(domain)}` +
+        `&entityName=${encodeURIComponent(entityName)}` +
+        `&memo=${encodeURIComponent(memo || "")}`;
+    
+      return jsonp(url);
+    }
 
     function renderEntity(entity) {
       const box = document.getElementById("entityBox");
@@ -303,27 +318,13 @@
       msg.textContent = "저장 중...";
     
       try {
-        const payload = {
-          fn: "createEventWithEntity",
-          token: ADMIN_TOKEN,
-          data: { sortStart, displayDate, title, domain, entityName, memo }
-        };
-    
-        // ✅ 프리플라이트를 피하기 위해 Content-Type을 text/plain으로 보냄
-        const res = await fetch(API_BASE, {
-          method: "POST",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify(payload),
-        });
-    
-        const data = await res.json();
-    
-        if (!data.ok) throw new Error(data.message || "save failed");
+        const r = await saveEventWithEntityJsonp({ sortStart, displayDate, title, domain, entityName, memo });
+        if (!r.ok) throw new Error(r.message || "save failed");
     
         msg.className = "ok";
-        msg.textContent = `저장 완료! (entity=${data.entity.id}, event=${data.event.id}, link=${data.linkCreated ? "created" : "exists"})`;
+        msg.textContent = `저장 완료! (entity=${r.entity.id}, event=${r.event.id}, link=${r.linkCreated ? "created" : "exists"})`;
     
-        // (선택) 저장 후, 방금 엔티티로 조회 결과 자동 갱신
+        // 저장 후 자동 조회 갱신(원하면 주석 해제)
         // document.getElementById("q").value = entityName;
         // document.getElementById("btnSearch").click();
     
@@ -333,15 +334,6 @@
       }
     });
 
-
-    document.getElementById("btnFillDemo").addEventListener("click", () => {
-      document.getElementById("in_sortStart").value = "1927-01-01";
-      document.getElementById("in_displayDate").value = "1927년 1월";
-      document.getElementById("in_title").value = "신간회 창립";
-      document.getElementById("in_domain").value = "정치";
-      document.getElementById("in_entityName").value = "신간회";
-      document.getElementById("in_memo").value = "더미 입력 테스트";
-    });
 
   </script>
 
