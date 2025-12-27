@@ -6,6 +6,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="./admin.css" />
 
+  <!-- ✅ HTML 본문(XSS) 방어용: DOMPurify -->
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+
   <style>
     :root{
       --bg:#f3f4f6; --card:#ffffff; --text:#0f172a; --sub:#475569;
@@ -16,7 +19,7 @@
 
     /* ✅ 전체 컨텐츠 폭을 넓게 */
     .notice-wrap{
-      max-width: 1240px;      /* ← 넓힘 */
+      max-width: 1240px;
       margin: 0 auto;
       padding: 14px 14px 28px;
       box-sizing: border-box;
@@ -24,7 +27,7 @@
 
     .notice-grid{
       display: grid;
-      grid-template-columns: 1fr 380px; /* ✅ 본문 넓게 + 댓글 사이드 고정폭 */
+      grid-template-columns: 1fr 380px;
       gap: 14px;
       align-items: start;
     }
@@ -89,16 +92,47 @@
       border-color: rgba(15,23,42,0.92);
     }
 
-    /* ✅ 본문 가독성 + 폭 확보 */
+    /* ✅ 본문 가독성 + 폭 확보
+       - Summernote HTML 렌더를 위해 white-space: pre-wrap 제거 */
     .notice-body{
       font-size:14px;
       font-weight:650;
       line-height:1.75;
       color: var(--text);
-      white-space: pre-wrap;
       word-break: break-word;
       padding: 2px 0;
-      min-height: 260px; /* ← “내용 공간이 좀 더 넓게” */
+      min-height: 260px;
+    }
+
+    /* ✅ 본문 내 요소 기본 스타일(표/이미지/코드) */
+    .notice-body p{ margin: 0 0 10px; }
+    .notice-body img{ max-width:100%; height:auto; border-radius:12px; }
+    .notice-body table{ width:100%; border-collapse:collapse; margin: 10px 0; }
+    .notice-body th, .notice-body td{
+      border:1px solid rgba(15,23,42,0.14);
+      padding:8px;
+      vertical-align: top;
+    }
+    .notice-body th{ background:rgba(15,23,42,0.04); font-weight:900; }
+    .notice-body pre{
+      padding: 10px 12px;
+      border-radius: 12px;
+      border:1px solid rgba(15,23,42,0.10);
+      background: rgba(2,6,23,0.03);
+      overflow:auto;
+      font-size:12px;
+      line-height:1.6;
+    }
+    .notice-body code{
+      font-size:12px;
+      padding:2px 6px;
+      border-radius:8px;
+      background: rgba(2,6,23,0.05);
+      border:1px solid rgba(15,23,42,0.08);
+    }
+    .notice-body a{
+      color: inherit;
+      text-decoration: underline;
     }
 
     .divider{ height:1px; background:rgba(15,23,42,0.08); margin:12px 0; }
@@ -147,9 +181,9 @@
       display:flex;
       flex-direction:column;
       gap:10px;
-      max-height: 520px;   /* 원하는 높이 */
+      max-height: 520px;
       overflow: auto;
-      padding-right: 6px;  /* 스크롤바 여백 */
+      padding-right: 6px;
     }
     .comment-item{
       padding:10px 12px;
@@ -246,7 +280,6 @@
 
             <div class="card-b">
               <div class="comment-box">
-                <!-- ✅ 작성자 자동 표시(세션) -->
                 <div class="comment-author" id="sessionUserBox">
                   <div>작성자: <strong id="sessionUserText">-</strong></div>
                   <div class="muted" id="sessionUserHint"></div>
@@ -291,21 +324,58 @@
       return u.searchParams.get(name) || '';
     }
 
-    //세션 정보
+    // ✅ Summernote 본문을 안전하게 렌더링(sanitize)하는 함수
+    function renderNoticeBody_(html){
+      const raw = String(html || '');
+
+      // DOMPurify가 없으면(로드 실패) 안전하게 텍스트로만 표시
+      if(!window.DOMPurify){
+        document.getElementById('noticeBody').textContent = raw;
+        return;
+      }
+
+      // 허용 태그/속성 (공지 본문에 필요한 범위만)
+      const clean = DOMPurify.sanitize(raw, {
+        ALLOWED_TAGS: [
+          'p','br','b','strong','i','em','u','s','span',
+          'h1','h2','h3','h4','blockquote',
+          'ul','ol','li',
+          'a',
+          'table','thead','tbody','tr','th','td',
+          'pre','code',
+          'hr',
+          'img'
+        ],
+        ALLOWED_ATTR: [
+          'href','target','rel','class','style','colspan','rowspan',
+          'src','alt'
+        ]
+      });
+
+      const el = document.getElementById('noticeBody');
+      el.innerHTML = clean;
+
+      // 링크는 새 탭 + noopener 기본 적용(안전/UX)
+      el.querySelectorAll('a[href]').forEach(a=>{
+        a.setAttribute('target','_blank');
+        a.setAttribute('rel','noopener noreferrer');
+      });
+    }
+
+    // 세션 정보
     function getSessionUser_(){
       const empNo = (sessionStorage.getItem("cheese_admin_emp_no") || "").trim();
       const name  = (sessionStorage.getItem("cheese_admin_display_name") || "").trim();
       const loginId = (sessionStorage.getItem("cheese_admin_login_id") || "").trim();
       const role = (sessionStorage.getItem("cheese_admin_role") || "").trim();
-    
+
       if(!empNo) return null;
-    
+
       return {
         empNo,
         name,
         loginId,
         role
-        // email은 현재 세션에 없으니 빈값으로 보내면 됨
       };
     }
 
@@ -358,7 +428,6 @@
     }
 
     async function loadNotice_(noticeId){
-      // 상세 조회
       const j = await apiGet_({ mode:'getAnnouncement', noticeId });
       if(!j || j.ok !== true || !j.notice){
         document.getElementById('noticeTitle').textContent = '공지 정보를 불러올 수 없습니다.';
@@ -373,7 +442,9 @@
       document.getElementById('noticeUpdatedAt').textContent = '업데이트: ' + (n.updatedAt || n.createdAt || '-');
       document.getElementById('noticeViewCount').textContent = '조회: ' + String(n.viewCount ?? '-');
 
-      document.getElementById('noticeBody').textContent = n.body || '';
+      // ✅ 핵심 변경: HTML 본문 렌더링
+      renderNoticeBody_(n.body || '');
+
       const period = `게시기간: ${n.startAt || '-'} ~ ${n.endAt || '-'}`;
       document.getElementById('noticePeriod').textContent = period;
 
@@ -384,7 +455,6 @@
     }
 
     async function incrementView_(noticeId){
-      // 조회수 증가(실패해도 UX 영향 최소)
       try{ await apiPost_({ mode:'incrementNoticeView', noticeId }); }catch(e){}
     }
 
@@ -458,8 +528,8 @@
           noticeId,
           body,
           parentCommentId: '',
-          authorEmpNo: sessionUser.empNo,   // ✅ 자동
-          authorName: sessionUser.name || '', // ✅ 자동
+          authorEmpNo: sessionUser.empNo,
+          authorName: sessionUser.name || '',
           authorEmail: sessionUser.email || ''
         });
 
@@ -472,6 +542,26 @@
         await loadComments_(noticeId);
       } finally {
         btn.disabled = false;
+      }
+    }
+
+    function updateEditBtn_(noticeId, notice){
+      const btn = document.getElementById('btnEdit');
+      if(!btn) return;
+
+      const u = getSessionUser_();
+      const authorEmpNo = String((notice && notice.authorEmpNo) || '').trim();
+
+      const isAdmin  = u && String(u.role || '').toUpperCase() === 'ADMIN';
+      const isAuthor = u && String(u.empNo || '').trim() === authorEmpNo;
+
+      const canEdit = !!(isAdmin || isAuthor);
+
+      btn.style.display = canEdit ? 'inline-flex' : 'none';
+      if(canEdit){
+        btn.onclick = ()=> {
+          location.href = './notice-editor.html?id=' + encodeURIComponent(noticeId);
+        };
       }
     }
 
@@ -489,18 +579,17 @@
       document.getElementById('btnBack').addEventListener('click', ()=> location.href = './board.html');
       document.getElementById('btnRefresh').addEventListener('click', ()=> loadComments_(noticeId));
 
-      const sessionUser = bindSessionUserUI_();
+      bindSessionUserUI_();
+
       const notice = await loadNotice_(noticeId);
       updateEditBtn_(noticeId, notice);
 
-      // 댓글 허용 여부에 따라 입력 비활성
       if (notice && Number(notice.allowComments||0) !== 1) {
         document.getElementById('btnAddComment').disabled = true;
         document.getElementById('commentBody').disabled = true;
         document.getElementById('commentBody').placeholder = '이 공지는 댓글이 비활성화되어 있습니다.';
       }
 
-      // 조회수 증가(실패해도 무시)
       incrementView_(noticeId);
 
       await loadComments_(noticeId);
@@ -514,27 +603,6 @@
         addComment_(noticeId, u);
       });
     })();
-    
-    function updateEditBtn_(noticeId, notice){
-      const btn = document.getElementById('btnEdit');
-      if(!btn) return;
-    
-      const u = getSessionUser_();
-      const authorEmpNo = String((notice && notice.authorEmpNo) || '').trim();
-    
-      const isAdmin  = u && String(u.role || '').toUpperCase() === 'ADMIN';
-      const isAuthor = u && String(u.empNo || '').trim() === authorEmpNo;
-    
-      const canEdit = !!(isAdmin || isAuthor);
-    
-      btn.style.display = canEdit ? 'inline-flex' : 'none';
-      if(canEdit){
-        btn.onclick = ()=> {
-          location.href = './notice-editor.html?id=' + encodeURIComponent(noticeId);
-        };
-      }
-    }
-
   </script>
 </body>
 </html>
