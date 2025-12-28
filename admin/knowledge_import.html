@@ -294,28 +294,37 @@
 
           async function commit(){
             setErr(""); setOk("");
-            const api = getApiBase();
-            const token = ui.token.value.trim();
-            const format = ui.format.value;
-            const text = ui.text.value;
           
+            const api = getApiBase();               // .../exec
+            const token = ui.token.value.trim();
+            const format = ui.format.value;         // csv|tsv
+            const text = ui.text.value;             // 붙여넣은 CSV/TSV
+            const dryRun = ui.dryRun.checked ? "1" : "0";
+          
+            if (!api) return setErr("API Base가 비어 있습니다.");
             if (!token) return setErr("관리 토큰이 비었습니다.");
+            if (!text.trim()) return setErr("텍스트가 비었습니다.");
           
             ui.btnCommit.disabled = true;
+          
             try{
-              // ✅ POST로 전환 (JSONP 제거)
-              const data = await postJson(api, {
+              // ✅ 기존 POST(fetch) 대신 JSONP(GET)로 importCommit 호출
+              const url = api + "?" + new URLSearchParams({
                 fn: "importCommit",
                 token,
-                data: { text, format, dryRun: false }
-              });
+                format,
+                text,
+                dryRun
+              }).toString();
           
-              if (data.ok === false) throw new Error(data.message || "API 오류");
+              const data = await jsonp(url); // 이미 파일 안에 있는 jsonp() 재사용
+              if (!data || data.ok === false) throw new Error(data?.message || "API 오류");
           
               localStorage.setItem("CHEESE_ADMIN_TOKEN", token);
           
               ui.preview.textContent =
-                `total=${data.total}\nOK=${data.okCount} / NG=${data.ngCount}\ncommitted=${data.committed}\nfailed=${data.failed}\n\n` +
+                `total=${data.total}\nOK=${data.okCount} / NG=${data.ngCount}\ncommitted=${data.committed}\nfailed=${data.failed}\n` +
+                `dryRun=${data.dryRun}\n\n` +
                 `[results(첫 200건)]\n${JSON.stringify(data.results||[], null, 2)}`;
           
               setOk("반영 완료");
