@@ -38,7 +38,10 @@
       outline:none;
       background:#fff; color:#0f172a;
     }
-    .textarea{ min-height:220px; resize:vertical; line-height:1.45; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .textarea{
+      min-height:220px; resize:vertical; line-height:1.45;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
 
     .grid2{
       display:grid;
@@ -65,11 +68,14 @@
     .btn:disabled{ opacity:.5; cursor:not-allowed; }
 
     .pill{
-      display:inline-flex; align-items:center; gap:6px;
-      padding:4px 8px; border-radius:999px; font-size:12px; font-weight:900;
+      display:inline-flex; align-items:center; gap:8px;
+      padding:4px 10px; border-radius:999px; font-size:12px; font-weight:900;
       background:rgba(15,23,42,.06); color:#0f172a;
       white-space:nowrap;
+      border:1px solid rgba(15,23,42,.10);
     }
+    .pill input{ transform: translateY(1px); }
+
     .muted{ font-size:12px; color:#64748b; }
     .err{
       padding:10px 14px; color:#b91c1c; background:rgba(185,28,28,.06);
@@ -122,7 +128,7 @@
               <div>
                 <div class="label">API Base (exec)</div>
                 <input id="api" class="input" />
-                <div class="muted">URL 파라미터 api 가 있으면 우선 적용됩니다.</div>
+                <div class="muted">URL 파라미터 <b>api</b>가 있으면 우선 적용됩니다.</div>
               </div>
 
               <div>
@@ -150,9 +156,7 @@
             <div>
               <div class="label">붙여넣기</div>
               <textarea id="text" class="textarea" placeholder="여기에 CSV/TSV를 그대로 붙여넣기"></textarea>
-              <div class="muted">
-                필수: sortStart(YYYY-MM-DD), title, domain
-              </div>
+              <div class="muted">필수: sortStart(YYYY-MM-DD), title, domain</div>
             </div>
 
             <div>
@@ -164,6 +168,12 @@
           <div class="tools">
             <button id="btnPreview" class="btn">미리보기</button>
             <button id="btnCommit" class="btn primary">반영</button>
+
+            <label class="pill" title="체크하면 실제 반영 없이 검증/처리 결과만 반환합니다.">
+              <input id="dryRun" type="checkbox" />
+              dryRun (미반영 테스트)
+            </label>
+
             <a class="btn" href="./knowledge_db_hub.html" style="margin-left:auto;">허브로</a>
             <a class="btn" href="./knowledge_library.html">Library</a>
           </div>
@@ -173,7 +183,9 @@
         </section>
 
         <script>
-          const API_BASE_DEFAULT = "https://script.google.com/macros/s/AKfycbxowBj0yNZHZVjamJhn3tk9I8GoWSWMr67i2wVkjBF9aSEqNjbanbmyLa0qKYRtyZEMcw/exec";
+          // ✅ 네 exec URL 기본값
+          const API_BASE_DEFAULT =
+            "https://script.google.com/macros/s/AKfycbxowBj0yNZHZVjamJhn3tk9I8GoWSWMr67i2wVkjBF9aSEqNjbanbmyLa0qKYRtyZEMcw/exec";
 
           const $ = (id)=>document.getElementById(id);
           const ui = {
@@ -185,9 +197,12 @@
             preview: $("preview"),
             btnPreview: $("btnPreview"),
             btnCommit: $("btnCommit"),
+            dryRun: $("dryRun"),   // ✅ 존재함
             ok: $("ok"),
             err: $("err"),
           };
+
+          let busy = false; // 중복 클릭 방지
 
           function setErr(msg){
             ui.err.style.display = msg ? "block" : "none";
@@ -205,6 +220,7 @@
               || API_BASE_DEFAULT;
           }
 
+          // ✅ JSONP (cb=... 자동 부착)
           function jsonp(url){
             return new Promise((resolve, reject)=>{
               const cb = "cb_" + Math.random().toString(36).slice(2);
@@ -244,32 +260,24 @@
               "1927-01-01,1927년 1월,신간회 창립,정치,조직/인사,4,100,month,연표 항목,신간회,ORG,대상,확실"
             ].join("\\n");
           }
-          
-          async function postJson(api, body){
-            const resp = await fetch(api, {
-              method: "POST",
-              headers: { "Content-Type":"application/json" },
-              body: JSON.stringify(body),
-            });
-        
-            // Apps Script가 JSON을 돌려준다는 가정
-            const data = await resp.json().catch(()=>null);
-        
-            if (!resp.ok){
-              const msg = (data && data.message) ? data.message : `HTTP ${resp.status}`;
-              throw new Error(msg);
-            }
-            return data;
-          }
-          
+
+          // ✅ 미리보기(JSONP GET)
           async function preview(){
+            if (busy) return;
+            busy = true;
+
             setErr(""); setOk("");
             const api = getApiBase();
             const format = ui.format.value;
             const text = ui.text.value;
 
             ui.btnPreview.disabled = true;
+            ui.btnCommit.disabled = true;
+
             try{
+              if (!api) throw new Error("API Base가 비어 있습니다.");
+              if (!text.trim()) throw new Error("텍스트가 비었습니다.");
+
               const url = api + "?" + new URLSearchParams({
                 fn:"importPreview",
                 format,
@@ -277,6 +285,7 @@
               }).toString();
 
               const data = await jsonp(url);
+              if (!data) throw new Error("응답이 비었습니다.");
               if (data.ok === false) throw new Error(data.message || "API 오류");
 
               ui.preview.textContent =
@@ -289,49 +298,58 @@
               setErr(e.message || String(e));
             }finally{
               ui.btnPreview.disabled = false;
+              ui.btnCommit.disabled = false;
+              busy = false;
             }
           }
 
+          // ✅ 반영(JSONP GET) : CORS/Failed to fetch 회피
           async function commit(){
+            if (busy) return;
+            busy = true;
+
             setErr(""); setOk("");
-          
-            const api = getApiBase();               // .../exec
+
+            const api = getApiBase();
             const token = ui.token.value.trim();
-            const format = ui.format.value;         // csv|tsv
-            const text = ui.text.value;             // 붙여넣은 CSV/TSV
+            const format = ui.format.value;
+            const text = ui.text.value;
             const dryRun = ui.dryRun.checked ? "1" : "0";
-          
-            if (!api) return setErr("API Base가 비어 있습니다.");
-            if (!token) return setErr("관리 토큰이 비었습니다.");
-            if (!text.trim()) return setErr("텍스트가 비었습니다.");
-          
+
+            ui.btnPreview.disabled = true;
             ui.btnCommit.disabled = true;
-          
+
             try{
-              // ✅ 기존 POST(fetch) 대신 JSONP(GET)로 importCommit 호출
+              if (!api) throw new Error("API Base가 비어 있습니다.");
+              if (!token) throw new Error("관리 토큰이 비었습니다.");
+              if (!text.trim()) throw new Error("텍스트가 비었습니다.");
+
               const url = api + "?" + new URLSearchParams({
-                fn: "importCommit",
+                fn:"importCommit",
                 token,
                 format,
                 text,
                 dryRun
               }).toString();
-          
-              const data = await jsonp(url); // 이미 파일 안에 있는 jsonp() 재사용
-              if (!data || data.ok === false) throw new Error(data?.message || "API 오류");
-          
+
+              const data = await jsonp(url);
+              if (!data) throw new Error("응답이 비었습니다.");
+              if (data.ok === false) throw new Error(data.message || "API 오류");
+
               localStorage.setItem("CHEESE_ADMIN_TOKEN", token);
-          
+
               ui.preview.textContent =
                 `total=${data.total}\nOK=${data.okCount} / NG=${data.ngCount}\ncommitted=${data.committed}\nfailed=${data.failed}\n` +
                 `dryRun=${data.dryRun}\n\n` +
                 `[results(첫 200건)]\n${JSON.stringify(data.results||[], null, 2)}`;
-          
-              setOk("반영 완료");
+
+              setOk(dryRun === "1" ? "dryRun 완료(미반영)" : "반영 완료");
             }catch(e){
               setErr(e.message || String(e));
             }finally{
+              ui.btnPreview.disabled = false;
               ui.btnCommit.disabled = false;
+              busy = false;
             }
           }
 
