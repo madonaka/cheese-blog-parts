@@ -1,86 +1,132 @@
-<!-- events_editor.html (v1) : EVENTS 입력/수정 페이지 (메뉴/헤더 슬롯 포함 버전)
-  ✅ 고정 골격 포함
-  - window.CHEESE_ADMIN_REQUIRED_ROLES
-  - .admin-shell / #admin-menu-slot / #admin-header-slot / .admin-main
-
-  ✅ 해야 할 것
-  1) window.CHEESE_ADMIN_API_BASE 에 Apps Script exec URL(또는 프록시 API) 넣기
-  2) 서버(Apps Script)에서 mode=events.upsert 처리
--->
-
 <!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <title>Events Editor · Knowledge DB</title>
+  <title>사건 입력/수정 · Knowledge DB</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- 공통 CSS -->
   <link rel="stylesheet" href="./admin.css" />
-
-  <!-- 공통 로더(메뉴/헤더 슬롯 주입용) -->
-  <!-- 너의 프로젝트에서 쓰는 파일명이 다르면 교체 -->
   <script src="./admin-common.js" defer></script>
 
   <style>
     :root{
       --bg:#f3f4f6; --card:#ffffff; --text:#0f172a; --muted:#64748b;
-      --line:rgba(15,23,42,.10); --shadow:0 10px 28px rgba(15,23,42,.10);
-      --r:18px; --primary:#111827; --ok:#16a34a; --bad:#ef4444; --soft:#e0f2fe;
+      --line:rgba(15,23,42,.12); --shadow:0 10px 28px rgba(15,23,42,.10);
+      --r:18px; --primary:#111827; --ok:#16a34a; --bad:#ef4444;
+      --soft:#e0f2fe; --label:#0b1220;
     }
     body{ margin:0; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
-
-    /* ✅ admin-shell 안에서 콘텐츠 영역 */
-    .admin-content{
-      width:100%;
-      box-sizing:border-box;
-    }
+    .admin-content{ width:100%; box-sizing:border-box; }
 
     .wrap{ max-width:1100px; margin:0 auto; padding:18px 18px 40px; box-sizing:border-box; }
     .card{ background:var(--card); border:1px solid var(--line); border-radius:var(--r); box-shadow:var(--shadow); overflow:hidden; margin-bottom:14px; }
-    .h{ padding:14px 14px 10px; border-bottom:1px solid var(--line); display:flex; gap:10px; align-items:center; justify-content:space-between; }
-    .h .title{ font-weight:900; font-size:15px; }
-    .h .sub{ font-size:12px; color:var(--muted); }
-    .b{ padding:14px; }
+    .h{ padding:16px 16px 12px; border-bottom:1px solid var(--line); display:flex; gap:12px; align-items:center; justify-content:space-between; }
+    .h .title{ font-weight:950; font-size:18px; letter-spacing:-.2px; }
+    .h .sub{ font-size:13px; color:var(--muted); margin-top:2px; }
+    .b{ padding:16px; }
 
-    .grid{ display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
-    .grid3{ display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px; }
+    .grid{ display:grid; grid-template-columns: 1fr 1fr; gap:14px; }
+    .grid3{ display:grid; grid-template-columns: 1fr 1fr 1fr; gap:14px; }
     .full{ grid-column: 1 / -1; }
 
-    label{ display:block; font-size:12px; color:var(--muted); margin:0 0 6px; }
-    input[type="text"], input[type="date"], input[type="number"], textarea, select{
-      width:100%; padding:10px 11px; border:1px solid var(--line);
-      border-radius:12px; background:#fff; color:var(--text); outline:none;
+    /* ✅ 라벨(제목) 가독성 업 */
+    label{
+      display:block;
+      font-size:14px;
+      font-weight:900;
+      color:var(--label);
+      margin:0 0 8px;
+      letter-spacing:-.2px;
     }
-    textarea{ min-height:120px; resize:vertical; }
+    .label-sub{
+      font-weight:800;
+      color:var(--muted);
+      font-size:12px;
+      margin-left:6px;
+    }
 
+    /* ✅ 입력칸 크기/대비 업 */
+    input[type="text"], input[type="date"], input[type="number"], textarea, select{
+      width:100%;
+      padding:12px 12px;
+      border:1.5px solid var(--line);
+      border-radius:14px;
+      background:#fff;
+      color:var(--text);
+      outline:none;
+      font-size:14px;
+    }
+    input:focus, textarea:focus, select:focus{
+      border-color: rgba(17,24,39,.35);
+      box-shadow: 0 0 0 4px rgba(17,24,39,.08);
+    }
+    textarea{ min-height:130px; resize:vertical; }
+
+    /* ✅ 버튼 크게 */
     .row{ display:flex; gap:10px; align-items:center; }
     .btn{
-      border:1px solid var(--line); background:#fff; color:var(--text);
-      border-radius:12px; padding:10px 12px; cursor:pointer; font-weight:800;
+      border:1px solid var(--line);
+      background:#fff;
+      color:var(--text);
+      border-radius:14px;
+      padding:12px 16px;
+      cursor:pointer;
+      font-weight:950;
+      font-size:14px;
+      min-height:44px;
     }
-    .btn.primary{ background:var(--primary); color:#fff; border-color:rgba(0,0,0,.2); }
+    .btn.primary{
+      background:var(--primary);
+      color:#fff;
+      border-color:rgba(0,0,0,.2);
+    }
     .btn:disabled{ opacity:.55; cursor:not-allowed; }
 
     .chips{
-      display:flex; flex-wrap:wrap; gap:8px; padding:10px; border:1px solid var(--line); border-radius:12px; background:#fff;
+      display:flex; flex-wrap:wrap; gap:8px;
+      padding:10px;
+      border:1.5px solid var(--line);
+      border-radius:14px;
+      background:#fff;
     }
     .chip{
       display:inline-flex; gap:8px; align-items:center;
-      border:1px solid var(--line); border-radius:999px; padding:6px 10px; font-size:12px;
+      border:1px solid var(--line);
+      border-radius:999px;
+      padding:7px 11px;
+      font-size:13px;
       background:var(--soft);
+      font-weight:800;
     }
     .chip button{
-      border:none; background:transparent; cursor:pointer; font-weight:900; color:var(--muted);
+      border:none; background:transparent; cursor:pointer; font-weight:950; color:var(--muted); font-size:14px;
     }
-    .hint{ font-size:12px; color:var(--muted); margin-top:6px; line-height:1.35; }
-    .status{ font-size:12px; padding:8px 10px; border-radius:12px; border:1px solid var(--line); background:#fff; color:var(--muted); }
-    .status.ok{ border-color: rgba(22,163,74,.3); color: var(--ok); }
-    .status.bad{ border-color: rgba(239,68,68,.3); color: var(--bad); }
+
+    .hint{
+      font-size:12.5px;
+      color:var(--muted);
+      margin-top:7px;
+      line-height:1.4;
+    }
+
+    .status{
+      font-size:13px;
+      padding:10px 12px;
+      border-radius:14px;
+      border:1px solid var(--line);
+      background:#fff;
+      color:var(--muted);
+      font-weight:900;
+      min-height:44px;
+      display:inline-flex;
+      align-items:center;
+    }
+    .status.ok{ border-color: rgba(22,163,74,.35); color: var(--ok); }
+    .status.bad{ border-color: rgba(239,68,68,.35); color: var(--bad); }
 
     .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
     .small{ font-size:12px; color:var(--muted); }
-    .sep{ height:1px; background:var(--line); margin:12px 0; }
+    .sep{ height:1px; background:var(--line); margin:14px 0; }
   </style>
 
   <script>
@@ -90,22 +136,25 @@
 </head>
 
 <body>
-  <!-- 공통 헤더/메뉴 -->
-  <div id="admin-header-slot"></div>
+  <!-- ✅ 권한별 접근 제어(고정) -->
+  <script>
+    window.CHEESE_ADMIN_REQUIRED_ROLES = ["EMP", "MGR", "FIN", "ADMIN"];
+  </script>
+
+  <div class="admin-shell">
+    <div id="admin-menu-slot"></div>
 
     <div class="admin-main">
-      <!-- 왼쪽 메뉴 슬롯 -->
-      <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+      <div id="admin-header-slot"></div>
 
-      <!-- 오른쪽 메인 내용 -->
-      <main>
-      <div class="page-wrap">
+      <div class="admin-content">
+        <div class="wrap">
 
           <div class="card">
             <div class="h">
               <div>
-                <div class="title">EVENTS 입력/수정</div>
-                <div class="sub">v1 · 연표용 사건 데이터 + 블로그 글 재료 저장</div>
+                <div class="title">사건 입력/수정</div>
+                <div class="sub">v1 · 연표 사건 데이터 + 블로그 글 재료 저장</div>
               </div>
               <div class="row">
                 <span id="uiStatus" class="status">대기</span>
@@ -117,21 +166,21 @@
             <div class="b">
               <div class="grid3">
                 <div>
-                  <label>event_id</label>
-                  <input type="text" id="event_id" class="mono" placeholder="E_YYYYMMDD_XXXX" />
-                  <div class="hint">비워두면 저장 시 자동 생성합니다.</div>
+                  <label>사건 ID<span class="label-sub">(event_id)</span></label>
+                  <input type="text" id="event_id" class="mono" placeholder="예: E_19190301_SAM" />
+                  <div class="hint">비워두면 저장 시 자동으로 생성합니다.</div>
                 </div>
 
                 <div>
-                  <label>status</label>
+                  <label>상태<span class="label-sub">(status)</span></label>
                   <select id="status">
-                    <option value="draft">draft</option>
-                    <option value="published">published</option>
+                    <option value="draft">초안(draft)</option>
+                    <option value="published">공개(published)</option>
                   </select>
                 </div>
 
                 <div>
-                  <label>importance (1~5)</label>
+                  <label>중요도<span class="label-sub">(1~5)</span></label>
                   <input type="number" id="importance" min="1" max="5" value="3" />
                 </div>
               </div>
@@ -140,60 +189,65 @@
 
               <div class="grid">
                 <div>
-                  <label>title_ko</label>
-                  <input type="text" id="title_ko" placeholder="사건 한국어 표제" />
-                </div>
-                <div>
-                  <label>title_ja</label>
-                  <input type="text" id="title_ja" placeholder="일본어 표기(선택)" />
-                </div>
-                <div>
-                  <label>title_zh</label>
-                  <input type="text" id="title_zh" placeholder="중국어 표기(선택)" />
-                </div>
-                <div>
-                  <label>category</label>
-                  <select id="category">
-                    <option value="">(선택)</option>
-                    <option value="politics">politics</option>
-                    <option value="war">war</option>
-                    <option value="diplomacy">diplomacy</option>
-                    <option value="economy">economy</option>
-                    <option value="society">society</option>
-                    <option value="culture">culture</option>
-                  </select>
-                  <div class="hint">v1은 큰 분류만 1개로 제한하는 걸 추천.</div>
+                  <label>사건 제목(한국어)<span class="label-sub">(title_ko)</span></label>
+                  <input type="text" id="title_ko" placeholder="예: 3·1 운동" />
                 </div>
 
                 <div>
-                  <label>date_start</label>
+                  <label>사건 제목(일본어)<span class="label-sub">(title_ja)</span></label>
+                  <input type="text" id="title_ja" placeholder="예: 三・一運動 (선택)" />
+                </div>
+
+                <div>
+                  <label>사건 제목(중국어)<span class="label-sub">(title_zh)</span></label>
+                  <input type="text" id="title_zh" placeholder="예: 三一运动 (선택)" />
+                </div>
+
+                <div>
+                  <label>분류<span class="label-sub">(category)</span></label>
+                  <select id="category">
+                    <option value="">(선택)</option>
+                    <option value="politics">정치(politics)</option>
+                    <option value="war">전쟁/군사(war)</option>
+                    <option value="diplomacy">외교(diplomacy)</option>
+                    <option value="economy">경제(economy)</option>
+                    <option value="society">사회(society)</option>
+                    <option value="culture">문화(culture)</option>
+                  </select>
+                  <div class="hint">v1은 큰 분류 1개로 제한하는 것을 추천합니다.</div>
+                </div>
+
+                <div>
+                  <label>시작 날짜<span class="label-sub">(date_start)</span></label>
                   <input type="date" id="date_start" />
                 </div>
+
                 <div>
-                  <label>date_end</label>
+                  <label>종료 날짜<span class="label-sub">(date_end)</span></label>
                   <input type="date" id="date_end" />
                 </div>
+
                 <div>
-                  <label>date_precision</label>
+                  <label>날짜 정확도<span class="label-sub">(date_precision)</span></label>
                   <select id="date_precision">
-                    <option value="day">day</option>
-                    <option value="month">month</option>
-                    <option value="year">year</option>
+                    <option value="day">일 단위(day)</option>
+                    <option value="month">월 단위(month)</option>
+                    <option value="year">연 단위(year)</option>
                   </select>
                 </div>
 
                 <div class="full">
-                  <label>countries (KR|CN|JP)</label>
+                  <label>관련 국가<span class="label-sub">(countries: KR|CN|JP)</span></label>
                   <div class="row">
                     <input type="text" id="countries_input" placeholder="예: KR|JP  또는  KR,JP" />
                     <button class="btn" type="button" id="countries_apply">적용</button>
                   </div>
                   <div class="chips" id="countries_chips"></div>
-                  <div class="hint">파이프(|) 또는 콤마(,)로 입력 → “적용” 누르면 칩으로 변환됩니다.</div>
+                  <div class="hint">파이프(|) 또는 콤마(,)로 입력하면 칩으로 변환됩니다.</div>
                 </div>
 
                 <div class="full">
-                  <label>tags</label>
+                  <label>태그<span class="label-sub">(tags)</span></label>
                   <div class="row">
                     <input type="text" id="tags_input" placeholder="예: 독립운동|외교|시위" />
                     <button class="btn" type="button" id="tags_apply">적용</button>
@@ -202,17 +256,17 @@
                 </div>
 
                 <div class="full">
-                  <label>entity_refs (P_/O_/L_/C_...)</label>
+                  <label>관련 엔티티 ID<span class="label-sub">(entity_refs)</span></label>
                   <div class="row">
                     <input type="text" id="entity_refs_input" class="mono" placeholder="예: P_ANK|O_SINGANHOE|L_SEOUL" />
                     <button class="btn" type="button" id="entity_refs_apply">적용</button>
                   </div>
                   <div class="chips" id="entity_refs_chips"></div>
-                  <div class="hint">v1은 일단 직접 입력 방식. 이후 ENTITIES 검색 팝업으로 확장 가능.</div>
+                  <div class="hint">인물(P_), 단체(O_), 장소(L_), 개념(C_) 같은 접두사를 사용하면 관리가 쉽습니다.</div>
                 </div>
 
                 <div class="full">
-                  <label>source_refs (S_...)</label>
+                  <label>출처 ID<span class="label-sub">(source_refs)</span></label>
                   <div class="row">
                     <input type="text" id="source_refs_input" class="mono" placeholder="예: S_WEB_001|S_BOOK_010" />
                     <button class="btn" type="button" id="source_refs_apply">적용</button>
@@ -221,38 +275,37 @@
                 </div>
 
                 <div class="full">
-                  <label>summary</label>
-                  <textarea id="summary" placeholder="연표 카드용 2~3줄 요약"></textarea>
+                  <label>요약<span class="label-sub">(summary)</span></label>
+                  <textarea id="summary" placeholder="연표 카드에 표시할 2~3줄 요약을 적어주세요."></textarea>
                 </div>
 
                 <div class="full">
-                  <label>body</label>
-                  <textarea id="body" placeholder="상세 설명(블로그 본문 재료)"></textarea>
+                  <label>상세 설명<span class="label-sub">(body)</span></label>
+                  <textarea id="body" placeholder="블로그 본문 재료가 되는 상세 설명을 적어주세요. (배경/전개/영향 등)"></textarea>
                 </div>
 
                 <div class="full">
-                  <label>created_at / updated_at</label>
+                  <label>생성/수정 시각<span class="label-sub">(created_at / updated_at)</span></label>
                   <div class="grid3">
-                    <input type="text" id="created_at" placeholder="YYYY-MM-DD HH:mm" />
-                    <input type="text" id="updated_at" placeholder="YYYY-MM-DD HH:mm" />
+                    <input type="text" id="created_at" placeholder="예: 2025-12-29 10:15 (선택)" />
+                    <input type="text" id="updated_at" placeholder="예: 2025-12-29 11:02 (선택)" />
                     <button class="btn" type="button" id="btnStampNow">지금 시각 입력</button>
                   </div>
-                  <div class="hint">서버에서 자동 처리해도 됩니다. (화면은 선택)</div>
+                  <div class="hint">서버에서 자동 처리하도록 해도 됩니다.</div>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- 디버그/내보내기 -->
           <div class="card">
             <div class="h">
               <div>
                 <div class="title">미리보기(JSON)</div>
-                <div class="sub">저장 전에 payload를 확인할 수 있습니다.</div>
+                <div class="sub">저장 전에 전송될 데이터를 확인할 수 있습니다.</div>
               </div>
               <div class="row">
                 <button class="btn" type="button" id="btnCopyJson">JSON 복사</button>
-                <button class="btn" type="button" id="btnExportTsv">TSV 1줄 내보내기</button>
+                <button class="btn" type="button" id="btnExportTsv">TSV 1줄 복사</button>
               </div>
             </div>
             <div class="b">
@@ -262,14 +315,10 @@
 
         </div>
       </div>
-      </main>
     </div>
   </div>
-  <script src="./admin-common.js" defer></script>
+
   <script>
-    // =========================
-    // Utils
-    // =========================
     const $ = (id) => document.getElementById(id);
 
     function nowText(){
@@ -286,14 +335,17 @@
 
     function splitList(s){
       if (!s) return [];
-      return s
-        .split(/[\|\,,\n]+/g)
-        .map(v => v.trim())
-        .filter(Boolean);
+      return s.split(/[\|\,,\n]+/g).map(v=>v.trim()).filter(Boolean);
     }
+    const uniq = (arr)=> Array.from(new Set(arr));
 
-    function uniq(arr){
-      return Array.from(new Set(arr));
+    function escapeHtml(str){
+      return String(str)
+        .replaceAll("&","&amp;")
+        .replaceAll("<","&lt;")
+        .replaceAll(">","&gt;")
+        .replaceAll('"',"&quot;")
+        .replaceAll("'","&#039;");
     }
 
     function renderChips(container, items, onRemove){
@@ -305,19 +357,10 @@
       items.forEach((v, idx)=>{
         const chip = document.createElement("span");
         chip.className = "chip";
-        chip.innerHTML = `<span>${escapeHtml(v)}</span><button type="button" aria-label="remove">×</button>`;
+        chip.innerHTML = `<span>${escapeHtml(v)}</span><button type="button" aria-label="삭제">×</button>`;
         chip.querySelector("button").addEventListener("click", ()=> onRemove(idx));
         container.appendChild(chip);
       });
-    }
-
-    function escapeHtml(str){
-      return String(str)
-        .replaceAll("&","&amp;")
-        .replaceAll("<","&lt;")
-        .replaceAll(">","&gt;")
-        .replaceAll('"',"&quot;")
-        .replaceAll("'","&#039;");
     }
 
     function makeEventId(dateStart){
@@ -328,28 +371,10 @@
       return `E_${ymd}_${rand}`;
     }
 
-    function toPipe(items){
-      return items.join("|");
-    }
+    const state = { countries: [], tags: [], entity_refs: [], source_refs: [] };
 
-    function tsvEscape(v){
-      const s = String(v ?? "");
-      return s.replace(/\t/g, " ").replace(/\r?\n/g, " ").trim();
-    }
+    function toPipe(items){ return items.join("|"); }
 
-    // =========================
-    // State
-    // =========================
-    const state = {
-      countries: [],
-      tags: [],
-      entity_refs: [],
-      source_refs: [],
-    };
-
-    // =========================
-    // Bind chip controls
-    // =========================
     function applyFromInput(inputId, key, chipsId){
       const items = uniq(splitList($(inputId).value));
       state[key] = items;
@@ -366,9 +391,6 @@
     $("entity_refs_apply").addEventListener("click", ()=> applyFromInput("entity_refs_input","entity_refs","entity_refs_chips"));
     $("source_refs_apply").addEventListener("click", ()=> applyFromInput("source_refs_input","source_refs","source_refs_chips"));
 
-    // =========================
-    // Form → Payload
-    // =========================
     function collectPayload(){
       return {
         event_id: $("event_id").value.trim() || "",
@@ -399,9 +421,6 @@
     ["event_id","title_ko","title_ja","title_zh","date_start","date_end","date_precision","category","importance","status","summary","body","created_at","updated_at"]
       .forEach(id => $(id).addEventListener("input", syncPreview));
 
-    // =========================
-    // Buttons
-    // =========================
     $("btnStampNow").addEventListener("click", ()=>{
       const t = nowText();
       if (!$("created_at").value) $("created_at").value = t;
@@ -433,11 +452,16 @@
     $("btnCopyJson").addEventListener("click", async ()=>{
       try{
         await navigator.clipboard.writeText($("preview").textContent);
-        setUiStatus("JSON 복사됨", "ok");
+        setUiStatus("JSON이 복사되었습니다.", "ok");
       }catch(e){
-        setUiStatus("복사 실패(권한)", "bad");
+        setUiStatus("복사에 실패했습니다.", "bad");
       }
     });
+
+    function tsvEscape(v){
+      const s = String(v ?? "");
+      return s.replace(/\t/g, " ").replace(/\r?\n/g, " ").trim();
+    }
 
     $("btnExportTsv").addEventListener("click", async ()=>{
       const p = collectPayload();
@@ -452,29 +476,27 @@
       const line = cols.map(k => tsvEscape(p[k])).join("\t");
       try{
         await navigator.clipboard.writeText(line);
-        setUiStatus("TSV 1줄 복사됨", "ok");
+        setUiStatus("TSV 1줄이 복사되었습니다.", "ok");
       }catch(e){
-        setUiStatus("TSV 복사 실패", "bad");
+        setUiStatus("TSV 복사에 실패했습니다.", "bad");
       }
       syncPreview();
     });
 
-    // =========================
-    // Save (API)
-    // =========================
     async function apiPost(json){
       const base = (window.CHEESE_ADMIN_API_BASE || "").trim();
-      if (!base){
-        throw new Error("API Base가 비어 있습니다. window.CHEESE_ADMIN_API_BASE 를 설정하세요.");
-      }
+      if (!base) throw new Error("API Base가 비어 있습니다. window.CHEESE_ADMIN_API_BASE 를 설정하세요.");
+
       const res = await fetch(base, {
         method: "POST",
         headers: { "Content-Type":"application/json" },
         body: JSON.stringify(json),
       });
+
       const text = await res.text();
       let data = null;
       try{ data = JSON.parse(text); }catch(_){ data = { ok: res.ok, raw: text }; }
+
       if (!res.ok || data?.ok === false){
         throw new Error(data?.message || `HTTP ${res.status}`);
       }
@@ -487,9 +509,9 @@
         $("btnSave").disabled = true;
 
         const p = collectPayload();
+        if (!p.title_ko) throw new Error("사건 제목(한국어)은 필수입니다.");
+        if (!p.date_start) throw new Error("시작 날짜는 필수입니다.");
 
-        if (!p.title_ko) throw new Error("title_ko는 필수입니다.");
-        if (!p.date_start) throw new Error("date_start는 필수입니다.");
         if (!p.event_id){
           p.event_id = makeEventId(p.date_start);
           $("event_id").value = p.event_id;
@@ -511,7 +533,6 @@
       }
     });
 
-    // init
     renderChips($("countries_chips"), [], ()=>{});
     renderChips($("tags_chips"), [], ()=>{});
     renderChips($("entity_refs_chips"), [], ()=>{});
