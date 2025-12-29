@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>사건 목록 · Knowledge DB</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- ✅ 공통 CSS -->
+  <link rel="stylesheet" href="./admin.css" />
+  <!-- ✅ 반드시 포함: 공통 헤더/메뉴 주입 스크립트 -->
+  <script src="./admin-common.js" defer></script>
+
+  <style>
+    :root{
+      --bg:#f3f4f6; --card:#ffffff; --text:#0f172a; --muted:#64748b;
+      --line:rgba(15,23,42,.12); --shadow:0 10px 28px rgba(15,23,42,.10);
+      --r:18px; --primary:#111827; --ok:#16a34a; --bad:#ef4444;
+      --soft:#eef2ff;
+    }
+    body{ margin:0; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    .page-wrap{ max-width:1100px; margin:0 auto; padding:18px 18px 40px; box-sizing:border-box; }
+
+    .card{ background:var(--card); border:1px solid var(--line); border-radius:var(--r); box-shadow:var(--shadow); overflow:hidden; margin-bottom:14px; }
+    .h{ padding:16px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    .h .title{ font-weight:950; font-size:18px; letter-spacing:-.2px; }
+    .h .sub{ font-size:13px; color:var(--muted); margin-top:3px; }
+    .b{ padding:16px; }
+
+    /* Filters */
+    .filters{ display:grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr; gap:10px; align-items:end; }
+    @media (max-width: 980px){
+      .filters{ grid-template-columns: 1fr 1fr; }
+    }
+    label{ display:block; font-size:13px; font-weight:900; margin:0 0 8px; letter-spacing:-.2px; }
+    input[type="text"], select{
+      width:100%; padding:12px 12px; border:1.5px solid var(--line); border-radius:14px;
+      background:#fff; color:var(--text); outline:none; font-size:14px; box-sizing:border-box;
+    }
+    input:focus, select:focus{ border-color: rgba(17,24,39,.35); box-shadow: 0 0 0 4px rgba(17,24,39,.08); }
+
+    .row{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .btn{
+      border:1px solid var(--line); background:#fff; color:var(--text);
+      border-radius:14px; padding:12px 16px; cursor:pointer; font-weight:950; font-size:14px; min-height:44px;
+    }
+    .btn.primary{ background:var(--primary); color:#fff; border-color:rgba(0,0,0,.2); }
+    .btn:disabled{ opacity:.55; cursor:not-allowed; }
+
+    .status{
+      font-size:13px; padding:10px 12px; border-radius:14px; border:1px solid var(--line);
+      background:#fff; color:var(--muted); font-weight:900; min-height:44px; display:inline-flex; align-items:center;
+    }
+    .status.ok{ border-color: rgba(22,163,74,.35); color: var(--ok); }
+    .status.bad{ border-color: rgba(239,68,68,.35); color: var(--bad); }
+
+    /* List cards */
+    .list{ display:flex; flex-direction:column; gap:12px; }
+    .item{
+      background:#fff; border:1px solid var(--line); border-radius:18px; box-shadow:var(--shadow);
+      padding:14px 14px 12px;
+    }
+    .item-top{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+    .item-title{ font-weight:950; font-size:16px; letter-spacing:-.2px; line-height:1.25; }
+    .item-meta{ font-size:12.5px; color:var(--muted); margin-top:6px; display:flex; gap:10px; flex-wrap:wrap; }
+    .pill{
+      display:inline-flex; align-items:center; gap:6px;
+      border:1px solid var(--line); border-radius:999px; padding:6px 10px; font-size:12.5px; font-weight:900;
+      background:var(--soft);
+    }
+    .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+
+    .item-body{ margin-top:10px; color:var(--text); font-size:13.5px; line-height:1.55; }
+    .muted{ color:var(--muted); }
+
+    .item-actions{ margin-top:12px; display:flex; gap:10px; flex-wrap:wrap; }
+    .linklike{
+      border:1px solid var(--line); background:#fff; border-radius:14px; padding:10px 12px;
+      font-weight:950; cursor:pointer; font-size:13px;
+    }
+
+    .pager{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+    .pager .info{ color:var(--muted); font-weight:900; font-size:13px; }
+    .empty{
+      padding:18px; border:1px dashed var(--line); border-radius:18px; background:#fff; color:var(--muted);
+      font-weight:900;
+    }
+  </style>
+
+  <script>
+    // ✅ 너의 Apps Script WebApp exec URL 또는 프록시 API
+    window.CHEESE_ADMIN_API_BASE = ""; // TODO: https://script.google.com/macros/s/.../exec
+  </script>
+</head>
+
+<body>
+  <!-- ✅ 권한별 접근 제어 -->
+  <script>
+    window.CHEESE_ADMIN_REQUIRED_ROLES = ["EMP", "MGR", "FIN", "ADMIN"];
+  </script>
+
+  <!-- ✅ 공통 헤더/메뉴 슬롯 -->
+  <div id="admin-header-slot"></div>
+  <div class="admin-main">
+    <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+
+    <main>
+      <div class="page-wrap">
+
+        <div class="card">
+          <div class="h">
+            <div>
+              <div class="title">사건 목록</div>
+              <div class="sub">세로 카드로 나열 · 조건 검색 · 빠른 이동</div>
+            </div>
+            <div class="row">
+              <span id="uiStatus" class="status">대기</span>
+              <button class="btn" type="button" id="btnReset">초기화</button>
+              <button class="btn primary" type="button" id="btnSearch">검색</button>
+            </div>
+          </div>
+
+          <div class="b">
+            <div class="filters">
+              <div>
+                <label>검색어</label>
+                <input type="text" id="q" placeholder="제목/요약/본문/태그/국가/당대국가 등" />
+              </div>
+
+              <div>
+                <label>상태</label>
+                <select id="status">
+                  <option value="">전체</option>
+                  <option value="draft">초안(draft)</option>
+                  <option value="published">공개(published)</option>
+                </select>
+              </div>
+
+              <div>
+                <label>관련 국가</label>
+                <select id="country">
+                  <option value="">전체</option>
+                  <option value="KR">KR</option>
+                  <option value="JP">JP</option>
+                  <option value="CN">CN</option>
+                </select>
+              </div>
+
+              <div>
+                <label>당대 국가/정권</label>
+                <input type="text" id="polity" placeholder="예: 고구려, 조선, 청" />
+              </div>
+
+              <div>
+                <label>분류</label>
+                <select id="category">
+                  <option value="">전체</option>
+                  <option value="politics">정치</option>
+                  <option value="war">전쟁/군사</option>
+                  <option value="diplomacy">외교</option>
+                  <option value="economy">경제</option>
+                  <option value="society">사회</option>
+                  <option value="culture">문화</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="row" style="margin-top:12px; justify-content:space-between;">
+              <div class="row">
+                <button class="btn" type="button" id="btnPrev">이전</button>
+                <button class="btn" type="button" id="btnNext">다음</button>
+                <select id="size" style="width:auto; min-width:140px;">
+                  <option value="20">20개씩</option>
+                  <option value="50" selected>50개씩</option>
+                  <option value="100">100개씩</option>
+                </select>
+              </div>
+              <div class="pager">
+                <div class="info" id="pagerInfo">0건</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="list" class="list"></div>
+
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const $ = (id)=> document.getElementById(id);
+
+    // -----------------------
+    // UI
+    // -----------------------
+    function setUiStatus(text, kind=""){
+      const el = $("uiStatus");
+      if (!el) return;
+      el.textContent = text;
+      el.className = "status" + (kind ? (" " + kind) : "");
+    }
+
+    function escapeHtml(str){
+      return String(str ?? "")
+        .replaceAll("&","&amp;")
+        .replaceAll("<","&lt;")
+        .replaceAll(">","&gt;")
+        .replaceAll('"',"&quot;")
+        .replaceAll("'","&#039;");
+    }
+
+    function safePipeToPills(pipeStr){
+      const parts = String(pipeStr || "")
+        .split("|").map(s=>s.trim()).filter(Boolean)
+        .slice(0, 6); // 너무 많으면 카드가 지저분해져서 제한
+      return parts.map(p=>`<span class="pill">${escapeHtml(p)}</span>`).join("");
+    }
+
+    function firstLine(text, max=120){
+      const s = String(text || "").replace(/\s+/g, " ").trim();
+      if (!s) return "";
+      return s.length > max ? (s.slice(0, max) + "…") : s;
+    }
+
+    // -----------------------
+    // API
+    // -----------------------
+    async function apiPost(json){
+      const base = (window.CHEESE_ADMIN_API_BASE || "").trim();
+      if (!base) throw new Error("API Base가 비어 있습니다. window.CHEESE_ADMIN_API_BASE 를 설정하세요.");
+
+      // ✅ 프리플라이트(CORS) 회피: 헤더 제거
+      const res = await fetch(base, {
+        method: "POST",
+        body: JSON.stringify(json),
+      });
+
+      const text = await res.text();
+      let data = null;
+      try{ data = JSON.parse(text); } catch(_){ data = { ok: res.ok, raw: text }; }
+
+      if (!res.ok || data?.ok === false){
+        throw new Error(data?.message || `HTTP ${res.status}`);
+      }
+      return data;
+    }
+
+    // -----------------------
+    // State
+    // -----------------------
+    const state = {
+      page: 1,
+      size: 50,
+      total: 0,
+      items: [],
+      loading: false,
+    };
+
+    function readFilters(){
+      return {
+        q: $("q")?.value.trim() || "",
+        status: $("status")?.value || "",
+        country: $("country")?.value || "",
+        polity: $("polity")?.value.trim() || "",
+        category: $("category")?.value || "",
+      };
+    }
+
+    // -----------------------
+    // Render
+    // -----------------------
+    function render(){
+      const list = $("list");
+      if (!list) return;
+
+      $("pagerInfo").textContent = `${state.total}건 · ${state.page}페이지 · ${state.size}개씩`;
+
+      if (!state.items || state.items.length === 0){
+        list.innerHTML = `<div class="empty">조건에 맞는 사건이 없습니다.</div>`;
+        return;
+      }
+
+      list.innerHTML = state.items.map(item=>{
+        const title = item.title_ko || "(제목 없음)";
+        const date = item.date_start || "";
+        const cat  = item.category || "";
+        const st   = item.status || "";
+        const imp  = item.importance != null ? String(item.importance) : "";
+        const countries = item.countries || "";
+        const polities  = item.polities || "";
+        const tags      = item.tags || "";
+        const summary = item.summary || item.body || "";
+        const id = item.event_id || "";
+
+        const pills =
+          (countries ? safePipeToPills(countries) : "") +
+          (polities ? safePipeToPills(polities) : "") +
+          (cat ? `<span class="pill">${escapeHtml(cat)}</span>` : "") +
+          (st ? `<span class="pill">${escapeHtml(st)}</span>` : "") +
+          (imp ? `<span class="pill">★${escapeHtml(imp)}</span>` : "");
+
+        const tagPills = tags ? safePipeToPills(tags) : "";
+
+        return `
+          <section class="item">
+            <div class="item-top">
+              <div>
+                <div class="item-title">${escapeHtml(title)}</div>
+                <div class="item-meta">
+                  <span class="mono muted">${escapeHtml(id)}</span>
+                  ${date ? `<span class="muted">· ${escapeHtml(date)}</span>` : ""}
+                </div>
+              </div>
+              <div class="row" style="gap:8px; justify-content:flex-end;">
+                ${pills}
+              </div>
+            </div>
+
+            <div class="item-body">
+              ${summary ? escapeHtml(firstLine(summary, 160)) : `<span class="muted">요약/본문이 비어 있습니다.</span>`}
+            </div>
+
+            ${tagPills ? `<div class="item-actions">${tagPills}</div>` : ""}
+
+            <div class="item-actions">
+              <button class="linklike" type="button" data-action="copyId" data-id="${escapeHtml(id)}">ID 복사</button>
+              <button class="linklike" type="button" data-action="openEdit" data-id="${escapeHtml(id)}">편집 열기</button>
+            </div>
+          </section>
+        `;
+      }).join("");
+
+      // action bindings (event delegation)
+      list.querySelectorAll("[data-action]").forEach(btn=>{
+        btn.addEventListener("click", async ()=>{
+          const act = btn.getAttribute("data-action");
+          const id = btn.getAttribute("data-id") || "";
+          if (!id) return;
+
+          if (act === "copyId"){
+            try{
+              await navigator.clipboard.writeText(id);
+              setUiStatus("ID 복사됨", "ok");
+            }catch(_){
+              setUiStatus("복사 실패", "bad");
+            }
+          }
+
+          if (act === "openEdit"){
+            // ✅ 편집 페이지 파일명만 맞춰줘 (예: events_editor.html)
+            // query string으로 넘겨두면, 편집 페이지에서 event_id로 불러오기 구현하기 쉬움.
+            const url = `./events_editor.html?event_id=${encodeURIComponent(id)}`;
+            window.location.href = url;
+          }
+        });
+      });
+    }
+
+    // -----------------------
+    // Load
+    // -----------------------
+    async function load(reset=false){
+      if (state.loading) return;
+      state.loading = true;
+
+      try{
+        setUiStatus("불러오는 중…", "");
+        $("btnSearch").disabled = true;
+
+        if (reset) state.page = 1;
+        state.size = Number($("size")?.value || 50);
+
+        const f = readFilters();
+
+        // 서버 list는 q/status/country/polity만 받도록 해둔 상태.
+        // category는 서버에서 추가 필터가 없으니, v1에서는 클라이언트에서 한 번 더 거르는 방식.
+        const req = {
+          mode: "events.list",
+          q: f.q,
+          status: f.status,
+          country: f.country,
+          polity: f.polity,
+          page: state.page,
+          size: state.size,
+        };
+
+        const out = await apiPost(req);
+        let items = Array.isArray(out.items) ? out.items : [];
+        const total = Number(out.total || 0);
+
+        // ✅ category 클라이언트 필터(간단)
+        if (f.category){
+          items = items.filter(x => String(x.category || "") === f.category);
+        }
+
+        // total은 서버 total이라 카테고리 필터와 약간 다를 수 있음.
+        // v1은 UX 단순화를 위해 "보이는 개수" 기준으로 status만 갱신.
+        state.items = items;
+        state.total = f.category ? items.length : total;
+
+        setUiStatus("완료", "ok");
+        render();
+
+      }catch(err){
+        setUiStatus(err?.message || "불러오기 실패", "bad");
+        $("list").innerHTML = `<div class="empty">불러오기에 실패했습니다. (API Base / 배포 권한 / CORS 등을 확인)</div>`;
+      }finally{
+        state.loading = false;
+        $("btnSearch").disabled = false;
+      }
+    }
+
+    // -----------------------
+    // Bind
+    // -----------------------
+    window.addEventListener("DOMContentLoaded", ()=>{
+      $("btnSearch")?.addEventListener("click", ()=> load(true));
+      $("btnReset")?.addEventListener("click", ()=>{
+        $("q").value = "";
+        $("status").value = "";
+        $("country").value = "";
+        $("polity").value = "";
+        $("category").value = "";
+        $("size").value = "50";
+        state.page = 1;
+        load(true);
+      });
+
+      // Enter 검색
+      ["q","polity"].forEach(id=>{
+        $(id)?.addEventListener("keydown", (e)=>{
+          if (e.key === "Enter"){ e.preventDefault(); load(true); }
+        });
+      });
+
+      // paging
+      $("btnPrev")?.addEventListener("click", ()=>{
+        if (state.page <= 1) return;
+        state.page -= 1;
+        load(false);
+      });
+      $("btnNext")?.addEventListener("click", ()=>{
+        // total을 정확히 알 수 없을 때도 있으니 일단 다음 페이지 시도
+        state.page += 1;
+        load(false);
+      });
+
+      // size change
+      $("size")?.addEventListener("change", ()=> load(true));
+
+      // 초기 로드
+      render();
+      load(true);
+    });
+  </script>
+</body>
+</html>
