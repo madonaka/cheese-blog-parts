@@ -1,116 +1,96 @@
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-  <meta charset="UTF-8">
-  <title>Daily Log Export</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- ✅ daily_log_export.html (필요 부분만 교체/추가) -->
+<div class="form-row">
+  <label>연도</label>
+  <input id="year" type="number" value="2026" style="width:100px">
 
-  <!-- 관리자 공통 CSS -->
-  <link rel="stylesheet" href="./admin.css">
-</head>
+  <label style="margin-left:12px">월</label>
+  <input id="month" type="number" value="1" style="width:80px">
 
-<body>
-  <div class="admin-shell">
-    <!-- 헤더 슬롯 -->
-    <div id="admin-header-slot"></div>
+  <!-- ✅ 추가: 일별 -->
+  <label style="margin-left:12px">일</label>
+  <input id="day" type="text" placeholder="YYYY-MM-DD" style="width:140px">
 
-    <div class="admin-main">
-      <!-- 메뉴 슬롯 -->
-      <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+  <!-- ✅ 추가: id -->
+  <label style="margin-left:12px">id</label>
+  <input id="ids" type="text" placeholder="EVT001,EVT002" style="width:180px">
 
-      <!-- 메인 콘텐츠 -->
-      <main class="wrap">
+  <button id="btnGenerate" class="btn primary" style="margin-left:12px">
+    HTML 생성
+  </button>
 
-        <h1>Daily Log Export</h1>
-        <p class="desc">
-          daily_events 시트 데이터를 블로그에 바로 붙여넣을 수 있는 HTML로 변환합니다.
-        </p>
+  <button id="btnCopy" class="btn" style="margin-left:8px">
+    복사
+  </button>
+</div>
 
-        <div class="form-row">
-          <label>연도</label>
-          <input id="year" type="number" value="2026" style="width:100px">
+<script>
+  // ✅ 너의 웹앱 URL로 바꿔 넣기
+  const API_BASE = "https://script.google.com/macros/s/AKfycbyuC0qHyRdDKL2fC5fmRy66l0y1baCLbXuf9pNlPh0rBde_HQMzaqQv5NK06H_n7WFk/exec";
 
-          <label style="margin-left:12px">월</label>
-          <input id="month" type="number" value="1" style="width:80px">
+  document.getElementById("btnGenerate").addEventListener("click", generate);
+  document.getElementById("btnCopy").addEventListener("click", copyOutput);
 
-          <button id="btnGenerate" class="btn primary" style="margin-left:12px">
-            HTML 생성
-          </button>
+  async function generate() {
+    const year  = String(document.getElementById("year").value || "").trim();
+    const month = String(document.getElementById("month").value || "").trim();
+    const day   = String(document.getElementById("day").value || "").trim();
+    const ids   = String(document.getElementById("ids").value || "").trim();
 
-          <button id="btnCopy" class="btn" style="margin-left:8px">
-            복사
-          </button>
-        </div>
-
-        <textarea
-          id="output"
-          placeholder="여기에 daily-log HTML이 생성됩니다"
-          style="width:100%; height:360px; margin-top:16px;"
-        ></textarea>
-
-      </main>
-    </div>
-  </div>
-
-  <!-- 반드시 포함해야 하는 공통 스크립트 -->
-  <script src="./admin-common.js"></script>
-
-  <script>
-    // ✅ 너의 웹앱 URL로 바꿔 넣기
-    const API_BASE = "https://script.google.com/macros/s/AKfycbyuC0qHyRdDKL2fC5fmRy66l0y1baCLbXuf9pNlPh0rBde_HQMzaqQv5NK06H_n7WFk/exec";
-
-    document.getElementById("btnGenerate").addEventListener("click", generate);
-    document.getElementById("btnCopy").addEventListener("click", copyOutput);
-
-    async function generate() {
-      const year  = String(document.getElementById("year").value || "");
-      const month = String(document.getElementById("month").value || "");
-
-      if (!year || !month) {
-        alert("연도와 월을 입력하세요.");
-        return;
-      }
-
-      const url = `${API_BASE}?mode=exportDailyLog&year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}`;
-
-      try {
-        document.getElementById("output").value = "생성 중...";
-
-        const res = await fetch(url, { method: "GET" });
-        if (!res.ok) throw new Error("API 호출 실패 (HTTP " + res.status + ")");
-
-        const text = await res.text();
-
-        // 혹시 HTML 화면이 그대로 내려오는 경우(= doGet 분기 실패) 감지
-        if (text && /<!doctype html|<html/i.test(text)) {
-          throw new Error("API가 HTML 화면을 반환했습니다. (doGet(e) 분기/배포 확인 필요)");
-        }
-
-        document.getElementById("output").value = text || "<!-- empty -->";
-      } catch (e) {
-        document.getElementById("output").value = "";
-        alert("HTML 생성 실패: " + e.message);
-      }
+    // 월 추출(기존): year+month 필요
+    // 일 추출: day만 있으면 됨
+    if (!day && (!year || !month)) {
+      alert("월 추출은 연도/월이 필요하고, 일별 추출은 day(YYYY-MM-DD)가 필요합니다.");
+      return;
     }
 
-    async function copyOutput() {
-      const ta = document.getElementById("output");
-      const val = ta.value || "";
-      if (!val.trim()) {
-        alert("복사할 내용이 없습니다.");
-        return;
-      }
-      try {
-        await navigator.clipboard.writeText(val);
-        alert("복사 완료");
-      } catch (e) {
-        // fallback
-        ta.focus();
-        ta.select();
-        document.execCommand("copy");
-        alert("복사 완료");
-      }
+    const params = new URLSearchParams();
+    params.set("mode", "exportDailyLog");
+
+    if (day) params.set("day", day);
+    else {
+      params.set("year", year);
+      params.set("month", month);
     }
-  </script>
-</body>
-</html>
+
+    if (ids) params.set("id", ids);
+
+    const url = `${API_BASE}?${params.toString()}`;
+
+    try {
+      document.getElementById("output").value = "생성 중...";
+
+      const res = await fetch(url, { method: "GET" });
+      if (!res.ok) throw new Error("API 호출 실패 (HTTP " + res.status + ")");
+
+      const text = await res.text();
+
+      // 혹시 HTML 화면이 그대로 내려오는 경우 감지
+      if (text && /<!doctype html|<html/i.test(text)) {
+        throw new Error("API가 HTML 화면을 반환했습니다. (doGet(e) 분기/배포 확인 필요)");
+      }
+
+      document.getElementById("output").value = text || "<!-- empty -->";
+    } catch (e) {
+      document.getElementById("output").value = "";
+      alert("HTML 생성 실패: " + e.message);
+    }
+  }
+
+  async function copyOutput() {
+    const ta = document.getElementById("output");
+    const val = ta.value || "";
+    if (!val.trim()) {
+      alert("복사할 내용이 없습니다.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(val);
+      alert("복사 완료");
+    } catch (e) {
+      ta.focus();
+      ta.select();
+      document.execCommand("copy");
+      alert("복사 완료");
+    }
+  }
+</script>
