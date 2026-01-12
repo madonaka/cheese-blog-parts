@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>Daily Log Export</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- ✅ 관리자 공통 CSS 유지 -->
+  <link rel="stylesheet" href="./admin.css" />
+
+  <style>
+    /* ===== Export 필터 카드 ===== */
+    .export-card{
+      background:#fff;
+      border:1px solid rgba(15,23,42,0.10);
+      border-radius:14px;
+      padding:14px;
+      box-shadow:0 10px 24px rgba(15,23,42,0.06);
+    }
+
+    /* ===== Export: 블록(줄)로 나누기 ===== */
+    .export-sections{
+      display:flex;
+      flex-direction:column;
+      gap:14px;
+    }
+
+    .search-block{
+      border: 1px solid rgba(15,23,42,0.08);
+      border-radius:12px;
+      padding:12px;
+      background: rgba(15,23,42,0.02);
+    }
+
+    .search-title{
+      font-weight: 900;
+      font-size: 0.95rem;
+      color:#0f172a;
+      margin: 0 0 10px;
+    }
+
+    .search-grid{
+      display:grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap:10px;
+      align-items:end;
+    }
+
+    .fg{ display:flex; flex-direction:column; gap:6px; }
+    .fg label{ font-weight:800; font-size:0.9rem; color:#111827; }
+    .fg input{
+      border:1px solid rgba(15,23,42,0.18);
+      border-radius:10px;
+      padding:10px 12px;
+      font-size:14px;
+      outline:none;
+      background:#fff;
+      height:40px;
+    }
+    .fg input[type="date"]{ padding:8px 10px; }
+
+    /* span 유틸 */
+    .span-2{ grid-column: span 2; min-width:120px; }
+    .span-4{ grid-column: span 4; min-width:200px; }
+    .span-8{ grid-column: span 8; min-width:260px; }
+
+    /* 버튼 줄 */
+    .actions{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      align-items:center;
+    }
+
+    .help-line{
+      margin-top:10px;
+      color:rgba(17,24,39,0.75);
+      font-size:0.92rem;
+      line-height:1.45;
+    }
+
+    /* 모바일: 전부 한 줄씩 */
+    @media (max-width: 980px){
+      .span-2,.span-4,.span-8{ grid-column: span 12; min-width: 0; }
+    }
+
+    /* ===== 탭 UI ===== */
+    .tabs{
+      display:flex; gap:8px; align-items:center;
+      margin: 12px 0 14px;
+      flex-wrap: wrap;
+    }
+    .tab-btn{
+      border: 1px solid rgba(15,23,42,0.14);
+      background:#fff;
+      padding: 8px 12px;
+      border-radius: 999px;
+      cursor:pointer;
+      font-weight: 700;
+    }
+    .tab-btn.active{
+      background:#111827;
+      color:#fff;
+      border-color:#111827;
+    }
+    .tab-panel{ display:none; }
+    .tab-panel.active{ display:block; }
+
+    /* ===== 월 요약 생성기 폼 ===== */
+    .note-grid{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 10px;
+    }
+    @media (max-width: 900px){
+      .note-grid{ grid-template-columns: 1fr; }
+    }
+    .card{
+      background:#fff;
+      border: 1px solid rgba(15,23,42,0.10);
+      border-radius: 14px;
+      padding: 14px;
+      box-shadow: 0 10px 24px rgba(15,23,42,0.06);
+    }
+    .card h2{
+      margin:0 0 10px;
+      font-size: 1.05rem;
+    }
+    .field{
+      display:flex;
+      flex-direction: column;
+      gap: 6px;
+      margin: 10px 0;
+    }
+    .field label{
+      font-weight: 800;
+      font-size: 0.92rem;
+      color:#111827;
+    }
+    .field input, .field textarea{
+      width:100%;
+      border: 1px solid rgba(15,23,42,0.18);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 14px;
+      outline: none;
+      background:#fff;
+    }
+    .field textarea{ min-height: 120px; resize: vertical; }
+
+    .row-actions{
+      display:flex; gap:8px; flex-wrap:wrap;
+      margin-top: 10px;
+    }
+
+    /* ===== month-note 미리보기 스타일(기본 포스트잇) ===== */
+    .month-note{
+      margin: 10px 0 14px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      background: #fff7cc;
+      border: 1px solid rgba(17,24,39,0.10);
+      box-shadow: 0 8px 18px rgba(15,23,42,0.08);
+      position: relative;
+    }
+    .month-note::before{
+      content:"";
+      position:absolute;
+      top:-8px;
+      left: 18px;
+      width: 66px;
+      height: 18px;
+      border-radius: 6px;
+      background: rgba(255,255,255,0.65);
+      border: 1px solid rgba(17,24,39,0.08);
+      transform: rotate(-2deg);
+    }
+    .month-note-title{
+      font-weight: 800;
+      color: #111827;
+      margin-bottom: 8px;
+    }
+    .month-note-tags{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+    }
+    .month-note-tags .mtag{
+      display:inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 0.85em;
+      font-weight: 700;
+      background: rgba(17,24,39,0.08);
+      color:#111827;
+    }
+    .month-note-desc{
+      margin-top: 8px;
+      font-size: 0.88em;
+      color: rgba(17,24,39,0.75);
+    }
+    @media (max-width: 640px){
+      .month-note{ padding: 12px; }
+      .month-note::before{ left: 12px; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="admin-shell">
+    <!-- ✅ 헤더 슬롯 -->
+    <div id="admin-header-slot"></div>
+
+    <div class="admin-main">
+      <!-- ✅ 메뉴 슬롯 -->
+      <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+
+      <!-- 메인 콘텐츠 -->
+      <main class="wrap">
+        <h1>Daily Log Export</h1>
+        <p class="desc">
+          daily_events 시트 데이터를 블로그에 바로 붙여넣을 수 있는 HTML로 변환합니다.
+          (월/일/ID 필터 지원)
+        </p>
+
+        <!-- ✅ 탭 -->
+        <div class="tabs">
+          <button class="tab-btn active" data-tab="tab-export">Daily Log Export</button>
+          <button class="tab-btn" data-tab="tab-monthnote">월 요약 포스트잇 생성기</button>
+        </div>
+
+        <!-- =========================
+             TAB 1: Daily Log Export
+        ========================= -->
+        <section id="tab-export" class="tab-panel active">
+          <div class="export-card">
+            <div class="export-sections">
+
+              <!-- 1) 연/월/일 -->
+              <div class="search-block">
+                <div class="search-title">연도, 월, 일 검색</div>
+                <div class="search-grid">
+                  <div class="fg span-2">
+                    <label for="year">연도</label>
+                    <input id="year" type="number" value="2026" />
+                  </div>
+
+                  <div class="fg span-2">
+                    <label for="month">월</label>
+                    <input id="month" type="number" min="1" max="12" value="1" />
+                  </div>
+
+                  <div class="fg span-4">
+                    <label for="day">일 (단일)</label>
+                    <input id="day" type="date" />
+                  </div>
+                </div>
+              </div>
+
+              <!-- 2) 기간 -->
+              <div class="search-block">
+                <div class="search-title">구체적 범위로 검색</div>
+                <div class="search-grid">
+                  <div class="fg span-4">
+                    <label for="start">start</label>
+                    <input id="start" type="date" />
+                  </div>
+
+                  <div class="fg span-4">
+                    <label for="end">end</label>
+                    <input id="end" type="date" />
+                  </div>
+                </div>
+              </div>
+
+              <!-- 3) ID -->
+              <div class="search-block">
+                <div class="search-title">id로 검색(복수 가능)</div>
+                <div class="search-grid">
+                  <div class="fg span-8">
+                    <label for="ids">id</label>
+                    <input id="ids" type="text" placeholder="240101-01 또는 240101-01,240101-02" />
+                  </div>
+                </div>
+              </div>
+
+              <!-- 버튼 -->
+              <div class="actions">
+                <button id="btnGenerate" class="btn primary">HTML 생성</button>
+                <button id="btnCopy" class="btn">복사</button>
+                <button id="btnOpen" class="btn">요청 URL 열기</button>
+                <button id="btnClear" class="btn">비우기</button>
+              </div>
+
+              <!-- 안내 -->
+              <div class="help-line">
+                - <b>day</b>를 입력하면 일별 추출이 우선 적용됩니다.<br/>
+                - <b>start/end</b>는 기간 추출입니다. (start만 또는 end만도 가능)<br/>
+                - <b>id</b>는 단일 또는 콤마로 여러 개 지정 가능합니다.
+              </div>
+
+            </div>
+          </div>
+
+          <textarea
+            id="output"
+            placeholder="여기에 daily-log HTML이 생성됩니다"
+            style="width:100%; height:380px; margin-top:14px;"
+          ></textarea>
+
+          <p class="desc" style="margin-top:10px;">
+            마지막 요청 URL: <span id="lastUrl" style="word-break:break-all;"></span>
+          </p>
+        </section>
+
+        <!-- =========================
+             TAB 2: 월 요약 포스트잇 생성기
+        ========================= -->
+        <section id="tab-monthnote" class="tab-panel">
+          <div class="note-grid">
+            <!-- 입력 -->
+            <div class="card">
+              <h2>입력</h2>
+
+              <div class="field">
+                <label>타이틀</label>
+                <input id="mnTitle" type="text" placeholder="예) 1월 핵심 키워드" />
+              </div>
+
+              <div class="field">
+                <label>키워드 (줄바꿈 또는 콤마로 입력)</label>
+                <textarea id="mnTags" placeholder="예)
+베네수엘라 공습
+민주당 공천헌금 파문
+이혜훈 후보자 논란"></textarea>
+              </div>
+
+              <div class="field">
+                <label>하단 설명 (선택)</label>
+                <input id="mnDesc" type="text" placeholder="예) ※ 한 달을 관통하는 이슈 키워드" />
+              </div>
+
+              <div class="row-actions">
+                <button id="mnBuild" class="btn primary">코드 생성</button>
+                <button id="mnCopy" class="btn">코드 복사</button>
+                <button id="mnReset" class="btn">입력 초기화</button>
+              </div>
+
+              <p class="desc" style="margin-top:10px;">
+                - 키워드는 최대 8개 정도가 보기 좋습니다.<br/>
+                - 입력은 자동 저장됩니다.
+              </p>
+            </div>
+
+            <!-- 미리보기/출력 -->
+            <div class="card">
+              <h2>미리보기</h2>
+              <div id="mnPreview"></div>
+
+              <h2 style="margin-top:14px;">생성된 코드</h2>
+              <textarea id="mnOutput" style="width:100%; height:220px;" placeholder="여기에 month-note 코드가 생성됩니다"></textarea>
+            </div>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- ✅ 공통 스크립트(헤더/메뉴 주입 등) -->
+  <script src="./admin-common.js"></script>
+
+  <script>
+    /* =========================
+       탭 로직
+    ========================= */
+    const tabBtns = Array.from(document.querySelectorAll(".tab-btn"));
+    const tabPanels = Array.from(document.querySelectorAll(".tab-panel"));
+
+    function setActiveTab(tabId){
+      tabBtns.forEach(b => b.classList.toggle("active", b.dataset.tab === tabId));
+      tabPanels.forEach(p => p.classList.toggle("active", p.id === tabId));
+      localStorage.setItem("CHEESE_ACTIVE_TAB", tabId);
+    }
+
+    tabBtns.forEach(btn => btn.addEventListener("click", () => setActiveTab(btn.dataset.tab)));
+    const savedTab = localStorage.getItem("CHEESE_ACTIVE_TAB");
+    if (savedTab && document.getElementById(savedTab)) setActiveTab(savedTab);
+
+    /* =========================
+       Daily Log Export
+    ========================= */
+    const API_BASE =
+      "https://script.google.com/macros/s/AKfycbzRFk4MVLqZTg_HtA1yODp-pUCU-Pm6vBg-n9kuuiM-c3C2rq6EWhjvRgPOELYHChw/exec";
+
+    const el = {
+      year: document.getElementById("year"),
+      month: document.getElementById("month"),
+      day: document.getElementById("day"),
+      start: document.getElementById("start"),
+      end: document.getElementById("end"),
+      ids: document.getElementById("ids"),
+      output: document.getElementById("output"),
+      lastUrl: document.getElementById("lastUrl"),
+      btnGenerate: document.getElementById("btnGenerate"),
+      btnCopy: document.getElementById("btnCopy"),
+      btnOpen: document.getElementById("btnOpen"),
+      btnClear: document.getElementById("btnClear"),
+    };
+
+    let lastRequestUrl = "";
+
+    el.btnGenerate.addEventListener("click", generate);
+    el.btnCopy.addEventListener("click", copyOutput);
+    el.btnOpen.addEventListener("click", openLastUrl);
+    el.btnClear.addEventListener("click", () => {
+      el.output.value = "";
+      el.lastUrl.textContent = "";
+      lastRequestUrl = "";
+      el.day.value = "";
+      el.start.value = "";
+      el.end.value = "";
+    });
+
+    function buildUrl() {
+      const year  = String(el.year.value || "").trim();
+      const month = String(el.month.value || "").trim();
+
+      const day   = String(el.day.value || "").trim();
+      const start = String(el.start.value || "").trim();
+      const end   = String(el.end.value || "").trim();
+
+      const ids   = String(el.ids.value || "").trim();
+
+      if (!day && !start && !end && (!year || !month)) {
+        throw new Error("월 추출은 연도/월이 필요하고, 일별은 day가 필요하며, 기간은 start/end가 필요합니다. (start만 또는 end만도 가능)");
+      }
+
+      const params = new URLSearchParams();
+      params.set("mode", "exportDailyLog");
+
+      if (day) {
+        params.set("day", day);
+      } else if (start || end) {
+        if (start) params.set("start", start);
+        if (end) params.set("end", end);
+      } else {
+        params.set("year", year);
+        params.set("month", month);
+      }
+
+      if (ids) params.set("id", ids);
+
+      return `${API_BASE}?${params.toString()}`;
+    }
+
+    async function generate() {
+      try {
+        const url = buildUrl();
+        lastRequestUrl = url;
+        el.lastUrl.textContent = url;
+
+        el.output.value = "생성 중...";
+
+        const res = await fetch(url, {
+          method: "GET",
+          cache: "no-store",
+          redirect: "follow",
+          credentials: "omit"
+        });
+        if (!res.ok) throw new Error("API 호출 실패 (HTTP " + res.status + ")");
+
+        const text = await res.text();
+
+        if (text && /<!doctype html|<html/i.test(text)) {
+          throw new Error("API가 HTML 화면을 반환했습니다. (서버 doGet(e) 분기/배포 확인 필요)");
+        }
+
+        const fixed = text.replace(/&lt;br\s*\/?&gt;/gi, "<br>");
+        el.output.value = fixed || "<!-- empty -->";
+      } catch (e) {
+        el.output.value = "";
+        const msg = (e && e.message ? e.message : String(e));
+        alert("HTML 생성 실패: " + msg + "\n\n(확인) '요청 URL 열기'로 새 탭에서 결과가 텍스트로 뜨는지 확인하세요.");
+      }
+    }
+
+    async function copyOutput() {
+      const val = (el.output.value || "").trim();
+      if (!val) {
+        alert("복사할 내용이 없습니다.");
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(el.output.value);
+        alert("복사 완료");
+      } catch (e) {
+        el.output.focus();
+        el.output.select();
+        document.execCommand("copy");
+        alert("복사 완료");
+      }
+    }
+
+    function openLastUrl() {
+      try {
+        const url = buildUrl();
+        lastRequestUrl = url;
+        el.lastUrl.textContent = url;
+        window.open(url, "_blank", "noopener,noreferrer");
+      } catch (e) {
+        alert("URL 생성 실패: " + (e && e.message ? e.message : String(e)));
+      }
+    }
+
+    /* =========================
+       월 요약 포스트잇 생성기
+    ========================= */
+    const mn = {
+      title: document.getElementById("mnTitle"),
+      tags: document.getElementById("mnTags"),
+      desc: document.getElementById("mnDesc"),
+      preview: document.getElementById("mnPreview"),
+      output: document.getElementById("mnOutput"),
+      build: document.getElementById("mnBuild"),
+      copy: document.getElementById("mnCopy"),
+      reset: document.getElementById("mnReset"),
+    };
+
+    const MN_KEY = "CHEESE_MONTH_NOTE_FORM";
+
+    function loadMonthNote(){
+      try{
+        const saved = JSON.parse(localStorage.getItem(MN_KEY) || "{}");
+        if (saved.title != null) mn.title.value = saved.title;
+        if (saved.tags  != null) mn.tags.value  = saved.tags;
+        if (saved.desc  != null) mn.desc.value  = saved.desc;
+      }catch(_){}
+    }
+    function saveMonthNote(){
+      localStorage.setItem(MN_KEY, JSON.stringify({
+        title: mn.title.value || "",
+        tags:  mn.tags.value || "",
+        desc:  mn.desc.value || ""
+      }));
+    }
+    ["input","change"].forEach(evt=>{
+      mn.title.addEventListener(evt, saveMonthNote);
+      mn.tags.addEventListener(evt, saveMonthNote);
+      mn.desc.addEventListener(evt, saveMonthNote);
+    });
+    loadMonthNote();
+
+    function escHtml(s){
+      return String(s ?? "")
+        .replace(/&/g,"&amp;")
+        .replace(/</g,"&lt;")
+        .replace(/>/g,"&gt;")
+        .replace(/"/g,"&quot;")
+        .replace(/'/g,"&#39;");
+    }
+
+    function parseTags(text){
+      return String(text || "")
+        .split(/\n|,/g)
+        .map(t => t.trim())
+        .filter(Boolean)
+        .slice(0, 12);
+    }
+
+    function buildMonthNote(){
+      const title = (mn.title.value || "").trim() || "월 핵심 키워드";
+      const tags = parseTags(mn.tags.value);
+      const desc = (mn.desc.value || "").trim();
+
+      const tagHtml = tags.length
+        ? tags.map(t => `    <span class="mtag">${escHtml(t)}</span>`).join("\n")
+        : `    <span class="mtag">키워드를 입력하세요</span>`;
+
+      const descHtml = desc
+        ? `\n\n  <div class="month-note-desc">\n    ${escHtml(desc)}\n  </div>`
+        : "";
+
+      const html =
+`<!-- ✅ 월 요약 포스트잇 (매달 1회) -->
+<div class="month-note">
+  <div class="month-note-title">${escHtml(title)}</div>
+  <div class="month-note-tags">
+${tagHtml}
+  </div>${descHtml}
+</div>`;
+
+      mn.preview.innerHTML =
+        `<div class="month-note">
+          <div class="month-note-title">${escHtml(title)}</div>
+          <div class="month-note-tags">
+            ${tags.map(t => `<span class="mtag">${escHtml(t)}</span>`).join("")}
+          </div>
+          ${desc ? `<div class="month-note-desc">${escHtml(desc)}</div>` : ""}
+        </div>`;
+
+      mn.output.value = html;
+    }
+
+    mn.build.addEventListener("click", (e) => {
+      e.preventDefault();
+      buildMonthNote();
+      saveMonthNote();
+    });
+
+    mn.copy.addEventListener("click", async (e) => {
+      e.preventDefault();
+      const val = (mn.output.value || "").trim();
+      if (!val){
+        buildMonthNote();
+      }
+      try{
+        await navigator.clipboard.writeText(mn.output.value);
+        alert("복사 완료");
+      }catch(_){
+        mn.output.focus();
+        mn.output.select();
+        document.execCommand("copy");
+        alert("복사 완료");
+      }
+    });
+
+    mn.reset.addEventListener("click", (e) => {
+      e.preventDefault();
+      mn.title.value = "";
+      mn.tags.value = "";
+      mn.desc.value = "";
+      mn.preview.innerHTML = "";
+      mn.output.value = "";
+      localStorage.removeItem(MN_KEY);
+    });
+
+    if ((mn.title.value || mn.tags.value || mn.desc.value).trim().length){
+      buildMonthNote();
+    }
+  </script>
+</body>
+</html>
