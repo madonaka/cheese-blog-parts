@@ -371,7 +371,6 @@
     .ev-edit-field textarea{ min-height: 160px; resize: vertical; white-space: pre-wrap; }
     .ev-edit-actions{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; }
     .ev-edit-actions .tag-hint{ margin-left:0; }
-
   </style>
 </head>
 
@@ -960,7 +959,6 @@ ${tagHtml}
       const noteEId = `note_e_${id}`;
       const noteIId = `note_i_${id}`;
       const noteMId = `note_m_${id}`;
-      const groupSelId = `group_${id}`;
 
       const contentPreview = buildPreview(it.content_raw || "");
 
@@ -1232,8 +1230,7 @@ ${tagHtml}
         const applyGroup = (raw) => {
           const v = String(raw || '').trim();
           if (v && !GROUP_RE.test(v)){
-            alert('형식이 올바르지 않습니다.
-E-xxxxxx-xx (예: E-202601-01)');
+            alert('형식이 올바르지 않습니다.\nE-xxxxxx-xx (예: E-202601-01)');
             return;
           }
           let tags = getTags();
@@ -1257,9 +1254,8 @@ E-xxxxxx-xx (예: E-202601-01)');
       }
     }
 
-    // (구버전 select용 함수는 더 이상 사용하지 않음)
-
     function scheduleSave(id, tagsArr, pillEl){
+      if (!pillEl) return;
       if (saveTimers.has(id)) clearTimeout(saveTimers.get(id));
 
       pillEl.classList.remove("saved","err");
@@ -1497,7 +1493,10 @@ E-xxxxxx-xx (예: E-202601-01)');
       return escHtml(cut);
     }
 
-    function escAttr(s){ return escHtml(s).replace(/\"/g,"&quot;"); }
+    function escAttr(s){
+      // escHtml이 이미 &quot; 처리하지만, 속성용으로 한번 더 안전하게 보정
+      return escHtml(s).replace(/\"/g,"&quot;");
+    }
 
     // ✅ 응답이 HTML(로그인/에러 페이지)로 떨어지는 케이스까지 방어
     async function safeReadJson_(res){
@@ -1511,6 +1510,33 @@ E-xxxxxx-xx (예: E-202601-01)');
         throw new Error("JSON 파싱 실패: " + (text ? text.slice(0, 140) : "(empty)"));
       }
     }
+
+    /* =========================
+       (DEV) 간단 셀프 테스트
+       - 기능에 영향 없음(콘솔에만 출력)
+    ========================= */
+    function runSelfTests_(){
+      try{
+        console.assert(GROUP_RE.test('E-202601-01') === true, 'GROUP_RE should accept E-202601-01');
+        console.assert(GROUP_RE.test('E-20261-01') === false, 'GROUP_RE should reject wrong format');
+
+        const a1 = normalizeTagsArray(['중요-보수','economy-환율','E-202601-01','중요-보수','foo']);
+        console.assert(a1[0] === 'E-202601-01', 'group should be first');
+        console.assert(a1.includes('중요-보수'), 'base should remain');
+        console.assert(a1.includes('economy-환율'), 'typed should remain');
+
+        const a2 = upsertTyped(['economy-환율'], 'economy', '금리');
+        console.assert(a2.includes('economy-금리') && !a2.includes('economy-환율'), 'upsertTyped should replace');
+
+        const v1 = getTypedTagValue(['important-핵심'], 'important');
+        console.assert(v1 === '핵심', 'getTypedTagValue should parse value');
+
+        console.debug('[DailyLogExport] self-tests passed');
+      }catch(err){
+        console.warn('[DailyLogExport] self-tests failed', err);
+      }
+    }
+    runSelfTests_();
   </script>
 </body>
 </html>
