@@ -1054,7 +1054,11 @@ ${tagHtml}
       `;
     }
 
-    function bindEventCard(it){$1const pill = root.querySelector(`#pill_${CSS.escape(it.id)}`);
+    function bindEventCard(it){
+      const root = tg.cards.querySelector(`.ev-card[data-id="${CSS.escape(it.id)}"]`);
+      if (!root) return;
+
+      const pill = root.querySelector(`#pill_${CSS.escape(it.id)}`);
 
       // ===== (NEW) 날짜/제목/내용 편집 =====
       const editor = root.querySelector('[data-role="editor"]');
@@ -1079,6 +1083,7 @@ ${tagHtml}
       let original = snap();
 
       const setPill = (state, text) => {
+        if (!pill) return;
         pill.classList.remove('saving','saved','err');
         if (state) pill.classList.add(state);
         pill.textContent = text;
@@ -1087,10 +1092,7 @@ ${tagHtml}
       const openEditor = (on) => {
         if (!editor) return;
         editor.classList.toggle('open', !!on);
-        if (on) {
-          // 열 때 원본 스냅샷 갱신(태그 저장 등과 무관)
-          original = snap();
-        }
+        if (on) original = snap();
       };
 
       if (btnToggle){
@@ -1114,13 +1116,10 @@ ${tagHtml}
         btnSave.addEventListener('click', async ()=>{
           try{
             const cur = snap();
-
-            // 최소 검증: 제목 공백 방지
             if (!cur.title){
               alert('title은 비울 수 없습니다.');
               return;
             }
-            // date_end가 있는데 date_start가 없으면 막기
             if (!cur.date_start && cur.date_end){
               alert('date_end를 쓰려면 date_start가 필요합니다.');
               return;
@@ -1136,20 +1135,16 @@ ${tagHtml}
             });
             if (!ok) throw new Error('SAVE_FAILED');
 
-            // UI 반영
             if (uiTitle) uiTitle.textContent = cur.title;
 
-            // meta의 첫 토큰(date)만 바꾸기: (date) · (party) · (id)
             const party = String(it.party || '').trim();
             const meta = `${cur.date_start || ''}${party ? ' · ' + party : ''} · ${it.id}`;
             if (uiMeta) uiMeta.textContent = meta;
 
             if (uiBody) uiBody.innerHTML = buildPreview(cur.content_raw || '');
 
-            // 원본 갱신 & 닫기
             original = cur;
             openEditor(false);
-
             setPill('saved','저장됨');
           }catch(e){
             setPill('err','오류');
@@ -1159,39 +1154,35 @@ ${tagHtml}
       }
       // ===== /편집 =====
 
-
       const getTags = () => parseTagsToArray(root.querySelector('[data-role="tags-raw"]').value);
       const setTags = (arr) => {
         const norm = normalizeTagsArray(arr);
-        root.querySelector('[data-role="tags-raw"]').value = norm.join(",");
+        root.querySelector('[data-role="tags-raw"]').value = norm.join(',');
         scheduleSave(it.id, norm, pill);
       };
 
       // base / typed 체크박스들
       root.querySelectorAll('input[type="checkbox"][data-tg]').forEach(chk=>{
-        chk.addEventListener("change", ()=>{
+        chk.addEventListener('change', ()=>{
           const kind = chk.dataset.tg;
           const key = chk.dataset.key;
           const checked = chk.checked;
 
           let tags = getTags();
 
-          if (kind === "base"){
-            // UI: 보수/진보/국제/이슈
-            // DB: 중요-보수/중요-진보/중요-국제/중요-이슈
-
-            // 보수/진보는 상호배타 (DB도 같이 제거)
-            if (key === "보수" && checked) tags = removeDbBase(tags, "진보");
-            if (key === "진보" && checked) tags = removeDbBase(tags, "보수");
+          if (kind === 'base'){
+            // 보수/진보 상호배타
+            if (key === '보수' && checked) tags = removeDbBase(tags, '진보');
+            if (key === '진보' && checked) tags = removeDbBase(tags, '보수');
 
             tags = checked ? addDbBase(tags, key) : removeDbBase(tags, key);
             setTags(tags);
             return;
           }
 
-          if (kind === "typed"){
+          if (kind === 'typed'){
             if (checked){
-              tags = upsertTyped(tags, key, getTypedTagValue(tags, key) || "");
+              tags = upsertTyped(tags, key, getTypedTagValue(tags, key) || '');
               showNote(root, key, true);
               focusNote(root, key);
             }else{
@@ -1206,33 +1197,32 @@ ${tagHtml}
       });
 
       // typed 입력창들(디바운스)
-      ["economy","important","mounting"].forEach(tp=>{
+      ['economy','important','mounting'].forEach(tp=>{
         const input = root.querySelector(`.tag-note[data-note="${tp}"] input`);
         if (!input) return;
 
         let t = null;
-        input.addEventListener("input", ()=>{
+        input.addEventListener('input', ()=>{
           clearTimeout(t);
           t = setTimeout(()=>{
             let tags = getTags();
             const on = root.querySelector(`input[type="checkbox"][data-tg="typed"][data-key="${tp}"]`)?.checked;
             if (!on) return;
-
-            tags = upsertTyped(tags, tp, input.value || "");
+            tags = upsertTyped(tags, tp, input.value || '');
             setTags(tags);
           }, 450);
         });
 
-        input.addEventListener("blur", ()=>{
+        input.addEventListener('blur', ()=>{
           let tags = getTags();
           const on = root.querySelector(`input[type="checkbox"][data-tg="typed"][data-key="${tp}"]`)?.checked;
           if (!on) return;
-          tags = upsertTyped(tags, tp, input.value || "");
+          tags = upsertTyped(tags, tp, input.value || '');
           setTags(tags);
         });
       });
 
-      // 그룹(E-xxxxxx-xx) editor (input + 적용/해제)
+      // 그룹(E-xxxxxx-xx) editor
       const groupBox = root.querySelector('.group-editor[data-tg="group"]');
       if (groupBox){
         const input = groupBox.querySelector('input[data-role="group-input"]');
@@ -1240,9 +1230,10 @@ ${tagHtml}
         const btnClear = groupBox.querySelector('[data-action="group-clear"]');
 
         const applyGroup = (raw) => {
-          const v = String(raw || "").trim();
+          const v = String(raw || '').trim();
           if (v && !GROUP_RE.test(v)){
-            alert("형식이 올바르지 않습니다.\nE-xxxxxx-xx (예: E-202601-01)");
+            alert('형식이 올바르지 않습니다.
+E-xxxxxx-xx (예: E-202601-01)');
             return;
           }
           let tags = getTags();
@@ -1252,14 +1243,9 @@ ${tagHtml}
           if (input) input.value = v;
         };
 
-        if (btnApply){
-          btnApply.addEventListener('click', ()=> applyGroup(input ? input.value : ""));
-        }
-        if (btnClear){
-          btnClear.addEventListener('click', ()=> applyGroup(""));
-        }
+        if (btnApply) btnApply.addEventListener('click', ()=> applyGroup(input ? input.value : ''));
+        if (btnClear) btnClear.addEventListener('click', ()=> applyGroup(''));
 
-        // 엔터로도 적용
         if (input){
           input.addEventListener('keydown', (e)=>{
             if (e.key === 'Enter'){
