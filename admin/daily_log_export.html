@@ -280,8 +280,14 @@
     .save-pill.saved{ background:rgba(34,197,94,0.14); color:#0f5132; }
     .save-pill.err{ background:rgba(239,68,68,0.14); color:#7f1d1d; }
 
-    /* 그룹(E-xxxxxx-xx) 선택 UI */
-    .tag-group select{
+    /* 그룹(E-xxxxxx-xx) 편집 UI */
+    .group-editor{
+      display:flex;
+      gap:8px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+    .group-editor input{
       border: 1px solid rgba(15,23,42,0.18);
       border-radius: 10px;
       padding: 6px 10px;
@@ -289,8 +295,27 @@
       background: #fff;
       height: 36px;
       outline: none;
-      min-width: 160px;
+      min-width: 220px;
       font-weight: 800;
+    }
+    .group-editor .btn-mini{
+      border:1px solid rgba(15,23,42,0.14);
+      background:#fff;
+      padding:6px 10px;
+      border-radius:10px;
+      cursor:pointer;
+      font-weight:900;
+      height:36px;
+    }
+    .group-editor .btn-mini.primary{
+      background:#111827;
+      color:#fff;
+      border-color:#111827;
+    }
+    .group-editor .btn-mini.danger{
+      background:rgba(239,68,68,0.10);
+      border-color:rgba(239,68,68,0.25);
+      color:#7f1d1d;
     }
     .tag-hint{
       font-size: 0.82rem;
@@ -920,11 +945,12 @@ ${tagHtml}
 
           <div class="tag-group">
             <span style="font-weight:900;">서브카드 그룹</span>
-            <select id="${groupSelId}" data-tg="group">
-              <option value="">(없음)</option>
-              <option value="${escAttr(groupTag)}" selected>${escHtml(groupTag || "(없음)")}</option>
-            </select>
-            <span class="tag-hint">E-xxxxxx-xx (1개 유지)</span>
+            <div class="group-editor" data-tg="group">
+              <input data-role="group-input" type="text" placeholder="예) E-202601-01" value="${escAttr(groupTag)}" />
+              <button type="button" class="btn-mini primary" data-action="group-apply">적용</button>
+              <button type="button" class="btn-mini danger" data-action="group-clear">해제</button>
+              <span class="tag-hint">E-xxxxxx-xx (1개 유지)</span>
+            </div>
           </div>
         </div>
 
@@ -1026,61 +1052,47 @@ ${tagHtml}
         });
       });
 
-      // 그룹(E-xxxxxx-xx) select
-      const groupSel = root.querySelector('select[data-tg="group"]');
-      if (groupSel){
-        // 옵션 보강: 현재 카드의 tags에 있는 groupTag를 1개만 띄우는 대신,
-        // 사용자가 직접 입력할 수 있도록 prompt로 추가할 수 있게(간단)
-        // - select 자체는 값 유지 + 변경 시 E태그 단 1개로 교체
+      // 그룹(E-xxxxxx-xx) editor (input + 적용/해제)
+      const groupBox = root.querySelector('.group-editor[data-tg="group"]');
+      if (groupBox){
+        const input = groupBox.querySelector('input[data-role="group-input"]');
+        const btnApply = groupBox.querySelector('[data-action="group-apply"]');
+        const btnClear = groupBox.querySelector('[data-action="group-clear"]');
 
-        // select가 (없음) + (현재값) 밖에 없을 때, 사용자가 클릭해도 바꿀 게 없으니
-        // 더블클릭(또는 우클릭 대체)로 E태그 직접 입력하도록 제공
-        groupSel.addEventListener("dblclick", ()=>{
-          const cur = String(groupSel.value || "");
-          const next = prompt("그룹 태그(E-xxxxxx-xx)를 입력하세요.\n예) E-202601-01\n\n비우면 그룹 해제", cur);
-          if (next === null) return;
-          const v = String(next || "").trim();
-
-          // 값이 있으면 패턴 검사
+        const applyGroup = (raw) => {
+          const v = String(raw || "").trim();
           if (v && !GROUP_RE.test(v)){
-            alert("형식이 올바르지 않습니다.\nE-xxxxxx-xx (예: E-202601-01)");
-            return;
-          }
-
-          // select 옵션 갱신
-          rebuildGroupSelectOptions(groupSel, v);
-
-          // tags 갱신: E태그 1개만 유지
-          let tags = getTags();
-          tags = removeGroupTags(tags);
-          if (v) tags = tags.concat([v]);
-          setTags(tags);
-        });
-
-        groupSel.addEventListener("change", ()=>{
-          const v = String(groupSel.value || "").trim();
-          if (v && !GROUP_RE.test(v)){
-            alert("형식이 올바르지 않습니다.\nE-xxxxxx-xx (예: E-202601-01)");
-            rebuildGroupSelectOptions(groupSel, "");
+            alert("형식이 올바르지 않습니다.
+E-xxxxxx-xx (예: E-202601-01)");
             return;
           }
           let tags = getTags();
           tags = removeGroupTags(tags);
           if (v) tags = tags.concat([v]);
           setTags(tags);
-        });
+          if (input) input.value = v;
+        };
+
+        if (btnApply){
+          btnApply.addEventListener('click', ()=> applyGroup(input ? input.value : ""));
+        }
+        if (btnClear){
+          btnClear.addEventListener('click', ()=> applyGroup(""));
+        }
+
+        // 엔터로도 적용
+        if (input){
+          input.addEventListener('keydown', (e)=>{
+            if (e.key === 'Enter'){
+              e.preventDefault();
+              applyGroup(input.value);
+            }
+          });
+        }
       }
     }
 
-    function rebuildGroupSelectOptions(sel, value){
-      const v = String(value || "").trim();
-      const safe = escAttr(v);
-      sel.innerHTML = `
-        <option value="">(없음)</option>
-        ${v ? `<option value="${safe}" selected>${escHtml(v)}</option>` : ``}
-      `;
-      sel.value = v;
-    }
+    // (구버전 select용 함수는 더 이상 사용하지 않음)
 
     function scheduleSave(id, tagsArr, pillEl){
       if (saveTimers.has(id)) clearTimeout(saveTimers.get(id));
