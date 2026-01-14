@@ -323,6 +323,55 @@
       font-weight: 700;
       margin-left: 6px;
     }
+
+    /* ===== (NEW) 이벤트(날짜/제목/내용) 편집 UI ===== */
+    .ev-actions{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .btn-mini{
+      border:1px solid rgba(15,23,42,0.14);
+      background:#fff;
+      padding:6px 10px;
+      border-radius:10px;
+      cursor:pointer;
+      font-weight:900;
+      height:34px;
+      line-height:1;
+    }
+    .btn-mini.primary{ background:#111827; color:#fff; border-color:#111827; }
+    .btn-mini.ghost{ background:rgba(15,23,42,0.04); }
+
+    .ev-editor{
+      display:none;
+      margin-top:10px;
+      padding:10px;
+      border-radius:12px;
+      background:rgba(15,23,42,0.02);
+      border:1px solid rgba(15,23,42,0.08);
+    }
+    .ev-editor.open{ display:block; }
+    .ev-edit-grid{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:10px;
+      margin-top:8px;
+    }
+    @media (max-width: 900px){
+      .ev-edit-grid{ grid-template-columns: 1fr; }
+    }
+    .ev-edit-field{ display:flex; flex-direction:column; gap:6px; margin-top:10px; }
+    .ev-edit-field label{ font-weight:900; font-size:0.9rem; color:#111827; }
+    .ev-edit-field input, .ev-edit-field textarea{
+      width:100%;
+      border: 1px solid rgba(15,23,42,0.18);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 14px;
+      outline: none;
+      background:#fff;
+    }
+    .ev-edit-field textarea{ min-height: 160px; resize: vertical; white-space: pre-wrap; }
+    .ev-edit-actions{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; }
+    .ev-edit-actions .tag-hint{ margin-left:0; }
+
   </style>
 </head>
 
@@ -922,10 +971,42 @@ ${tagHtml}
             <div class="ev-title">${title}</div>
             <div class="ev-meta">${date}${party ? " · " + party : ""} · ${id}</div>
           </div>
-          <span id="${pillId}" class="save-pill">대기</span>
+          <div class="ev-actions">
+            <span id="${pillId}" class="save-pill">대기</span>
+            <button type="button" class="btn-mini ghost" data-action="edit-toggle">편집</button>
+          </div>
         </div>
 
         <div class="ev-body">${contentPreview}</div>
+
+        <div class="ev-editor" data-role="editor">
+          <div class="ev-edit-grid">
+            <div class="ev-edit-field">
+              <label>date_start</label>
+              <input data-role="edit-start" type="date" value="${escAttr(it.date_start || "")}" />
+            </div>
+            <div class="ev-edit-field">
+              <label>date_end</label>
+              <input data-role="edit-end" type="date" value="${escAttr(it.date_end || "")}" />
+            </div>
+          </div>
+
+          <div class="ev-edit-field">
+            <label>title</label>
+            <input data-role="edit-title" type="text" value="${escAttr(it.title || "")}" />
+          </div>
+
+          <div class="ev-edit-field">
+            <label>content_raw</label>
+            <textarea data-role="edit-content">${escHtml(it.content_raw || "")}</textarea>
+          </div>
+
+          <div class="ev-edit-actions">
+            <button type="button" class="btn-mini primary" data-action="edit-save">저장</button>
+            <button type="button" class="btn-mini" data-action="edit-cancel">취소</button>
+            <span class="tag-hint">※ 저장 시 date_type은 start/end로 자동 계산</span>
+          </div>
+        </div>
 
         <div class="ev-tags">
           <div class="tag-group">
@@ -973,11 +1054,111 @@ ${tagHtml}
       `;
     }
 
-    function bindEventCard(it){
-      const root = tg.cards.querySelector(`.ev-card[data-id="${CSS.escape(it.id)}"]`);
-      if (!root) return;
+    function bindEventCard(it){$1const pill = root.querySelector(`#pill_${CSS.escape(it.id)}`);
 
-      const pill = root.querySelector(`#pill_${CSS.escape(it.id)}`);
+      // ===== (NEW) 날짜/제목/내용 편집 =====
+      const editor = root.querySelector('[data-role="editor"]');
+      const btnToggle = root.querySelector('[data-action="edit-toggle"]');
+      const btnSave = root.querySelector('[data-action="edit-save"]');
+      const btnCancel = root.querySelector('[data-action="edit-cancel"]');
+      const inStart = root.querySelector('[data-role="edit-start"]');
+      const inEnd = root.querySelector('[data-role="edit-end"]');
+      const inTitle = root.querySelector('[data-role="edit-title"]');
+      const inContent = root.querySelector('[data-role="edit-content"]');
+
+      const uiTitle = root.querySelector('.ev-title');
+      const uiMeta = root.querySelector('.ev-meta');
+      const uiBody = root.querySelector('.ev-body');
+
+      const snap = () => ({
+        date_start: String(inStart?.value || '').trim(),
+        date_end: String(inEnd?.value || '').trim(),
+        title: String(inTitle?.value || '').trim(),
+        content_raw: String(inContent?.value || '')
+      });
+      let original = snap();
+
+      const setPill = (state, text) => {
+        pill.classList.remove('saving','saved','err');
+        if (state) pill.classList.add(state);
+        pill.textContent = text;
+      };
+
+      const openEditor = (on) => {
+        if (!editor) return;
+        editor.classList.toggle('open', !!on);
+        if (on) {
+          // 열 때 원본 스냅샷 갱신(태그 저장 등과 무관)
+          original = snap();
+        }
+      };
+
+      if (btnToggle){
+        btnToggle.addEventListener('click', ()=>{
+          const isOpen = editor && editor.classList.contains('open');
+          openEditor(!isOpen);
+        });
+      }
+
+      if (btnCancel){
+        btnCancel.addEventListener('click', ()=>{
+          if (inStart) inStart.value = original.date_start || '';
+          if (inEnd) inEnd.value = original.date_end || '';
+          if (inTitle) inTitle.value = original.title || '';
+          if (inContent) inContent.value = original.content_raw || '';
+          openEditor(false);
+        });
+      }
+
+      if (btnSave){
+        btnSave.addEventListener('click', async ()=>{
+          try{
+            const cur = snap();
+
+            // 최소 검증: 제목 공백 방지
+            if (!cur.title){
+              alert('title은 비울 수 없습니다.');
+              return;
+            }
+            // date_end가 있는데 date_start가 없으면 막기
+            if (!cur.date_start && cur.date_end){
+              alert('date_end를 쓰려면 date_start가 필요합니다.');
+              return;
+            }
+
+            setPill('saving','저장중');
+
+            const ok = await postPatchEvent(it.id, {
+              date_start: cur.date_start,
+              date_end: cur.date_end,
+              title: cur.title,
+              content_raw: cur.content_raw
+            });
+            if (!ok) throw new Error('SAVE_FAILED');
+
+            // UI 반영
+            if (uiTitle) uiTitle.textContent = cur.title;
+
+            // meta의 첫 토큰(date)만 바꾸기: (date) · (party) · (id)
+            const party = String(it.party || '').trim();
+            const meta = `${cur.date_start || ''}${party ? ' · ' + party : ''} · ${it.id}`;
+            if (uiMeta) uiMeta.textContent = meta;
+
+            if (uiBody) uiBody.innerHTML = buildPreview(cur.content_raw || '');
+
+            // 원본 갱신 & 닫기
+            original = cur;
+            openEditor(false);
+
+            setPill('saved','저장됨');
+          }catch(e){
+            setPill('err','오류');
+            alert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+          }
+        });
+      }
+      // ===== /편집 =====
+
 
       const getTags = () => parseTagsToArray(root.querySelector('[data-role="tags-raw"]').value);
       const setTags = (arr) => {
@@ -1118,18 +1299,20 @@ ${tagHtml}
     }
 
     async function postPatchTags(id, tags){
-      // 1) POST(JSON) 우선 시도
+      // 1) POST(Form) 우선: CORS preflight(OPTIONS) 회피 + 안정적
       const params = new URLSearchParams();
       params.set("mode","patchTags");
       if (TG_ADMIN_KEY) params.set("key", TG_ADMIN_KEY);
-
       const url = `${API_BASE}?${params.toString()}`;
 
       try{
+        const body = new URLSearchParams();
+        body.set('id', String(id||''));
+        body.set('tags', String(tags||''));
+
         const res = await fetch(url, {
           method:"POST",
-          headers:{ "Content-Type":"application/json" },
-          body: JSON.stringify({ id, tags }),
+          body,
           cache:"no-store",
           credentials:"omit"
         });
@@ -1138,11 +1321,9 @@ ${tagHtml}
           const data = await safeReadJson_(res);
           if (data && data.ok === true) return true;
         }
-      }catch(_){
-        // POST가 막히는 배포(리다이렉트/405 등)에서 GET로 폴백
-      }
+      }catch(_){ }
 
-      // 2) GET 폴백 (Code.gs에서 doGet(mode=patchTags) 지원)
+      // 2) GET 폴백
       try{
         const p2 = new URLSearchParams();
         p2.set("mode","patchTags");
@@ -1156,6 +1337,37 @@ ${tagHtml}
 
         const data2 = await safeReadJson_(res2);
         return !!(data2 && data2.ok === true);
+      }catch(_){
+        return false;
+      }
+    }
+
+    // ===== (NEW) 날짜/제목/내용 업데이트 API =====
+    async function postPatchEvent(id, patch){
+      const params = new URLSearchParams();
+      params.set('mode','patchEvent');
+      if (TG_ADMIN_KEY) params.set('key', TG_ADMIN_KEY);
+      const url = `${API_BASE}?${params.toString()}`;
+
+      try{
+        // form POST로 보내면 preflight 없이 안정적(콘텐츠 길이도 OK)
+        const body = new URLSearchParams();
+        body.set('id', String(id||''));
+        if (patch && patch.date_start != null) body.set('date_start', String(patch.date_start||''));
+        if (patch && patch.date_end != null)   body.set('date_end', String(patch.date_end||''));
+        if (patch && patch.title != null)      body.set('title', String(patch.title||''));
+        if (patch && patch.content_raw != null)body.set('content_raw', String(patch.content_raw||''));
+
+        const res = await fetch(url, {
+          method:'POST',
+          body,
+          cache:'no-store',
+          credentials:'omit'
+        });
+        if (!res.ok) return false;
+
+        const data = await safeReadJson_(res);
+        return !!(data && data.ok === true);
       }catch(_){
         return false;
       }
