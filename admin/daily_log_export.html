@@ -1239,7 +1239,7 @@ ${tagHtml}
       params.set('mode','patchEvent');
       if (TG_ADMIN_KEY) params.set('key', TG_ADMIN_KEY);
       const url = `${API_BASE}?${params.toString()}`;
-
+    
       try{
         const body = new URLSearchParams();
         body.set('id', String(id||''));
@@ -1247,22 +1247,27 @@ ${tagHtml}
         if (patch && patch.date_end != null)   body.set('date_end', String(patch.date_end||''));
         if (patch && patch.title != null)      body.set('title', String(patch.title||''));
         if (patch && patch.content_raw != null)body.set('content_raw', String(patch.content_raw||''));
-
-        /* ✅ [추가] hidden 컬럼 저장 (서버에서 hidden 컬럼 업데이트만 해주면 됨) */
-        if (patch && patch.hidden != null)     body.set('hidden', String(patch.hidden||''));
-
-        const res = await fetch(url, {
-          method:'POST',
-          body,
-          cache:'no-store',
-          credentials:'omit'
-        });
-        if (!res.ok) return false;
-
-        const data = await safeReadJson_(res);
-        return !!(data && data.ok === true);
-      }catch(_){
-        return false;
+        if (patch && patch.hidden != null)     body.set('hidden', String(patch.hidden||'')); // ✅ 여기
+    
+        const res = await fetch(url, { method:'POST', body, cache:'no-store', credentials:'omit' });
+        const text = await res.text();
+    
+        // JSON 파싱 시도
+        let data = null;
+        try { data = JSON.parse(text); } catch(_){}
+    
+        if (!res.ok){
+          return { ok:false, error:`HTTP ${res.status}: ${text.slice(0,300)}` };
+        }
+        if (!data){
+          return { ok:false, error:`JSON 아님: ${text.slice(0,300)}` };
+        }
+        if (data.ok !== true){
+          return { ok:false, error: String(data.error || JSON.stringify(data)).slice(0,300) };
+        }
+        return { ok:true, data };
+      }catch(e){
+        return { ok:false, error: e && e.message ? e.message : String(e) };
       }
     }
 
@@ -1302,17 +1307,20 @@ ${tagHtml}
       };
 
       if (hideChk){
-        hideChk.addEventListener('change', async ()=>{
+          hideChk.addEventListener('change', async ()=>{
           const on = !!hideChk.checked;
           applyHiddenUi(on);
           setPill('saving','저장중');
-
-          const ok = await postPatchEvent(it.id, { hidden: on ? 'TRUE' : 'FALSE' });
-          if (ok){
+        
+          const r = await postPatchEvent(it.id, { hidden: on ? 'TRUE' : 'FALSE' });
+        
+          if (r.ok){
             setPill('saved','저장됨');
             originalHidden = on;
           }else{
             setPill('err','오류');
+            alert('비표시 저장 실패: ' + r.error);
+        
             // 실패 시 원복
             hideChk.checked = originalHidden;
             applyHiddenUi(originalHidden);
