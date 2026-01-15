@@ -162,6 +162,17 @@
       background:#fff;
       box-shadow:0 10px 24px rgba(15,23,42,0.06);
     }
+
+    /* ✅ [추가] hidden(비표시) 카드 그레이아웃 */
+    .ev-card.is-hidden{
+      background: rgba(15,23,42,0.03);
+      border-color: rgba(15,23,42,0.18);
+      opacity: 0.62;
+      filter: grayscale(1);
+    }
+    .ev-card.is-hidden .ev-title{ color: rgba(15,23,42,0.72); }
+    .ev-card.is-hidden .ev-body{ color: rgba(17,24,39,0.65); }
+
     .ev-head{ display:flex; gap:10px; align-items:flex-start; justify-content:space-between; }
     .ev-title{ font-weight:900; color:#0f172a; line-height:1.25; }
     .ev-meta{ color:rgba(17,24,39,0.65); font-size:0.88rem; margin-top:4px; }
@@ -188,6 +199,25 @@
     }
     .tag-item{ display:flex; gap:6px; align-items:center; font-weight:800; font-size:0.92rem; }
     .tag-item input{ transform: translateY(1px); }
+
+    /* ✅ [추가] 비표시 토글(헤더 우측) */
+    .hide-toggle{
+      display:flex;
+      gap:6px;
+      align-items:center;
+      font-weight:900;
+      font-size:0.9rem;
+      padding:4px 8px;
+      border-radius:999px;
+      background:rgba(15,23,42,0.05);
+      border:1px solid rgba(15,23,42,0.10);
+      user-select:none;
+    }
+    .ev-card.is-hidden .hide-toggle{
+      background:rgba(239,68,68,0.10);
+      border-color:rgba(239,68,68,0.22);
+      color:#7f1d1d;
+    }
 
     .tag-note{ display:none; gap:8px; align-items:center; margin-top:8px; }
     .tag-note input{
@@ -550,6 +580,14 @@
         .replace(/'/g,"&#39;");
     }
     function escAttr(s){ return escHtml(s).replace(/\"/g,"&quot;"); }
+
+    /* ✅ [추가] bool 파서 + hidden 판정 */
+    function parseBool_(v){
+      if (v === true) return true;
+      if (v === false) return false;
+      const s = String(v ?? "").trim().toLowerCase();
+      return (s === "true" || s === "t" || s === "1" || s === "y" || s === "yes" || s === "on");
+    }
 
     /* =========================
        탭 로직
@@ -1006,6 +1044,18 @@ ${tagHtml}
       return escHtml(cut);
     }
 
+    /* ✅ [추가] 서버에서 내려오는 hidden 컬럼 판정(필요시 여기만 수정) */
+    function isHiddenItem_(it, tagsArr){
+      // 서버 컬럼명이 hide/is_hidden/hidden 중 무엇이든 대응
+      const v = (it && (it.hidden ?? it.is_hidden ?? it.hide));
+      if (parseBool_(v)) return true;
+
+      // (혹시 태그 기반이 섞여있다면 보조로 대응)
+      if (Array.isArray(tagsArr) && tagsArr.includes("__HIDE")) return true;
+
+      return false;
+    }
+
     function renderEventCardHtml(it){
       const id = escAttr(it.id);
       const title = escHtml(it.title || "");
@@ -1013,6 +1063,7 @@ ${tagHtml}
       const party = escHtml(it.party || "");
 
       const tags = parseTagsToArray(it.tags || "");
+      const hidden = isHiddenItem_(it, tags);
 
       const hasBosu  = hasDbBase(tags, "보수");
       const hasJinbo = hasDbBase(tags, "진보");
@@ -1036,13 +1087,19 @@ ${tagHtml}
       const contentPreview = buildPreview(it.content_raw || "");
 
       return `
-      <div class="ev-card" data-id="${id}">
+      <div class="ev-card${hidden ? " is-hidden" : ""}" data-id="${id}" data-hidden="${hidden ? "1" : "0"}">
         <div class="ev-head">
           <div>
             <div class="ev-title">${title}</div>
             <div class="ev-meta">${date}${party ? " · " + party : ""} · ${id}</div>
           </div>
           <div class="ev-actions">
+            <!-- ✅ [추가] 비표시 토글 -->
+            <label class="hide-toggle" title="비표시(히든) 처리">
+              <input type="checkbox" data-action="hide-toggle" ${hidden ? "checked" : ""}/>
+              비표시
+            </label>
+
             <span id="${pillId}" class="save-pill">대기</span>
             <button type="button" class="btn-mini ghost" data-action="edit-toggle">편집</button>
           </div>
@@ -1191,6 +1248,9 @@ ${tagHtml}
         if (patch && patch.title != null)      body.set('title', String(patch.title||''));
         if (patch && patch.content_raw != null)body.set('content_raw', String(patch.content_raw||''));
 
+        /* ✅ [추가] hidden 컬럼 저장 (서버에서 hidden 컬럼 업데이트만 해주면 됨) */
+        if (patch && patch.hidden != null)     body.set('hidden', String(patch.hidden||''));
+
         const res = await fetch(url, {
           method:'POST',
           body,
@@ -1225,13 +1285,14 @@ ${tagHtml}
       const uiMeta = root.querySelector('.ev-meta');
       const uiBody = root.querySelector('.ev-body');
 
-      const snap = () => ({
-        date_start: String(inStart?.value || '').trim(),
-        date_end: String(inEnd?.value || '').trim(),
-        title: String(inTitle?.value || '').trim(),
-        content_raw: String(inContent?.value || '')
-      });
-      let original = snap();
+      /* ✅ [추가] 비표시 토글 */
+      const hideChk = root.querySelector('[data-action="hide-toggle"]');
+      const applyHiddenUi = (on) => {
+        root.classList.toggle('is-hidden', !!on);
+        root.dataset.hidden = on ? '1' : '0';
+      };
+      let originalHidden = !!(hideChk && hideChk.checked);
+      applyHiddenUi(originalHidden);
 
       const setPill = (state, text) => {
         if (!pill) return;
@@ -1239,6 +1300,34 @@ ${tagHtml}
         if (state) pill.classList.add(state);
         pill.textContent = text;
       };
+
+      if (hideChk){
+        hideChk.addEventListener('change', async ()=>{
+          const on = !!hideChk.checked;
+          applyHiddenUi(on);
+          setPill('saving','저장중');
+
+          const ok = await postPatchEvent(it.id, { hidden: on ? 'TRUE' : 'FALSE' });
+          if (ok){
+            setPill('saved','저장됨');
+            originalHidden = on;
+          }else{
+            setPill('err','오류');
+            // 실패 시 원복
+            hideChk.checked = originalHidden;
+            applyHiddenUi(originalHidden);
+          }
+        });
+      }
+
+      const snap = () => ({
+        date_start: String(inStart?.value || '').trim(),
+        date_end: String(inEnd?.value || '').trim(),
+        title: String(inTitle?.value || '').trim(),
+        content_raw: String(inContent?.value || ''),
+        hidden: !!(hideChk && hideChk.checked)
+      });
+      let original = snap();
 
       const openEditor = (on) => {
         if (!editor) return;
@@ -1259,6 +1348,12 @@ ${tagHtml}
           if (inEnd) inEnd.value = original.date_end || '';
           if (inTitle) inTitle.value = original.title || '';
           if (inContent) inContent.value = original.content_raw || '';
+
+          if (hideChk){
+            hideChk.checked = !!original.hidden;
+            applyHiddenUi(!!original.hidden);
+          }
+
           openEditor(false);
         });
       }
@@ -1282,7 +1377,8 @@ ${tagHtml}
               date_start: cur.date_start,
               date_end: cur.date_end,
               title: cur.title,
-              content_raw: cur.content_raw
+              content_raw: cur.content_raw,
+              hidden: cur.hidden ? 'TRUE' : 'FALSE'
             });
             if (!ok) throw new Error('SAVE_FAILED');
 
@@ -1293,6 +1389,9 @@ ${tagHtml}
             if (uiMeta) uiMeta.textContent = meta;
 
             if (uiBody) uiBody.innerHTML = buildPreview(cur.content_raw || '');
+
+            applyHiddenUi(!!cur.hidden);
+            originalHidden = !!cur.hidden;
 
             original = cur;
             openEditor(false);
