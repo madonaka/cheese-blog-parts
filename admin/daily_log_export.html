@@ -1169,9 +1169,15 @@ ${tagHtml}
           </div>
 
           <div class="ev-edit-actions">
-            <button type="button" class="btn-mini primary" data-action="edit-save">저장</button>
-            <button type="button" class="btn-mini" data-action="edit-cancel">취소</button>
-            <span class="tag-hint">※ 저장 시 date_type은 start/end로 자동 계산</span>
+          <button type="button" class="btn-mini primary" data-action="edit-save">저장</button>
+          <button type="button" class="btn-mini" data-action="edit-cancel">취소</button>
+          
+          
+          <!-- ✅ 새 id 재생성(appendEvent AUTO) + 기존 숨김(patchHidden) -->
+          <button type="button" class="btn-mini" data-action="edit-recreate">재등록(AUTO)</button>
+          
+          
+          <span class="tag-hint">※ 저장 시 date_type은 start/end로 자동 계산 · 재등록은 새 id 생성 후 기존 건을 비표시 처리</span>
           </div>
         </div>
 
@@ -1309,6 +1315,47 @@ ${tagHtml}
       }
     }
 
+    function safePipe_(s){
+      // | 가 들어가면 11칸 파싱이 깨지므로 치환
+      return String(s ?? "").replaceAll("|", "｜");
+      }
+      
+      
+      async function postAppendEventLine(line){
+      const params = new URLSearchParams();
+      params.set('mode','appendEvent');
+      if (TG_ADMIN_KEY) params.set('key', TG_ADMIN_KEY);
+      const url = `${API_BASE}?${params.toString()}`;
+      
+      
+      try{
+      const body = new URLSearchParams();
+      body.set('line', String(line || ''));
+      
+      
+      const res = await fetch(url, { method:'POST', body, cache:'no-store', credentials:'omit' });
+      const text = await res.text();
+      
+      
+      let data = null;
+      try { data = JSON.parse(text); } catch(_){ }
+      
+      
+      if (!res.ok) return { ok:false, error:`HTTP ${res.status}: ${text.slice(0,300)}` };
+      if (!data) return { ok:false, error:`JSON 아님: ${text.slice(0,300)}` };
+      if (data.ok !== true) return { ok:false, error: String(data.error || JSON.stringify(data)).slice(0,300) };
+      
+      
+      // Apps Script appendEvent 성공 시 {ok:true, id:"YYMMDD-##"} 형태
+      return { ok:true, id: String(data.id || '') };
+      
+      
+      }catch(e){
+      return { ok:false, error: e && e.message ? e.message : String(e) };
+      }
+    }
+
+    
     async function postPatchHidden(id, hidden){
       const params = new URLSearchParams();
       params.set('mode','patchHidden');
@@ -1351,6 +1398,8 @@ ${tagHtml}
       const inTitle = root.querySelector('[data-role="edit-title"]');
       const inContent = root.querySelector('[data-role="edit-content"]');
 
+      const btnRecreate = root.querySelector('[data-action="edit-recreate"]');
+      
       const uiTitle = root.querySelector('.ev-title');
       const uiMeta = root.querySelector('.ev-meta');
       const uiBody = root.querySelector('.ev-body');
@@ -1431,6 +1480,83 @@ ${tagHtml}
         });
       }
 
+      if (btnRecreate){
+        btnRecreate.addEventListener('click', async ()=>{
+          try{
+          const cur = snap();
+          
+          
+          // 최소 검증
+          if (!cur.title){ alert('title은 필수입니다.'); return; }
+          if (!String(cur.date_start||'').trim() && String(cur.date_end||'').trim()){
+          alert('date_end를 쓰려면 date_start가 필요합니다.');
+          return;
+          }
+          
+          
+          // 현재 카드의 태그 문자열(숨김 textarea에 저장된 값)
+          const tagsRaw = String(root.querySelector('[data-role="tags-raw"]')?.value || '');
+          
+          
+          // appendEvent용 11칸 라인 생성
+          // id|date_type|date_start|date_end|title|content_raw|party|is_foreign|country|tags|created_at
+          const party = String(it.party || '');
+          const isForeign = it.is_foreign === true ? 'TRUE' : 'FALSE';
+          const country = String(it.country || '');
+          
+          
+          const line = [
+          'AUTO',
+          '',
+          cur.date_start || '',
+          cur.date_end || '',
+          safePipe_(cur.title || ''),
+          safePipe_(cur.content_raw || ''),
+          safePipe_(party),
+          isForeign,
+          safePipe_(country),
+          safePipe_(tagsRaw),
+          '' // created_at 비우면 서버가 현재 시각 자동 입력
+          ].join('|');
+          
+          
+          setPill('saving','재등록중');
+          
+          
+          // 1) 새 이벤트 추가 → 새 id 생성
+          const r1 = await postAppendEventLine(line);
+          if (!r1.ok || !r1.id) throw new Error('appendEvent 실패: ' + (r1.error || 'UNKNOWN'));
+          
+          
+          // 2) 기존 이벤트 숨김 처리
+          const r2 = await postPatchHidden(it.id, true);
+          if (!r2.ok) throw new Error('기존 숨김 실패: ' + (r2.error || 'UNKNOWN'));
+          
+          
+          // 3) 현재 카드 UI를 숨김 상태로 반영
+          applyHiddenUi(true);
+          if (hideChk) hideChk.checked = true;
+          originalHidden = true;
+          
+          
+          setPill('saved', `재등록됨 → ${r1.id}`);
+          
+          
+          // 4) 목록 새로고침(새 id 카드도 함께 뜸)
+          if (typeof loadTagCards === 'function'){
+          await loadTagCards();
+          }
+          
+          
+          }catch(e){
+          setPill('err','오류');
+          alert('재등록 실패: ' + (e && e.message ? e.message : String(e)));
+          }
+        });
+      }
+
+      
+      
       if (btnSave){
         btnSave.addEventListener('click', async ()=>{
           try{
