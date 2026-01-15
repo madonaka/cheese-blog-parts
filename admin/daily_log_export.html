@@ -329,6 +329,15 @@
       gap: 12px;
       margin-top: 10px;
     }
+
+    .tg-select{
+      height:34px;
+      padding:6px 10px;
+      border-radius:10px;
+      border:1px solid rgba(15,23,42,0.14);
+      background:#fff;
+      font-weight:700;
+    }
     @media (max-width: 980px){
       .add-grid{ grid-template-columns: 1fr; }
     }
@@ -421,13 +430,25 @@
             </p>
 
             <div class="row-actions" style="margin-top:10px;">
-              <button id="tgLoad" class="btn primary">목록 불러오기</button>
-              <label style="display:flex; gap:8px; align-items:center; font-weight:700;">
-                <input id="tgOnlyEmpty" type="checkbox" />
-                태그 비어있는 것만
-              </label>
-              <span id="tgStatus" class="desc" style="margin-left:auto;"></span>
-            </div>
+                <button id="tgLoad" class="btn primary">목록 불러오기</button>
+              
+                <label style="display:flex; gap:8px; align-items:center; font-weight:700;">
+                  <input id="tgOnlyEmpty" type="checkbox" />
+                  태그 비어있는 것만
+                </label>
+              
+                <!-- ✅ 추가: 숨김 보기 옵션 -->
+                <label style="display:flex; gap:8px; align-items:center; font-weight:700;">
+                  숨김
+                  <select id="tgHiddenView" class="tg-select">
+                    <option value="all" selected>전체(숨김 포함)</option>
+                    <option value="exclude">숨김 제외</option>
+                    <option value="only">숨김만</option>
+                  </select>
+                </label>
+              
+                <span id="tgStatus" class="desc" style="margin-left:auto;"></span>
+              </div>
 
             <div id="tgCards" style="margin-top:12px; display:flex; flex-direction:column; gap:10px;"></div>
           </div>
@@ -854,6 +875,7 @@ ${tagHtml}
     const tg = {
       load: document.getElementById("tgLoad"),
       onlyEmpty: document.getElementById("tgOnlyEmpty"),
+      hiddenView: document.getElementById("tgHiddenView"), // ✅ 추가
       status: document.getElementById("tgStatus"),
       cards: document.getElementById("tgCards"),
     };
@@ -862,6 +884,7 @@ ${tagHtml}
     const saveTimers = new Map();
 
     tg.load.addEventListener("click", loadTagCards);
+    tg.hiddenView.addEventListener("change", loadTagCards); // ✅ 옵션 바꾸면 바로 다시 로드(선택)
 
     function buildListUrl(){
       const year  = String(el.year.value || "").trim();
@@ -888,7 +911,11 @@ ${tagHtml}
         params.set("year", year);
         params.set("month", month);
       }
-
+    
+      // ✅ 추가: 숨김 포함 여부(서버의 includeHidden 파라미터)
+      const view = tg.hiddenView ? tg.hiddenView.value : "all";
+      params.set("includeHidden", view === "exclude" ? "false" : "true");
+        
       if (ids) params.set("id", ids);
       if (TG_ADMIN_KEY) params.set("key", TG_ADMIN_KEY);
 
@@ -899,23 +926,35 @@ ${tagHtml}
       try{
         tg.status.textContent = "불러오는 중...";
         tg.cards.innerHTML = "";
-
+    
         const url = buildListUrl();
         const res = await fetch(url, { method:"GET", cache:"no-store", credentials:"omit" });
         if (!res.ok) throw new Error("목록 API 실패 (HTTP " + res.status + ")");
-
+    
         const data = await safeReadJson_(res);
         if (!data || data.ok !== true) throw new Error((data && data.error) ? data.error : "UNKNOWN_ERROR");
-
-        let items = Array.isArray(data.items) ? data.items : [];
-
+    
+        const allItems = Array.isArray(data.items) ? data.items : [];
+        let items = allItems.slice();
+    
+        // 태그 비어있는 것만
         if (tg.onlyEmpty.checked) {
           items = items.filter(it => !String(it.tags || "").trim());
         }
-
-        tg.status.textContent = `${items.length}건`;
+    
+        // ✅ 숨김 보기 필터
+        const view = tg.hiddenView ? tg.hiddenView.value : "all";
+        if (view === "exclude") items = items.filter(it => it.hidden !== true);
+        if (view === "only")    items = items.filter(it => it.hidden === true);
+    
+        const hiddenCnt = allItems.filter(it => it.hidden === true).length;
+    
+        tg.status.textContent =
+          view === "all"     ? `${items.length}건 (숨김 ${hiddenCnt}건 포함)`
+        : view === "exclude" ? `${items.length}건 (숨김 ${hiddenCnt}건 제외)`
+        :                    `${items.length}건 (숨김만)`;
+    
         tg.cards.innerHTML = items.map(it => renderEventCardHtml(it)).join("");
-
         items.forEach(it => bindEventCard(it));
       }catch(e){
         tg.status.textContent = "";
