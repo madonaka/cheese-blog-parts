@@ -922,6 +922,53 @@ ${tagHtml}
       return `${API_BASE}?${params.toString()}`;
     }
 
+    // ✅ 재등록(AUTO) 후: 새 date_start가 현재 필터 범위 밖이면
+    // 새로 생성된 카드가 목록에 안 보일 수 있음 → 필터를 자동 동기화
+    function syncFiltersToDateStart_(dateStart){
+      const ds = String(dateStart || "").trim();
+      if (!ds) return false;
+      
+      
+      // 1) YYYY-MM-DD → day 우선
+      if (/^\d{4}-\d{2}-\d{2}$/.test(ds)){
+      if (el.day) el.day.value = ds;
+      if (el.start) el.start.value = "";
+      if (el.end) el.end.value = "";
+      if (el.year) el.year.value = "";
+      if (el.month) el.month.value = "";
+      return true;
+      }
+      
+      
+      // 2) YYYY-MM → year/month
+      if (/^\d{4}-\d{2}$/.test(ds)){
+      const y = ds.slice(0,4);
+      const m = String(Number(ds.slice(5,7))); // 01 → 1
+      if (el.year) el.year.value = y;
+      if (el.month) el.month.value = m;
+      if (el.day) el.day.value = "";
+      if (el.start) el.start.value = "";
+      if (el.end) el.end.value = "";
+      return true;
+      }
+      
+      
+      // 3) YYYY → 기간으로 잡아줌(연/월 없이도 buildListUrl 통과)
+      if (/^\d{4}$/.test(ds)){
+      if (el.day) el.day.value = "";
+      if (el.year) el.year.value = "";
+      if (el.month) el.month.value = "";
+      if (el.start) el.start.value = ds + "-01-01";
+      if (el.end) el.end.value = ds + "-12-31";
+      return true;
+      }
+    
+    
+    return false;
+    }
+
+
+    
     async function loadTagCards(){
       try{
         tg.status.textContent = "불러오는 중...";
@@ -1540,6 +1587,11 @@ ${tagHtml}
           
           
           setPill('saved', `재등록됨 → ${r1.id}`);
+
+          // ✅ 새 date_start 기준으로 필터 동기화 (필터 밖이면 새 카드가 안 보일 수 있음)
+          syncFiltersToDateStart_(cur.date_start);
+          // ✅ '숨김만(only)' 보기 상태면 새로 만든(=숨김 아님) 카드가 안 보이므로 all로 복귀
+          if (tg.hiddenView && tg.hiddenView.value === 'only') tg.hiddenView.value = 'all';
           
           
           // 4) 목록 새로고침(새 id 카드도 함께 뜸)
