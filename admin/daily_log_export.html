@@ -1362,6 +1362,41 @@ ${tagHtml}
       }
     }
 
+    // ✅ 재발급(덮어쓰기): date_start 기준으로 id까지 재산정
+    async function postReissueEvent(id, patch, force){
+      const params = new URLSearchParams();
+      params.set('mode','reissueEvent');
+      if (TG_ADMIN_KEY) params.set('key', TG_ADMIN_KEY);
+      const url = `${API_BASE}?${params.toString()}`;
+    
+      try{
+        const body = new URLSearchParams();
+        body.set('id', String(id||''));
+        if (patch && patch.date_start != null) body.set('date_start', String(patch.date_start||''));
+        if (patch && patch.date_end != null)   body.set('date_end', String(patch.date_end||''));
+        if (patch && patch.title != null)      body.set('title', String(patch.title||''));
+        if (patch && patch.content_raw != null)body.set('content_raw', String(patch.content_raw||''));
+        if (force === true) body.set('force', 'true');
+    
+        const res = await fetch(url, { method:'POST', body, cache:'no-store', credentials:'omit' });
+        const text = await res.text();
+    
+        let data = null;
+        try { data = JSON.parse(text); } catch(_){}
+    
+        if (!res.ok) return { ok:false, error:`HTTP ${res.status}: ${text.slice(0,300)}` };
+        if (!data)  return { ok:false, error:`JSON 아님: ${text.slice(0,300)}` };
+        if (data.ok !== true) return { ok:false, error: String(data.error || JSON.stringify(data)).slice(0,300) };
+    
+        return { ok:true, data };
+      }catch(e){
+        return { ok:false, error: e && e.message ? e.message : String(e) };
+      }
+    }
+
+    
+
+    
     function safePipe_(s){
       // | 가 들어가면 11칸 파싱이 깨지므로 치환
       return String(s ?? "").replaceAll("|", "｜");
@@ -1527,85 +1562,52 @@ ${tagHtml}
         });
       }
 
-      if (btnRecreate){
-        btnRecreate.addEventListener('click', async ()=>{
-          try{
+    if (btnRecreate){
+      btnRecreate.addEventListener('click', async ()=>{
+        try{
           const cur = snap();
-          
-          
+    
           // 최소 검증
           if (!cur.title){ alert('title은 필수입니다.'); return; }
           if (!String(cur.date_start||'').trim() && String(cur.date_end||'').trim()){
-          alert('date_end를 쓰려면 date_start가 필요합니다.');
-          return;
+            alert('date_end를 쓰려면 date_start가 필요합니다.');
+            return;
           }
-          
-          
-          // 현재 카드의 태그 문자열(숨김 textarea에 저장된 값)
-          const tagsRaw = String(root.querySelector('[data-role="tags-raw"]')?.value || '');
-          
-          
-          // appendEvent용 11칸 라인 생성
-          // id|date_type|date_start|date_end|title|content_raw|party|is_foreign|country|tags|created_at
-          const party = String(it.party || '');
-          const isForeign = it.is_foreign === true ? 'TRUE' : 'FALSE';
-          const country = String(it.country || '');
-          
-          
-          const line = [
-          'AUTO',
-          '',
-          cur.date_start || '',
-          cur.date_end || '',
-          safePipe_(cur.title || ''),
-          safePipe_(cur.content_raw || ''),
-          safePipe_(party),
-          isForeign,
-          safePipe_(country),
-          safePipe_(tagsRaw),
-          '' // created_at 비우면 서버가 현재 시각 자동 입력
-          ].join('|');
-          
-          
-          setPill('saving','재등록중');
-          
-          
-          // 1) 새 이벤트 추가 → 새 id 생성
-          const r1 = await postAppendEventLine(line);
-          if (!r1.ok || !r1.id) throw new Error('appendEvent 실패: ' + (r1.error || 'UNKNOWN'));
-          
-          
-          // 2) 기존 이벤트 숨김 처리
-          const r2 = await postPatchHidden(it.id, true);
-          if (!r2.ok) throw new Error('기존 숨김 실패: ' + (r2.error || 'UNKNOWN'));
-          
-          
-          // 3) 현재 카드 UI를 숨김 상태로 반영
-          applyHiddenUi(true);
-          if (hideChk) hideChk.checked = true;
-          originalHidden = true;
-          
-          
-          setPill('saved', `재등록됨 → ${r1.id}`);
-
-          // ✅ 새 date_start 기준으로 필터 동기화 (필터 밖이면 새 카드가 안 보일 수 있음)
+    
+          setPill('saving','재발급중');
+    
+          // ✅ 같은 행을 “대체(덮어쓰기)”하면서, date_start 기준으로 id까지 재산정
+          // - force=true: 버튼을 누른 경우에는 같은 날짜여도 새 id를 발급
+          const r = await postReissueEvent(it.id, {
+            date_start: cur.date_start || '',
+            date_end: cur.date_end || '',
+            title: cur.title || '',
+            content_raw: cur.content_raw || ''
+          }, true);
+    
+          if (!r.ok) throw new Error(r.error || 'reissueEvent 실패');
+    
+          const newId = String(r.data?.new_id || '');
+          const oldId = String(r.data?.old_id || String(it.id||''));
+    
+          setPill('saved', (newId && newId !== oldId) ? `재발급됨 → ${newId}` : '저장됨');
+    
+          // ✅ 새 date_start 기준으로 필터 동기화 (필터 밖이면 카드가 안 보일 수 있음)
           syncFiltersToDateStart_(cur.date_start);
-          // ✅ '숨김만(only)' 보기 상태면 새로 만든(=숨김 아님) 카드가 안 보이므로 all로 복귀
-          if (tg.hiddenView && tg.hiddenView.value === 'only') tg.hiddenView.value = 'all';
-          
-          
-          // 4) 목록 새로고침(새 id 카드도 함께 뜸)
+    
+          // id가 바뀌면 현재 카드의 data-id도 갱신(리렌더 전까지라도 일관성 유지)
+          if (newId) root.dataset.id = newId;
+    
+          // 정렬/표시 보장: 목록 새로고침
           if (typeof loadTagCards === 'function'){
-          await loadTagCards();
+            await loadTagCards();
           }
-          
-          
-          }catch(e){
+        }catch(e){
           setPill('err','오류');
-          alert('재등록 실패: ' + (e && e.message ? e.message : String(e)));
-          }
-        });
-      }
+          alert('재발급 실패: ' + (e && e.message ? e.message : String(e)));
+        }
+      });
+    }
 
       
       
