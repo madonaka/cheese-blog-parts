@@ -1614,6 +1614,24 @@ ${tagHtml}
         pill.textContent = text;
       };
 
+      // ✅ image_url → 미리보기 동기화
+      const renderImagePreview = (rawUrl) => {
+        if (!pastePreview) return;
+      
+        const url = String(rawUrl || "").trim();
+        if (!url) {
+          pastePreview.style.display = "none";
+          pastePreview.innerHTML = "";
+          return;
+        }
+      
+        pastePreview.style.display = "block";
+        pastePreview.innerHTML = `
+          <a href="${escAttr(url)}" target="_blank" rel="noopener">원본 열기</a>
+          <img src="${escAttr(url)}" alt="" loading="lazy" />
+        `;
+      };
+      
       // clipboard paste(image) -> upload -> fill image_url -> save (image_url only)
       const handleImagePaste = async (e)=>{
         try{
@@ -1647,14 +1665,16 @@ ${tagHtml}
 
           if (inImageUrl) inImageUrl.value = url;
 
-          // 미리보기(있을 때만)
-          if (pastePreview){
-            pastePreview.style.display = 'block';
-            pastePreview.innerHTML = `<img src="${escAttr(url)}" alt="" loading="lazy" />`;
-          }
-
+          // ✅ 미리보기 즉시 갱신
+          renderImagePreview(url);
+          
           // ✅ image_url만 DB에 즉시 반영(다른 필드 덮어쓰기 방지)
           const saved = await postPatchEvent(it.id, { image_url: url });
+          if (!saved.ok) throw new Error(saved.error || 'PATCH_FAILED');
+          
+          // ✅ 취소/재로딩 시 안 사라지게 스냅샷도 갱신
+          original.image_url = url;
+          it.image_url = url;
           if (!saved.ok) throw new Error(saved.error || 'PATCH_FAILED');
 
           setPill('saved','업로드됨');
@@ -1671,6 +1691,15 @@ ${tagHtml}
       // 카드 영역 어디서든 Ctrl+V 가능(텍스트는 통과, 이미지일 때만 업로드)
       root.addEventListener('paste', handleImagePaste, true);
 
+      if (inImageUrl) {
+        inImageUrl.addEventListener('input', () => {
+          renderImagePreview(inImageUrl.value);
+        });
+        inImageUrl.addEventListener('change', () => {
+          renderImagePreview(inImageUrl.value);
+        });
+      }
+      
 
       if (hideChk){
           hideChk.addEventListener('change', async ()=>{
@@ -1704,10 +1733,22 @@ ${tagHtml}
       });
       let original = snap();
 
+      let original = snap();
+      renderImagePreview(original.image_url); // ✅ 카드 로드 시 기존 이미지도 표시
+      
       const openEditor = (on) => {
         if (!editor) return;
         editor.classList.toggle('open', !!on);
         if (on) original = snap();
+
+        const openEditor = (on) => {
+          if (!editor) return;
+          editor.classList.toggle('open', !!on);
+          if (on) {
+            original = snap();
+            renderImagePreview(original.image_url); // ✅ 열 때도 동기화
+          }
+        };
       };
 
       if (btnToggle){
@@ -1729,6 +1770,7 @@ ${tagHtml}
             hideChk.checked = !!original.hidden;
             applyHiddenUi(!!original.hidden);
           }
+          renderImagePreview(original.image_url); // ✅ 취소 시 미리보기 원복
 
           openEditor(false);
         });
