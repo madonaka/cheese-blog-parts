@@ -1441,7 +1441,19 @@ ${tagHtml}
       params.set('mode','uploadImage');
       if (TG_ADMIN_KEY) params.set('key', TG_ADMIN_KEY);
       const url = `${API_BASE}?${params.toString()}`;
-    
+
+      // ✅ 디버그용: 원문/상태코드까지 항상 확보
+      const mkErr = (label, extra) => {
+        const parts = [];
+        if (label) parts.push(String(label));
+        if (extra && typeof extra === 'object'){
+          try{ parts.push(JSON.stringify(extra)); }catch(_){ parts.push(String(extra)); }
+        }else if (extra != null){
+          parts.push(String(extra));
+        }
+        return parts.join(' | ').slice(0, 2000);
+      };
+
       try{
         // ✅ JSON 금지: preflight(OPTIONS) 안 생기게 "폼 전송"으로 보냄
         const body = new URLSearchParams();
@@ -1449,7 +1461,7 @@ ${tagHtml}
         body.set('title', String(title||''));
         body.set('mime', String(mime||''));
         body.set('data', String(base64||''));
-    
+
         const res = await fetch(url, {
           method:'POST',
           body,                 // ✅ form-urlencoded
@@ -1457,25 +1469,38 @@ ${tagHtml}
           credentials:'omit'    // 유지
           // ✅ headers 설정하지 말 것!
         });
-    
+
         const text = await res.text();
         let data = null;
-        try { data = JSON.parse(text); } catch(_){}
-    
-        if (!res.ok) return { ok:false, error:`HTTP ${res.status}: ${text.slice(0,300)}` };
-        if (!data)  return { ok:false, error:`JSON 아님: ${text.slice(0,300)}` };
-        if (data.ok !== true) {
-          const msg =
-            data && data.detail
-              ? `${data.error}: ${data.detail}`
-              : (data && (data.error || text) ? (data.error || text) : JSON.stringify(data));
-        
-          return { ok:false, error: String(msg).slice(0, 2000) };
-        }    
+        try { data = JSON.parse(text); } catch(_){ }
 
-        return { ok:true, data };
+        // ✅ 콘솔에 최소 정보 남김(알림이 짧아도 원인 추적 가능)
+        try{
+          console.log('[uploadImage] url=', url);
+          console.log('[uploadImage] status=', res.status);
+          console.log('[uploadImage] raw=', (text||'').slice(0, 500));
+        }catch(_){ }
+
+        if (!res.ok){
+          return { ok:false, error: mkErr(`HTTP ${res.status}`, (data ? data : String(text || '').slice(0,500))), raw:text, status:res.status, url };
+        }
+
+        if (!data){
+          return { ok:false, error: mkErr('JSON_PARSE_FAILED', String(text || '').slice(0,500)), raw:text, status:res.status, url };
+        }
+
+        if (data.ok !== true) {
+          const msg = (data && data.detail)
+            ? `${data.error}: ${data.detail}`
+            : (data && data.error ? String(data.error) : 'UPLOAD_FAILED');
+
+          return { ok:false, error: mkErr('API_ERROR', { msg, build: data._build, ts: data._ts }), raw:text, status:res.status, url, data };
+        }
+
+        return { ok:true, data, raw:text, status:res.status, url };
       }catch(e){
-        return { ok:false, error: e && e.message ? e.message : String(e) };
+        const msg = e && e.message ? e.message : String(e);
+        return { ok:false, error: mkErr('FETCH_ERROR', msg), status:0, url };
       }
     }
 
@@ -1612,7 +1637,10 @@ ${tagHtml}
 
           const curTitle = String(inTitle?.value || it.title || '').trim();
           const up = await postUploadImage(it.id, curTitle, mime, b64);
-          if (!up.ok) throw new Error(up.error || 'UPLOAD_FAILED');
+          if (!up || up.ok !== true){
+            const dbg = up ? (up.error || JSON.stringify(up).slice(0,800)) : 'NO_RESPONSE';
+            throw new Error(String(dbg || 'UPLOAD_FAILED'));
+          }
 
           const url = String(up.data && up.data.url ? up.data.url : '').trim();
           if (!url) throw new Error('URL_EMPTY');
@@ -1632,6 +1660,7 @@ ${tagHtml}
           setPill('saved','업로드됨');
         }catch(err){
           setPill('err','오류');
+          console.log('upload debug(err)=', err);
           alert('이미지 업로드 실패: ' + (err && err.message ? err.message : String(err)));
         }
       };
