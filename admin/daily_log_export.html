@@ -1645,6 +1645,24 @@ ${tagHtml}
         pill.textContent = text;
       };
 
+      // ✅ Google Drive URL에서 파일 ID 추출 & 썸네일 URL 생성
+      const driveIdFromUrl_ = (u) => {
+        const s = String(u || '');
+        // 1) ...?id=FILE_ID
+        let m = s.match(/[?&]id=([a-zA-Z0-9_-]{10,})/);
+        if (m && m[1]) return m[1];
+        // 2) /d/FILE_ID/...
+        m = s.match(/\/d\/([a-zA-Z0-9_-]{10,})(?:[/?]|$)/);
+        if (m && m[1]) return m[1];
+        return '';
+      };
+      const toDriveThumbUrl_ = (u) => {
+        const id = driveIdFromUrl_(u);
+        if (!id) return '';
+        // Drive가 썸네일을 만들어주는 엔드포인트(공유 권한이 있어야 표시됨)
+        return `https://drive.google.com/thumbnail?id=${id}&sz=w200`;
+      };
+
       // ✅ image_url → 미리보기 동기화
       const renderImagePreview = (rawUrl) => {
         if (!pastePreview) return;
@@ -1655,12 +1673,22 @@ ${tagHtml}
           pastePreview.innerHTML = "";
           return;
         }
-      
-        pastePreview.style.display = "block";
+
+        const thumb = toDriveThumbUrl_(url) || url;
+        pastePreview.style.display = "flex"; // ✅ CSS와 맞춰 flex로 표시
         pastePreview.innerHTML = `
           <a href="${escAttr(url)}" target="_blank" rel="noopener">원본 열기</a>
-          <img src="${escAttr(url)}" alt="" loading="lazy" />
+          <img src="${escAttr(thumb)}" alt="" loading="lazy" />
         `;
+
+        // ✅ 썸네일이 깨지는 경우(권한/URL 문제) - 링크는 유지하고 힌트만 표시
+        const img = pastePreview.querySelector('img');
+        if (img){
+          img.addEventListener('error', ()=>{
+            try{ img.remove(); }catch(_){ }
+            pastePreview.insertAdjacentHTML('beforeend', '<span class="tag-hint">미리보기 실패</span>');
+          }, { once:true });
+        }
       };
       
       // clipboard paste(image) -> upload -> fill image_url -> save (image_url only)
