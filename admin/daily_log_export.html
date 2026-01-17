@@ -1441,46 +1441,37 @@ ${tagHtml}
       params.set('mode','uploadImage');
       if (TG_ADMIN_KEY) params.set('key', TG_ADMIN_KEY);
       const url = `${API_BASE}?${params.toString()}`;
-
+    
       try{
-        const payload = { id: String(id||''), title: String(title||''), mime: String(mime||''), data: String(base64||'') };
+        // ✅ JSON 금지: preflight(OPTIONS) 안 생기게 "폼 전송"으로 보냄
+        const body = new URLSearchParams();
+        body.set('id', String(id||''));
+        body.set('title', String(title||''));
+        body.set('mime', String(mime||''));
+        body.set('data', String(base64||''));
+    
         const res = await fetch(url, {
           method:'POST',
-          headers: { 'Content-Type':'application/json' },
-          body: JSON.stringify(payload),
+          body,                 // ✅ form-urlencoded
           cache:'no-store',
-          credentials:'omit'
+          credentials:'omit'    // 유지
+          // ✅ headers 설정하지 말 것!
         });
-
+    
         const text = await res.text();
         let data = null;
-        try { data = JSON.parse(text); } catch(_){ }
-
+        try { data = JSON.parse(text); } catch(_){}
+    
         if (!res.ok) return { ok:false, error:`HTTP ${res.status}: ${text.slice(0,300)}` };
         if (!data)  return { ok:false, error:`JSON 아님: ${text.slice(0,300)}` };
         if (data.ok !== true) return { ok:false, error: String(data.error || JSON.stringify(data)).slice(0,300) };
-
+    
         return { ok:true, data };
       }catch(e){
         return { ok:false, error: e && e.message ? e.message : String(e) };
       }
     }
 
-    function readBlobAsBase64_(blob){
-      return new Promise((resolve, reject)=>{
-        const fr = new FileReader();
-        fr.onerror = ()=>reject(new Error('FileReader 실패'));
-        fr.onload = ()=>{
-          const s = String(fr.result || '');
-          const i = s.indexOf('base64,');
-          resolve(i >= 0 ? s.slice(i + 7) : s);
-        };
-        fr.readAsDataURL(blob);
-      });
-    }
-
-
-    
 
     
     function safePipe_(s){
