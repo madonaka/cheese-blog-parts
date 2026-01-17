@@ -353,7 +353,33 @@
       word-break: break-word;
       font-size: 13px;
     }
-  </style>
+  
+
+    /* ===== Clipboard paste image zone (Tag review) ===== */
+    .paste-zone{
+      border:1px dashed rgba(15,23,42,0.25);
+      border-radius:10px;
+      padding:10px 12px;
+      background:#fff;
+      min-height:44px;
+      font-size:0.92rem;
+      color:rgba(15,23,42,0.75);
+    }
+    .paste-zone:focus{ outline:2px solid rgba(37,99,235,0.25); }
+    .paste-hint{ font-size:0.82rem; color:rgba(15,23,42,0.65); margin-top:6px; }
+    .paste-preview{ margin-top:8px; display:none; }
+    .paste-preview img{
+      display:block;
+      width:120px;
+      max-width:40%;
+      height:auto;
+      border-radius:12px;
+      object-fit:cover;
+    }
+    @media (max-width: 640px){
+      .paste-preview img{ width:100%; max-width:100%; }
+    }
+</style>
 </head>
 
 <body>
@@ -1216,6 +1242,14 @@ ${tagHtml}
             <input data-role="edit-image-url" type="url" placeholder="https://..." value="${escAttr(it.image_url || "")}" />
           </div>
 
+            <div class="ev-edit-field">
+              <div class="ev-edit-label">스크린샷 붙여넣기</div>
+              <div class="paste-zone" data-role="paste-image" contenteditable="true" spellcheck="false" tabindex="0">여기를 클릭하고 Ctrl+V</div>
+              <div class="paste-hint">✅ 이미지 붙여넣기(Ctrl+V)가 들어오면 Drive에 저장하고 <b>image_url</b>을 자동으로 채웁니다. (image_url 입력칸에서 Ctrl+V 해도 동일)</div>
+              <div class="paste-preview" data-role="paste-preview"></div>
+            </div>
+
+
           <div class="ev-edit-field">
             <label>content_raw</label>
             <textarea data-role="edit-content">${escHtml(it.content_raw || "")}</textarea>
@@ -1402,6 +1436,50 @@ ${tagHtml}
       }
     }
 
+    async function postUploadImage(id, title, mime, base64){
+      const params = new URLSearchParams();
+      params.set('mode','uploadImage');
+      if (TG_ADMIN_KEY) params.set('key', TG_ADMIN_KEY);
+      const url = `${API_BASE}?${params.toString()}`;
+
+      try{
+        const payload = { id: String(id||''), title: String(title||''), mime: String(mime||''), data: String(base64||'') };
+        const res = await fetch(url, {
+          method:'POST',
+          headers: { 'Content-Type':'application/json' },
+          body: JSON.stringify(payload),
+          cache:'no-store',
+          credentials:'omit'
+        });
+
+        const text = await res.text();
+        let data = null;
+        try { data = JSON.parse(text); } catch(_){ }
+
+        if (!res.ok) return { ok:false, error:`HTTP ${res.status}: ${text.slice(0,300)}` };
+        if (!data)  return { ok:false, error:`JSON 아님: ${text.slice(0,300)}` };
+        if (data.ok !== true) return { ok:false, error: String(data.error || JSON.stringify(data)).slice(0,300) };
+
+        return { ok:true, data };
+      }catch(e){
+        return { ok:false, error: e && e.message ? e.message : String(e) };
+      }
+    }
+
+    function readBlobAsBase64_(blob){
+      return new Promise((resolve, reject)=>{
+        const fr = new FileReader();
+        fr.onerror = ()=>reject(new Error('FileReader 실패'));
+        fr.onload = ()=>{
+          const s = String(fr.result || '');
+          const i = s.indexOf('base64,');
+          resolve(i >= 0 ? s.slice(i + 7) : s);
+        };
+        fr.readAsDataURL(blob);
+      });
+    }
+
+
     
 
     
@@ -1488,6 +1566,8 @@ ${tagHtml}
       const inTitle = root.querySelector('[data-role="edit-title"]');
       const inContent = root.querySelector('[data-role="edit-content"]');
       const inImageUrl = root.querySelector('[data-role="edit-image-url"]');
+      const pasteZone = root.querySelector('[data-role="paste-image"]');
+      const pastePreview = root.querySelector('[data-role="paste-preview"]');
 
       const btnRecreate = root.querySelector('[data-action="edit-recreate"]');
       
@@ -1510,6 +1590,60 @@ ${tagHtml}
         if (state) pill.classList.add(state);
         pill.textContent = text;
       };
+
+      // clipboard paste(image) -> upload -> fill image_url -> save (image_url only)
+      const handleImagePaste = async (e)=>{
+        try{
+          // 중복 실행 방지(캡처/버블 중첩 등)
+          if (e && e.__dlImgHandled) return;
+
+          const items = (e.clipboardData && e.clipboardData.items) ? Array.from(e.clipboardData.items) : [];
+          const imgItem = items.find(x => x && x.type && x.type.indexOf('image/') === 0);
+          if (!imgItem) return; // 텍스트 붙여넣기는 그대로 통과
+
+          // 이제부터는 “이미지 붙여넣기”로 처리
+          e.__dlImgHandled = true;
+          e.preventDefault();
+          e.stopPropagation();
+
+          setPill('saving','업로드중');
+
+          const blob = imgItem.getAsFile();
+          const mime = blob && blob.type ? blob.type : 'image/png';
+          const b64 = await readBlobAsBase64_(blob);
+
+          const curTitle = String(inTitle?.value || it.title || '').trim();
+          const up = await postUploadImage(it.id, curTitle, mime, b64);
+          if (!up.ok) throw new Error(up.error || 'UPLOAD_FAILED');
+
+          const url = String(up.data && up.data.url ? up.data.url : '').trim();
+          if (!url) throw new Error('URL_EMPTY');
+
+          if (inImageUrl) inImageUrl.value = url;
+
+          // 미리보기(있을 때만)
+          if (pastePreview){
+            pastePreview.style.display = 'block';
+            pastePreview.innerHTML = `<img src="${escAttr(url)}" alt="" loading="lazy" />`;
+          }
+
+          // ✅ image_url만 DB에 즉시 반영(다른 필드 덮어쓰기 방지)
+          const saved = await postPatchEvent(it.id, { image_url: url });
+          if (!saved.ok) throw new Error(saved.error || 'PATCH_FAILED');
+
+          setPill('saved','업로드됨');
+        }catch(err){
+          setPill('err','오류');
+          alert('이미지 업로드 실패: ' + (err && err.message ? err.message : String(err)));
+        }
+      };
+
+      // ✅ 어디에 커서가 있어도(특히 image_url input) 이미지 붙여넣기가 동작하도록
+      if (pasteZone) pasteZone.addEventListener('paste', handleImagePaste);
+      if (inImageUrl) inImageUrl.addEventListener('paste', handleImagePaste);
+      // 카드 영역 어디서든 Ctrl+V 가능(텍스트는 통과, 이미지일 때만 업로드)
+      root.addEventListener('paste', handleImagePaste, true);
+
 
       if (hideChk){
           hideChk.addEventListener('change', async ()=>{
