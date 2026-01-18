@@ -2046,11 +2046,7 @@ if (btnToggle){
   const ADD_COLS = ["id","date_type","date_start","date_end","title","content_raw","party","is_foreign","country","tags","created_at"];
   
   function splitNonEmptyLines_(text){
-    return String(text || "")
-      .replace(/\r/g, "")
-      .split("\n")
-      .map(s => s.trim())
-      .filter(Boolean);
+    return String(text || "").replace(/\r/g,"").split("\n").map(s=>s.trim()).filter(Boolean);
   }
   
   function parsePipeLineStrict_(line){
@@ -2179,41 +2175,29 @@ if (btnToggle){
       const lines = splitNonEmptyLines_(add.line.value);
       if (!lines.length) { alert('입력 라인이 비어있습니다.'); return; }
   
-      // 1) 사전 검증(전부 통과해야 저장)
-      for (let i=0;i<lines.length;i++){
-        const obj = parsePipeLineStrict_(lines[i]);
-        const err = validateAddObj_(obj);
-        if (err) throw new Error(`${i+1}행: ${err}`);
+      add.status.textContent = `저장 중... (0/${lines.length})`;
+  
+      const results = [];
+      for (let i=0; i<lines.length; i++){
+        add.status.textContent = `저장 중... (${i+1}/${lines.length})`;
+        const r = await postAppendEventLine(lines[i]); // ✅ 기존 헬퍼 사용 :contentReference[oaicite:3]{index=3}
+        results.push(r);
+        if (!r.ok) throw new Error(`${i+1}행 저장 실패: ${r.error}`);
       }
   
-      add.status.textContent = (lines.length === 1) ? '저장 중...' : `일괄 저장 중... (0/${lines.length})`;
+      // id 자동 반영
+      const newLines = lines.map((line, i)=>{
+        const r = results[i];
+        return (r && r.ok && r.id) ? replaceIdInLine_(line, r.id) : line;
+      });
+      add.line.value = newLines.join('\n');
   
-      // 2) 단건이면 기존 appendEvent 그대로 사용(현재 코드 유지 가능)
-      if (lines.length === 1){
-        // 기존 단건 로직 그대로 (appendEvent + line=...)
-        const params = new URLSearchParams();
-        params.set('mode','appendEvent');
-        if (TG_ADMIN_KEY) params.set('key', TG_ADMIN_KEY);
-        const url = `${API_BASE}?${params.toString()}`;
-  
-        const body = new URLSearchParams();
-        body.set('line', String(lines[0] || ''));
-  
-        const res = await fetch(url, { method:'POST', body, cache:'no-store', credentials:'omit' });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-  
-        const data = await safeReadJson_(res);
-        if (!data || data.ok !== true) throw new Error(data?.error ? data.error : 'SAVE_FAILED');
-  
-        const newId = data.id ? String(data.id) : '';
-        add.status.textContent = newId ? `저장 완료 (id: ${newId})` : '저장 완료';
-  
-        if (newId){
-          add.line.value = replaceIdInLine_(lines[0], newId);
-        }
-        renderAddPreviewFromText_();
-        return;
-      }
+      add.status.textContent = `저장 완료: ${results.length}/${results.length}`;
+    }catch(e){
+      add.status.textContent = '';
+      alert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+    }
+  });
   
       // 3) 여러 건: appendEvents를 배치로 호출(너무 큰 입력 대비)
       const BATCH = 200; // 필요하면 100~300으로 조절
