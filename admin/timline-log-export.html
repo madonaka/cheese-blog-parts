@@ -1100,15 +1100,7 @@ ${tagHtml}
     function buildListUrl(){
       const year  = String(el.year.value ?? "").trim();
       const month = String(el.month.value ?? "").trim();
-      
-      // ✅ 단위 검색: 다른 조건이 없고 year만 있을 때 start/end로 변환
-      if (!ids && !day && !start && !end && year && !month) {
-        const r = unitRangeFromYear_(year, el.yearUnit?.value);
-        if (r) {
-          params.set("start", r.start);
-          params.set("end", r.end);
-        }
-      }
+    
       const day   = normalizeDateInput_(el.day.value);
       const start = normalizeDateInput_(el.start.value);
       const end   = normalizeDateInput_(el.end.value);
@@ -1122,24 +1114,36 @@ ${tagHtml}
       if (tg.onlyEmpty && tg.onlyEmpty.checked) params.set("onlyEmpty", "1");
     
       const hv = (tg.hiddenView && tg.hiddenView.value) ? tg.hiddenView.value : "all";
-      // all/only는 hidden 포함해서 받아야 함
       if (hv !== "exclude") params.set("includeHidden", "1");
     
-      // ✅ 필터 우선순위: id > day > start/end > year/month > year-only
+      // ✅ 필터 우선순위: id > day > start/end > year/month > year+unit > year-only
       if (ids) {
         params.set("id", ids);
+    
       } else if (day) {
         params.set("day", day);
+    
       } else if (start || end) {
         if (start) params.set("start", start);
-        if (end) params.set("end", end);
+        if (end)   params.set("end", end);
+    
       } else if (year && month) {
         params.set("year", normalizeDateInput_(year));
         params.set("month", month);
+    
       } else if (year && !month) {
-        params.set("day", normalizeDateInput_(year));
+        // ✅ 단위 검색: year만 있을 때 yearUnit이 있으면 start/end로 변환
+        const r = unitRangeFromYear_(year, el.yearUnit?.value);
+        if (r) {
+          params.set("start", r.start);
+          params.set("end", r.end);
+        } else {
+          // ✅ 단위 선택이 없으면 기존 year-only 동작
+          params.set("day", normalizeDateInput_(year));
+        }
+    
       } else {
-        throw new Error("검수 목록을 불러오려면 id / day / start-end / year-month / year-only 중 하나를 입력하세요.");
+        throw new Error("검수 목록을 불러오려면 id / day / start-end / year-month / year-only(또는 year+unit) 중 하나를 입력하세요.");
       }
     
       return `${API_BASE}?${params.toString()}`;
