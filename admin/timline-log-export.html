@@ -537,6 +537,8 @@
                       <option value="100">100년</option>
                       <option value="C">세기(입력값을 세기 번호로)</option>         
                     </select>
+                    <label>세기</label>
+                    <input id="century" type="text" placeholder="예) 1 (1세기), -3 (B.C. 3세기)">
                   </div>
 
                   <div class="fg span-2">
@@ -784,6 +786,7 @@ const el = {
       btnOpen: document.getElementById("btnOpen"),
       btnClear: document.getElementById("btnClear"),
       yearUnit: document.getElementById("yearUnit"),
+      century: document.getElementById("century"),
     };
 
     let lastRequestUrl = "";
@@ -875,13 +878,27 @@ const el = {
     return `${API_BASE}?${params.toString()}`;
   }
     
-  // ✅ 3.5) year + unit  (단위 선택이 있으면 month가 있어도 단위 검색 우선)
+  // ✅ 3.5) year + unit (단위 선택이 있으면 우선)
   const unitVal = String(el.yearUnit?.value || "").trim();
-  if (year && unitVal && !ids && !day && !start && !end) {
-    const r = unitRangeFromYear_(year, unitVal);
-    params.set("start", r.start);
-    params.set("end", r.end);
-    return `${API_BASE}?${params.toString()}`;
+  if (unitVal && !ids && !day && !start && !end) {
+  
+    // ✅ 세기 모드
+    if (unitVal === "C") {
+      const cRaw = String(el.century?.value || "").trim() || String(el.year.value || "").trim(); // century가 비면 year를 fallback
+      if (!cRaw) throw new Error("세기 검색은 세기 입력(또는 연도칸에 세기 번호)을 넣어주세요. 예) 1, -3");
+      const r = centuryRange_(cRaw);
+      params.set("start", r.start);
+      params.set("end", r.end);
+      return `${API_BASE}?${params.toString()}`;
+    }
+  
+    // ✅ 10/50/100년 모드 (기존대로)
+    if (year) {
+      const r = unitRangeFromYear_(year, unitVal);
+      params.set("start", r.start);
+      params.set("end", r.end);
+      return `${API_BASE}?${params.toString()}`;
+    }
   }
     
   // 4) year+month
@@ -1129,10 +1146,22 @@ ${tagHtml}
         if (start) params.set("start", start);
         if (end)   params.set("end", end);
     
-      } else if (year && unitVal) {
-        const r = unitRangeFromYear_(year, unitVal);
-        params.set("start", r.start);
-        params.set("end", r.end);
+      } else if (unitVal) {
+        // ✅ 세기 모드: year 대신 century 입력을 사용
+        if (unitVal === "C") {
+          const cRaw = String(el.century?.value || "").trim();
+          if (!cRaw) throw new Error("세기 검색은 '세기' 입력칸에 1, -3 같은 값을 넣어주세요.");
+          const r = centuryRange_(cRaw);   // ★ centuryRange_ 함수 필요
+          params.set("start", r.start);
+          params.set("end", r.end);
+      
+        } else {
+          // ✅ 10/50/100년 모드: 연도 필요
+          if (!year) throw new Error("10/50/100년 단위 검색은 '연도' 입력이 필요합니다.");
+          const r = unitRangeFromYear_(year, unitVal);
+          params.set("start", r.start);
+          params.set("end", r.end);
+        }
     
       } else if (year && month) {
         params.set("year", normalizeDateInput_(year));
@@ -1170,6 +1199,10 @@ ${tagHtml}
         if (el.start) el.start.value = "";
         if (el.end) el.end.value = "";
         // year/month은 비워두면 buildUrl이 day를 우선 사용
+        // ✅ 추가: 단위/세기 입력은 리셋 (안 그러면 unit이 우선되어 필터가 안 맞음)
+        if (el.yearUnit) el.yearUnit.value = "";
+        if (el.century)  el.century.value = "";
+        
         return true;
       }
 
@@ -1181,6 +1214,10 @@ ${tagHtml}
         if (el.day) el.day.value = "";
         if (el.start) el.start.value = "";
         if (el.end) el.end.value = "";
+
+        if (el.yearUnit) el.yearUnit.value = "";
+        if (el.century)  el.century.value = "";
+        
         return true;
       }
 
@@ -1190,6 +1227,10 @@ ${tagHtml}
         if (el.day) el.day.value = m[1];
         if (el.start) el.start.value = "";
         if (el.end) el.end.value = "";
+
+        if (el.yearUnit) el.yearUnit.value = "";
+        if (el.century)  el.century.value = "";
+        
         return true;
       }
 
@@ -2444,7 +2485,23 @@ if (btnToggle){
       const bucketEnd   = bucketStart + unit - 1;
       return { start: String(bucketStart), end: String(bucketEnd) };
     }
-
+    
+    function centuryRange_(centuryStr){
+      const v = normalizeDateInput_(centuryStr);
+      const c = parseInt(String(v || "").trim(), 10);
+      if (Number.isNaN(c)) throw new Error("세기 입력이 숫자가 아닙니다. 예) 1, -3");
+      if (c === 0) throw new Error("0세기는 사용할 수 없습니다.");
+    
+      if (c > 0){
+        const start = (c - 1) * 100 + 1; // 1세기 => 1
+        const end   = c * 100;           // 1세기 => 100
+        return { start: String(start), end: String(end) };
+      } else {
+        const start = c * 100;           // -3세기 => -300
+        const end   = c * 100 + 99;      // -300~-201
+        return { start: String(start), end: String(end) };
+      }
+    }
     
   </script>
 </body>
