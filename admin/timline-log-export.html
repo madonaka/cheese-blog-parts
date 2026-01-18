@@ -409,6 +409,10 @@
   @media (max-width: 640px){
     .paste-preview img{ width:56px; height:56px; }
   }
+
+    /* 마지막 요청 URL은 화면에 표시하지 않음 */
+    .last-url-wrap{ display:none; }
+    #lastUrl{ display:none; }
 </style>
 
 </head>
@@ -587,7 +591,7 @@
           ></textarea>
 
           <p class="desc" style="margin-top:10px; display:none;">
-            마지막 요청 URL: <span id="lastUrl" style="word-break:break-all;"></span>
+            <span class="last-url-wrap">마지막 요청 URL:</span> <span id="lastUrl"></span>
           </p>
         </section>
 
@@ -688,9 +692,41 @@
        Daily Log Export
     ========================= */
     const API_BASE =
-      "https://script.google.com/macros/s/AKfycbyuC0qHyRdDKL2fC5fmRy66l0y1baCLbXuf9pNlPh0rBde_HQMzaqQv5NK06H_n7WFk/exec";
+      "https://script.google.com/macros/s/AKfycbzRFk4MVLqZTg_HtA1yODp-pUCU-Pm6vBg-n9kuuiM-c3C2rq6EWhjvRgPOELYHChw/exec";
 
-    const el = {
+    
+
+    /* =========================
+       입력 정규화(BC/부분날짜/유니코드 마이너스)
+       - 예: “B.C. 220” -> “-220”
+       - 예: “−220-05”  -> “-220-05”
+    ========================= */
+    function normMinus_(s){
+      return String(s ?? "").trim().replace(/[\u2212\u2013\u2014]/g, "-");
+    }
+    function normDateLike_(s){
+      let v = normMinus_(s);
+      // “B.C. 220” / “BC 220” / “BC220” -> “-220”
+      v = v.replace(/^\s*(B\.?\s*C\.?|BC)\s*/i, "-");
+      // “A.D. 220” / “AD220” -> “220”
+      v = v.replace(/^\s*(A\.?\s*D\.?|AD)\s*/i, "");
+      // 공백 제거
+      v = v.replace(/\s+/g, "");
+      return v;
+    }
+    function isNegYearOnly_(v){
+      return /^-\d{1,6}$/.test(String(v || ""));
+    }
+    function displayUrl_(fullUrl){
+      // 보안/노이즈 때문에 base URL은 숨기고 쿼리만 보여줌
+      try{
+        const u = new URL(fullUrl);
+        return "?" + u.searchParams.toString();
+      }catch(_){
+        return "";
+      }
+    }
+const el = {
       year: document.getElementById("year"),
       month: document.getElementById("month"),
       day: document.getElementById("day"),
@@ -719,41 +755,69 @@
         el.end.value = "";
     });
 
-    function buildUrl() {
-      const year  = String(el.year.value || "").trim();
-      const month = String(el.month.value || "").trim();
-      const day   = String(el.day.value || "").trim();
-      const start = String(el.start.value || "").trim();
-      const end   = String(el.end.value || "").trim();
-      const ids   = String(el.ids.value || "").trim();
+  function buildUrl() {
+    // 입력 (문자열로 처리해서 BC/부분날짜를 안전하게)
+    const year  = normDateLike_(el.year.value);
+    const month = normDateLike_(el.month.value);
 
-      if (!ids && !day && !start && !end && (!year || !month)) {
-        throw new Error("월 추출은 연도/월이 필요하고, 일별은 day가 필요하며, 기간은 start/end가 필요합니다. (start만 또는 end만도 가능)");
-      }
+    const day   = normDateLike_(el.day.value);
+    const start = normDateLike_(el.start.value);
+    const end   = normDateLike_(el.end.value);
 
-      const params = new URLSearchParams();
-      params.set("mode", "exportDailyLog");
+    const ids   = String(el.ids.value || "").trim();
 
-      if (day) {
-        params.set("day", day);
-      } else if (start || end) {
-        if (start) params.set("start", start);
-        if (end) params.set("end", end);
-      } else {
-        params.set("year", year);
-        params.set("month", month);
-      }
+    // ✅ ids가 없을 때만 조건 체크
+    if (!ids && !day && !start && !end && (!year && !month)) {
+      throw new Error("월 추출은 연도/월이 필요하고, 일별은 day가 필요하며, 기간은 start/end가 필요합니다. (start만 또는 end만도 가능) 또는 id를 입력하세요.");
+    }
 
-      if (ids) params.set("id", ids);
+    const params = new URLSearchParams();
+    params.set("mode", "exportDailyLog");
 
+    // ✅ 1) id 기반
+    if (ids) {
+      params.set("id", ids);
       return `${API_BASE}?${params.toString()}`;
     }
+
+    // ✅ 2) day 입력 (YYYY, YYYY-MM, YYYY-MM-DD, -220, -220-05 등)
+    if (day) {
+      params.set("day", day);
+      return `${API_BASE}?${params.toString()}`;
+    }
+
+    // ✅ 3) 기간
+    if (start || end) {
+      if (start) params.set("start", start);
+      if (end)   params.set("end", end);
+      return `${API_BASE}?${params.toString()}`;
+    }
+
+    // ✅ 4) 월 추출
+    // - BC 연도는 month가 기본값으로 남아 있어도 '연도만' 검색하는 경우가 많아서
+    //   year가 음수면 기본적으로 '연도만'으로 간주 (월 지정은 day에 -220-05처럼 입력 권장)
+    if (isBceYear_(year)) {
+      params.set("day", year);
+      return `${API_BASE}?${params.toString()}`;
+    }
+
+    if (!year || !month) {
+      throw new Error("월 추출은 연도/월이 모두 필요합니다. (BC는 day에 -220 또는 -220-05처럼 입력하세요)");
+    }
+
+    params.set("year", year);
+    params.set("month", month);
+    return `${API_BASE}?${params.toString()}`;
+  }
+
+
+
 
     async function generate() {
       try {
         const url = buildUrl();
         lastRequestUrl = url;
-        el.lastUrl.textContent = url;
+        el.lastUrl.textContent = displayUrl_(url);
 
         el.output.value = "생성 중...";
 
@@ -801,7 +865,7 @@
       try {
         const url = buildUrl();
         lastRequestUrl = url;
-        el.lastUrl.textContent = url;
+        el.lastUrl.textContent = displayUrl_(url);
         window.open(url, "_blank", "noopener,noreferrer");
       } catch (e) {
         alert("URL 생성 실패: " + (e && e.message ? e.message : String(e)));
@@ -945,16 +1009,40 @@ ${tagHtml}
     tg.hiddenView.addEventListener("change", loadTagCards); // ✅ 옵션 바꾸면 바로 다시 로드(선택)
 
     function buildListUrl(){
-      const year  = String(el.year.value || "").trim();
-      const month = String(el.month.value || "").trim();
-      const day   = String(el.day.value || "").trim();
-      const start = String(el.start.value || "").trim();
-      const end   = String(el.end.value || "").trim();
-      const ids   = String(el.ids.value || "").trim();
+      const year  = normDateLike_(tg.year.value);
+      const month = normDateLike_(tg.month.value);
+      const day   = normDateLike_(tg.day.value);
 
-      if (!ids && !day && !start && !end && (!year || !month)) {
-        throw new Error("월 추출은 연도/월이 필요하고, 일별은 day가 필요하며, 기간은 start/end가 필요합니다. (start만 또는 end만도 가능)");
+      const params = new URLSearchParams();
+      params.set('mode','listEvents');
+
+      // ✅ BC/부분날짜 지원: day가 있으면 day가 우선
+      if (day){
+        params.set('day', day);
+      } else {
+        // ✅ BC year는 month가 있어도 연도 단독 우선(월 필터는 day에 -220-05로 입력)
+        if (isBceYear_(year)){
+          if (!year) throw new Error('연도를 입력하세요');
+          params.set('day', year);
+        } else {
+          if (!year || !month) throw new Error('연도/월 또는 day를 입력하세요');
+          params.set('year', year);
+          params.set('month', month);
+        }
       }
+
+      // 숨김 포함 옵션
+      if (tg.includeHidden && tg.includeHidden.checked) params.set('includeHidden','1');
+
+      return `${API_BASE}?${params.toString()}`;
+    }
+
+      if (country) params.set("country", country);
+      if (polity) params.set("polity", polity);
+      if (showHidden) params.set("hidden", "1");
+
+      return `${API_BASE}?${params.toString()}`;
+    }
 
       const params = new URLSearchParams();
       params.set("mode", "listEvents");
@@ -966,8 +1054,13 @@ ${tagHtml}
         if (start) params.set("start", start);
         if (end) params.set("end", end);
       } else {
-        params.set("year", year);
-        params.set("month", month);
+        if (year && month) {
+          params.set("year", year);
+          params.set("month", month);
+        } else {
+          // 연도만 지정된 경우(예: -220) → 서버의 day 필터로 전달(해당 연도 전체)
+          params.set("day", year);
+        }
       }
     
       // ✅ 추가: 숨김 포함 여부(서버의 includeHidden 파라미터)
@@ -985,55 +1078,57 @@ ${tagHtml}
     function syncFiltersToDateStart_(dateStart){
       const ds = String(dateStart || "").trim();
       if (!ds) return false;
-      
-      
-      // 1) YYYY-MM-DD → day 우선
-      if (/^\d{4}-\d{2}-\d{2}$/.test(ds)){
-      if (el.day) el.day.value = ds;
-      if (el.start) el.start.value = "";
-      if (el.end) el.end.value = "";
-      if (el.year) el.year.value = "";
-      if (el.month) el.month.value = "";
-      return true;
+
+      // 공통: 숫자/하이픈 외 문자 제거 시도(예: B.C. 220, −220)
+      const cleaned = ds
+        .replace(/[−–—]/g, "-")
+        .replace(/^\s*(?:B\.\s*C\.\s*E?|B\.\s*C\.|BC|BCE)\s*/i, "-")
+        .replace(/^\s*(?:A\.\s*D\.\s*|AD|CE)\s*/i, "")
+        .replace(/\s+/g, "");
+
+      let m;
+
+      // 1) YYYY-MM-DD 또는 -220-5-1 → day 우선
+      m = cleaned.match(/^(-?\d{1,4})-(\d{1,2})-(\d{1,2})$/);
+      if (m){
+        if (el.day) el.day.value = `${m[1]}-${m[2]}-${m[3]}`;
+        if (el.start) el.start.value = "";
+        if (el.end) el.end.value = "";
+        // year/month은 비워두면 buildUrl이 day를 우선 사용
+        return true;
       }
-      
-      
-      // 2) YYYY-MM → year/month
-      if (/^\d{4}-\d{2}$/.test(ds)){
-      const y = ds.slice(0,4);
-      const m = String(Number(ds.slice(5,7))); // 01 → 1
-      if (el.year) el.year.value = y;
-      if (el.month) el.month.value = m;
-      if (el.day) el.day.value = "";
-      if (el.start) el.start.value = "";
-      if (el.end) el.end.value = "";
-      return true;
+
+      // 2) YYYY-MM 또는 -220-5 → year/month
+      m = cleaned.match(/^(-?\d{1,4})-(\d{1,2})$/);
+      if (m){
+        if (el.year) el.year.value = m[1];
+        if (el.month) el.month.value = String(Number(m[2]));
+        if (el.day) el.day.value = "";
+        if (el.start) el.start.value = "";
+        if (el.end) el.end.value = "";
+        return true;
       }
-      
-      
-      // 3) YYYY → 기간으로 잡아줌(연/월 없이도 buildListUrl 통과)
-      if (/^\d{4}$/.test(ds)){
-      if (el.day) el.day.value = "";
-      if (el.year) el.year.value = "";
-      if (el.month) el.month.value = "";
-      if (el.start) el.start.value = ds + "-01-01";
-      if (el.end) el.end.value = ds + "-12-31";
-      return true;
+
+      // 3) YYYY 또는 -220 (연도만) → day에 넣어 연도 범위로 처리
+      m = cleaned.match(/^(-?\d{1,4})$/);
+      if (m){
+        if (el.day) el.day.value = m[1];
+        if (el.start) el.start.value = "";
+        if (el.end) el.end.value = "";
+        return true;
       }
-    
-    
-    return false;
+
+      return false;
     }
 
-
-    
-    async function loadTagCards(){
+async function loadTagCards(){
+      let _lastListUrl = "";
       try{
         tg.status.textContent = "불러오는 중...";
         tg.cards.innerHTML = "";
-    
-        const url = buildListUrl();
-        const res = await fetch(url, { method:"GET", cache:"no-store", credentials:"include" });
+        _lastListUrl = buildListUrl();
+        const url = _lastListUrl;
+        const res = await fetch(url, { method:"GET", cache:"no-store", credentials:"omit" });
         if (!res.ok) throw new Error("목록 API 실패 (HTTP " + res.status + ")");
     
         const data = await safeReadJson_(res);
@@ -1063,7 +1158,18 @@ ${tagHtml}
         items.forEach(it => bindEventCard(it));
       }catch(e){
         tg.status.textContent = "";
-        alert("태그 검수 목록 불러오기 실패: " + (e && e.message ? e.message : String(e)));
+        const _msg = (e && e.message ? e.message : String(e));
+        let _hint = "";
+        if (/failed to fetch/i.test(_msg)) {
+          _hint = `
+
+(확인) 아래 URL을 새 탭으로 열었을 때 JSON이 보이나요?
+${_lastListUrl}
+
+- JSON이 아니라 로그인 화면/권한 오류/HTML이 나오면: 웹앱 배포를 'Anyone' 접근 가능으로, 그리고 '최신 배포본'으로 다시 배포해야 합니다.
+- JSON이 보이는데도 여기서 실패하면: 브라우저에서 해당 도메인에 대한 차단(CORS/확장프로그램)이 있을 수 있습니다.`;
+        }
+        alert("태그 검수 목록 불러오기 실패: " + _msg + _hint);
       }
     }
 
@@ -1385,7 +1491,7 @@ ${tagHtml}
           method:"POST",
           body,
           cache:"no-store",
-          credentials:"include"
+          credentials:"omit"
         });
 
         if (res.ok){
@@ -1412,7 +1518,7 @@ ${tagHtml}
         if (patch && patch.content_raw != null)body.set('content_raw', String(patch.content_raw||''));
         if (patch && patch.image_url != null)  body.set('image_url', String(patch.image_url||''));
     
-        const res = await fetch(url, { method:'POST', body, cache:'no-store', credentials:'include' });
+        const res = await fetch(url, { method:'POST', body, cache:'no-store', credentials:'omit' });
         const text = await res.text();
     
         // JSON 파싱 시도
@@ -1451,7 +1557,7 @@ ${tagHtml}
         if (patch && patch.image_url != null)  body.set('image_url', String(patch.image_url||''));
         if (force === true) body.set('force', 'true');
     
-        const res = await fetch(url, { method:'POST', body, cache:'no-store', credentials:'include' });
+        const res = await fetch(url, { method:'POST', body, cache:'no-store', credentials:'omit' });
         const text = await res.text();
     
         let data = null;
@@ -1497,7 +1603,7 @@ ${tagHtml}
           method:'POST',
           body,                 // ✅ form-urlencoded
           cache:'no-store',
-          credentials:'include'    // 유지
+          credentials:'omit'    // 유지
           // ✅ headers 설정하지 말 것!
         });
 
@@ -1555,7 +1661,7 @@ ${tagHtml}
       body.set('line', String(line || ''));
       
       
-      const res = await fetch(url, { method:'POST', body, cache:'no-store', credentials:'include' });
+      const res = await fetch(url, { method:'POST', body, cache:'no-store', credentials:'omit' });
       const text = await res.text();
       
       
@@ -1589,7 +1695,7 @@ ${tagHtml}
         body.set('id', String(id||''));
         body.set('hidden', hidden ? 'true' : 'false');
     
-        const res = await fetch(url, { method:'POST', body, cache:'no-store', credentials:'include' });
+        const res = await fetch(url, { method:'POST', body, cache:'no-store', credentials:'omit' });
         const text = await res.text();
     
         let data = null;
@@ -2112,7 +2218,7 @@ if (btnToggle){
         const body = new URLSearchParams();
         body.set('line', String(add.line.value || ''));
 
-        const res = await fetch(url, { method:'POST', body, cache:'no-store', credentials:'include' });
+        const res = await fetch(url, { method:'POST', body, cache:'no-store', credentials:'omit' });
         if (!res.ok) throw new Error('HTTP ' + res.status);
 
         const data = await safeReadJson_(res);
