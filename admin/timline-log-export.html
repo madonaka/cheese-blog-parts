@@ -756,59 +756,57 @@ const el = {
     });
 
   function buildUrl() {
-    // 입력 (문자열로 처리해서 BC/부분날짜를 안전하게)
-    const year  = normDateLike_(el.year.value);
-    const month = normDateLike_(el.month.value);
+  const year  = String(el.year.value ?? "").trim();
+  const month = String(el.month.value ?? "").trim();
 
-    const day   = normDateLike_(el.day.value);
-    const start = normDateLike_(el.start.value);
-    const end   = normDateLike_(el.end.value);
+  const day   = normalizeDateInput_(el.day.value);
+  const start = normalizeDateInput_(el.start.value);
+  const end   = normalizeDateInput_(el.end.value);
 
-    const ids   = String(el.ids.value || "").trim();
+  const ids   = String(el.ids.value ?? "").trim();
 
-    // ✅ ids가 없을 때만 조건 체크
-    if (!ids && !day && !start && !end && (!year && !month)) {
-      throw new Error("월 추출은 연도/월이 필요하고, 일별은 day가 필요하며, 기간은 start/end가 필요합니다. (start만 또는 end만도 가능) 또는 id를 입력하세요.");
-    }
+  // ✅ 우선순위: id > day > start/end > year/month > year-only
+  if (!ids && !day && !start && !end && !year && !month) {
+    throw new Error("검색 조건을 입력하세요. (id / day / start-end / year-month / year-only)");
+  }
 
-    const params = new URLSearchParams();
-    params.set("mode", "exportDailyLog");
+  const params = new URLSearchParams();
+  params.set("mode", "exportDailyLog");
 
-    // ✅ 1) id 기반
-    if (ids) {
-      params.set("id", ids);
-      return `${API_BASE}?${params.toString()}`;
-    }
+  // 1) id
+  if (ids) {
+    params.set("id", ids);
+    return `${API_BASE}?${params.toString()}`;
+  }
 
-    // ✅ 2) day 입력 (YYYY, YYYY-MM, YYYY-MM-DD, -220, -220-05 등)
-    if (day) {
-      params.set("day", day);
-      return `${API_BASE}?${params.toString()}`;
-    }
+  // 2) day (예: 2026-01-05 / 2026-01 / 2026 / -220)
+  if (day) {
+    params.set("day", day);
+    return `${API_BASE}?${params.toString()}`;
+  }
 
-    // ✅ 3) 기간
-    if (start || end) {
-      if (start) params.set("start", start);
-      if (end)   params.set("end", end);
-      return `${API_BASE}?${params.toString()}`;
-    }
+  // 3) range
+  if (start || end) {
+    if (start) params.set("start", start);
+    if (end) params.set("end", end);
+    return `${API_BASE}?${params.toString()}`;
+  }
 
-    // ✅ 4) 월 추출
-    // - BC 연도는 month가 기본값으로 남아 있어도 '연도만' 검색하는 경우가 많아서
-    //   year가 음수면 기본적으로 '연도만'으로 간주 (월 지정은 day에 -220-05처럼 입력 권장)
-    if (isBceYear_(year)) {
-      params.set("day", year);
-      return `${API_BASE}?${params.toString()}`;
-    }
-
-    if (!year || !month) {
-      throw new Error("월 추출은 연도/월이 모두 필요합니다. (BC는 day에 -220 또는 -220-05처럼 입력하세요)");
-    }
-
+  // 4) year+month
+  if (year && month) {
     params.set("year", year);
     params.set("month", month);
     return `${API_BASE}?${params.toString()}`;
   }
+
+  // 5) year-only (month 비워둔 경우): year를 day로 보내서 연도 전체를 잡는다
+  if (year && !month) {
+    params.set("day", normalizeDateInput_(year));
+    return `${API_BASE}?${params.toString()}`;
+  }
+
+  throw new Error("월 추출은 year+month가 필요하고, 연도만 추출하려면 month를 비워둔 뒤 year만 입력하세요.");
+}
 
 
 
@@ -1009,69 +1007,44 @@ ${tagHtml}
     tg.hiddenView.addEventListener("change", loadTagCards); // ✅ 옵션 바꾸면 바로 다시 로드(선택)
 
     function buildListUrl(){
-      const year  = normDateLike_(tg.year.value);
-      const month = normDateLike_(tg.month.value);
-      const day   = normDateLike_(tg.day.value);
+  const year  = String(el.year.value ?? "").trim();
+  const month = String(el.month.value ?? "").trim();
 
-      const params = new URLSearchParams();
-      params.set('mode','listEvents');
+  const day   = normalizeDateInput_(el.day.value);
+  const start = normalizeDateInput_(el.start.value);
+  const end   = normalizeDateInput_(el.end.value);
 
-      // ✅ BC/부분날짜 지원: day가 있으면 day가 우선
-      if (day){
-        params.set('day', day);
-      } else {
-        // ✅ BC year는 month가 있어도 연도 단독 우선(월 필터는 day에 -220-05로 입력)
-        if (isBceYear_(year)){
-          if (!year) throw new Error('연도를 입력하세요');
-          params.set('day', year);
-        } else {
-          if (!year || !month) throw new Error('연도/월 또는 day를 입력하세요');
-          params.set('year', year);
-          params.set('month', month);
-        }
-      }
+  const ids   = String(el.ids.value ?? "").trim();
 
-      // 숨김 포함 옵션
-      if (tg.includeHidden && tg.includeHidden.checked) params.set('includeHidden','1');
+  const params = new URLSearchParams();
+  params.set("mode", "listEvents");
 
-      return `${API_BASE}?${params.toString()}`;
-    }
+  // ✅ 태그 검수 옵션
+  if (tg.onlyEmpty && tg.onlyEmpty.checked) params.set("onlyEmpty", "1");
 
-      if (country) params.set("country", country);
-      if (polity) params.set("polity", polity);
-      if (showHidden) params.set("hidden", "1");
+  const hv = (tg.hiddenView && tg.hiddenView.value) ? tg.hiddenView.value : "all";
+  // all/only는 hidden 포함해서 받아야 함
+  if (hv !== "exclude") params.set("includeHidden", "1");
 
-      return `${API_BASE}?${params.toString()}`;
-    }
+  // ✅ 필터 우선순위: id > day > start/end > year/month > year-only
+  if (ids) {
+    params.set("id", ids);
+  } else if (day) {
+    params.set("day", day);
+  } else if (start || end) {
+    if (start) params.set("start", start);
+    if (end) params.set("end", end);
+  } else if (year && month) {
+    params.set("year", normalizeDateInput_(year));
+    params.set("month", month);
+  } else if (year && !month) {
+    params.set("day", normalizeDateInput_(year));
+  } else {
+    throw new Error("검수 목록을 불러오려면 id / day / start-end / year-month / year-only 중 하나를 입력하세요.");
+  }
 
-      const params = new URLSearchParams();
-      params.set("mode", "listEvents");
-      params.set("limit", "300");
-
-      if (day) {
-        params.set("day", day);
-      } else if (start || end) {
-        if (start) params.set("start", start);
-        if (end) params.set("end", end);
-      } else {
-        if (year && month) {
-          params.set("year", year);
-          params.set("month", month);
-        } else {
-          // 연도만 지정된 경우(예: -220) → 서버의 day 필터로 전달(해당 연도 전체)
-          params.set("day", year);
-        }
-      }
-    
-      // ✅ 추가: 숨김 포함 여부(서버의 includeHidden 파라미터)
-      const view = tg.hiddenView ? tg.hiddenView.value : "all";
-      params.set("includeHidden", view === "exclude" ? "false" : "true");
-        
-      if (ids) params.set("id", ids);
-      if (TG_ADMIN_KEY) params.set("key", TG_ADMIN_KEY);
-
-      return `${API_BASE}?${params.toString()}`;
-    }
+  return `${API_BASE}?${params.toString()}`;
+}
 
     // ✅ 재등록(AUTO) 후: 새 date_start가 현재 필터 범위 밖이면
     // 새로 생성된 카드가 목록에 안 보일 수 있음 → 필터를 자동 동기화
