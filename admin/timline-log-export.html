@@ -790,7 +790,44 @@ const el = {
         el.start.value = "";
         el.end.value = "";
     });
-
+    
+  function dateKey_(s, isEnd){
+    const v = normalizeDateInput_(s);
+    if (!v) return null;
+  
+    const parts = String(v).replace(/[./]/g, "-").split("-");
+    let y, m, d;
+  
+    if (parts[0] === ""){ // 음수 연도
+      y = -parseInt(parts[1], 10);
+      m = parts[2] ? parseInt(parts[2], 10) : null;
+      d = parts[3] ? parseInt(parts[3], 10) : null;
+    } else {
+      y = parseInt(parts[0], 10);
+      m = parts[1] ? parseInt(parts[1], 10) : null;
+      d = parts[2] ? parseInt(parts[2], 10) : null;
+    }
+  
+    if (Number.isNaN(y)) return null;
+    if (!m) m = isEnd ? 12 : 1;
+    if (!d) d = isEnd ? 31 : 1;
+  
+    return y * 10000 + m * 100 + d;
+  }
+  
+  function overlapsRange_(itStart, itEnd, start, end){
+    const sk = start ? dateKey_(start, false) : null;
+    const ek = end   ? dateKey_(end,   true)  : null;
+  
+    const a = dateKey_(itStart, false);
+    const b = dateKey_(itEnd || itStart, true);
+    if (a === null) return false;
+  
+    if (sk !== null && b < sk) return false;
+    if (ek !== null && a > ek) return false;
+    return true;
+  }
+    
   function buildUrl() {
   const year  = String(el.year.value ?? "").trim();
   const month = String(el.month.value ?? "").trim();
@@ -1155,7 +1192,45 @@ async function loadTagCards(){
         const view = tg.hiddenView ? tg.hiddenView.value : "all";
         if (view === "exclude") items = items.filter(it => it.hidden !== true);
         if (view === "only")    items = items.filter(it => it.hidden === true);
-    
+        
+        // ✅ 날짜/범위 표시 필터 (서버가 전체를 줘도 화면은 범위대로 보이게)
+        const year  = String(el.year.value ?? "").trim();
+        const month = String(el.month.value ?? "").trim();
+        
+        const day   = normalizeDateInput_(el.day.value);
+        const start = normalizeDateInput_(el.start.value);
+        const end   = normalizeDateInput_(el.end.value);
+        
+        const ids   = String(el.ids.value ?? "").trim();
+        
+        if (ids) {
+          const set = new Set(ids.split(/[\s,]+/).filter(Boolean));
+          items = items.filter(it => set.has(String(it.id || "").trim()));
+        } else if (day) {
+          items = items.filter(it => {
+            const ds = String(it.date_start || "");
+            const de = String(it.date_end || "");
+            return ds.startsWith(day) || de.startsWith(day);
+          });
+        } else if (start || end) {
+          items = items.filter(it => overlapsRange_(it.date_start, it.date_end, start, end));
+        } else if (year && month) {
+          const mm = String(Number(month)).padStart(2, "0");
+          const prefix = `${normalizeDateInput_(year)}-${mm}`;
+          items = items.filter(it => {
+            const ds = String(it.date_start || "");
+            const de = String(it.date_end || "");
+            return ds.startsWith(prefix) || de.startsWith(prefix);
+          });
+        } else if (year && !month) {
+          const prefix = normalizeDateInput_(year);
+          items = items.filter(it => {
+            const ds = String(it.date_start || "");
+            const de = String(it.date_end || "");
+            return ds.startsWith(prefix) || de.startsWith(prefix);
+          });
+        }
+        
         const hiddenCnt = allItems.filter(it => it.hidden === true).length;
     
         tg.status.textContent =
@@ -2268,6 +2343,20 @@ if (btnToggle){
           reject(e);
         }
       });
+    }
+
+    
+    function overlapsRange_(itStart, itEnd, start, end){
+      const sk = start ? dateKey_(start, false) : null;
+      const ek = end   ? dateKey_(end,   true)  : null;
+    
+      const a = dateKey_(itStart, false);
+      const b = dateKey_(itEnd || itStart, true);
+      if (a === null) return false;
+    
+      if (sk !== null && b < sk) return false;
+      if (ek !== null && a > ek) return false;
+      return true;
     }
   </script>
 </body>
