@@ -535,6 +535,7 @@
                       <option value="10">10년</option>
                       <option value="50">50년</option>
                       <option value="100">100년</option>
+                      <option value="C">세기(입력값을 세기 번호로)</option>         
                     </select>
                   </div>
 
@@ -873,14 +874,16 @@ const el = {
     if (end) params.set("end", end);
     return `${API_BASE}?${params.toString()}`;
   }
+    
   // ✅ 3.5) year + unit  (단위 선택이 있으면 month가 있어도 단위 검색 우선)
   const unitVal = String(el.yearUnit?.value || "").trim();
-  if (year && parseInt(unitVal, 10) && !ids && !day && !start && !end) {
+  if (year && unitVal && !ids && !day && !start && !end) {
     const r = unitRangeFromYear_(year, unitVal);
     params.set("start", r.start);
     params.set("end", r.end);
     return `${API_BASE}?${params.toString()}`;
   }
+    
   // 4) year+month
   if (year && month) {
     params.set("year", year);
@@ -1104,17 +1107,18 @@ ${tagHtml}
       const end   = normalizeDateInput_(el.end.value);
     
       const ids   = String(el.ids.value ?? "").trim();
+      const unitVal = String(el.yearUnit?.value || "").trim();
     
       const params = new URLSearchParams();
       params.set("mode", "listEvents");
     
-      // ✅ 태그 검수 옵션
+      // 태그 검수 옵션
       if (tg.onlyEmpty && tg.onlyEmpty.checked) params.set("onlyEmpty", "1");
     
       const hv = (tg.hiddenView && tg.hiddenView.value) ? tg.hiddenView.value : "all";
       if (hv !== "exclude") params.set("includeHidden", "1");
     
-      // ✅ 필터 우선순위: id > day > start/end > year+unit > year/month > year-only
+      // 우선순위: id > day > start/end > year+unit > year+month > year-only
       if (ids) {
         params.set("id", ids);
     
@@ -1125,26 +1129,20 @@ ${tagHtml}
         if (start) params.set("start", start);
         if (end)   params.set("end", end);
     
+      } else if (year && unitVal) {
+        const r = unitRangeFromYear_(year, unitVal);
+        params.set("start", r.start);
+        params.set("end", r.end);
+    
+      } else if (year && month) {
+        params.set("year", normalizeDateInput_(year));
+        params.set("month", month);
+    
+      } else if (year && !month) {
+        params.set("day", normalizeDateInput_(year));
+    
       } else {
-        const unitVal = String(el.yearUnit?.value || "").trim();
-        const hasUnit = !!parseInt(unitVal, 10);
-    
-        // ✅ year+unit (단위가 선택되면 month가 있어도 unit이 우선)
-        if (year && hasUnit) {
-          const r = unitRangeFromYear_(year, unitVal);
-          params.set("start", r.start);
-          params.set("end", r.end);
-    
-        } else if (year && month) {
-          params.set("year", normalizeDateInput_(year));
-          params.set("month", month);
-    
-        } else if (year) {
-          params.set("day", normalizeDateInput_(year));
-    
-        } else {
-          throw new Error("검수 목록을 불러오려면 id / day / start-end / year-month / year+unit / year-only 중 하나를 입력하세요.");
-        }
+        throw new Error("검수 목록을 불러오려면 id / day / start-end / year+unit / year-month / year-only 중 하나를 입력하세요.");
       }
     
       return `${API_BASE}?${params.toString()}`;
@@ -2414,30 +2412,37 @@ if (btnToggle){
      *   예) -3 + 100 => -300~-201 (B.C. 3세기)
      */
     function unitRangeFromYear_(yearStr, unitStr){
-      const unit = parseInt(String(unitStr || "").trim(), 10);
-      if (!unit) return null;
+      const u = String(unitStr || "").trim();
+      if (!u) return null;
     
       const y = parseYearInt_(yearStr);
-      if (y === null) throw new Error("단위 검색은 연도(또는 세기 번호)를 입력하세요. 예) 2026, -220, 1(=1세기), -3(=B.C.3세기)");
+      if (y === null) throw new Error("단위 검색은 숫자를 입력하세요. (연도 또는 세기 번호)");
     
-      // ✅ 세기 모드(1세기, -3세기 같은 입력)
-      if (unit === 100 && Math.abs(y) <= 50){
-        if (y > 0){
-          const start = (y - 1) * 100 + 1; // 1세기 => 1
-          const end   = y * 100;           // 1세기 => 100
+      // ✅ 세기 모드: 입력값을 '세기 번호'로 해석
+      //  1  -> 1~100
+      // -3 -> -300~-201  (B.C. 3세기)
+      if (u === "C") {
+        const c = y;
+        if (c === 0) throw new Error("0세기는 사용할 수 없습니다.");
+    
+        if (c > 0) {
+          const start = (c - 1) * 100 + 1;
+          const end   = c * 100;
           return { start: String(start), end: String(end) };
         } else {
-          const start = y * 100;           // -3세기 => -300
-          const end   = start + 99;        // -300~-201
+          const start = c * 100;       // 예: -3 => -300
+          const end   = c * 100 + 99;  //      => -201
           return { start: String(start), end: String(end) };
         }
       }
     
-      // ✅ 기본 버킷 모드(10/50/100년 단위)
-      // 2026, unit=100 => 2000~2099 / -221, unit=100 => -300~-201
-      const start = Math.floor(y / unit) * unit;
-      const end = start + unit - 1;
-      return { start: String(start), end: String(end) };
+      // ✅ 연도 버킷 모드(10/50/100)
+      const unit = parseInt(u, 10);
+      if (!unit) throw new Error("단위 값이 올바르지 않습니다: " + u);
+    
+      const bucketStart = Math.floor(y / unit) * unit;
+      const bucketEnd   = bucketStart + unit - 1;
+      return { start: String(bucketStart), end: String(bucketEnd) };
     }
 
     
