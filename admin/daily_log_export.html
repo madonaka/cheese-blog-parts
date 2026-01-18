@@ -440,7 +440,7 @@
         ========================= -->
         <section id="tab-add" class="tab-panel">
           <div class="card">
-            <h2>새 이벤트 추가 (파이프 1줄 붙여넣기)</h2>
+            <h2>새 이벤트 추가 (파이프 여러 줄 붙여넣기: 1행=1이벤트)</h2>
             <p class="desc" style="margin-top:6px;">
               형식(11칸 고정): <span class="mono">id|date_type|date_start|date_end|title|content_raw|party|is_foreign|country|tags|created_at</span><br/>
               - <b>id</b>가 <span class="mono">AUTO</span> 또는 빈칸이면, 서버가 <b>date_start 기준</b>으로 <span class="mono">YYMMDD-01</span>처럼 자동 생성합니다.<br/>
@@ -2032,127 +2032,261 @@ if (btnToggle){
       }
     }
 
-    /* =========================
-       새 이벤트 추가 탭
-    ========================= */
-    const add = {
-      line: document.getElementById('addLine'),
-      save: document.getElementById('addSave'),
-      clear: document.getElementById('addClear'),
-      status: document.getElementById('addStatus'),
-      preview: document.getElementById('addPreview')
-    };
-
-    const ADD_COLS = ["id","date_type","date_start","date_end","title","content_raw","party","is_foreign","country","tags","created_at"];
-
-    function parsePipeLine(line){
-      const raw = String(line || '').replace(/\r/g,'').trim();
-      if (!raw) return null;
-      const parts = raw.split('|');
-
-      // 11칸 미만이면 패딩, 초과면 오류(파이프가 본문에 섞인 경우)
-      if (parts.length < 11) {
-        while(parts.length < 11) parts.push('');
-      } else if (parts.length > 11) {
-        throw new Error('열 개수 초과(11칸 필요). content_raw에 | 가 포함되었는지 확인하세요.');
-      }
-
-      const obj = {};
-      for (let i=0;i<11;i++){
-        obj[ADD_COLS[i]] = (parts[i] ?? '').toString();
-      }
-      return obj;
+  /* =========================
+     새 이벤트 추가 탭 (단건/일괄)
+  ========================= */
+  const add = {
+    line: document.getElementById('addLine'),
+    save: document.getElementById('addSave'),
+    clear: document.getElementById('addClear'),
+    status: document.getElementById('addStatus'),
+    preview: document.getElementById('addPreview')
+  };
+  
+  const ADD_COLS = ["id","date_type","date_start","date_end","title","content_raw","party","is_foreign","country","tags","created_at"];
+  
+  function splitNonEmptyLines_(text){
+    return String(text || "")
+      .replace(/\r/g, "")
+      .split("\n")
+      .map(s => s.trim())
+      .filter(Boolean);
+  }
+  
+  function parsePipeLineStrict_(line){
+    const raw = String(line || '').replace(/\r/g,'').trim();
+    if (!raw) return null;
+  
+    const parts = raw.split('|');
+  
+    // 11칸 미만이면 패딩, 초과면 오류(파이프가 본문에 섞인 경우)
+    if (parts.length < 11) {
+      while(parts.length < 11) parts.push('');
+    } else if (parts.length > 11) {
+      throw new Error('열 개수 초과(11칸 필요). content_raw에 | 가 포함되었는지 확인하세요.');
     }
-
-    function renderAddPreview(obj){
-      if (!obj) { add.preview.textContent = '(아직 없음)'; return; }
-      const lines = ADD_COLS.map(k => `${k}: ${obj[k] ?? ''}`);
-      add.preview.textContent = lines.join('\n');
+  
+    const obj = {};
+    for (let i=0;i<11;i++){
+      obj[ADD_COLS[i]] = (parts[i] ?? '').toString();
     }
-
-    add.line.addEventListener('input', ()=>{
-      try{
-        const obj = parsePipeLine(add.line.value);
-        renderAddPreview(obj);
-        add.status.textContent = '';
-      }catch(e){
-        add.preview.textContent = '미리보기 오류: ' + (e && e.message ? e.message : String(e));
-      }
-    });
-
-    add.clear.addEventListener('click', ()=>{
-      add.line.value = '';
+    return obj;
+  }
+  
+  function validateAddObj_(obj){
+    const ds = String(obj?.date_start || '').trim();
+    const de = String(obj?.date_end || '').trim();
+    const title = String(obj?.title || '').trim();
+  
+    if (!ds && de) return 'date_end를 쓰려면 date_start가 필요합니다.';
+    if (!ds) return 'date_start는 필수입니다.';
+    if (!title) return 'title은 필수입니다.';
+    return '';
+  }
+  
+  function renderAddPreviewFromText_(){
+    const lines = splitNonEmptyLines_(add.line.value);
+  
+    if (!lines.length){
       add.preview.textContent = '(아직 없음)';
       add.status.textContent = '';
-    });
-
-    add.save.addEventListener('click', async ()=>{
+      return;
+    }
+  
+    // 단건이면 기존처럼 자세히 보여주고,
+    // 여러 건이면 라인별 요약/오류를 보여줌
+    if (lines.length === 1){
       try{
-        const obj = parsePipeLine(add.line.value);
-        if (!obj) { alert('입력 라인이 비어있습니다.'); return; }
-
-        // 최소 검증
-        const ds = String(obj.date_start || '').trim();
-        const title = String(obj.title || '').trim();
-        if (!ds) { alert('date_start는 필수입니다.'); return; }
-        if (!title) { alert('title은 필수입니다.'); return; }
-        if (!String(obj.date_start||'').trim() && String(obj.date_end||'').trim()){
-          alert('date_end를 쓰려면 date_start가 필요합니다.');
-          return;
-        }
-
-        add.status.textContent = '저장 중...';
-
+        const obj = parsePipeLineStrict_(lines[0]);
+        const err = validateAddObj_(obj);
+        if (err) throw new Error(err);
+  
+        add.preview.textContent = ADD_COLS.map(k => `${k}: ${obj[k] ?? ''}`).join('\n');
+        add.status.textContent = '';
+      }catch(e){
+        add.preview.textContent = '미리보기 오류: ' + (e?.message ? e.message : String(e));
+      }
+      return;
+    }
+  
+    const out = [];
+    out.push(`총 ${lines.length}행 (1행=1이벤트)`);
+    out.push('---');
+  
+    let okCount = 0;
+    lines.forEach((line, idx) => {
+      try{
+        const obj = parsePipeLineStrict_(line);
+        const err = validateAddObj_(obj);
+        if (err) throw new Error(err);
+  
+        okCount++;
+        const range = (obj.date_end && String(obj.date_end).trim()) ? ` ~ ${obj.date_end}` : '';
+        out.push(`[${idx+1}] ✅ ${obj.date_start}${range} | ${obj.title} | tags=${obj.tags || ''}`);
+      }catch(e){
+        out.push(`[${idx+1}] ❌ ${e?.message ? e.message : String(e)}`);
+      }
+    });
+  
+    out.push('---');
+    out.push(`검증 통과: ${okCount}/${lines.length}`);
+    add.preview.textContent = out.join('\n');
+  }
+  
+  add.line.addEventListener('input', renderAddPreviewFromText_);
+  
+  add.clear.addEventListener('click', ()=>{
+    add.line.value = '';
+    add.preview.textContent = '(아직 없음)';
+    add.status.textContent = '';
+  });
+  
+  /** ✅ 단건: appendEvent(form)
+   *  ✅ 일괄: appendEvents(JSON) - 서버에 이미 구현되어 있음 :contentReference[oaicite:4]{index=4}
+   */
+  async function postAppendEvents_(lines){
+    const params = new URLSearchParams();
+    params.set('mode','appendEvents');
+    if (TG_ADMIN_KEY) params.set('key', TG_ADMIN_KEY);
+    const url = `${API_BASE}?${params.toString()}`;
+  
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lines }),
+      cache: 'no-store',
+      credentials: 'omit'
+    });
+  
+    const text = await res.text();
+    let data = null;
+    try { data = JSON.parse(text); } catch(_){}
+  
+    if (!res.ok) return { ok:false, error:`HTTP ${res.status}: ${text.slice(0,300)}` };
+    if (!data)    return { ok:false, error:`JSON 아님: ${text.slice(0,300)}` };
+    return { ok:true, data };
+  }
+  
+  function replaceIdInLine_(line, newId){
+    const parts = String(line || '').split('|');
+    while(parts.length < 11) parts.push('');
+    parts[0] = String(newId || '').trim();
+    return parts.slice(0,11).join('|');
+  }
+  
+  add.save.addEventListener('click', async ()=>{
+    try{
+      const lines = splitNonEmptyLines_(add.line.value);
+      if (!lines.length) { alert('입력 라인이 비어있습니다.'); return; }
+  
+      // 1) 사전 검증(전부 통과해야 저장)
+      for (let i=0;i<lines.length;i++){
+        const obj = parsePipeLineStrict_(lines[i]);
+        const err = validateAddObj_(obj);
+        if (err) throw new Error(`${i+1}행: ${err}`);
+      }
+  
+      add.status.textContent = (lines.length === 1) ? '저장 중...' : `일괄 저장 중... (0/${lines.length})`;
+  
+      // 2) 단건이면 기존 appendEvent 그대로 사용(현재 코드 유지 가능)
+      if (lines.length === 1){
+        // 기존 단건 로직 그대로 (appendEvent + line=...)
         const params = new URLSearchParams();
         params.set('mode','appendEvent');
         if (TG_ADMIN_KEY) params.set('key', TG_ADMIN_KEY);
         const url = `${API_BASE}?${params.toString()}`;
-
+  
         const body = new URLSearchParams();
-        body.set('line', String(add.line.value || ''));
-
+        body.set('line', String(lines[0] || ''));
+  
         const res = await fetch(url, { method:'POST', body, cache:'no-store', credentials:'omit' });
         if (!res.ok) throw new Error('HTTP ' + res.status);
-
+  
         const data = await safeReadJson_(res);
-        if (!data || data.ok !== true) throw new Error(data && data.error ? data.error : 'SAVE_FAILED');
-
-        // 서버가 생성/확정한 id를 반환
+        if (!data || data.ok !== true) throw new Error(data?.error ? data.error : 'SAVE_FAILED');
+  
         const newId = data.id ? String(data.id) : '';
         add.status.textContent = newId ? `저장 완료 (id: ${newId})` : '저장 완료';
-
-        // id가 AUTO/빈칸이었다면, 입력 라인도 최신 id로 갱신해주면 편함
+  
         if (newId){
-          const parts = String(add.line.value||'').replace(/\r/g,'').trim().split('|');
-          while(parts.length < 11) parts.push('');
-          parts[0] = newId;
-          add.line.value = parts.slice(0,11).join('|');
-          const obj2 = parsePipeLine(add.line.value);
-          renderAddPreview(obj2);
+          add.line.value = replaceIdInLine_(lines[0], newId);
         }
+        renderAddPreviewFromText_();
+        return;
+      }
+  
+      // 3) 여러 건: appendEvents를 배치로 호출(너무 큰 입력 대비)
+      const BATCH = 200; // 필요하면 100~300으로 조절
+      const allResults = [];
+  
+      for (let s=0; s<lines.length; s+=BATCH){
+        const chunk = lines.slice(s, s+BATCH);
+        add.status.textContent = `일괄 저장 중... (${Math.min(s+BATCH, lines.length)}/${lines.length})`;
+  
+        const r = await postAppendEvents_(chunk);
+        if (!r.ok) throw new Error(r.error || 'BULK_SAVE_FAILED');
+  
+        const results = Array.isArray(r.data?.results) ? r.data.results : [];
+        // 서버는 각 라인별로 {ok:true,id:"..."} 또는 {ok:false,error:"..."} 형태를 반환 :contentReference[oaicite:5]{index=5}
+        allResults.push(...results);
+  
+        // 이 배치에서 실패가 있으면 여기서 멈추게(원하면 계속 진행으로 바꿀 수 있음)
+        const allOkThisBatch = results.every(x => x && x.ok === true);
+        if (!allOkThisBatch) break;
+      }
+  
+      // 4) 결과 반영
+      const okCount = allResults.filter(x => x && x.ok === true).length;
+      const failIdx = [];
+      allResults.forEach((x, i)=>{
+        if (!x || x.ok !== true) failIdx.push(i+1);
+      });
+  
+      // AUTO/빈 id였던 라인들은 서버가 확정한 id를 results[i].id로 돌려주므로, 입력 텍스트도 id로 갱신
+      const newLines = lines.map((line, i)=>{
+        const rr = allResults[i];
+        if (rr && rr.ok === true && rr.id) return replaceIdInLine_(line, rr.id);
+        return line;
+      });
+      add.line.value = newLines.join('\n');
+  
+      if (failIdx.length){
+        add.status.textContent = `부분 실패: 성공 ${okCount}/${lines.length} (실패 행: ${failIdx.join(', ')})`;
+        renderAddPreviewFromText_();
+        alert(`일괄 저장 중 일부 실패가 있습니다.\n실패 행: ${failIdx.join(', ')}\n미리보기에서 오류를 확인하세요.`);
+        return;
+      }
+  
+      add.status.textContent = `일괄 저장 완료: ${okCount}/${lines.length}`;
+      renderAddPreviewFromText_();
+  
+    }catch(e){
+      add.status.textContent = '';
+      renderAddPreviewFromText_();
+      alert('저장 실패: ' + (e?.message ? e.message : String(e)));
+    }
+  });
+  
+  // 초기 1회
+  renderAddPreviewFromText_();
+
+  // ✅ Clipboard 이미지 Blob -> base64(데이터 부분만)
+  function readBlobAsBase64_(blob){
+    return new Promise((resolve, reject) => {
+      try{
+        const fr = new FileReader();
+        fr.onload = () => {
+          const s = String(fr.result || "");
+          const i = s.indexOf(",");
+          resolve(i >= 0 ? s.slice(i + 1) : s); // "data:...;base64," 헤더 제거
+        };
+        fr.onerror = () => reject(fr.error || new Error("FileReader failed"));
+        fr.readAsDataURL(blob);
       }catch(e){
-        add.status.textContent = '';
-        alert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+        reject(e);
       }
     });
-
-    // ✅ Clipboard 이미지 Blob -> base64(데이터 부분만)
-    function readBlobAsBase64_(blob){
-      return new Promise((resolve, reject) => {
-        try{
-          const fr = new FileReader();
-          fr.onload = () => {
-            const s = String(fr.result || "");
-            const i = s.indexOf(",");
-            resolve(i >= 0 ? s.slice(i + 1) : s); // "data:...;base64," 헤더 제거
-          };
-          fr.onerror = () => reject(fr.error || new Error("FileReader failed"));
-          fr.readAsDataURL(blob);
-        }catch(e){
-          reject(e);
-        }
-      });
-    }
-  </script>
+  }
+</script>
 </body>
 </html>
