@@ -2138,120 +2138,105 @@ if (btnToggle){
   });
   
   /** ✅ 단건: appendEvent(form)
-   *  ✅ 일괄: appendEvents(JSON) - 서버에 이미 구현되어 있음 :contentReference[oaicite:4]{index=4}
+   *  ✅ 일괄: appendEvents(JSON)
+   *
+   *  ⚠️ 주의: Google Apps Script WebApp은 CORS preflight(OPTIONS)를 처리하지 못하는 경우가 많아서
+   *  `Content-Type: application/json` 같은 헤더를 붙이면 브라우저에서 "Failed to fetch"가 날 수 있습니다.
+   *  그래서 headers를 지정하지 않고 JSON 문자열을 body로만 보내 preflight를 피합니다.
    */
   async function postAppendEvents_(lines){
     const params = new URLSearchParams();
     params.set('mode','appendEvents');
     if (TG_ADMIN_KEY) params.set('key', TG_ADMIN_KEY);
     const url = `${API_BASE}?${params.toString()}`;
-  
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ lines }),
-      cache: 'no-store',
-      credentials: 'omit'
-    });
-  
-    const text = await res.text();
-    let data = null;
-    try { data = JSON.parse(text); } catch(_){}
-  
-    if (!res.ok) return { ok:false, error:`HTTP ${res.status}: ${text.slice(0,300)}` };
-    if (!data)    return { ok:false, error:`JSON 아님: ${text.slice(0,300)}` };
-    return { ok:true, data };
+
+    try{
+      const res = await fetch(url, {
+        method: 'POST',
+        // ✅ headers 금지(=preflight 방지)
+        body: JSON.stringify({ lines }),
+        cache: 'no-store',
+        credentials: 'omit'
+      });
+
+      const text = await res.text();
+      let data = null;
+      try { data = JSON.parse(text); } catch(_){ }
+
+      if (!res.ok) return { ok:false, error:`HTTP ${res.status}: ${text.slice(0,300)}` };
+      if (!data)   return { ok:false, error:`JSON 아님: ${text.slice(0,300)}` };
+      return { ok:true, data };
+    }catch(e){
+      return { ok:false, error: e && e.message ? e.message : String(e) };
+    }
   }
-  
+
   function replaceIdInLine_(line, newId){
     const parts = String(line || '').split('|');
     while(parts.length < 11) parts.push('');
     parts[0] = String(newId || '').trim();
     return parts.slice(0,11).join('|');
   }
-  
+
   add.save.addEventListener('click', async ()=>{
     try{
       const lines = splitNonEmptyLines_(add.line.value);
       if (!lines.length) { alert('입력 라인이 비어있습니다.'); return; }
-  
-      add.status.textContent = `저장 중... (0/${lines.length})`;
-  
-      const results = [];
-      for (let i=0; i<lines.length; i++){
-        add.status.textContent = `저장 중... (${i+1}/${lines.length})`;
-        const r = await postAppendEventLine(lines[i]); // ✅ 기존 헬퍼 사용 :contentReference[oaicite:3]{index=3}
-        results.push(r);
-        if (!r.ok) throw new Error(`${i+1}행 저장 실패: ${r.error}`);
-      }
-  
-      // id 자동 반영
-      const newLines = lines.map((line, i)=>{
-        const r = results[i];
-        return (r && r.ok && r.id) ? replaceIdInLine_(line, r.id) : line;
-      });
-      add.line.value = newLines.join('\n');
-  
-      add.status.textContent = `저장 완료: ${results.length}/${results.length}`;
-    }catch(e){
-      add.status.textContent = '';
-      alert('저장 실패: ' + (e && e.message ? e.message : String(e)));
-    }
-  });
-  
-      // 3) 여러 건: appendEvents를 배치로 호출(너무 큰 입력 대비)
-      const BATCH = 200; // 필요하면 100~300으로 조절
+
+      // ✅ 일괄 저장(배치) + 결과 id를 입력값에 되돌려쓰기
+      const BATCH = 200; // 너무 크면 실패할 수 있어 적당히 쪼갭니다.
       const allResults = [];
-  
+
+      add.status.textContent = `일괄 저장 중... (0/${lines.length})`;
+
       for (let s=0; s<lines.length; s+=BATCH){
         const chunk = lines.slice(s, s+BATCH);
         add.status.textContent = `일괄 저장 중... (${Math.min(s+BATCH, lines.length)}/${lines.length})`;
-  
+
         const r = await postAppendEvents_(chunk);
         if (!r.ok) throw new Error(r.error || 'BULK_SAVE_FAILED');
-  
-        const results = Array.isArray(r.data?.results) ? r.data.results : [];
-        // 서버는 각 라인별로 {ok:true,id:"..."} 또는 {ok:false,error:"..."} 형태를 반환 :contentReference[oaicite:5]{index=5}
+
+        const results = Array.isArray(r.data && r.data.results) ? r.data.results : [];
+        if (!results.length) throw new Error('서버 응답에 results가 없습니다. (appendEvents)');
+
         allResults.push(...results);
-  
-        // 이 배치에서 실패가 있으면 여기서 멈추게(원하면 계속 진행으로 바꿀 수 있음)
-        const allOkThisBatch = results.every(x => x && x.ok === true);
-        if (!allOkThisBatch) break;
+
+        // 일부 실패가 있으면 여기서 멈춤(중복 저장 방지). 원하면 계속 진행으로 바꿀 수 있음
+        const okThisBatch = results.every(x => x && x.ok === true);
+        if (!okThisBatch) break;
       }
-  
-      // 4) 결과 반영
-      const okCount = allResults.filter(x => x && x.ok === true).length;
-      const failIdx = [];
-      allResults.forEach((x, i)=>{
-        if (!x || x.ok !== true) failIdx.push(i+1);
-      });
-  
-      // AUTO/빈 id였던 라인들은 서버가 확정한 id를 results[i].id로 돌려주므로, 입력 텍스트도 id로 갱신
+
+      // 결과 반영
       const newLines = lines.map((line, i)=>{
         const rr = allResults[i];
         if (rr && rr.ok === true && rr.id) return replaceIdInLine_(line, rr.id);
         return line;
       });
       add.line.value = newLines.join('\n');
-  
+
+      const okCount = allResults.filter(x => x && x.ok === true).length;
+      const failIdx = [];
+      allResults.forEach((x, i)=>{ if (!x || x.ok !== true) failIdx.push(i+1); });
+      // 처리되지 않은 행(서버 중단/부분 실행)도 실패로 표시
+      for (let i=allResults.length; i<lines.length; i++){ failIdx.push(i+1); }
+
+      renderAddPreviewFromText_();
+
       if (failIdx.length){
         add.status.textContent = `부분 실패: 성공 ${okCount}/${lines.length} (실패 행: ${failIdx.join(', ')})`;
-        renderAddPreviewFromText_();
         alert(`일괄 저장 중 일부 실패가 있습니다.\n실패 행: ${failIdx.join(', ')}\n미리보기에서 오류를 확인하세요.`);
         return;
       }
-  
+
       add.status.textContent = `일괄 저장 완료: ${okCount}/${lines.length}`;
-      renderAddPreviewFromText_();
-  
     }catch(e){
       add.status.textContent = '';
       renderAddPreviewFromText_();
-      alert('저장 실패: ' + (e?.message ? e.message : String(e)));
+      alert('저장 실패: ' + (e && e.message ? e.message : String(e)));
     }
   });
-  
-  // 초기 1회
+
+// 초기 1회
   renderAddPreviewFromText_();
 
   // ✅ Clipboard 이미지 Blob -> base64(데이터 부분만)
