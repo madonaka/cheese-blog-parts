@@ -717,6 +717,42 @@
     function isNegYearOnly_(v){
       return /^-\d{1,6}$/.test(String(v || ""));
     }
+    // ✅ 누락된 함수 보완: buildUrl/buildListUrl에서 사용
+function normalizeDateInput_(input){
+  // 1) 기본 정리(유니코드 마이너스/BC/AD/공백 제거 등)
+  let v = normDateLike_(input);
+  if (!v) return "";
+
+  // 2) 2026.01.05 / 2026/01/05 같은 입력도 허용하려면 치환
+  v = v.replace(/[./]/g, "-");
+
+  // 3) 허용 패턴: 연도 / 연-월 / 연-월-일 (BC는 -220 형태)
+  // - 연도만
+  if (/^-?\d{1,6}$/.test(v)) return v;
+
+  // - 연-월
+  let m = v.match(/^(-?\d{1,6})-(\d{1,2})$/);
+  if (m){
+    const y = m[1];
+    const mm = String(parseInt(m[2], 10));
+    if (!mm || isNaN(mm) || +mm < 1 || +mm > 12) throw new Error("month 범위 오류: " + input);
+    return `${y}-${mm.padStart(2,"0")}`;
+  }
+
+  // - 연-월-일
+  m = v.match(/^(-?\d{1,6})-(\d{1,2})-(\d{1,2})$/);
+  if (m){
+    const y = m[1];
+    const mm = parseInt(m[2], 10);
+    const dd = parseInt(m[3], 10);
+    if (isNaN(mm) || mm < 1 || mm > 12) throw new Error("month 범위 오류: " + input);
+    if (isNaN(dd) || dd < 1 || dd > 31) throw new Error("day 범위 오류: " + input);
+    return `${y}-${String(mm).padStart(2,"0")}-${String(dd).padStart(2,"0")}`;
+  }
+
+  // 4) 여기까지 오면 형식 불명
+  throw new Error("날짜 형식 오류: " + input);
+}
     function displayUrl_(fullUrl){
       // 보안/노이즈 때문에 base URL은 숨기고 쿼리만 보여줌
       try{
