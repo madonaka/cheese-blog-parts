@@ -566,6 +566,10 @@
 
               <div class="actions">
                 <button id="btnGenerate" class="btn primary">HTML 생성</button>
+                <label style="display:flex; gap:8px; align-items:center; font-weight:800; margin-left:6px;">
+                  <input id="includeMonthNote" type="checkbox" />
+                  월 요약 포스트잇 포함
+                </label>
                 <button id="btnCopy" class="btn">복사</button>
                 <button id="btnOpen" class="btn">요청 URL 열기</button>
                 <button id="btnClear" class="btn">비우기</button>
@@ -600,6 +604,11 @@
               <h2>입력</h2>
 
               <div class="field">
+                <label>자동 추천 개수(Top N)</label>
+                <input id="mnTopN" type="number" min="3" max="20" value="8" />
+              </div>
+                            
+              <div class="field">
                 <label>타이틀</label>
                 <input id="mnTitle" type="text" placeholder="예) 1월 핵심 키워드" />
               </div>
@@ -621,6 +630,7 @@
                 <button id="mnBuild" class="btn primary">코드 생성</button>
                 <button id="mnCopy" class="btn">코드 복사</button>
                 <button id="mnReset" class="btn">입력 초기화</button>
+                <button id="mnAuto" class="btn">important 태그 자동 추천</button>
               </div>
 
               <p class="desc" style="margin-top:10px;">
@@ -772,7 +782,27 @@
         }
 
         const fixed = text.replace(/&lt;br\s*\/?&gt;/gi, "<br>");
-        el.output.value = fixed || "<!-- empty -->";
+
+        let outHtml = fixed || "<!-- empty -->";
+        
+        // ✅ 체크 시: month-note 코드를 앞에 붙임
+        const include = document.getElementById("includeMonthNote")?.checked === true;
+        if (include){
+          // mnOutput이 비어있으면 현재 입력값으로 생성 시도
+          const mnOutputEl = document.getElementById("mnOutput");
+          let mnCode = String(mnOutputEl?.value || "").trim();
+        
+          if (!mnCode){
+            try { buildMonthNote(); } catch(_){}
+            mnCode = String(mnOutputEl?.value || "").trim();
+          }
+        
+          if (mnCode){
+            outHtml = mnCode + "\n\n" + outHtml;
+          }
+        }
+        
+        el.output.value = outHtml;
       } catch (e) {
         el.output.value = "";
         const msg = (e && e.message ? e.message : String(e));
@@ -820,6 +850,8 @@
       build: document.getElementById("mnBuild"),
       copy: document.getElementById("mnCopy"),
       reset: document.getElementById("mnReset"),
+      topN: document.getElementById("mnTopN"),
+      auto: document.getElementById("mnAuto"),
     };
 
     const MN_KEY = "CHEESE_MONTH_NOTE_FORM";
@@ -829,20 +861,28 @@
         if (saved.title != null) mn.title.value = saved.title;
         if (saved.tags  != null) mn.tags.value  = saved.tags;
         if (saved.desc  != null) mn.desc.value  = saved.desc;
+        if (saved.topN != null && mn.topN) mn.topN.value = saved.topN;
       }catch(_){ }
     }
     function saveMonthNote(){
       localStorage.setItem(MN_KEY, JSON.stringify({
         title: mn.title.value || "",
         tags:  mn.tags.value || "",
-        desc:  mn.desc.value || ""
+        desc:  mn.desc.value || "",
+        topN: mn.topN ? (mn.topN.value || "8") : "8"
       }));
     }
     ["input","change"].forEach(evt=>{
       mn.title.addEventListener(evt, saveMonthNote);
       mn.tags.addEventListener(evt, saveMonthNote);
       mn.desc.addEventListener(evt, saveMonthNote);
+      mn.topN.addEventListener(evt, saveMonthNote);
     });
+
+    if ((mn.title.value || mn.tags.value || mn.desc.value).trim().length){
+      buildMonthNote();
+    }
+    
     loadMonthNote();
 
     function parseTags(text){
@@ -2256,6 +2296,114 @@ if (btnToggle){
       }
     });
   }
+    function extractImportantLabelsFromTags_(tagsStr){
+  const tags = String(tagsStr || "")
+    .split(",")
+    .map(s => String(s).trim())
+    .filter(Boolean);
+
+  const out = [];
+  tags.forEach(t => {
+    // important 또는 important-라벨
+    const m = /^important(?:-(.+))?$/i.exec(t);
+    if (!m) return;
+
+    const label = String(m[1] || "").trim();
+    // 라벨 없는 "important"는 추천 키워드로 의미가 약해서 제외(원하면 포함으로 바꿔도 됨)
+    if (!label) return;
+
+    out.push(label);
+  });
+  return out;
+}
+
+function buildListUrlForSuggest_(){
+  // Export 탭과 동일한 필터 입력값 사용
+  const year  = String(el.year.value || "").trim();
+  const month = String(el.month.value || "").trim();
+  const day   = String(el.day.value || "").trim();
+  const start = String(el.start.value || "").trim();
+  const end   = String(el.end.value || "").trim();
+  const ids   = String(el.ids.value || "").trim();
+
+  if (!day && !start && !end && (!year || !month)) {
+    throw new Error("월 추천은 연도/월이 필요합니다. (또는 기간 start/end, 일 day)");
+  }
+
+  const params = new URLSearchParams();
+  params.set("mode", "listEvents");
+  params.set("limit", "800");
+
+  if (day) {
+    params.set("day", day);
+  } else if (start || end) {
+    if (start) params.set("start", start);
+    if (end) params.set("end", end);
+  } else {
+    params.set("year", year);
+    params.set("month", month);
+  }
+
+  // ✅ 추천은 숨김(비표시) 제외가 자연스러움
+  params.set("includeHidden", "false");
+
+  if (ids) params.set("id", ids);
+  if (TG_ADMIN_KEY) params.set("key", TG_ADMIN_KEY);
+
+  return `${API_BASE}?${params.toString()}`;
+}
+
+async function autoSuggestMonthNote_(){
+  const topN = Math.min(Math.max(Number(mn.topN?.value || 8), 3), 20);
+
+  const url = buildListUrlForSuggest_();
+  const res = await fetch(url, { method:"GET", cache:"no-store", credentials:"omit" });
+  if (!res.ok) throw new Error("추천용 목록 API 실패 (HTTP " + res.status + ")");
+
+  const data = await safeReadJson_(res);
+  if (!data || data.ok !== true) throw new Error((data && data.error) ? data.error : "UNKNOWN_ERROR");
+
+  const items = Array.isArray(data.items) ? data.items : [];
+  const freq = new Map();
+
+  items.forEach(it => {
+    const labels = extractImportantLabelsFromTags_(it.tags || "");
+    labels.forEach(lb => freq.set(lb, (freq.get(lb) || 0) + 1));
+  });
+
+  const ranked = Array.from(freq.entries())
+    .sort((a,b) => (b[1] - a[1]) || String(a[0]).localeCompare(String(b[0]), "ko"));
+
+  const picked = ranked.slice(0, topN).map(x => x[0]);
+
+  // 타이틀 자동
+  const y = String(el.year.value || "").trim();
+  const m = String(el.month.value || "").trim();
+  if (y && m && !el.day.value && !el.start.value && !el.end.value) {
+    mn.title.value = `${y}년 ${m}월 핵심 키워드`;
+  } else {
+    mn.title.value = `범위 핵심 키워드`;
+  }
+
+  mn.tags.value = picked.join("\n");
+  mn.desc.value = `※ important 태그 중복 빈도 Top ${picked.length} 기준 추천`;
+
+  buildMonthNote();
+  saveMonthNote();
+}
+그리고 버튼 클릭 바인딩 추가:
+
+if (mn.auto){
+  mn.auto.addEventListener("click", async (e)=>{
+    e.preventDefault();
+    try{
+      await autoSuggestMonthNote_();
+      alert("important 태그 추천을 반영했습니다. (필요하면 키워드를 직접 수정하세요)");
+    }catch(err){
+      alert("자동 추천 실패: " + (err && err.message ? err.message : String(err)));
+    }
+  });
+}
 </script>
 </body>
 </html>
