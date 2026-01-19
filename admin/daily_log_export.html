@@ -853,38 +853,41 @@
       topN: document.getElementById("mnTopN"),
       auto: document.getElementById("mnAuto"),
     };
-
+    
     const MN_KEY = "CHEESE_MONTH_NOTE_FORM";
+    
     function loadMonthNote(){
       try{
         const saved = JSON.parse(localStorage.getItem(MN_KEY) || "{}");
         if (saved.title != null) mn.title.value = saved.title;
         if (saved.tags  != null) mn.tags.value  = saved.tags;
         if (saved.desc  != null) mn.desc.value  = saved.desc;
-        if (saved.topN != null && mn.topN) mn.topN.value = saved.topN;
+        if (saved.topN  != null && mn.topN) mn.topN.value = saved.topN;
       }catch(_){ }
     }
+    
     function saveMonthNote(){
       localStorage.setItem(MN_KEY, JSON.stringify({
         title: mn.title.value || "",
         tags:  mn.tags.value || "",
         desc:  mn.desc.value || "",
-        topN: mn.topN ? (mn.topN.value || "8") : "8"
+        topN:  mn.topN ? (mn.topN.value || "8") : "8"
       }));
     }
+    
     ["input","change"].forEach(evt=>{
       mn.title.addEventListener(evt, saveMonthNote);
       mn.tags.addEventListener(evt, saveMonthNote);
       mn.desc.addEventListener(evt, saveMonthNote);
-      mn.topN.addEventListener(evt, saveMonthNote);
+      if (mn.topN) mn.topN.addEventListener(evt, saveMonthNote);
     });
-
+    
+    // ✅ 순서: 로드 → 값 있으면 미리보기/코드 생성
+    loadMonthNote();
     if ((mn.title.value || mn.tags.value || mn.desc.value).trim().length){
       buildMonthNote();
     }
     
-    loadMonthNote();
-
     function parseTags(text){
       return String(text || "")
         .split(/\n|,/g)
@@ -892,41 +895,39 @@
         .filter(Boolean)
         .slice(0, 12);
     }
-
+    
     function buildMonthNote(){
       const title = (mn.title.value || "").trim() || "월 핵심 키워드";
       const tags = parseTags(mn.tags.value);
       const desc = (mn.desc.value || "").trim();
-
+    
       const tagHtml = tags.length
         ? tags.map(t => `    <span class="mtag">${escHtml(t)}</span>`).join("\n")
         : `    <span class="mtag">키워드를 입력하세요</span>`;
-
+    
       const descHtml = desc
         ? `\n\n  <div class="month-note-desc">\n    ${escHtml(desc)}\n  </div>`
         : "";
-
+    
       // ✅ summary 타이틀 자동(연/월 필터 기준)
-      // - day/start/end가 있으면 "범위"라서 summary를 생략하거나 기본값을 사용(여기선 기본값 처리)
       const y = String(el.year?.value || "").trim();
       const m = String(el.month?.value || "").trim();
-      
+    
       const canUseYm = !!(y && m && !el.day?.value && !el.start?.value && !el.end?.value);
       const summaryTitle = canUseYm ? `${y}년 ${Number(m)}월` : "";
-      
       const summaryHtml = summaryTitle
         ? `  <summary><h2>${escHtml(summaryTitle)}</h2></summary>\n`
         : "";
-      
+    
       const html =
-      `${summaryHtml}  <!-- ✅ 월 요약 포스트잇 (매달 1회) -->
-        <div class="month-note">
-          <div class="month-note-title">${escHtml(title)}</div>
-          <div class="month-note-tags">
-      ${tagHtml}
-          </div>${descHtml ? descHtml.replace(/\n/g, "\n  ") : ""}
-        </div>`;
-
+    `${summaryHtml}  <!-- ✅ 월 요약 포스트잇 (매달 1회) -->
+      <div class="month-note">
+        <div class="month-note-title">${escHtml(title)}</div>
+        <div class="month-note-tags">
+    ${tagHtml}
+        </div>${descHtml ? descHtml.replace(/\n/g, "\n  ") : ""}
+      </div>`;
+    
       mn.preview.innerHTML =
         `<div class="month-note">
           <div class="month-note-title">${escHtml(title)}</div>
@@ -935,16 +936,16 @@
           </div>
           ${desc ? `<div class="month-note-desc">${escHtml(desc)}</div>` : ""}
         </div>`;
-
+    
       mn.output.value = html;
     }
-
+    
     mn.build.addEventListener("click", (e) => {
       e.preventDefault();
       buildMonthNote();
       saveMonthNote();
     });
-
+    
     mn.copy.addEventListener("click", async (e) => {
       e.preventDefault();
       const val = (mn.output.value || "").trim();
@@ -959,16 +960,18 @@
         alert("복사 완료");
       }
     });
-
+    
     mn.reset.addEventListener("click", (e) => {
       e.preventDefault();
       mn.title.value = "";
       mn.tags.value = "";
       mn.desc.value = "";
+      if (mn.topN) mn.topN.value = "8";
       mn.preview.innerHTML = "";
       mn.output.value = "";
       localStorage.removeItem(MN_KEY);
     });
+
 
     if ((mn.title.value || mn.tags.value || mn.desc.value).trim().length){
       buildMonthNote();
@@ -1159,14 +1162,13 @@
       }
       return out;
     }
-
+    
+    // ✅ 단일 값이 필요한 곳(economy/mourning 등)에서 쓰는 래퍼
     function getTypedTagValue(arr, type){
       const vals = getTypedTagValues(arr, type);
-      if (!vals.length) return null;     // 아예 없으면 null
-      // 라벨이 있는 값이 있으면 그걸 우선 반환
+      if (!vals.length) return null; // 아예 없으면 null
       const first = vals.find(v => String(v).trim().length > 0);
-      // important만 있고 라벨이 없으면 "" 반환
-      return (first != null) ? first : "";
+      return (first != null) ? first : ""; // [""] 형태면 ""
     }
     
     function hasTypedTag(arr, type){
@@ -1179,6 +1181,7 @@
         return !(s === type || s.startsWith(type + "-"));
       });
     }
+    
     function upsertTyped(arr, type, value){
       const kept = removeTyped(arr, type);
       const v = String(value || "").trim();
