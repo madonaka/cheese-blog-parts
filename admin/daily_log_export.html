@@ -1149,14 +1149,21 @@
       return arr.filter(t => !GROUP_RE.test(String(t||"").trim()));
     }
 
-    function getTypedTagValue(arr, type){
-      for (const t of arr){
+    // ✅ important-* 복수 추출 (important / important-라벨 모두 대응)
+    function getTypedTagValues(arr, type){
+      const out = [];
+      for (const t of (arr || [])){
         const s = String(t||"").trim();
-        if (s === type) return "";
-        if (s.startsWith(type + "-")) return s.slice(type.length + 1);
+        if (s === type) { out.push(""); continue; }
+        if (s.startsWith(type + "-")) out.push(s.slice(type.length + 1));
       }
-      return null;
+      return out;
     }
+    
+    function hasTypedTag(arr, type){
+      return getTypedTagValues(arr, type).length > 0;
+    }
+    
     function removeTyped(arr, type){
       return arr.filter(t=>{
         const s = String(t||"").trim();
@@ -1207,7 +1214,20 @@
 
       const typedSorted = [];
       const picked = new Set();
+      
       typedOrder.forEach(tp=>{
+        if (tp === "important"){
+          // ✅ important는 전부 유지(원래 등장 순서 유지)
+          const allImp = typed.filter(t=>{
+            const m = /^([a-z]+)(?:-.*)?$/i.exec(String(t||"").trim());
+            const x = m ? String(m[1]).toLowerCase() : "";
+            return x === "important";
+          });
+          allImp.forEach(t => typedSorted.push(t));
+          return;
+        }
+      
+        // 기존: economy/mourning은 1개만
         const found = typed.find(t=>{
           const m = /^([a-z]+)(?:-.*)?$/i.exec(t);
           const x = m ? String(m[1]).toLowerCase() : "";
@@ -1267,11 +1287,15 @@
       const hasIssue = hasDbBase(tags, "이슈");
 
       const ecoVal = getTypedTagValue(tags, "economy");
-      const impVal = getTypedTagValue(tags, "important");
       const mouVal = getTypedTagValue(tags, "mourning");
+      
+      // ✅ important는 복수
+      const impVals = getTypedTagValues(tags, "important"); // ["라벨1","라벨2", ...] 또는 [""](important만)
+      const impVal  = impVals.filter(v => String(v).trim()).join(", "); // 표시용
+      
       const ecoOn = ecoVal != null;
-      const impOn = impVal != null;
       const mouOn = mouVal != null;
+      const impOn = impVals.length > 0;
 
       const groupTag = getGroupTag(tags) || "";
 
@@ -2000,7 +2024,12 @@ if (btnToggle){
 
           if (kind === 'typed'){
             if (checked){
-              tags = upsertTyped(tags, key, getTypedTagValue(tags, key) || '');
+              if (key === "important"){
+                // 기존 important-*가 이미 있으면 유지, 없으면 important만 추가
+                if (!hasTypedTag(tags, "important")) tags = tags.concat(["important"]);
+              } else {
+                tags = upsertTyped(tags, key, getTypedTagValue(tags, key) || '');
+              }
               showNote(root, key, true);
               focusNote(root, key);
             }else{
@@ -2025,7 +2054,20 @@ if (btnToggle){
             let tags = getTags();
             const on = root.querySelector(`input[type="checkbox"][data-tg="typed"][data-key="${tp}"]`)?.checked;
             if (!on) return;
-            tags = upsertTyped(tags, tp, input.value || '');
+            if (tp === "important"){
+              const raw = String(input.value || "");
+              const vals = raw.split(/,|\n/g).map(s=>s.trim()).filter(Boolean);
+            
+              tags = removeTyped(tags, "important");
+              if (!vals.length){
+                // important 체크만 켜진 상태를 유지하고 싶으면 important만 넣음
+                tags = tags.concat(["important"]);
+              } else {
+                tags = tags.concat(vals.map(v => `important-${v}`));
+              }
+            } else {
+              tags = upsertTyped(tags, tp, input.value || '');
+            }
             setTags(tags);
           }, 450);
         });
@@ -2034,7 +2076,20 @@ if (btnToggle){
           let tags = getTags();
           const on = root.querySelector(`input[type="checkbox"][data-tg="typed"][data-key="${tp}"]`)?.checked;
           if (!on) return;
-          tags = upsertTyped(tags, tp, input.value || '');
+        
+          if (tp === "important"){
+            const raw = String(input.value || "");
+            const vals = raw.split(/,|\n/g).map(s=>s.trim()).filter(Boolean);
+        
+            tags = removeTyped(tags, "important");
+            if (!vals.length){
+              tags = tags.concat(["important"]);
+            } else {
+              tags = tags.concat(vals.map(v => `important-${v}`));
+            }
+          } else {
+            tags = upsertTyped(tags, tp, input.value || '');
+          }
           setTags(tags);
         });
       });
