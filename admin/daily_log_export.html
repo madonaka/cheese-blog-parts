@@ -1674,7 +1674,7 @@
       });
 
       const baseOrder = BASE_UI.map(ui => toDbBase(ui));
-      const typedOrder = ["economy","important","mourning","mourning"];
+      const typedOrder = ["economy","important","mnforce","mourning","mourning"];
 
       const group = [];
       const base = [];
@@ -1776,8 +1776,12 @@
       const mouVal = getTypedTagValue(tags, "mourning");
       
       // ✅ important는 복수
-      const impVals = getTypedTagValues(tags, "important"); // ["라벨1","라벨2", ...] 또는 [""](important만)
-      const impVal  = impVals.filter(v => String(v).trim()).join(", "); // 표시용
+      const impVals = getTypedTagValues(tags, "important");
+      const impVal  = impVals.filter(v => String(v).trim()).join(", ");
+      
+      // ✅ [추가] 월요약 강제(복수)
+      const forceVals = getTypedTagValues(tags, "mnforce");
+      const forceOn = forceVals.length > 0;
       
       const ecoOn = ecoVal != null;
       const mouOn = mouVal != null;
@@ -1895,6 +1899,12 @@
         <div class="tag-note" data-note="important" style="${impOn ? "display:flex;" : ""}">
           <b style="min-width:82px;">important</b>
           <input id="${noteIId}" type="text" placeholder="예) 왜 중요한지 한 줄" value="${escAttr(impVal || "")}" />
+        
+          <!-- ✅ [추가] 월 요약 강제 포함 -->
+          <label style="display:flex; gap:6px; align-items:center; font-weight:900; margin-left:10px; white-space:nowrap;">
+            <input type="checkbox" data-role="mnforce" ${forceOn ? "checked" : ""}/>
+            월요약 강제
+          </label>
         </div>
 
         <div class="tag-note" data-note="mourning" style="${mouOn ? "display:flex;" : ""}">
@@ -2504,6 +2514,44 @@ if (btnToggle){
         scheduleSave(it.id, norm, pill);
       };
 
+      // ✅ [추가] 월요약 강제 포함 체크박스
+      const forceChk = root.querySelector('input[type="checkbox"][data-role="mnforce"]');
+      
+      function parseImportantInputToLabels_(){
+        const input = root.querySelector(`.tag-note[data-note="important"] input`);
+        const raw = String(input?.value || "");
+        return raw.split(/,|\n/g).map(s=>s.trim()).filter(Boolean);
+      }
+      
+      function removeMnForce_(tags){
+        return removeTyped(tags, "mnforce"); // 이미 있는 유틸 재사용( mnforce / mnforce-* 제거 )
+      }
+      
+      function applyMnForceFromImportant_(on){
+        let tags = getTags();
+        tags = removeMnForce_(tags);
+      
+        if (on){
+          const labels = parseImportantInputToLabels_();
+          if (!labels.length){
+            alert("월요약 강제를 켜려면 important 입력칸에 라벨(키워드)을 1개 이상 적어주세요.");
+            if (forceChk) forceChk.checked = false;
+            setTags(tags);
+            return;
+          }
+          tags = tags.concat(labels.map(v => `mnforce-${v}`));
+        }
+      
+        setTags(tags);
+      }
+      
+      if (forceChk){
+        forceChk.addEventListener("change", ()=>{
+          applyMnForceFromImportant_(!!forceChk.checked);
+        });
+      }
+
+      
       root.querySelectorAll('input[type="checkbox"][data-tg]').forEach(chk=>{
         chk.addEventListener('change', ()=>{
           const kind = chk.dataset.tg;
@@ -2568,6 +2616,24 @@ if (btnToggle){
             } else {
               tags = upsertTyped(tags, tp, input.value || '');
             }
+            
+            // ✅ [추가] 월요약 강제 ON이면 mnforce-*도 important 라벨과 동일하게 맞춰줌
+            if (tp === "important"){
+              const forceChk2 = root.querySelector('input[type="checkbox"][data-role="mnforce"]');
+              if (forceChk2 && forceChk2.checked){
+                // 현재 tags에서 mnforce 제거 후, 입력 라벨로 다시 구성
+                tags = removeTyped(tags, "mnforce");
+                const labels2 = String(input.value || "").split(/,|\n/g).map(s=>s.trim()).filter(Boolean);
+                if (labels2.length){
+                  tags = tags.concat(labels2.map(v => `mnforce-${v}`));
+                }else{
+                  // 라벨이 사라졌다면 강제도 해제하는 편이 안전
+                  forceChk2.checked = false;
+                }
+              }
+            }
+
+            
             setTags(tags);
           }, 450);
         });
@@ -2863,7 +2929,7 @@ if (btnToggle){
       }
     });
   }
-    function extractImportantLabelsFromTags_(tagsStr){
+function extractImportantLabelsFromTags_(tagsStr){
   const tags = String(tagsStr || "")
     .split(",")
     .map(s => String(s).trim())
@@ -2884,6 +2950,24 @@ if (btnToggle){
   return out;
 }
 
+function extractMnForceLabelsFromTags_(tagsStr){
+  const tags = String(tagsStr || "")
+    .split(",")
+    .map(s => String(s).trim())
+    .filter(Boolean);
+
+  const out = [];
+  tags.forEach(t => {
+    const m = /^mnforce-(.+)$/i.exec(t);
+    if (!m) return;
+    const label = String(m[1] || "").trim();
+    if (!label) return;
+    out.push(label);
+  });
+  return out;
+}
+
+    
 function buildListUrlForSuggest_(){
   // Export 탭과 동일한 필터 입력값 사용
   const year  = String(el.year.value || "").trim();
@@ -2931,17 +3015,35 @@ async function autoSuggestMonthNote_(){
   if (!data || data.ok !== true) throw new Error((data && data.error) ? data.error : "UNKNOWN_ERROR");
 
   const items = Array.isArray(data.items) ? data.items : [];
+  
+  // 1) ✅ 강제 라벨 먼저 수집(중복 제거, 등장 순서 유지)
+  const forced = [];
+  const forcedSet = new Set();
+  items.forEach(it=>{
+    const labs = extractMnForceLabelsFromTags_(it.tags || "");
+    labs.forEach(lb=>{
+      if (forcedSet.has(lb)) return;
+      forcedSet.add(lb);
+      forced.push(lb);
+    });
+  });
+  
+  // 2) 나머지는 기존처럼 important 빈도 집계
   const freq = new Map();
-
   items.forEach(it => {
     const labels = extractImportantLabelsFromTags_(it.tags || "");
     labels.forEach(lb => freq.set(lb, (freq.get(lb) || 0) + 1));
   });
-
+  
   const ranked = Array.from(freq.entries())
-    .sort((a,b) => (b[1] - a[1]) || String(a[0]).localeCompare(String(b[0]), "ko"));
-
-  const picked = ranked.slice(0, topN).map(x => x[0]);
+    .sort((a,b) => (b[1] - a[1]) || String(a[0]).localeCompare(String(b[0]), "ko"))
+    .map(x=>x[0])
+    .filter(lb => !forcedSet.has(lb)); // ✅ 강제는 중복 방지
+  
+  // 3) ✅ forced를 앞에 두고, 남은 자리만 ranked로 채움
+  const picked = forced.slice(0, topN).concat(
+    ranked.slice(0, Math.max(0, topN - forced.length))
+  );
 
   // 타이틀 자동
   const y = String(el.year.value || "").trim();
@@ -2953,7 +3055,8 @@ async function autoSuggestMonthNote_(){
   }
 
   mn.tags.value = picked.join("\n");
-  mn.desc.value = `※ important 태그 중복 빈도 Top ${picked.length} 기준 추천`;
+  mn.desc.value = `※ 핵심 (${Math.min(forced.length, topN)}개) + 중복 태그 Top ${Math.max(0, picked.length - Math.min(forced.length, topN))} 기준 추천`;
+
 
   buildMonthNote();
   saveMonthNote();
