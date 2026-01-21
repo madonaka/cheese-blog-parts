@@ -9,7 +9,6 @@
   <link rel="stylesheet" href="./admin.css" />
 
   <style>
-    /* 이 파일에서 필요한 최소 보정만(공통 스타일은 admin.css에 있다고 가정) */
     .pm-wrap{ padding: 14px; }
     .pm-card{
       background:#fff;
@@ -47,21 +46,13 @@
       cursor:pointer;
       font-weight:800;
     }
-    .pm-btn.primary{
-      background:#111827;
-      color:#fff;
-      border-color:#111827;
-    }
-    .pm-btn.danger{
-      background:#b91c1c;
-      color:#fff;
-      border-color:#b91c1c;
-    }
+    .pm-btn.primary{ background:#111827; color:#fff; border-color:#111827; }
+    .pm-btn.danger{ background:#b91c1c; color:#fff; border-color:#b91c1c; }
     .pm-muted{ color:#6b7280; font-size:13px; }
     .pm-status{ margin-top:10px; font-size:13px; }
     .pm-status.ok{ color:#047857; }
     .pm-status.err{ color:#b91c1c; }
-    .pm-meta{ display:grid; grid-template-columns: 120px 1fr; gap:8px 12px; margin-top:10px; }
+    .pm-meta{ display:grid; grid-template-columns: 140px 1fr; gap:8px 12px; margin-top:10px; }
     .pm-meta div{ padding:6px 0; }
     .pm-link{ color:#2563eb; font-weight:800; text-decoration:none; }
     .pm-pill{
@@ -72,6 +63,7 @@
       font-size:12px;
       margin-left:8px;
     }
+    .pm-small{ font-size:12px; color:#6b7280; }
   </style>
 </head>
 
@@ -87,9 +79,6 @@
           <h2 style="margin:0 0 12px;">
             포스트 관리 <span class="pm-pill">Sheet DB + Drive HTML</span>
           </h2>
-          <div class="pm-muted" style="margin-bottom:12px;">
-            posts 시트 기반으로 불러오고 저장합니다. Drive 내보내기는 <b>.html 파일</b>로 저장/업데이트합니다.
-          </div>
 
           <section class="pm-card">
             <div class="pm-row">
@@ -101,14 +90,30 @@
             </div>
 
             <div class="pm-row" style="margin-top:10px;">
-              <div class="pm-label">또는 Post ID</div>
-              <input id="postId" class="pm-input" type="text" placeholder="gene_0001" />
-              <button class="pm-btn" onclick="createPost()">신규 생성</button>
+              <div class="pm-label">카테고리</div>
+              <select id="category" class="pm-select" style="min-width:360px;">
+                <option value="">선택...</option>
+                <option value="주요 사건, 이슈, 뉴스 월별 총정리">주요 사건, 이슈, 뉴스 월별 총정리</option>
+                <option value="한국사+중국사+일본사 연표">한국사+중국사+일본사 연표</option>
+                <option value="가계도 시리즈">가계도 시리즈</option>
+                <option value="기타">기타</option>
+              </select>
+
+              <button class="pm-btn" onclick="createPostAuto()">ID 자동 생성 & 신규 생성</button>
+
+              <div class="pm-small">생성 예: NM_20260121_01 / TL_20260121_01 / GD_20260121_01 / OT_20260121_01</div>
+            </div>
+
+            <div class="pm-row" style="margin-top:10px;">
+              <div class="pm-label">Post ID</div>
+              <input id="postId" class="pm-input" type="text" placeholder="자동 생성됨" />
+              <button class="pm-btn" onclick="setFromSelect()">선택값을 ID에 반영</button>
             </div>
 
             <div id="status" class="pm-status pm-muted">준비됨</div>
 
             <div class="pm-meta">
+              <div class="pm-muted">Category</div><div id="metaCategory" class="pm-muted">-</div>
               <div class="pm-muted">Drive fileId</div><div id="driveFileId" class="pm-muted">-</div>
               <div class="pm-muted">Drive url</div><div id="driveUrl" class="pm-muted">-</div>
               <div class="pm-muted">Updated</div><div id="updatedAt" class="pm-muted">-</div>
@@ -154,6 +159,7 @@
     }
 
     function setMeta(post){
+      $("metaCategory").textContent = post.category || "-";
       $("driveFileId").textContent = post.drive_file_id || "-";
       $("driveUrl").textContent = post.drive_url || "-";
       $("updatedAt").textContent = post.updated_at || "-";
@@ -192,7 +198,8 @@
           for (const it of items){
             const opt = document.createElement("option");
             opt.value = it.id;
-            opt.textContent = it.id + (it.title ? ` — ${it.title}` : "");
+            const cat = it.category ? ` [${it.category}]` : "";
+            opt.textContent = it.id + cat + (it.title ? ` — ${it.title}` : "");
             sel.appendChild(opt);
           }
 
@@ -205,6 +212,11 @@
         })
         .withFailureHandler((e)=> setStatus("목록 불러오기 오류: " + e, false))
         .apiListPosts();
+    }
+
+    function setFromSelect(){
+      const v = $("postSelect").value;
+      if (v) $("postId").value = v;
     }
 
     function getTargetPostId(){
@@ -223,7 +235,9 @@
           if (!res || !res.ok) return setStatus("불러오기 실패: " + (res?.error||""), false);
 
           current = res.post;
+
           $("postId").value = current.id;
+          $("category").value = current.category || "";
           $("title").value = current.title || "";
           $("html").value = current.html || "";
           syncCharCount();
@@ -241,6 +255,7 @@
 
       const payload = {
         postId: id,
+        category: $("category").value,
         title: $("title").value.trim(),
         html: $("html").value
       };
@@ -313,22 +328,28 @@
       setStatus("편집창을 비웠습니다.", true);
     }
 
-    function createPost(){
-      const id = $("postId").value.trim();
+    function createPostAuto(){
+      const category = $("category").value;
       const title = $("title").value.trim();
 
-      if (!id) return setStatus("새로 만들 postId를 입력하세요.", false);
+      if (!category) return setStatus("카테고리를 선택하세요.", false);
 
-      setStatus("신규 생성 중...", true);
+      setStatus("ID 생성 & 신규 생성 중...", true);
       google.script.run
         .withSuccessHandler((res)=>{
           if (!res || !res.ok) return setStatus("신규 생성 실패: " + (res?.error||""), false);
 
-          setStatus("신규 생성 완료. 이제 불러와서 편집하세요.", true);
+          const id = res.postId;
+          $("postId").value = id;
+
+          setStatus("신규 생성 완료: " + id, true);
           refreshList(id);
+
+          // 바로 불러오기까지
+          loadPost();
         })
         .withFailureHandler((e)=> setStatus("신규 생성 오류: " + e, false))
-        .apiCreatePost({ postId: id, title });
+        .apiCreatePostAuto({ category, title });
     }
 
     // init
