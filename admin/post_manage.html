@@ -223,32 +223,37 @@
       return await res.json();
     }
 
-    // ✅ POST (preflight 회피: Content-Type 헤더를 의도적으로 붙이지 않음)
-    // - Apps Script WebApp을 외부에서 호출할 때 OPTIONS(preflight) 때문에 Failed to fetch가 나는 경우가 많음
-    // - body는 JSON 문자열 그대로 보내되, 헤더를 생략하면 보통 text/plain으로 전송되어 preflight를 피함
     async function apiPost(mode, bodyObj){
-        const url = buildUrl(mode, null);
-  
-        const res = await fetch(url, {
-          method: "POST",
-          body: JSON.stringify({ mode, ...(bodyObj||{}) }),
-          cache: "no-store",
-          credentials: "omit",
-        });
-  
-        const text = await res.text();
-  
-        let data = null;
-        try { data = JSON.parse(text); } catch(_){}
-  
-        if (!res.ok){
-          throw new Error(`HTTP ${res.status}: ${text.slice(0,300)}`);
+      // POST는 mode를 URL이 아니라 body에 넣어주는 게 깔끔함(캐시방지용 _ts만 URL에)
+      const url = `${API_BASE}?_ts=${Date.now()}`;
+    
+      const body = new URLSearchParams();
+      body.set("mode", String(mode || ""));
+    
+      if (bodyObj && typeof bodyObj === "object"){
+        for (const [k,v] of Object.entries(bodyObj)){
+          if (v === undefined || v === null) continue;
+          body.set(k, String(v));
         }
-        if (!data){
-          throw new Error(`JSON 아님: ${text.slice(0,300)}`);
-        }
-        return data;
       }
+    
+      const res = await fetch(url, {
+        method: "POST",
+        body,                 // ✅ form-urlencoded (preflight 회피)
+        cache: "no-store",
+        credentials: "omit"
+      });
+    
+      const text = await res.text();
+      let data = null;
+      try { data = JSON.parse(text); } catch(_){}
+    
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0,300)}`);
+      if (!data)   throw new Error(`JSON 아님: ${text.slice(0,300)}`);
+    
+      return data;
+    }
+
 
     function setFromSelect(){
       const v = $("postSelect").value;
