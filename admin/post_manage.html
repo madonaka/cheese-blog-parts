@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>포스트 관리</title>
+
+  <!-- ✅ 관리자 공통 CSS 유지 -->
+  <link rel="stylesheet" href="./admin.css" />
+
+  <style>
+    /* 이 파일에서 필요한 최소 보정만(공통 스타일은 admin.css에 있다고 가정) */
+    .pm-wrap{ padding: 14px; }
+    .pm-card{
+      background:#fff;
+      border:1px solid rgba(15,23,42,0.14);
+      border-radius:14px;
+      padding:14px;
+      margin-bottom:12px;
+      box-shadow:0 10px 24px rgba(15,23,42,0.06);
+    }
+    .pm-row{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .pm-label{ font-weight:800; }
+    .pm-input, .pm-select{
+      padding:10px 12px;
+      border:1px solid rgba(15,23,42,0.2);
+      border-radius:10px;
+      min-width:280px;
+      background:#fff;
+    }
+    .pm-title{ min-width:420px; }
+    .pm-textarea{
+      width:100%;
+      min-height:420px;
+      padding:12px;
+      border:1px solid rgba(15,23,42,0.2);
+      border-radius:12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size:13px;
+      line-height:1.45;
+    }
+    .pm-btn{
+      padding:10px 12px;
+      border-radius:10px;
+      border:1px solid rgba(15,23,42,0.18);
+      background:#fff;
+      cursor:pointer;
+      font-weight:800;
+    }
+    .pm-btn.primary{
+      background:#111827;
+      color:#fff;
+      border-color:#111827;
+    }
+    .pm-btn.danger{
+      background:#b91c1c;
+      color:#fff;
+      border-color:#b91c1c;
+    }
+    .pm-muted{ color:#6b7280; font-size:13px; }
+    .pm-status{ margin-top:10px; font-size:13px; }
+    .pm-status.ok{ color:#047857; }
+    .pm-status.err{ color:#b91c1c; }
+    .pm-meta{ display:grid; grid-template-columns: 120px 1fr; gap:8px 12px; margin-top:10px; }
+    .pm-meta div{ padding:6px 0; }
+    .pm-link{ color:#2563eb; font-weight:800; text-decoration:none; }
+    .pm-pill{
+      display:inline-block;
+      padding:3px 8px;
+      border-radius:999px;
+      border:1px solid rgba(15,23,42,0.15);
+      font-size:12px;
+      margin-left:8px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="admin-shell">
+    <div id="admin-header-slot"></div>
+
+    <div class="admin-main">
+      <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+
+      <main class="admin-content">
+        <div class="pm-wrap">
+          <h2 style="margin:0 0 12px;">
+            포스트 관리 <span class="pm-pill">Sheet DB + Drive HTML</span>
+          </h2>
+          <div class="pm-muted" style="margin-bottom:12px;">
+            posts 시트 기반으로 불러오고 저장합니다. Drive 내보내기는 <b>.html 파일</b>로 저장/업데이트합니다.
+          </div>
+
+          <section class="pm-card">
+            <div class="pm-row">
+              <div class="pm-label">Post 선택</div>
+              <select id="postSelect" class="pm-select"></select>
+
+              <button class="pm-btn" onclick="refreshList()">목록 새로고침</button>
+              <button class="pm-btn primary" onclick="loadPost()">불러오기</button>
+            </div>
+
+            <div class="pm-row" style="margin-top:10px;">
+              <div class="pm-label">또는 Post ID</div>
+              <input id="postId" class="pm-input" type="text" placeholder="gene_0001" />
+              <button class="pm-btn" onclick="createPost()">신규 생성</button>
+            </div>
+
+            <div id="status" class="pm-status pm-muted">준비됨</div>
+
+            <div class="pm-meta">
+              <div class="pm-muted">Drive fileId</div><div id="driveFileId" class="pm-muted">-</div>
+              <div class="pm-muted">Drive url</div><div id="driveUrl" class="pm-muted">-</div>
+              <div class="pm-muted">Updated</div><div id="updatedAt" class="pm-muted">-</div>
+            </div>
+          </section>
+
+          <section class="pm-card">
+            <div class="pm-row">
+              <div class="pm-label">Title</div>
+              <input id="title" class="pm-input pm-title" type="text" placeholder="글 제목" />
+              <div class="pm-muted" id="charCount">0 chars</div>
+            </div>
+
+            <div style="margin-top:10px;">
+              <div class="pm-label" style="margin-bottom:6px;">HTML</div>
+              <textarea id="html" class="pm-textarea" placeholder="여기에 최종 HTML(또는 본문 HTML)을 편집하세요"></textarea>
+            </div>
+
+            <div class="pm-row" style="margin-top:12px;">
+              <button class="pm-btn primary" onclick="saveToSheet()">시트에 저장</button>
+              <button class="pm-btn" onclick="exportToDrive()">Drive로 저장/업데이트</button>
+              <button class="pm-btn" onclick="importFromDrive()">Drive에서 불러오기</button>
+              <button class="pm-btn danger" onclick="clearEditor()">편집창 비우기</button>
+              <a id="openDriveLink" class="pm-link" href="#" target="_blank" style="display:none;">Drive 파일 열기</a>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- ✅ 반드시 포함해야 하는 공통 스크립트 유지 -->
+  <script src="./admin-common.js"></script>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let current = null;
+
+    function setStatus(msg, ok=true){
+      const el = $("status");
+      el.textContent = msg;
+      el.className = "pm-status " + (ok ? "ok" : "err");
+    }
+
+    function setMeta(post){
+      $("driveFileId").textContent = post.drive_file_id || "-";
+      $("driveUrl").textContent = post.drive_url || "-";
+      $("updatedAt").textContent = post.updated_at || "-";
+
+      const link = $("openDriveLink");
+      if (post.drive_url){
+        link.href = post.drive_url;
+        link.style.display = "inline";
+      }else{
+        link.style.display = "none";
+      }
+    }
+
+    function syncCharCount(){
+      $("charCount").textContent = ($("html").value || "").length + " chars";
+    }
+    $("html").addEventListener("input", syncCharCount);
+
+    function refreshList(selectId){
+      setStatus("목록 불러오는 중...", true);
+      google.script.run
+        .withSuccessHandler((res)=>{
+          if (!res || !res.ok) return setStatus("목록 불러오기 실패", false);
+
+          const sel = $("postSelect");
+          sel.innerHTML = "";
+
+          const items = res.items || [];
+          items.sort((a,b)=> (a.id > b.id ? 1 : -1));
+
+          const opt0 = document.createElement("option");
+          opt0.value = "";
+          opt0.textContent = "선택...";
+          sel.appendChild(opt0);
+
+          for (const it of items){
+            const opt = document.createElement("option");
+            opt.value = it.id;
+            opt.textContent = it.id + (it.title ? ` — ${it.title}` : "");
+            sel.appendChild(opt);
+          }
+
+          if (selectId){
+            sel.value = selectId;
+            $("postId").value = selectId;
+          }
+
+          setStatus(`목록 ${items.length}건`, true);
+        })
+        .withFailureHandler((e)=> setStatus("목록 불러오기 오류: " + e, false))
+        .apiListPosts();
+    }
+
+    function getTargetPostId(){
+      const fromSelect = $("postSelect").value;
+      const fromInput  = $("postId").value.trim();
+      return fromInput || fromSelect || "";
+    }
+
+    function loadPost(){
+      const id = getTargetPostId();
+      if (!id) return setStatus("postId를 선택하거나 입력하세요.", false);
+
+      setStatus(`불러오는 중: ${id}`, true);
+      google.script.run
+        .withSuccessHandler((res)=>{
+          if (!res || !res.ok) return setStatus("불러오기 실패: " + (res?.error||""), false);
+
+          current = res.post;
+          $("postId").value = current.id;
+          $("title").value = current.title || "";
+          $("html").value = current.html || "";
+          syncCharCount();
+          setMeta(current);
+
+          setStatus("불러오기 완료", true);
+        })
+        .withFailureHandler((e)=> setStatus("불러오기 오류: " + e, false))
+        .apiGetPost(id);
+    }
+
+    function saveToSheet(){
+      const id = getTargetPostId();
+      if (!id) return setStatus("postId가 필요합니다.", false);
+
+      const payload = {
+        postId: id,
+        title: $("title").value.trim(),
+        html: $("html").value
+      };
+
+      setStatus("시트 저장 중...", true);
+      google.script.run
+        .withSuccessHandler((res)=>{
+          if (!res || !res.ok) return setStatus("시트 저장 실패: " + (res?.error||""), false);
+
+          setStatus("시트 저장 완료", true);
+          loadPost();
+          refreshList(id);
+        })
+        .withFailureHandler((e)=> setStatus("시트 저장 오류: " + e, false))
+        .apiSavePost(payload);
+    }
+
+    function exportToDrive(){
+      const id = getTargetPostId();
+      if (!id) return setStatus("postId가 필요합니다.", false);
+
+      const payload = {
+        postId: id,
+        title: $("title").value.trim(),
+        html: $("html").value
+      };
+
+      setStatus("Drive 저장/업데이트 중...", true);
+      google.script.run
+        .withSuccessHandler((res)=>{
+          if (!res || !res.ok) return setStatus("Drive 저장 실패: " + (res?.error||""), false);
+
+          setStatus(`Drive 저장 완료: ${res.file.name}`, true);
+          loadPost();
+          refreshList(id);
+        })
+        .withFailureHandler((e)=> setStatus("Drive 저장 오류: " + e, false))
+        .apiDriveUpsert(payload);
+    }
+
+    function importFromDrive(){
+      const id = getTargetPostId();
+      if (!id) return setStatus("postId가 필요합니다.", false);
+
+      setStatus("Drive에서 불러오는 중...", true);
+      google.script.run
+        .withSuccessHandler((res)=>{
+          if (!res || !res.ok) return setStatus("Drive 불러오기 실패: " + (res?.error||""), false);
+
+          $("html").value = res.html || "";
+          syncCharCount();
+
+          if (res.file && current){
+            current.drive_file_id = res.file.id;
+            current.drive_url = res.file.url;
+            current.drive_name = res.file.name;
+            setMeta(current);
+          }
+
+          setStatus(`Drive 불러오기 완료: ${res.file.name}`, true);
+        })
+        .withFailureHandler((e)=> setStatus("Drive 불러오기 오류: " + e, false))
+        .apiDriveReadByPostId({ postId: id });
+    }
+
+    function clearEditor(){
+      $("title").value = "";
+      $("html").value = "";
+      syncCharCount();
+      setStatus("편집창을 비웠습니다.", true);
+    }
+
+    function createPost(){
+      const id = $("postId").value.trim();
+      const title = $("title").value.trim();
+
+      if (!id) return setStatus("새로 만들 postId를 입력하세요.", false);
+
+      setStatus("신규 생성 중...", true);
+      google.script.run
+        .withSuccessHandler((res)=>{
+          if (!res || !res.ok) return setStatus("신규 생성 실패: " + (res?.error||""), false);
+
+          setStatus("신규 생성 완료. 이제 불러와서 편집하세요.", true);
+          refreshList(id);
+        })
+        .withFailureHandler((e)=> setStatus("신규 생성 오류: " + e, false))
+        .apiCreatePost({ postId: id, title });
+    }
+
+    // init
+    refreshList();
+  </script>
+</body>
+</html>
