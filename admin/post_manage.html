@@ -64,8 +64,6 @@
       margin-left:8px;
     }
     .pm-small{ font-size:12px; color:#6b7280; }
-
-    /* 연결 경고 배너 */
     .pm-banner{
       margin: 0 0 12px;
       padding: 10px 12px;
@@ -73,15 +71,10 @@
       border: 1px solid rgba(185,28,28,0.25);
       background: rgba(185,28,28,0.06);
       color:#7f1d1d;
-      display:none;
-      font-weight:700;
+      font-weight:800;
       font-size:13px;
-    }
-
-    .pm-disabled{
-      opacity: 0.55;
-      pointer-events: none;
-      user-select: none;
+      display:none;
+      white-space:pre-line;
     }
   </style>
 </head>
@@ -99,13 +92,9 @@
             포스트 관리 <span class="pm-pill">Sheet DB + Drive HTML</span>
           </h2>
 
-          <!-- ✅ Apps Script 연결 실패 시 배너 -->
-          <div id="gasBanner" class="pm-banner">
-            ⚠️ 이 화면은 Apps Script WebApp(/exec)에서 열려야 DB/Drive 기능이 동작합니다.
-            (현재 google.script.run이 없어 서버 호출을 할 수 없습니다)
-          </div>
+          <div id="banner" class="pm-banner"></div>
 
-          <section class="pm-card" id="pmMainCard">
+          <section class="pm-card">
             <div class="pm-row">
               <div class="pm-label">Post 선택</div>
               <select id="postSelect" class="pm-select"></select>
@@ -145,7 +134,7 @@
             </div>
           </section>
 
-          <section class="pm-card" id="pmEditorCard">
+          <section class="pm-card">
             <div class="pm-row">
               <div class="pm-label">Title</div>
               <input id="title" class="pm-input pm-title" type="text" placeholder="글 제목" />
@@ -177,10 +166,20 @@
     const $ = (id) => document.getElementById(id);
     let current = null;
 
+    // ✅ 여기! 기존처럼 API_BASE를 명시해서 씀
+    const API_BASE =
+      "https://script.google.com/macros/s/AKfyHyRdDcbyuC0qKL2fC5fmRy66l0y1baCLbXuf9pNlPh0rBde_HQMzaqQv5NK06H_n7WFk/exec";
+
     function setStatus(msg, ok=true){
       const el = $("status");
       el.textContent = msg;
       el.className = "pm-status " + (ok ? "ok" : "err");
+    }
+
+    function showBanner(msg){
+      const b = $("banner");
+      b.textContent = msg;
+      b.style.display = "block";
     }
 
     function setMeta(post){
@@ -203,75 +202,55 @@
     }
     $("html").addEventListener("input", syncCharCount);
 
-    function isGasConnected_(){
-      return !!(window.google && google.script && google.script.run);
-    }
+    function buildUrl(mode, paramsObj){
+      const params = new URLSearchParams();
+      params.set("mode", mode);
+      params.set("_ts", String(Date.now())); // 캐시 방지
 
-    function applyGasDisconnectedUi_(){
-      // 배너 표시 + 버튼/입력 비활성화 (편집창은 내용 확인용으로 남김)
-      $("gasBanner").style.display = "block";
-      $("pmMainCard").classList.add("pm-disabled");
-      $("pmEditorCard").classList.add("pm-disabled");
-      setStatus("서버 연결 없음: /exec로 열린 화면이 아닙니다.", false);
-    }
-
-    /**
-     * ✅ google.script.run 호출 래퍼
-     * - 연결 체크
-     * - 타임아웃(기본 25초)으로 “영원히 로딩” 방지
-     */
-    function callApi_(apiName, payload, onOk){
-      if (!isGasConnected_()){
-        applyGasDisconnectedUi_();
-        return;
+      if (paramsObj && typeof paramsObj === "object"){
+        for (const [k,v] of Object.entries(paramsObj)){
+          if (v === undefined || v === null) continue;
+          params.set(k, String(v));
+        }
       }
+      return `${API_BASE}?${params.toString()}`;
+    }
 
-      const TIMEOUT_MS = 25000;
-      let done = false;
+    // ✅ GET JSON
+    async function apiGet(mode, paramsObj){
+      const url = buildUrl(mode, paramsObj);
+      const res = await fetch(url, { method:"GET" });
+      return await res.json();
+    }
 
-      const timer = setTimeout(() => {
-        if (done) return;
-        done = true;
-        setStatus(`서버 응답 지연: ${apiName} (Executions 로그에서 에러/대기 여부 확인 필요)`, false);
-      }, TIMEOUT_MS);
+    // ✅ POST JSON
+    async function apiPost(mode, bodyObj){
+      const url = buildUrl(mode, null);
+      const res = await fetch(url, {
+        method:"POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode, ...(bodyObj||{}) })
+      });
+      return await res.json();
+    }
 
-      const ok = (res) => {
-        if (done) return;
-        done = true;
-        clearTimeout(timer);
-        onOk && onOk(res);
-      };
+    function setFromSelect(){
+      const v = $("postSelect").value;
+      if (v) $("postId").value = v;
+    }
 
-      const fail = (e) => {
-        if (done) return;
-        done = true;
-        clearTimeout(timer);
-        setStatus(`서버 호출 오류: ${apiName} - ${e}`, false);
-      };
+    function getTargetPostId(){
+      const fromSelect = $("postSelect").value;
+      const fromInput  = $("postId").value.trim();
+      return fromInput || fromSelect || "";
+    }
 
+    async function refreshList(selectId){
       try{
-        const runner = google.script.run.withSuccessHandler(ok).withFailureHandler(fail);
+        setStatus("목록 불러오는 중...", true);
+        const res = await apiGet("listPosts");
 
-        // 동적 호출(안전하게 switch)
-        if (apiName === "apiListPosts") return runner.apiListPosts();
-        if (apiName === "apiGetPost") return runner.apiGetPost(payload);
-        if (apiName === "apiSavePost") return runner.apiSavePost(payload);
-        if (apiName === "apiDriveUpsert") return runner.apiDriveUpsert(payload);
-        if (apiName === "apiDriveReadByPostId") return runner.apiDriveReadByPostId(payload);
-        if (apiName === "apiCreatePostAuto") return runner.apiCreatePostAuto(payload);
-
-        setStatus("알 수 없는 API: " + apiName, false);
-      }catch(e){
-        clearTimeout(timer);
-        setStatus("호출 실패: " + apiName + " - " + e, false);
-      }
-    }
-
-    function refreshList(selectId){
-      setStatus("목록 불러오는 중...", true);
-
-      callApi_("apiListPosts", null, (res) => {
-        if (!res || !res.ok) return setStatus("목록 불러오기 실패", false);
+        if (!res || !res.ok) return setStatus("목록 불러오기 실패: " + (res?.error||""), false);
 
         const sel = $("postSelect");
         sel.innerHTML = "";
@@ -298,27 +277,23 @@
         }
 
         setStatus(`목록 ${items.length}건`, true);
-      });
+      }catch(e){
+        setStatus("목록 불러오기 오류: " + e, false);
+        showBanner(
+          "외부 사이트에서 API_BASE로 직접 호출하면 브라우저 CORS로 막힐 수 있습니다.\n" +
+          "이 경우: (1) /exec 화면을 iframe으로 넣거나 (2) 프록시/JSONP 방식이 필요합니다."
+        );
+      }
     }
 
-    function setFromSelect(){
-      const v = $("postSelect").value;
-      if (v) $("postId").value = v;
-    }
-
-    function getTargetPostId(){
-      const fromSelect = $("postSelect").value;
-      const fromInput  = $("postId").value.trim();
-      return fromInput || fromSelect || "";
-    }
-
-    function loadPost(){
+    async function loadPost(){
       const id = getTargetPostId();
       if (!id) return setStatus("postId를 선택하거나 입력하세요.", false);
 
-      setStatus(`불러오는 중: ${id}`, true);
+      try{
+        setStatus(`불러오는 중: ${id}`, true);
+        const res = await apiGet("getPost", { postId: id });
 
-      callApi_("apiGetPost", id, (res) => {
         if (!res || !res.ok) return setStatus("불러오기 실패: " + (res?.error||""), false);
 
         current = res.post;
@@ -331,10 +306,12 @@
         setMeta(current);
 
         setStatus("불러오기 완료", true);
-      });
+      }catch(e){
+        setStatus("불러오기 오류: " + e, false);
+      }
     }
 
-    function saveToSheet(){
+    async function saveToSheet(){
       const id = getTargetPostId();
       if (!id) return setStatus("postId가 필요합니다.", false);
 
@@ -345,18 +322,21 @@
         html: $("html").value
       };
 
-      setStatus("시트 저장 중...", true);
+      try{
+        setStatus("시트 저장 중...", true);
+        const res = await apiPost("savePost", payload);
 
-      callApi_("apiSavePost", payload, (res) => {
         if (!res || !res.ok) return setStatus("시트 저장 실패: " + (res?.error||""), false);
 
         setStatus("시트 저장 완료", true);
-        loadPost();
-        refreshList(id);
-      });
+        await loadPost();
+        await refreshList(id);
+      }catch(e){
+        setStatus("시트 저장 오류: " + e, false);
+      }
     }
 
-    function exportToDrive(){
+    async function exportToDrive(){
       const id = getTargetPostId();
       if (!id) return setStatus("postId가 필요합니다.", false);
 
@@ -366,24 +346,28 @@
         html: $("html").value
       };
 
-      setStatus("Drive 저장/업데이트 중...", true);
+      try{
+        setStatus("Drive 저장/업데이트 중...", true);
+        const res = await apiPost("driveUpsert", payload);
 
-      callApi_("apiDriveUpsert", payload, (res) => {
         if (!res || !res.ok) return setStatus("Drive 저장 실패: " + (res?.error||""), false);
 
         setStatus(`Drive 저장 완료: ${res.file.name}`, true);
-        loadPost();
-        refreshList(id);
-      });
+        await loadPost();
+        await refreshList(id);
+      }catch(e){
+        setStatus("Drive 저장 오류: " + e, false);
+      }
     }
 
-    function importFromDrive(){
+    async function importFromDrive(){
       const id = getTargetPostId();
       if (!id) return setStatus("postId가 필요합니다.", false);
 
-      setStatus("Drive에서 불러오는 중...", true);
+      try{
+        setStatus("Drive에서 불러오는 중...", true);
+        const res = await apiGet("driveReadByPostId", { postId: id });
 
-      callApi_("apiDriveReadByPostId", { postId: id }, (res) => {
         if (!res || !res.ok) return setStatus("Drive 불러오기 실패: " + (res?.error||""), false);
 
         $("html").value = res.html || "";
@@ -397,7 +381,9 @@
         }
 
         setStatus(`Drive 불러오기 완료: ${res.file.name}`, true);
-      });
+      }catch(e){
+        setStatus("Drive 불러오기 오류: " + e, false);
+      }
     }
 
     function clearEditor(){
@@ -407,34 +393,30 @@
       setStatus("편집창을 비웠습니다.", true);
     }
 
-    function createPostAuto(){
+    async function createPostAuto(){
       const category = $("category").value;
       const title = $("title").value.trim();
-
       if (!category) return setStatus("카테고리를 선택하세요.", false);
 
-      setStatus("ID 생성 & 신규 생성 중...", true);
+      try{
+        setStatus("ID 생성 & 신규 생성 중...", true);
+        const res = await apiPost("createPostAuto", { category, title });
 
-      callApi_("apiCreatePostAuto", { category, title }, (res) => {
         if (!res || !res.ok) return setStatus("신규 생성 실패: " + (res?.error||""), false);
 
         const id = res.postId;
         $("postId").value = id;
 
         setStatus("신규 생성 완료: " + id, true);
-        refreshList(id);
-        loadPost();
-      });
+        await refreshList(id);
+        await loadPost();
+      }catch(e){
+        setStatus("신규 생성 오류: " + e, false);
+      }
     }
 
     // init
-    window.addEventListener("load", () => {
-      if (!isGasConnected_()){
-        applyGasDisconnectedUi_();
-        return;
-      }
-      refreshList();
-    });
+    refreshList();
   </script>
 </body>
 </html>
