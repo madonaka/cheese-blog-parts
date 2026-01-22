@@ -120,9 +120,24 @@
 
             <div class="pm-row" style="margin-top:10px;">
               <div class="pm-label">ID</div>
-              <input id="id" class="pm-input" type="text" placeholder="예: NM_20260121_01" />
+              <input id="id" class="pm-input" type="text" placeholder="예: NM_20260121_01" disabled />
               <button id="btnSetFromSelect" class="pm-btn">선택값을 ID에 반영</button>
             </div>
+            
+            <div class="pm-row" style="margin-top:10px;">
+              <div class="pm-label">분류</div>
+              <select id="category" class="pm-select">
+                <option value="">분류 선택...</option>
+                <option value="monthly_news">주요 사건, 이슈, 뉴스 월별 총정리</option>
+                <option value="timeline_kr_cn_jp">한국사+중국사+일본사 연표</option>
+                <option value="genealogy_series">가계도시리즈</option>
+                <option value="etc">기타</option>
+                <option value="manual">수동입력</option>
+              </select>
+              <button id="btnRegenId" class="pm-btn">ID 새로 생성</button>
+              <div class="pm-muted pm-small">※ 분류 선택 시 ID 자동생성. “수동입력”만 직접 입력 가능.</div>
+            </div>
+
 
             <div id="status" class="pm-status pm-muted">준비됨</div>
 
@@ -171,6 +186,18 @@
     // ✅ 고정: Apps Script 주소
     const API_BASE =
       "https://script.google.com/macros/s/AKfycbzj5LUEUKMyQqJfVsVlftO1f4CTYb3NhAQMT2QL6VADBlnjleAXLtBVVhuVHOfwkhQYqQ/exec";
+
+    // ===== ID 자동 생성 설정 =====
+    // ID 규칙: <PREFIX>_<YYYYMMDD>_<NN>
+    // 예) NM_20260122_01
+    const CAT_PREFIX = {
+      monthly_news: "NM",
+      timeline_kr_cn_jp: "TL",
+      genealogy_series: "GS",
+      etc: "ETC"
+    };
+    
+    let lastListItems = []; // listPosts 캐시(보조)
 
     function setStatus(msg, ok=true){
       const el = $("status");
@@ -258,6 +285,82 @@
       return data;
     }
 
+    function escapeRegExp_(s){
+      return String(s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }
+    
+    function tokyoYYYYMMDD_(){
+      // 브라우저 타임존이 달라도 "Asia/Tokyo" 기준 날짜로 고정
+      const d = new Date();
+      const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Tokyo",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+      }).formatToParts(d).reduce((acc, p)=>{ acc[p.type] = p.value; return acc; }, {});
+      return `${parts.year}${parts.month}${parts.day}`;
+    }
+    
+    async function generateNextId_(catKey){
+      const prefix = CAT_PREFIX[catKey];
+      if (!prefix) return "";
+    
+      const ymd = tokyoYYYYMMDD_();
+      const base = `${prefix}_${ymd}_`;
+    
+      // 정확도를 위해, base로 서버에서 부분검색(listPosts q) 후 시퀀스 계산
+      let items = [];
+      try{
+        const res = await apiGet("listPosts", { q: base, limit: 200 });
+        if (res && res.ok) items = res.items || [];
+      }catch(_){
+        items = lastListItems || [];
+      }
+    
+      const re = new RegExp("^" + escapeRegExp_(prefix) + "_" + ymd + "_(\\d+)$");
+      let max = 0;
+      for (const it of items){
+        const id = String(it && it.id ? it.id : "").trim();
+        const m = id.match(re);
+        if (m){
+          const n = parseInt(m[1], 10);
+          if (!isNaN(n) && n > max) max = n;
+        }
+      }
+      const next = String(max + 1).padStart(2, "0");
+      return `${prefix}_${ymd}_${next}`;
+    }
+    
+    async function applyIdMode_(forceRegen=false){
+      const cat = $("category") ? $("category").value : "";
+      const idEl = $("id");
+    
+      // "수동입력" => 직접 입력 가능
+      if (cat === "manual"){
+        idEl.disabled = false;
+        idEl.placeholder = "예: NM_20260121_01 (직접 입력)";
+        if (forceRegen) idEl.value = "";
+        return;
+      }
+    
+      // 분류 미선택 => ID 입력 막고 비움
+      if (!cat){
+        idEl.disabled = true;
+        idEl.placeholder = "분류를 선택하면 ID가 자동생성됩니다.";
+        if (forceRegen) idEl.value = "";
+        return;
+      }
+    
+      // 자동 생성 모드
+      idEl.disabled = true;
+      idEl.placeholder = "자동 생성됨";
+    
+      if (forceRegen || !String(idEl.value || "").trim()){
+        const newId = await generateNextId_(cat);
+        if (newId) idEl.value = newId;
+      }
+    }
+    
     function setFromSelect(){
       const v = $("postSelect").value;
       if (v) $("id").value = v;
@@ -272,7 +375,7 @@
     async function refreshList(selectId){
       try{
         setStatus("목록 불러오는 중...", true);
-        const res = await apiGet("listPosts");
+        const res = await apiGet("listPosts", { limit: 200 });
 
         if (!res || !res.ok) return setStatus("목록 불러오기 실패: " + (res?.message||""), false);
 
@@ -280,7 +383,8 @@
         sel.innerHTML = "";
 
         const items = res.items || [];
-
+        lastListItems = items;
+        
         const opt0 = document.createElement("option");
         opt0.value = "";
         opt0.textContent = "선택...";
@@ -408,13 +512,15 @@
     $("btnRefresh").addEventListener("click", ()=>refreshList());
     $("btnLoad").addEventListener("click", loadPost);
     $("btnSetFromSelect").addEventListener("click", setFromSelect);
+    $("category").addEventListener("change", ()=>applyIdMode_(true));
+    $("btnRegenId").addEventListener("click", ()=>applyIdMode_(true));
     $("btnSaveSheet").addEventListener("click", saveToSheet);
     $("btnDriveUpsert").addEventListener("click", exportToDrive);
     $("btnDriveRead").addEventListener("click", importFromDrive);
     $("btnClear").addEventListener("click", clearEditor);
 
     // init
-    refreshList();
+    refreshList().then(()=>applyIdMode_(true));
   </script>
 </body>
 </html>
