@@ -305,23 +305,98 @@
     }
   }
 
-  async function loadPost(){ /* ... 기존 그대로 ... */ }
-  async function saveToSheet(){ /* ... 기존 그대로 ... */ }
-  async function exportToDrive(){ /* ... 기존 그대로 ... */ }
-  async function importFromDrive(){ /* ... 기존 그대로 ... */ }
-  function clearEditor(){ /* ... 기존 그대로 ... */ }
-
-  // 버튼 연결
+  async function loadPost(){
+    const id = getTargetId();
+    if (!id) return setStatus("id를 선택하거나 입력하세요.", false);
+  
+    try{
+      setStatus(`불러오는 중: ${id}`, true);
+      const res = await apiGet("getPost", { id });
+  
+      if (!res || !res.ok) return setStatus("불러오기 실패: " + (res?.message||""), false);
+  
+      current = res.post;
+  
+      $("id").value = current.id;
+      $("title").value = current.title || "";
+      $("html").value = current.html || "";
+      syncCharCount();
+      setMeta(current);
+  
+      setStatus("불러오기 완료", true);
+    }catch(e){
+      setStatus("불러오기 오류: " + e.message, false);
+    }
+  }
+  
+  async function exportToDrive(){
+    const id = getTargetId();
+    if (!id) return setStatus("id가 필요합니다.", false);
+  
+    const payload = {
+      id,
+      title: $("title").value.trim(),
+      html: $("html").value
+    };
+  
+    try{
+      setStatus("Drive 저장/업데이트 중...", true);
+      const res = await apiPost("driveUpsert", payload);
+  
+      if (!res || !res.ok) return setStatus("Drive 저장 실패: " + (res?.message||""), false);
+  
+      setStatus(`Drive 저장 완료: ${res.file?.name || ""}`, true);
+      await refreshList(id);
+      await loadPost();
+    }catch(e){
+      setStatus("Drive 저장 오류: " + e.message, false);
+    }
+  }
+  
+  async function importFromDrive(){
+    const id = getTargetId();
+    if (!id) return setStatus("id가 필요합니다.", false);
+  
+    try{
+      setStatus("Drive에서 불러오는 중...", true);
+      const res = await apiGet("driveReadById", { id });
+  
+      if (!res || !res.ok) return setStatus("Drive 불러오기 실패: " + (res?.message||""), false);
+  
+      $("html").value = res.html || "";
+      syncCharCount();
+  
+      // 메타(Drive url/fileId) 등도 최신으로 반영
+      await loadPost();
+      setStatus("Drive 불러오기 완료", true);
+    }catch(e){
+      setStatus("Drive 불러오기 오류: " + e.message, false);
+    }
+  }
+  
+  function clearEditor(){
+    $("title").value = "";
+    $("html").value = "";
+    syncCharCount();
+    setStatus("편집창을 비웠습니다.", true);
+  }
+  
+  /* =========================
+     버튼 연결 (시트 저장 제거)
+  ========================= */
   $("btnRefresh").addEventListener("click", ()=>refreshList());
   $("btnLoad").addEventListener("click", loadPost);
   $("btnSetFromSelect").addEventListener("click", setFromSelect);
-  //$("btnSaveSheet").addEventListener("click", saveToSheet);
+  
+  // ❌ 제거: $("btnSaveSheet")...  / saveToSheet()
+  
   $("btnDriveUpsert").addEventListener("click", exportToDrive);
   $("btnDriveRead").addEventListener("click", importFromDrive);
   $("btnClear").addEventListener("click", clearEditor);
-
+  
   // init
   refreshList();
+
 })();
 </script>
 
