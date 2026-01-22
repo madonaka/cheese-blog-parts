@@ -186,6 +186,30 @@
               <a id="openBloggerLink" class="pm-link" href="#" target="_blank" style="display:none;">Blogger 글 열기</a>
               <span id="bloggerMeta" class="pm-muted pm-small"></span>
             </div>
+
+            <div class="pm-row" style="margin-top:10px;">
+              <div class="pm-label">라벨</div>
+            
+              <input
+                id="bloggerLabels"
+                class="pm-input"
+                type="text"
+                placeholder="예: 주요 사건,2026,정치 (콤마로 구분)"
+              />
+            
+              <select id="bloggerLabelsAction" class="pm-select" style="min-width:180px;">
+                <option value="replace">덮어쓰기</option>
+                <option value="add">추가</option>
+                <option value="remove">제거</option>
+              </select>
+            
+              <button id="btnBloggerLabels" class="pm-btn">라벨 적용</button>
+            
+              <button id="btnBloggerRevert" class="pm-btn danger">초안으로 되돌리기</button>
+            
+              <span class="pm-muted pm-small">※ “초안으로 되돌리기”는 발행/예약 글을 draft로 되돌립니다.</span>
+            </div>
+
           </section>
         </div>
       </main>
@@ -461,6 +485,50 @@
     }
   }
 
+async function patchBloggerLabels(){
+  const id = getTargetId();
+  if (!id) return setStatus("id가 필요합니다.", false);
+
+  const labels = $("bloggerLabels").value.trim(); // "a,b,c"
+  const action = $("bloggerLabelsAction").value || "replace";
+
+  try{
+    setStatus("라벨 적용 중...", true);
+    const res = await apiPost("bloggerPatchLabels", { id, labels, action });
+    setDebug(res);
+
+    if (!res || !res.ok) return setStatus("라벨 적용 실패: " + (res?.message||""), false);
+
+    // res.labels가 오면 표시용으로 상태 메시지 업데이트
+    setStatus(`라벨 적용 완료 (${(res.labels||[]).length}개)`, true);
+
+    // url 있으면 링크 갱신
+    if (res.url) setBloggerMeta({ url: res.url, post_id: res.post_id, status: "labels_updated" });
+
+  }catch(e){
+    setStatus("라벨 적용 오류: " + e.message, false);
+  }
+}
+
+  async function revertBloggerToDraft(){
+    const id = getTargetId();
+    if (!id) return setStatus("id가 필요합니다.", false);
+  
+    try{
+      setStatus("초안으로 되돌리는 중...", true);
+      const res = await apiPost("bloggerRevert", { id });
+      setDebug(res);
+  
+      if (!res || !res.ok) return setStatus("초안 되돌리기 실패: " + (res?.message||""), false);
+  
+      setBloggerMeta({ url: res.url, post_id: res.post_id, status: "draft" });
+      setStatus("초안으로 되돌리기 완료", true);
+  
+    }catch(e){
+      setStatus("초안 되돌리기 오류: " + e.message, false);
+    }
+  }
+  
   function clearEditor(){
     $("title").value = "";
     $("html").value = "";
@@ -482,6 +550,9 @@
   $("btnClear").addEventListener("click", clearEditor);
   $("btnBloggerUpsert").addEventListener("click", exportToBlogger);
   $("btnBloggerRead").addEventListener("click", importFromBlogger);
+
+  $("btnBloggerLabels").addEventListener("click", patchBloggerLabels);
+  $("btnBloggerRevert").addEventListener("click", revertBloggerToDraft);
   
   // init
   setDebug('');
