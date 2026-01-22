@@ -535,6 +535,90 @@ async function patchBloggerLabels(){
     syncCharCount();
     setStatus("편집창을 비웠습니다.", true);
   }
+
+  /* =========================
+     ✅ ID 자동생성(분류 기반)
+  ========================= */
+
+  function mapCategoryToPrefix(cat){
+    const m = {
+      monthly_news: "NM",
+      timeline_kr_cn_jp: "TL",
+      genealogy_series: "GN",
+      etc: "ETC",
+    };
+    return m[cat] || "POST";
+  }
+
+  function yyyymmddNow(){
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}${m}${day}`;
+  }
+
+  async function regenId(){
+    const cat = $("category").value;
+
+    if (!cat) {
+      setStatus("분류를 먼저 선택하세요.", false);
+      return;
+    }
+
+    if (cat === "manual"){
+      // 수동입력은 자동생성 안 함
+      setStatus("수동입력 분류입니다. ID를 직접 입력하세요.", true);
+      $("id").disabled = false;
+      $("id").focus();
+      return;
+    }
+
+    const prefix = mapCategoryToPrefix(cat);
+    const dateToken = yyyymmddNow();
+    const base = `${prefix}_${dateToken}_`; // 예: NM_20260123_
+
+    try{
+      setStatus("ID 생성 중...", true);
+
+      // 기존 목록을 보고 같은 날짜/프리픽스의 마지막 번호를 찾아 +1
+      const res = await apiGet("listPosts");
+      if (!res || !res.ok) throw new Error(res?.message || "LIST_FAILED");
+
+      let maxSeq = 0;
+      for (const it of (res.items || [])){
+        const id = String(it.id || "");
+        if (!id.startsWith(base)) continue;
+        const tail = id.slice(base.length);   // "01"
+        const n = parseInt(tail, 10);
+        if (!isNaN(n)) maxSeq = Math.max(maxSeq, n);
+      }
+
+      const nextSeq = String(maxSeq + 1).padStart(2, "0");
+      $("id").value = `${base}${nextSeq}`;
+      $("id").disabled = true;
+
+      setStatus(`ID 생성 완료: ${$("id").value}`, true);
+    }catch(e){
+      setStatus("ID 생성 오류: " + (e.message || e), false);
+      setDebug(String(e && e.stack ? e.stack : e));
+    }
+  }
+
+  function onCategoryChange(){
+    const cat = $("category").value;
+
+    if (cat === "manual"){
+      $("id").disabled = false;
+      setStatus("수동입력: ID를 직접 입력하세요.", true);
+      return;
+    }
+
+    $("id").disabled = true;
+
+    // 분류 선택만으로도 자동 생성되게(원치 않으면 이 줄만 제거)
+    if (cat) regenId();
+  }
   
   /* =========================
      버튼 연결 (시트 저장 제거)
@@ -553,6 +637,9 @@ async function patchBloggerLabels(){
 
   $("btnBloggerLabels").addEventListener("click", patchBloggerLabels);
   $("btnBloggerRevert").addEventListener("click", revertBloggerToDraft);
+
+  $("btnRegenId").addEventListener("click", regenId);
+  $("category").addEventListener("change", onCategoryChange);
   
   // init
   setDebug('');
