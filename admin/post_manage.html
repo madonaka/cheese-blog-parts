@@ -141,6 +141,11 @@
 
             <div id="status" class="pm-status pm-muted">준비됨</div>
 
+            <details style="margin-top:10px;">
+              <summary class="pm-muted" style="cursor:pointer; font-weight:800;">디버그(마지막 응답)</summary>
+              <pre id="debug" style="margin:10px 0 0; padding:10px; border:1px solid rgba(15,23,42,0.14); border-radius:12px; background:rgba(15,23,42,0.03); overflow:auto; max-height:220px; font-size:12px;"></pre>
+            </details>
+
             <div class="pm-meta">
               <div class="pm-muted">Drive fileId</div><div id="driveFileId" class="pm-muted">-</div>
               <div class="pm-muted">Drive url</div><div id="driveUrl" class="pm-muted">-</div>
@@ -168,6 +173,18 @@
               <button id="btnDriveUpsert" class="pm-btn">Drive로 저장/업데이트</button>
               <button id="btnDriveRead" class="pm-btn">Drive에서 불러오기</button>
               <button id="btnClear" class="pm-btn danger">편집창 비우기</button>
+            </div>
+
+            <div class="pm-row" style="margin-top:12px;">
+              <div class="pm-label">Blogger</div>
+              <label class="pm-muted" style="display:flex; gap:6px; align-items:center;">
+                <input id="bloggerPublish" type="checkbox" />
+                발행(publish)
+              </label>
+              <button id="btnBloggerUpsert" class="pm-btn">블로그 업로드/수정</button>
+              <button id="btnBloggerRead" class="pm-btn">블로그에서 불러오기</button>
+              <a id="openBloggerLink" class="pm-link" href="#" target="_blank" style="display:none;">Blogger 글 열기</a>
+              <span id="bloggerMeta" class="pm-muted pm-small"></span>
             </div>
           </section>
         </div>
@@ -199,6 +216,13 @@
     b.style.display = "block";
   }
 
+  function setDebug(obj){
+    const el = $("debug");
+    if (!el) return;
+    try{ el.textContent = (typeof obj === 'string') ? obj : JSON.stringify(obj, null, 2); }
+    catch(e){ el.textContent = String(obj); }
+  }
+
   function setMeta(post){
     $("driveFileId").textContent = post.drive_file_id || "-";
     $("driveUrl").textContent = post.drive_url || "-";
@@ -210,6 +234,20 @@
       link.style.display = "inline";
     } else {
       link.style.display = "none";
+    }
+  }
+
+  function setBloggerMeta(info){
+    const meta = $("bloggerMeta");
+    const link = $("openBloggerLink");
+    if (meta) meta.textContent = info ? (info.status ? `status: ${info.status}` : '') + (info.post_id ? `  postId: ${info.post_id}` : '') : '';
+    if (link){
+      if (info && info.url){
+        link.href = info.url;
+        link.style.display = 'inline';
+      }else{
+        link.style.display = 'none';
+      }
     }
   }
 
@@ -322,6 +360,7 @@
       $("html").value = current.html || "";
       syncCharCount();
       setMeta(current);
+      setBloggerMeta(null);
   
       setStatus("불러오기 완료", true);
     }catch(e){
@@ -374,6 +413,54 @@
     }
   }
   
+
+  async function exportToBlogger(){
+    const id = getTargetId();
+    if (!id) return setStatus("id가 필요합니다.", false);
+
+    const payload = {
+      id,
+      title: $("title").value.trim(),
+      html: $("html").value,
+      publish: $("bloggerPublish").checked ? "true" : "false"
+    };
+
+    try{
+      setStatus("Blogger 업로드/수정 중...", true);
+      const res = await apiPost("bloggerUpsert", payload);
+      setDebug(res);
+
+      if (!res || !res.ok) return setStatus("Blogger 업로드 실패: " + (res?.message||""), false);
+
+      setBloggerMeta({ url: res.url, post_id: res.post_id, status: res.status });
+      setStatus(`Blogger ${res.status === 'published' ? '발행' : '초안'} 완료`, true);
+    }catch(e){
+      setStatus("Blogger 업로드 오류: " + e.message, false);
+    }
+  }
+
+  async function importFromBlogger(){
+    const id = getTargetId();
+    if (!id) return setStatus("id가 필요합니다.", false);
+
+    try{
+      setStatus("Blogger에서 불러오는 중...", true);
+      const res = await apiGet("bloggerRead", { id });
+      setDebug(res);
+
+      if (!res || !res.ok) return setStatus("Blogger 불러오기 실패: " + (res?.message||""), false);
+
+      $("title").value = res.title || $("title").value;
+      $("html").value = res.html || "";
+      syncCharCount();
+
+      setBloggerMeta({ url: res.url, post_id: res.post_id, status: "loaded" });
+      setStatus("Blogger 불러오기 완료", true);
+    }catch(e){
+      setStatus("Blogger 불러오기 오류: " + e.message, false);
+    }
+  }
+
   function clearEditor(){
     $("title").value = "";
     $("html").value = "";
@@ -393,8 +480,11 @@
   $("btnDriveUpsert").addEventListener("click", exportToDrive);
   $("btnDriveRead").addEventListener("click", importFromDrive);
   $("btnClear").addEventListener("click", clearEditor);
+  $("btnBloggerUpsert").addEventListener("click", exportToBlogger);
+  $("btnBloggerRead").addEventListener("click", importFromBlogger);
   
   // init
+  setDebug('');
   refreshList();
 
 })();
