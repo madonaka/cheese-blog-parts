@@ -139,14 +139,14 @@
             </div>
 
             <div class="pm-row" style="margin-top:10px;">
-              <div class="pm-label">템플릿</div>
+              <div class="pm-label">템플릿(Drive)</div>
               <select id="templateSelect" class="pm-select" style="min-width:280px;"></select>
 
               <button id="btnApplyTemplate" class="pm-btn">템플릿 적용(새로)</button>
               <button id="btnRewrapTemplate" class="pm-btn">래퍼 재적용(본문 유지)</button>
 
               <span class="pm-muted pm-small">
-                ※ 불러오기 시 template_id가 있으면 자동 선택됩니다.
+                ※ 템플릿은 Drive의 매니페스트(JSON) + 섹션(HTML 조각)을 조립합니다.
               </span>
             </div>
 
@@ -176,8 +176,8 @@
             </div>
 
             <div style="margin-top:10px;">
-              <div class="pm-label" style="margin-bottom:6px;">HTML</div>
-              <textarea id="html" class="pm-textarea" placeholder="여기에 최종 HTML을 편집하세요"></textarea>
+              <div class="pm-label" style="margin-bottom:6px;">HTML(최종본)</div>
+              <textarea id="html" class="pm-textarea" placeholder="여기에 최종 HTML이 생성됩니다. (디버그/직접편집 가능)"></textarea>
             </div>
 
             <div style="margin-top:10px;">
@@ -185,7 +185,7 @@
               <textarea id="body" class="pm-textarea" style="min-height:260px;"
                 placeholder="<!-- BODY_START --> ~ <!-- BODY_END --> 사이에 들어갈 내용만 편집합니다."></textarea>
               <div class="pm-muted pm-small">
-                ※ 저장 시: 선택한 템플릿 + 본문을 합쳐 최종 HTML을 자동 생성합니다.
+                ※ 저장/래퍼 재적용 시: 선택한 템플릿(Drive) + 본문을 합쳐 최종 HTML을 자동 생성합니다.
               </div>
             </div>
 
@@ -247,6 +247,9 @@
   // ✅ 고정: Apps Script 주소
   const API_BASE =
     "https://script.google.com/macros/s/AKfycbzj5LUEUKMyQqJfVsVlftO1f4CTYb3NhAQMT2QL6VADBlnjleAXLtBVVhuVHOfwkhQYqQ/exec";
+
+  // 섹션 HTML 캐시(같은 섹션을 여러 번 조립할 때 API 호출 최소화)
+  const sectionCache = new Map(); // key: sectionName, value: html
 
   function setStatus(msg, ok=true){
     const el = $("status");
@@ -314,6 +317,7 @@
     return `${API_BASE}?${params.toString()}`;
   }
 
+  // ===== meta/body parsing (기존 글 수정용) =====
   function readTemplateMeta_(html){
     const get = (key) => {
       const re = new RegExp(`<!--\\s*${key}\\s*:\\s*([^>]+?)\\s*-->`, "i");
@@ -335,114 +339,11 @@
     if (si >= 0 && ei >= 0 && ei > si){
       return t.slice(si + s.length, ei).trim();
     }
-    // 마커가 없으면: 전체를 본문으로 간주 (구형 글 호환)
+    // 마커가 없으면: 구형 글 호환(전체를 본문으로 추측)
     return t.trim();
   }
 
-  // ===== Templates =====
-  const TEMPLATES = {
-    "genealogy_v1": {
-      name: "가계도시리즈 v1",
-      ver: "2026-01-23",
-      html: `<!-- template_id: genealogy_v1 -->
-<!-- template_ver: 2026-01-23 -->
-<article class="post-wrap genealogy">
-  {{NAV}}
-  <header class="post-head">
-    <h1>{{TITLE}}</h1>
-  </header>
-
-  <!-- BODY_START -->
-  {{BODY}}
-  <!-- BODY_END -->
-
-  {{FOOTER}}
-</article>`
-    },
-
-    "monthly_news_v1": {
-      name: "월별총정리 v1",
-      ver: "2026-01-23",
-      html: `<!-- template_id: monthly_news_v1 -->
-<!-- template_ver: 2026-01-23 -->
-<article class="post-wrap monthly-news">
-  {{NAV}}
-  <header class="post-head">
-    <h1>{{TITLE}}</h1>
-  </header>
-
-  <!-- BODY_START -->
-  {{BODY}}
-  <!-- BODY_END -->
-
-  {{FOOTER}}
-</article>`
-    }
-  };
-
-  function renderTemplate_(tplId, vars){
-    const tpl = TEMPLATES[tplId];
-    if (!tpl) return "";
-
-    let out = tpl.html;
-    out = out.replaceAll("{{TITLE}}", vars.title || "");
-    out = out.replaceAll("{{BODY}}", vars.body || "");
-    out = out.replaceAll("{{NAV}}", vars.nav || "");
-    out = out.replaceAll("{{FOOTER}}", vars.footer || "");
-    return out;
-  }
-
-  function initTemplateSelect_(){
-    const sel = $("templateSelect");
-    sel.innerHTML = "";
-
-    const opt0 = document.createElement("option");
-    opt0.value = "";
-    opt0.textContent = "템플릿 선택...";
-    sel.appendChild(opt0);
-
-    for (const [id, t] of Object.entries(TEMPLATES)){
-      const opt = document.createElement("option");
-      opt.value = id;
-      opt.textContent = `${t.name} (${id})`;
-      sel.appendChild(opt);
-    }
-  }
-
-  function applyTemplateNew(){
-    const tplId = $("templateSelect").value;
-    if (!tplId) return setStatus("템플릿을 먼저 선택하세요.", false);
-
-    $("body").value = "";
-    const finalHtml = renderTemplate_(tplId, {
-      title: $("title").value.trim(),
-      body: "",
-      nav: "",
-      footer: ""
-    });
-
-    $("html").value = finalHtml;
-    syncCharCount();
-    setStatus("템플릿을 적용했습니다(새로). 본문(BODY)을 작성하세요.", true);
-  }
-
-  function rewrapTemplateKeepBody(){
-    const tplId = $("templateSelect").value;
-    if (!tplId) return setStatus("템플릿을 먼저 선택하세요.", false);
-
-    const body = $("body").value || "";
-    const finalHtml = renderTemplate_(tplId, {
-      title: $("title").value.trim(),
-      body,
-      nav: "",
-      footer: ""
-    });
-
-    $("html").value = finalHtml;
-    syncCharCount();
-    setStatus("래퍼를 재적용했습니다(본문 유지).", true);
-  }
-
+  // ===== API =====
   async function apiGet(mode, paramsObj){
     const url = buildUrl(mode, paramsObj);
     const res = await fetch(url, { method:"GET", cache:"no-store", credentials:"omit" });
@@ -471,6 +372,172 @@
     return data;
   }
 
+  // ===== Drive Template/Section helpers =====
+  async function listTemplates_(){
+    const res = await apiGet("listTemplates");
+    if (!res || !res.ok) throw new Error(res?.message || "LIST_TEMPLATES_FAILED");
+    return res.items || [];
+  }
+
+  async function getTemplateManifest_(templateId){
+    const res = await apiGet("getTemplate", { template_id: templateId });
+    if (!res || !res.ok) throw new Error(res?.message || "GET_TEMPLATE_FAILED");
+
+    // 서버가 json 문자열로 내려주는 형태(이전 제안안 기준)
+    const txt = String(res.json || "").trim();
+    if (!txt) throw new Error("TEMPLATE_JSON_EMPTY");
+
+    let manifest = null;
+    try{ manifest = JSON.parse(txt); }
+    catch(e){
+      throw new Error("TEMPLATE_JSON_PARSE_FAILED: " + (e?.message || e));
+    }
+    return manifest;
+  }
+
+  async function getSectionHtml_(name){
+    if (sectionCache.has(name)) return sectionCache.get(name);
+
+    const res = await apiGet("getSection", { name });
+    if (!res || !res.ok) throw new Error(res?.message || ("GET_SECTION_FAILED: " + name));
+
+    const html = String(res.html || "");
+    sectionCache.set(name, html);
+    return html;
+  }
+
+  function replaceVars_(html, vars){
+    let out = String(html || "");
+    out = out.replaceAll("{{TITLE}}", vars.title || "");
+    out = out.replaceAll("{{BODY}}", vars.body || "");
+    out = out.replaceAll("{{NAV}}", vars.nav || "");
+    out = out.replaceAll("{{FOOTER}}", vars.footer || "");
+    return out;
+  }
+
+  async function assembleHtmlFromTemplate_(templateId, vars){
+    // 1) manifest 로드
+    const manifest = await getTemplateManifest_(templateId);
+
+    // manifest 최소 요구:
+    // { template_id, template_ver, sections: ["a.html","b.html", ...] }
+    const tid = String(manifest.template_id || templateId).trim();
+    const tver = String(manifest.template_ver || "").trim();
+    const sections = Array.isArray(manifest.sections) ? manifest.sections : null;
+    if (!sections || sections.length === 0){
+      throw new Error("TEMPLATE_SECTIONS_EMPTY");
+    }
+
+    // 2) 섹션 순서대로 로드 + 합치기
+    const parts = [];
+    for (const secNameRaw of sections){
+      const secName = String(secNameRaw || "").trim();
+      if (!secName) continue;
+      const secHtml = await getSectionHtml_(secName);
+      parts.push(secHtml);
+    }
+
+    // 3) 조립본 + 메타 주석
+    let assembled = parts.join("\n");
+
+    const metaHeader =
+      `<!-- template_id: ${tid} -->\n` +
+      (tver ? `<!-- template_ver: ${tver} -->\n` : "");
+
+    assembled = metaHeader + assembled;
+
+    // 4) 토큰 치환
+    assembled = replaceVars_(assembled, vars);
+
+    return { html: assembled, manifest };
+  }
+
+  async function initTemplateSelect_(){
+    const sel = $("templateSelect");
+    sel.innerHTML = "";
+
+    const opt0 = document.createElement("option");
+    opt0.value = "";
+    opt0.textContent = "템플릿 선택...";
+    sel.appendChild(opt0);
+
+    try{
+      setStatus("템플릿 목록 불러오는 중(Drive)...", true);
+      const items = await listTemplates_();
+
+      for (const it of items){
+        // API가 {id, name}를 어떤 형태로 내려주든 최대한 대응
+        const id = String(it.id || it.template_id || it.name || "").replace(/\.json$/i, "").trim();
+        if (!id) continue;
+
+        const opt = document.createElement("option");
+        opt.value = id;
+        opt.textContent = id;
+        sel.appendChild(opt);
+      }
+
+      setStatus(`템플릿 ${items.length}개 로드됨`, true);
+    }catch(e){
+      setStatus("템플릿 목록 불러오기 실패: " + e.message, false);
+      showBanner(String(e && e.stack ? e.stack : e));
+    }
+  }
+
+  // ===== UI actions =====
+  async function applyTemplateNew(){
+    const tplId = $("templateSelect").value;
+    if (!tplId) return setStatus("템플릿을 먼저 선택하세요.", false);
+
+    try{
+      setStatus("템플릿 적용(새로) 중...", true);
+
+      // 새로 시작: body 비우기
+      $("body").value = "";
+
+      const out = await assembleHtmlFromTemplate_(tplId, {
+        title: $("title").value.trim(),
+        body: "",
+        nav: "",
+        footer: ""
+      });
+
+      $("html").value = out.html;
+      syncCharCount();
+      setStatus("템플릿 적용 완료(새로). 본문(BODY)을 작성하세요.", true);
+
+    }catch(e){
+      setStatus("템플릿 적용 오류: " + e.message, false);
+      setDebug(String(e && e.stack ? e.stack : e));
+    }
+  }
+
+  async function rewrapTemplateKeepBody(){
+    const tplId = $("templateSelect").value;
+    if (!tplId) return setStatus("템플릿을 먼저 선택하세요.", false);
+
+    try{
+      setStatus("래퍼 재적용(본문 유지) 중...", true);
+
+      const body = $("body").value || "";
+
+      const out = await assembleHtmlFromTemplate_(tplId, {
+        title: $("title").value.trim(),
+        body,
+        nav: "",
+        footer: ""
+      });
+
+      $("html").value = out.html;
+      syncCharCount();
+      setStatus("래퍼 재적용 완료(본문 유지).", true);
+
+    }catch(e){
+      setStatus("래퍼 재적용 오류: " + e.message, false);
+      setDebug(String(e && e.stack ? e.stack : e));
+    }
+  }
+
+  // ===== Post list/load =====
   function setFromSelect(){
     const v = $("postSelect").value;
     if (v) $("id").value = v;
@@ -532,9 +599,11 @@
       $("title").value = current.title || "";
       $("html").value = current.html || "";
 
+      // template_id 자동 선택 (기존 글 수정용)
       const meta = readTemplateMeta_(current.html || "");
       if (meta.template_id && $("templateSelect")) $("templateSelect").value = meta.template_id;
 
+      // body 추출
       $("body").value = extractBody_(current.html || "");
 
       syncCharCount();
@@ -547,23 +616,23 @@
     }
   }
 
+  // ===== Drive HTML upsert/read =====
   async function exportToDrive(){
     const id = getTargetId();
     if (!id) return setStatus("id가 필요합니다.", false);
 
     try{
-      // 템플릿 선택되어 있으면: body + template로 최종 html 생성
+      // 템플릿 선택되어 있으면: Drive 템플릿으로 최종 html 재생성 (본문 우선)
       const tplId = $("templateSelect").value;
-      const body = $("body").value || "";
-
       if (tplId){
-        const finalHtml = renderTemplate_(tplId, {
+        setStatus("저장 전 최종 HTML 생성(템플릿 조립) 중...", true);
+        const out = await assembleHtmlFromTemplate_(tplId, {
           title: $("title").value.trim(),
-          body,
-          nav: "",     // TODO: 카테고리별 NAV 넣을 자리
-          footer: ""   // TODO: 공통 꼬리말 넣는 자리
+          body: $("body").value || "",
+          nav: "",
+          footer: ""
         });
-        $("html").value = finalHtml;
+        $("html").value = out.html;
         syncCharCount();
       }
 
@@ -575,14 +644,17 @@
 
       setStatus("Drive 저장/업데이트 중...", true);
       const res = await apiPost("driveUpsert", payload);
+      setDebug(res);
 
       if (!res || !res.ok) return setStatus("Drive 저장 실패: " + (res?.message||""), false);
 
       setStatus(`Drive 저장 완료: ${res.file?.name || ""}`, true);
       await refreshList(id);
       await loadPost();
+
     }catch(e){
       setStatus("Drive 저장 오류: " + e.message, false);
+      setDebug(String(e && e.stack ? e.stack : e));
     }
   }
 
@@ -606,11 +678,13 @@
 
       syncCharCount();
       setStatus("Drive 불러오기 완료", true);
+
     }catch(e){
       setStatus("Drive 불러오기 오류: " + e.message, false);
     }
   }
 
+  // ===== Blogger =====
   async function exportToBlogger(){
     const id = getTargetId();
     if (!id) return setStatus("id가 필요합니다.", false);
@@ -679,8 +753,8 @@
       if (!res || !res.ok) return setStatus("라벨 적용 실패: " + (res?.message||""), false);
 
       setStatus(`라벨 적용 완료 (${(res.labels||[]).length}개)`, true);
-
       if (res.url) setBloggerMeta({ url: res.url, post_id: res.post_id, status: "labels_updated" });
+
     }catch(e){
       setStatus("라벨 적용 오류: " + e.message, false);
     }
@@ -699,6 +773,7 @@
 
       setBloggerMeta({ url: res.url, post_id: res.post_id, status: "draft" });
       setStatus("초안으로 되돌리기 완료", true);
+
     }catch(e){
       setStatus("초안 되돌리기 오류: " + e.message, false);
     }
@@ -751,7 +826,7 @@
 
     const prefix = mapCategoryToPrefix(cat);
     const dateToken = yyyymmddNow();
-    const base = `${prefix}_${dateToken}_`; // 예: NM_20260123_
+    const base = `${prefix}_${dateToken}_`;
 
     try{
       setStatus("ID 생성 중...", true);
@@ -789,7 +864,6 @@
     }
 
     $("id").disabled = true;
-
     if (cat) regenId();
   }
 
@@ -817,9 +891,9 @@
   $("category").addEventListener("change", onCategoryChange);
 
   // init
-  setDebug('');
-  initTemplateSelect_();
+  setDebug("");
   refreshList();
+  initTemplateSelect_();
 })();
 </script>
 
