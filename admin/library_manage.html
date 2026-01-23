@@ -1,0 +1,618 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>라이브러리 관리(섹션/템플릿)</title>
+
+  <link rel="stylesheet" href="./admin.css" />
+
+  <style>
+    .wrap{ padding:14px; }
+    .card{
+      background:#fff;
+      border:1px solid rgba(15,23,42,0.14);
+      border-radius:14px;
+      padding:14px;
+      box-shadow:0 10px 24px rgba(15,23,42,0.06);
+    }
+    .row{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .grid{ display:grid; grid-template-columns: 360px 1fr; gap:14px; }
+    @media (max-width: 980px){ .grid{ grid-template-columns: 1fr; } }
+
+    .input, .textarea{
+      width:100%;
+      padding:10px 12px;
+      border:1px solid rgba(15,23,42,0.18);
+      border-radius:10px;
+      background:#fff;
+      outline:none;
+    }
+    .textarea{
+      min-height: 520px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+
+    .btn{
+      padding:10px 12px;
+      border-radius:10px;
+      border:1px solid rgba(15,23,42,0.18);
+      background:#fff;
+      cursor:pointer;
+      font-weight:800;
+    }
+    .btn.primary{ background:#0b57d0; color:#fff; border-color:#0b57d0; }
+
+    .muted{ color: rgba(15,23,42,0.65); font-weight:600; font-size: 12px; }
+    .status{ font-size:12px; font-weight:800; color: rgba(15,23,42,0.75); }
+
+    .tabs{
+      display:flex; gap:8px; flex-wrap:wrap;
+      border-bottom:1px solid rgba(15,23,42,0.12);
+      padding-bottom:10px;
+      margin-bottom:12px;
+    }
+    .tab{
+      padding:10px 12px;
+      border-radius:999px;
+      border:1px solid rgba(15,23,42,0.14);
+      background:#fff;
+      cursor:pointer;
+      font-weight:900;
+    }
+    .tab.active{
+      background: rgba(11,87,208,0.10);
+      border-color: rgba(11,87,208,0.35);
+      color:#0b57d0;
+    }
+
+    .list{
+      border:1px solid rgba(15,23,42,0.12);
+      border-radius:12px;
+      overflow:hidden;
+      background:#fff;
+    }
+    .list-head{
+      padding:10px 12px;
+      border-bottom:1px solid rgba(15,23,42,0.10);
+      display:flex;
+      gap:10px;
+      align-items:center;
+      justify-content:space-between;
+      font-weight:900;
+    }
+    .list-body{ max-height: 560px; overflow:auto; }
+    .item{
+      padding:10px 12px;
+      border-bottom:1px solid rgba(15,23,42,0.08);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      cursor:pointer;
+    }
+    .item:last-child{ border-bottom:0; }
+    .item:hover{ background: rgba(15,23,42,0.03); }
+    .item.active{ background: rgba(11,87,208,0.08); }
+
+    .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size:12px; }
+
+    .preview{
+      border:1px dashed rgba(15,23,42,0.20);
+      border-radius:12px;
+      padding:12px;
+      background: rgba(15,23,42,0.02);
+      overflow:auto;
+      max-height: 260px;
+    }
+    .hidden{ display:none !important; }
+  </style>
+
+  <script>
+    // 같은 WebApp 내부에서 열면 상대 호출이 가장 안정적
+    const API_BASE = ""; // 외부에서 쓰면 WebApp /exec 주소로 바꿔도 됨
+
+    function baseExec(){
+      return API_BASE || location.href.split('?')[0]; // .../exec
+    }
+    function apiUrl(params){
+      const usp = new URLSearchParams(params);
+      return baseExec() + "?" + usp.toString();
+    }
+    async function apiGet(params){
+      const res = await fetch(apiUrl(params), { method:'GET' });
+      return await res.json();
+    }
+    async function apiPost(params){
+      const body = new URLSearchParams(params);
+      const res = await fetch(baseExec(), {
+        method:'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+        body
+      });
+      return await res.json();
+    }
+
+    const state = {
+      tab: 'sections', // sections | templates
+      // sections
+      sections: [],
+      sectionActiveName: '',
+      sectionDirty: false,
+      // templates
+      templates: [],
+      templateActiveId: '',
+      templateDirty: false
+    };
+
+    function setStatus(msg){
+      document.getElementById('status').textContent = msg || '';
+    }
+
+    function setDirty(kind, on){
+      if (kind === 'sections'){
+        state.sectionDirty = !!on;
+        document.getElementById('dirty').textContent = state.sectionDirty ? '● 수정됨(저장 필요)' : '';
+      }else{
+        state.templateDirty = !!on;
+        document.getElementById('dirty').textContent = state.templateDirty ? '● 수정됨(저장 필요)' : '';
+      }
+    }
+
+    function normalizeSectionName(name){
+      name = String(name || '').trim();
+      if (!name) return '';
+      if (!/\.html$/i.test(name)) name += '.html';
+      return name;
+    }
+    function normalizeTemplateId(id){
+      id = String(id || '').trim();
+      id = id.replace(/[\\\/:*?"<>|]/g, '_').replace(/\s+/g,'_');
+      return id;
+    }
+
+    function switchTab(next){
+      if (next === state.tab) return;
+
+      if (state.tab === 'sections' && state.sectionDirty){
+        if (!confirm('섹션에 저장하지 않은 변경이 있습니다. 탭을 이동할까요?')) return;
+      }
+      if (state.tab === 'templates' && state.templateDirty){
+        if (!confirm('템플릿에 저장하지 않은 변경이 있습니다. 탭을 이동할까요?')) return;
+      }
+
+      state.tab = next;
+      document.getElementById('tab-sections').classList.toggle('active', next==='sections');
+      document.getElementById('tab-templates').classList.toggle('active', next==='templates');
+
+      document.getElementById('pane-sections').classList.toggle('hidden', next!=='sections');
+      document.getElementById('pane-templates').classList.toggle('hidden', next!=='templates');
+
+      document.getElementById('dirty').textContent = '';
+      if (next === 'sections'){
+        document.getElementById('dirty').textContent = state.sectionDirty ? '● 수정됨(저장 필요)' : '';
+        setStatus('섹션 탭');
+      }else{
+        document.getElementById('dirty').textContent = state.templateDirty ? '● 수정됨(저장 필요)' : '';
+        setStatus('템플릿 탭');
+      }
+    }
+
+    /* =========================
+       Sections
+    ========================= */
+
+    function renderSectionList(){
+      const box = document.getElementById('section-list');
+      box.innerHTML = '';
+
+      const q = document.getElementById('section-q').value.trim().toLowerCase();
+      const items = state.sections.filter(it => !q || (it.name||'').toLowerCase().includes(q));
+
+      for (const it of items){
+        const div = document.createElement('div');
+        div.className = 'item' + (it.name === state.sectionActiveName ? ' active' : '');
+        div.onclick = () => openSection(it.name);
+
+        const left = document.createElement('div');
+        left.style.minWidth = '0';
+
+        const title = document.createElement('div');
+        title.className = 'mono';
+        title.textContent = it.name;
+
+        const meta = document.createElement('div');
+        meta.className = 'muted';
+        meta.textContent = it.url ? 'Drive URL 있음' : '';
+
+        left.appendChild(title);
+        left.appendChild(meta);
+
+        const right = document.createElement('div');
+        right.className = 'muted';
+        right.textContent = '.html';
+
+        div.appendChild(left);
+        div.appendChild(right);
+
+        box.appendChild(div);
+      }
+    }
+
+    async function loadSections(){
+      setStatus('섹션 목록 불러오는 중...');
+      const r = await apiGet({ mode:'listSections' });
+      if (!r.ok){ setStatus(r.message || '섹션 목록 불러오기 실패'); return; }
+      state.sections = r.items || [];
+      renderSectionList();
+      setStatus(`섹션 ${r.total ?? state.sections.length}개`);
+    }
+
+    async function openSection(name){
+      if (state.sectionDirty){
+        if (!confirm('저장하지 않은 변경이 있습니다. 그래도 열까요?')) return;
+      }
+      name = normalizeSectionName(name);
+      if (!name) return;
+
+      setStatus('섹션 불러오는 중...');
+      const r = await apiGet({ mode:'getSection', name });
+      if (!r.ok){ setStatus(r.message || '섹션 불러오기 실패'); return; }
+
+      state.sectionActiveName = name;
+      document.getElementById('section-name').value = name;
+      document.getElementById('section-html').value = r.html || '';
+      document.getElementById('section-preview').innerHTML = r.html || '(비어있음)';
+      setDirty('sections', false);
+
+      renderSectionList();
+      setStatus('섹션 불러오기 완료');
+    }
+
+    function newSection(){
+      if (state.sectionDirty){
+        if (!confirm('저장하지 않은 변경이 있습니다. 새로 만들까요?')) return;
+      }
+      state.sectionActiveName = '';
+      document.getElementById('section-name').value = '';
+      document.getElementById('section-html').value = '';
+      document.getElementById('section-preview').innerHTML = '(미리보기)';
+      setDirty('sections', false);
+      renderSectionList();
+      setStatus('새 섹션 작성');
+    }
+
+    function updateSectionPreview(){
+      const html = document.getElementById('section-html').value;
+      document.getElementById('section-preview').innerHTML = html || '(비어있음)';
+      setDirty('sections', true);
+    }
+
+    async function saveSection(){
+      const name = normalizeSectionName(document.getElementById('section-name').value);
+      const html = document.getElementById('section-html').value;
+
+      if (!name){ alert('섹션 이름이 필요합니다.'); return; }
+      if (!html.trim()){ alert('HTML이 비어 있습니다.'); return; }
+
+      setStatus('섹션 저장 중...');
+      const r = await apiPost({ mode:'sectionUpsert', name, html });
+      if (!r.ok){ setStatus(r.message || '섹션 저장 실패'); return; }
+
+      await loadSections();
+      await openSection(name);
+      setDirty('sections', false);
+      setStatus('섹션 저장 완료');
+    }
+
+    function presetCssDailyLog(){
+      newSection();
+      document.getElementById('section-name').value = '10_css_daily-log.html';
+      document.getElementById('section-html').value =
+`<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@db6329169e3a7fa5b56ff024d7889fc600cc0d07/timeline/daily-log.css" />`;
+      updateSectionPreview();
+    }
+
+    function presetYearNav(){
+      newSection();
+      document.getElementById('section-name').value = '20_year_nav.html';
+      // ✅ 주소/연도는 계속 바뀌므로 placeholder 유지
+      document.getElementById('section-html').value =
+`<!-- 연도 네비게이션 -->
+<details class="cheese-year-nav" open="">
+  <summary>
+    <div class="cheese-year-head">
+      <p class="cheese-year-title">주요 사건, 이슈, 뉴스 월별 총정리</p>
+    </div>
+    <span class="cheese-year-toggle">펼치기 / 접기</span>
+  </summary>
+
+  <div class="cheese-year-body" aria-label="연도 이동 링크">
+    <div class="cheese-year-grid">
+      {{YEAR_NAV_ITEMS}}
+    </div>
+  </div>
+</details>`;
+      updateSectionPreview();
+    }
+
+    /* =========================
+       Templates
+    ========================= */
+
+    function renderTemplateList(){
+      const box = document.getElementById('template-list');
+      box.innerHTML = '';
+
+      const q = document.getElementById('template-q').value.trim().toLowerCase();
+      const items = state.templates.filter(it => {
+        if (!q) return true;
+        return (it.id||'').toLowerCase().includes(q) || (it.name||'').toLowerCase().includes(q);
+      });
+
+      for (const it of items){
+        const div = document.createElement('div');
+        div.className = 'item' + (it.id === state.templateActiveId ? ' active' : '');
+        div.onclick = () => openTemplate(it.id);
+
+        const left = document.createElement('div');
+        left.style.minWidth = '0';
+
+        const title = document.createElement('div');
+        title.className = 'mono';
+        title.textContent = it.id;
+
+        const meta = document.createElement('div');
+        meta.className = 'muted';
+        meta.textContent = it.name || (it.file_id ? 'Drive 파일 있음' : '');
+
+        left.appendChild(title);
+        left.appendChild(meta);
+
+        const right = document.createElement('div');
+        right.className = 'muted';
+        right.textContent = '.json';
+
+        div.appendChild(left);
+        div.appendChild(right);
+
+        box.appendChild(div);
+      }
+    }
+
+    async function loadTemplates(){
+      setStatus('템플릿 목록 불러오는 중...');
+      const r = await apiGet({ mode:'listTemplates' });
+      if (!r.ok){ setStatus(r.message || '템플릿 목록 불러오기 실패'); return; }
+      state.templates = r.items || [];
+      renderTemplateList();
+      setStatus(`템플릿 ${r.total ?? state.templates.length}개`);
+    }
+
+    async function openTemplate(id){
+      if (state.templateDirty){
+        if (!confirm('저장하지 않은 변경이 있습니다. 그래도 열까요?')) return;
+      }
+      id = normalizeTemplateId(id);
+      if (!id) return;
+
+      setStatus('템플릿 불러오는 중...');
+      const r = await apiGet({ mode:'getTemplate', template_id:id });
+      if (!r.ok){ setStatus(r.message || '템플릿 불러오기 실패'); return; }
+
+      state.templateActiveId = id;
+      document.getElementById('template-id').value = id;
+      document.getElementById('template-name').value = '';
+      document.getElementById('template-json').value = r.json || '';
+      setDirty('templates', false);
+
+      renderTemplateList();
+      setStatus('템플릿 불러오기 완료');
+    }
+
+    function newTemplate(){
+      if (state.templateDirty){
+        if (!confirm('저장하지 않은 변경이 있습니다. 새로 만들까요?')) return;
+      }
+      state.templateActiveId = '';
+      document.getElementById('template-id').value = '';
+      document.getElementById('template-name').value = '';
+      document.getElementById('template-json').value = '';
+      setDirty('templates', false);
+      renderTemplateList();
+      setStatus('새 템플릿 작성');
+    }
+
+    function presetGenealogy(){
+      newTemplate();
+      document.getElementById('template-id').value = 'genealogy_v1';
+      document.getElementById('template-name').value = 'Genealogy v1';
+
+      const sample = {
+        id: "genealogy_v1",
+        name: "Genealogy v1",
+        description: "섹션(HTML 조각)을 조립해서 최종 HTML 생성",
+        sections: [
+          "10_css_daily-log.html",
+          "20_year_nav.html"
+        ],
+        variables: {
+          YEAR_NAV_ITEMS: "<!-- 런타임에서 생성/치환 -->"
+        }
+      };
+
+      document.getElementById('template-json').value = JSON.stringify(sample, null, 2);
+      setDirty('templates', true);
+      setStatus('템플릿 프리셋 로드됨');
+    }
+
+    async function saveTemplate(){
+      const template_id = normalizeTemplateId(document.getElementById('template-id').value);
+      const name = document.getElementById('template-name').value.trim();
+      const jsonText = document.getElementById('template-json').value;
+
+      if (!template_id){ alert('template_id가 필요합니다.'); return; }
+      if (!jsonText.trim()){ alert('json이 비어 있습니다.'); return; }
+
+      try { JSON.parse(jsonText); }
+      catch(e){ alert('JSON 파싱 실패: ' + e.message); return; }
+
+      setStatus('템플릿 저장 중...');
+      const r = await apiPost({ mode:'templateUpsert', template_id, name, json: jsonText });
+      if (!r.ok){ setStatus(r.message || '템플릿 저장 실패'); return; }
+
+      await loadTemplates();
+      await openTemplate(template_id);
+      setDirty('templates', false);
+      setStatus('템플릿 저장 완료');
+    }
+
+    /* =========================
+       boot
+    ========================= */
+    window.addEventListener('DOMContentLoaded', async () => {
+      // 기본: 섹션 탭
+      switchTab('sections');
+
+      // 최초 로드
+      await loadSections();
+      await loadTemplates();
+
+      // 입력 dirty
+      document.getElementById('section-name').addEventListener('input', () => setDirty('sections', true));
+      document.getElementById('section-html').addEventListener('input', () => setDirty('sections', true));
+      document.getElementById('template-id').addEventListener('input', () => setDirty('templates', true));
+      document.getElementById('template-name').addEventListener('input', () => setDirty('templates', true));
+      document.getElementById('template-json').addEventListener('input', () => setDirty('templates', true));
+    });
+  </script>
+</head>
+
+<body>
+  <div class="admin-shell">
+    <div id="admin-header-slot"></div>
+
+    <div class="admin-main">
+      <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+
+      <main class="admin-content">
+        <div class="wrap">
+          <div class="card">
+            <div class="row" style="justify-content:space-between;">
+              <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                <div style="font-weight:900;">라이브러리 관리</div>
+                <div id="dirty" class="status"></div>
+              </div>
+              <div id="status" class="status"></div>
+            </div>
+
+            <div class="tabs" style="margin-top:10px;">
+              <button id="tab-sections" class="tab active" onclick="switchTab('sections')">섹션(HTML 조각)</button>
+              <button id="tab-templates" class="tab" onclick="switchTab('templates')">템플릿(JSON)</button>
+            </div>
+
+            <div class="muted">
+              섹션은 <span class="mono">PostManage_Sections</span> 폴더(.html), 템플릿은 <span class="mono">PostManage_Templates</span> 폴더(.json)에 저장됩니다.
+            </div>
+          </div>
+
+          <!-- =======================
+               Sections Pane
+          ======================== -->
+          <div id="pane-sections" class="grid" style="margin-top:14px;">
+            <div class="card">
+              <div class="row" style="margin-bottom:10px;">
+                <input id="section-q" class="input" placeholder="검색 (섹션 파일명)" oninput="renderSectionList()" />
+              </div>
+
+              <div class="row" style="margin-bottom:10px;">
+                <button class="btn" onclick="loadSections()">새로고침</button>
+                <button class="btn" onclick="newSection()">새 섹션</button>
+                <button class="btn primary" onclick="saveSection()">저장</button>
+              </div>
+
+              <div class="row" style="margin-bottom:10px;">
+                <button class="btn" onclick="presetCssDailyLog()">프리셋: CSS 링크</button>
+                <button class="btn" onclick="presetYearNav()">프리셋: 연도 네비</button>
+              </div>
+
+              <div class="list">
+                <div class="list-head">
+                  <div>섹션 목록</div>
+                  <div class="muted">.html</div>
+                </div>
+                <div id="section-list" class="list-body"></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="row">
+                <div style="width:240px; font-weight:900;">섹션 파일명</div>
+                <input id="section-name" class="input mono" placeholder="예: 20_year_nav.html" />
+              </div>
+
+              <div class="muted" style="margin-top:10px; margin-bottom:6px;">HTML 편집</div>
+              <textarea id="section-html" class="textarea" placeholder="여기에 섹션 HTML 조각을 넣으세요"></textarea>
+
+              <div class="row" style="margin-top:10px;">
+                <button class="btn" onclick="updateSectionPreview()">미리보기 갱신</button>
+              </div>
+
+              <div class="muted" style="margin-top:10px; margin-bottom:6px;">미리보기</div>
+              <div id="section-preview" class="preview">(미리보기)</div>
+            </div>
+          </div>
+
+          <!-- =======================
+               Templates Pane
+          ======================== -->
+          <div id="pane-templates" class="grid hidden" style="margin-top:14px;">
+            <div class="card">
+              <div class="row" style="margin-bottom:10px;">
+                <input id="template-q" class="input" placeholder="검색 (template_id)" oninput="renderTemplateList()" />
+              </div>
+
+              <div class="row" style="margin-bottom:10px;">
+                <button class="btn" onclick="loadTemplates()">새로고침</button>
+                <button class="btn" onclick="newTemplate()">새 템플릿</button>
+                <button class="btn" onclick="presetGenealogy()">프리셋: genealogy_v1</button>
+                <button class="btn primary" onclick="saveTemplate()">저장</button>
+              </div>
+
+              <div class="list">
+                <div class="list-head">
+                  <div>템플릿 목록</div>
+                  <div class="muted">.json</div>
+                </div>
+                <div id="template-list" class="list-body"></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="row">
+                <div style="width:240px; font-weight:900;">template_id</div>
+                <input id="template-id" class="input mono" placeholder="예: genealogy_v1" />
+              </div>
+
+              <div class="row" style="margin-top:10px;">
+                <div style="width:240px; font-weight:900;">표시 이름(선택)</div>
+                <input id="template-name" class="input" placeholder="예: Genealogy v1" />
+              </div>
+
+              <div class="muted" style="margin-top:10px; margin-bottom:6px;">JSON 편집</div>
+              <textarea id="template-json" class="textarea" placeholder='{"id":"...","sections":[...]}'></textarea>
+
+              <div class="muted" style="margin-top:10px;">
+                파일명은 <span class="mono">template_id.json</span> 으로 저장됩니다.
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script src="./admin-common.js"></script>
+</body>
+</html>
