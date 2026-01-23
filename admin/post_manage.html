@@ -123,7 +123,7 @@
               <input id="id" class="pm-input" type="text" placeholder="예: NM_20260121_01" disabled />
               <button id="btnSetFromSelect" class="pm-btn">선택값을 ID에 반영</button>
             </div>
-            
+
             <div class="pm-row" style="margin-top:10px;">
               <div class="pm-label">분류</div>
               <select id="category" class="pm-select">
@@ -138,6 +138,17 @@
               <div class="pm-muted pm-small">※ 분류 선택 시 ID 자동생성. “수동입력”만 직접 입력 가능.</div>
             </div>
 
+            <div class="pm-row" style="margin-top:10px;">
+              <div class="pm-label">템플릿</div>
+              <select id="templateSelect" class="pm-select" style="min-width:280px;"></select>
+
+              <button id="btnApplyTemplate" class="pm-btn">템플릿 적용(새로)</button>
+              <button id="btnRewrapTemplate" class="pm-btn">래퍼 재적용(본문 유지)</button>
+
+              <span class="pm-muted pm-small">
+                ※ 불러오기 시 template_id가 있으면 자동 선택됩니다.
+              </span>
+            </div>
 
             <div id="status" class="pm-status pm-muted">준비됨</div>
 
@@ -169,6 +180,15 @@
               <textarea id="html" class="pm-textarea" placeholder="여기에 최종 HTML을 편집하세요"></textarea>
             </div>
 
+            <div style="margin-top:10px;">
+              <div class="pm-label" style="margin-bottom:6px;">본문(BODY)</div>
+              <textarea id="body" class="pm-textarea" style="min-height:260px;"
+                placeholder="<!-- BODY_START --> ~ <!-- BODY_END --> 사이에 들어갈 내용만 편집합니다."></textarea>
+              <div class="pm-muted pm-small">
+                ※ 저장 시: 선택한 템플릿 + 본문을 합쳐 최종 HTML을 자동 생성합니다.
+              </div>
+            </div>
+
             <div class="pm-row" style="margin-top:12px;">
               <button id="btnDriveUpsert" class="pm-btn">Drive로 저장/업데이트</button>
               <button id="btnDriveRead" class="pm-btn">Drive에서 불러오기</button>
@@ -189,24 +209,24 @@
 
             <div class="pm-row" style="margin-top:10px;">
               <div class="pm-label">라벨</div>
-            
+
               <input
                 id="bloggerLabels"
                 class="pm-input"
                 type="text"
                 placeholder="예: 주요 사건,2026,정치 (콤마로 구분)"
               />
-            
+
               <select id="bloggerLabelsAction" class="pm-select" style="min-width:180px;">
                 <option value="replace">덮어쓰기</option>
                 <option value="add">추가</option>
                 <option value="remove">제거</option>
               </select>
-            
+
               <button id="btnBloggerLabels" class="pm-btn">라벨 적용</button>
-            
+
               <button id="btnBloggerRevert" class="pm-btn danger">초안으로 되돌리기</button>
-            
+
               <span class="pm-muted pm-small">※ “초안으로 되돌리기”는 발행/예약 글을 draft로 되돌립니다.</span>
             </div>
 
@@ -294,6 +314,135 @@
     return `${API_BASE}?${params.toString()}`;
   }
 
+  function readTemplateMeta_(html){
+    const get = (key) => {
+      const re = new RegExp(`<!--\\s*${key}\\s*:\\s*([^>]+?)\\s*-->`, "i");
+      const m = String(html||"").match(re);
+      return m ? m[1].trim() : "";
+    };
+    return {
+      template_id: get("template_id"),
+      template_ver: get("template_ver"),
+    };
+  }
+
+  function extractBody_(html){
+    const s = "<!-- BODY_START -->";
+    const e = "<!-- BODY_END -->";
+    const t = String(html||"");
+    const si = t.indexOf(s);
+    const ei = t.indexOf(e);
+    if (si >= 0 && ei >= 0 && ei > si){
+      return t.slice(si + s.length, ei).trim();
+    }
+    // 마커가 없으면: 전체를 본문으로 간주 (구형 글 호환)
+    return t.trim();
+  }
+
+  // ===== Templates =====
+  const TEMPLATES = {
+    "genealogy_v1": {
+      name: "가계도시리즈 v1",
+      ver: "2026-01-23",
+      html: `<!-- template_id: genealogy_v1 -->
+<!-- template_ver: 2026-01-23 -->
+<article class="post-wrap genealogy">
+  {{NAV}}
+  <header class="post-head">
+    <h1>{{TITLE}}</h1>
+  </header>
+
+  <!-- BODY_START -->
+  {{BODY}}
+  <!-- BODY_END -->
+
+  {{FOOTER}}
+</article>`
+    },
+
+    "monthly_news_v1": {
+      name: "월별총정리 v1",
+      ver: "2026-01-23",
+      html: `<!-- template_id: monthly_news_v1 -->
+<!-- template_ver: 2026-01-23 -->
+<article class="post-wrap monthly-news">
+  {{NAV}}
+  <header class="post-head">
+    <h1>{{TITLE}}</h1>
+  </header>
+
+  <!-- BODY_START -->
+  {{BODY}}
+  <!-- BODY_END -->
+
+  {{FOOTER}}
+</article>`
+    }
+  };
+
+  function renderTemplate_(tplId, vars){
+    const tpl = TEMPLATES[tplId];
+    if (!tpl) return "";
+
+    let out = tpl.html;
+    out = out.replaceAll("{{TITLE}}", vars.title || "");
+    out = out.replaceAll("{{BODY}}", vars.body || "");
+    out = out.replaceAll("{{NAV}}", vars.nav || "");
+    out = out.replaceAll("{{FOOTER}}", vars.footer || "");
+    return out;
+  }
+
+  function initTemplateSelect_(){
+    const sel = $("templateSelect");
+    sel.innerHTML = "";
+
+    const opt0 = document.createElement("option");
+    opt0.value = "";
+    opt0.textContent = "템플릿 선택...";
+    sel.appendChild(opt0);
+
+    for (const [id, t] of Object.entries(TEMPLATES)){
+      const opt = document.createElement("option");
+      opt.value = id;
+      opt.textContent = `${t.name} (${id})`;
+      sel.appendChild(opt);
+    }
+  }
+
+  function applyTemplateNew(){
+    const tplId = $("templateSelect").value;
+    if (!tplId) return setStatus("템플릿을 먼저 선택하세요.", false);
+
+    $("body").value = "";
+    const finalHtml = renderTemplate_(tplId, {
+      title: $("title").value.trim(),
+      body: "",
+      nav: "",
+      footer: ""
+    });
+
+    $("html").value = finalHtml;
+    syncCharCount();
+    setStatus("템플릿을 적용했습니다(새로). 본문(BODY)을 작성하세요.", true);
+  }
+
+  function rewrapTemplateKeepBody(){
+    const tplId = $("templateSelect").value;
+    if (!tplId) return setStatus("템플릿을 먼저 선택하세요.", false);
+
+    const body = $("body").value || "";
+    const finalHtml = renderTemplate_(tplId, {
+      title: $("title").value.trim(),
+      body,
+      nav: "",
+      footer: ""
+    });
+
+    $("html").value = finalHtml;
+    syncCharCount();
+    setStatus("래퍼를 재적용했습니다(본문 유지).", true);
+  }
+
   async function apiGet(mode, paramsObj){
     const url = buildUrl(mode, paramsObj);
     const res = await fetch(url, { method:"GET", cache:"no-store", credentials:"omit" });
@@ -370,44 +519,65 @@
   async function loadPost(){
     const id = getTargetId();
     if (!id) return setStatus("id를 선택하거나 입력하세요.", false);
-  
+
     try{
       setStatus(`불러오는 중: ${id}`, true);
       const res = await apiGet("getPost", { id });
-  
+
       if (!res || !res.ok) return setStatus("불러오기 실패: " + (res?.message||""), false);
-  
+
       current = res.post;
-  
+
       $("id").value = current.id;
       $("title").value = current.title || "";
       $("html").value = current.html || "";
+
+      const meta = readTemplateMeta_(current.html || "");
+      if (meta.template_id && $("templateSelect")) $("templateSelect").value = meta.template_id;
+
+      $("body").value = extractBody_(current.html || "");
+
       syncCharCount();
       setMeta(current);
       setBloggerMeta(null);
-  
+
       setStatus("불러오기 완료", true);
     }catch(e){
       setStatus("불러오기 오류: " + e.message, false);
     }
   }
-  
+
   async function exportToDrive(){
     const id = getTargetId();
     if (!id) return setStatus("id가 필요합니다.", false);
-  
-    const payload = {
-      id,
-      title: $("title").value.trim(),
-      html: $("html").value
-    };
-  
+
     try{
+      // 템플릿 선택되어 있으면: body + template로 최종 html 생성
+      const tplId = $("templateSelect").value;
+      const body = $("body").value || "";
+
+      if (tplId){
+        const finalHtml = renderTemplate_(tplId, {
+          title: $("title").value.trim(),
+          body,
+          nav: "",     // TODO: 카테고리별 NAV 넣을 자리
+          footer: ""   // TODO: 공통 꼬리말 넣는 자리
+        });
+        $("html").value = finalHtml;
+        syncCharCount();
+      }
+
+      const payload = {
+        id,
+        title: $("title").value.trim(),
+        html: $("html").value
+      };
+
       setStatus("Drive 저장/업데이트 중...", true);
       const res = await apiPost("driveUpsert", payload);
-  
+
       if (!res || !res.ok) return setStatus("Drive 저장 실패: " + (res?.message||""), false);
-  
+
       setStatus(`Drive 저장 완료: ${res.file?.name || ""}`, true);
       await refreshList(id);
       await loadPost();
@@ -415,28 +585,31 @@
       setStatus("Drive 저장 오류: " + e.message, false);
     }
   }
-  
+
   async function importFromDrive(){
     const id = getTargetId();
     if (!id) return setStatus("id가 필요합니다.", false);
-  
+
     try{
       setStatus("Drive에서 불러오는 중...", true);
       const res = await apiGet("driveReadById", { id });
-  
+
       if (!res || !res.ok) return setStatus("Drive 불러오기 실패: " + (res?.message||""), false);
-  
-      $("html").value = res.html || "";
+
+      const html = res.html || "";
+      $("html").value = html;
+
+      // Drive HTML 기준으로 본문/템플릿 자동 복원
+      $("body").value = extractBody_(html);
+      const meta = readTemplateMeta_(html);
+      if (meta.template_id) $("templateSelect").value = meta.template_id;
+
       syncCharCount();
-  
-      // 메타(Drive url/fileId) 등도 최신으로 반영
-      await loadPost();
       setStatus("Drive 불러오기 완료", true);
     }catch(e){
       setStatus("Drive 불러오기 오류: " + e.message, false);
     }
   }
-  
 
   async function exportToBlogger(){
     const id = getTargetId();
@@ -478,6 +651,12 @@
       $("html").value = res.html || "";
       syncCharCount();
 
+      // Blogger HTML 기준으로 본문/템플릿 자동 복원
+      const html = $("html").value || "";
+      $("body").value = extractBody_(html);
+      const meta = readTemplateMeta_(html);
+      if (meta.template_id) $("templateSelect").value = meta.template_id;
+
       setBloggerMeta({ url: res.url, post_id: res.post_id, status: "loaded" });
       setStatus("Blogger 불러오기 완료", true);
     }catch(e){
@@ -485,53 +664,50 @@
     }
   }
 
-async function patchBloggerLabels(){
-  const id = getTargetId();
-  if (!id) return setStatus("id가 필요합니다.", false);
+  async function patchBloggerLabels(){
+    const id = getTargetId();
+    if (!id) return setStatus("id가 필요합니다.", false);
 
-  const labels = $("bloggerLabels").value.trim(); // "a,b,c"
-  const action = $("bloggerLabelsAction").value || "replace";
+    const labels = $("bloggerLabels").value.trim(); // "a,b,c"
+    const action = $("bloggerLabelsAction").value || "replace";
 
-  try{
-    setStatus("라벨 적용 중...", true);
-    const res = await apiPost("bloggerPatchLabels", { id, labels, action });
-    setDebug(res);
+    try{
+      setStatus("라벨 적용 중...", true);
+      const res = await apiPost("bloggerPatchLabels", { id, labels, action });
+      setDebug(res);
 
-    if (!res || !res.ok) return setStatus("라벨 적용 실패: " + (res?.message||""), false);
+      if (!res || !res.ok) return setStatus("라벨 적용 실패: " + (res?.message||""), false);
 
-    // res.labels가 오면 표시용으로 상태 메시지 업데이트
-    setStatus(`라벨 적용 완료 (${(res.labels||[]).length}개)`, true);
+      setStatus(`라벨 적용 완료 (${(res.labels||[]).length}개)`, true);
 
-    // url 있으면 링크 갱신
-    if (res.url) setBloggerMeta({ url: res.url, post_id: res.post_id, status: "labels_updated" });
-
-  }catch(e){
-    setStatus("라벨 적용 오류: " + e.message, false);
+      if (res.url) setBloggerMeta({ url: res.url, post_id: res.post_id, status: "labels_updated" });
+    }catch(e){
+      setStatus("라벨 적용 오류: " + e.message, false);
+    }
   }
-}
 
   async function revertBloggerToDraft(){
     const id = getTargetId();
     if (!id) return setStatus("id가 필요합니다.", false);
-  
+
     try{
       setStatus("초안으로 되돌리는 중...", true);
       const res = await apiPost("bloggerRevert", { id });
       setDebug(res);
-  
+
       if (!res || !res.ok) return setStatus("초안 되돌리기 실패: " + (res?.message||""), false);
-  
+
       setBloggerMeta({ url: res.url, post_id: res.post_id, status: "draft" });
       setStatus("초안으로 되돌리기 완료", true);
-  
     }catch(e){
       setStatus("초안 되돌리기 오류: " + e.message, false);
     }
   }
-  
+
   function clearEditor(){
     $("title").value = "";
     $("html").value = "";
+    $("body").value = "";
     syncCharCount();
     setStatus("편집창을 비웠습니다.", true);
   }
@@ -567,7 +743,6 @@ async function patchBloggerLabels(){
     }
 
     if (cat === "manual"){
-      // 수동입력은 자동생성 안 함
       setStatus("수동입력 분류입니다. ID를 직접 입력하세요.", true);
       $("id").disabled = false;
       $("id").focus();
@@ -581,7 +756,6 @@ async function patchBloggerLabels(){
     try{
       setStatus("ID 생성 중...", true);
 
-      // 기존 목록을 보고 같은 날짜/프리픽스의 마지막 번호를 찾아 +1
       const res = await apiGet("listPosts");
       if (!res || !res.ok) throw new Error(res?.message || "LIST_FAILED");
 
@@ -589,7 +763,7 @@ async function patchBloggerLabels(){
       for (const it of (res.items || [])){
         const id = String(it.id || "");
         if (!id.startsWith(base)) continue;
-        const tail = id.slice(base.length);   // "01"
+        const tail = id.slice(base.length);
         const n = parseInt(tail, 10);
         if (!isNaN(n)) maxSeq = Math.max(maxSeq, n);
       }
@@ -616,22 +790,23 @@ async function patchBloggerLabels(){
 
     $("id").disabled = true;
 
-    // 분류 선택만으로도 자동 생성되게(원치 않으면 이 줄만 제거)
     if (cat) regenId();
   }
-  
+
   /* =========================
-     버튼 연결 (시트 저장 제거)
+     버튼 연결
   ========================= */
   $("btnRefresh").addEventListener("click", ()=>refreshList());
   $("btnLoad").addEventListener("click", loadPost);
   $("btnSetFromSelect").addEventListener("click", setFromSelect);
-  
-  // ❌ 제거: $("btnSaveSheet")...  / saveToSheet()
-  
+
+  $("btnApplyTemplate").addEventListener("click", applyTemplateNew);
+  $("btnRewrapTemplate").addEventListener("click", rewrapTemplateKeepBody);
+
   $("btnDriveUpsert").addEventListener("click", exportToDrive);
   $("btnDriveRead").addEventListener("click", importFromDrive);
   $("btnClear").addEventListener("click", clearEditor);
+
   $("btnBloggerUpsert").addEventListener("click", exportToBlogger);
   $("btnBloggerRead").addEventListener("click", importFromBlogger);
 
@@ -640,11 +815,11 @@ async function patchBloggerLabels(){
 
   $("btnRegenId").addEventListener("click", regenId);
   $("category").addEventListener("change", onCategoryChange);
-  
+
   // init
   setDebug('');
+  initTemplateSelect_();
   refreshList();
-
 })();
 </script>
 
