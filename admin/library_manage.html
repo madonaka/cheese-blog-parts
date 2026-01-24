@@ -550,29 +550,29 @@ $("btnSecLoad").addEventListener("click", loadSectionByName_);
 
 $("btnSecSave").addEventListener("click", async ()=>{
   try{
-    const name = $("secName").value.trim();
-    let html = $("secHtml").value;
+    // ✅ IME 조합/입력 확정 (한글 입력 중 클릭 이슈 방지)
+    $("secName").blur();
+    $("secHtml").blur();
+    await new Promise(r=>setTimeout(r, 0));
 
-    // ✅ (옵션) 섹션 파일 자체에 구분 주석을 넣고 싶을 때만
-    if ($("secAutoMarker") && $("secAutoMarker").checked){
-      const startTag = `<!-- SECTION:${name} START -->`;
-      const endTag   = `<!-- SECTION:${name} END -->`;
-      // 중복 삽입 방지
-      if (!html.includes(startTag) && !html.includes(endTag)){
-        html = `${startTag}\n${html}\n${endTag}\n`;
-      }
-    }
+    let name = $("secName").value.trim();
+    const html = $("secHtml").value;
+
+    // ✅ .html 자동 보정
+    if (name && !/\.html$/i.test(name)) name += ".html";
+
     if (!name) return setMsg($("secMsg"), "파일명을 입력하세요", true);
-    if (!html.trim()) return setMsg($("secMsg"), "HTML이 비어 있습니다", true);
+    if (!html.trim()) return setMsg($("secMsg"), "HTML이 비어있습니다", true);
 
     setMsg($("secMsg"), "저장 중...");
-    const r = await apiPost("sectionUpsert", { name, html });
-    if (!r || !r.ok) throw new Error(r && r.message ? r.message : "sectionUpsert 실패");
-    setMsg($("secMsg"), "OK");
-    await loadSectionsList2().catch(()=>{});
-    await reloadSections().catch(()=>{});
+    const res = await apiPost("sectionUpsert", { name, html });
+    if (!res || !res.ok) throw new Error(res && res.message ? res.message : "sectionUpsert 실패");
+
+    setMsg($("secMsg"), "저장 완료: " + (res.file && res.file.name ? res.file.name : name));
+    await loadSectionsList2();
+    await reloadSections();
   }catch(e){
-    setMsg($("secMsg"), "ERROR: " + String(e.message||e), true);
+    setMsg($("secMsg"), "저장 실패: " + String(e.message||e), true);
   }
 });
 
