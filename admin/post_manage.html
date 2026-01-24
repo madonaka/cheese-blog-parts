@@ -419,23 +419,56 @@
     // 1) manifest 로드
     const manifest = await getTemplateManifest_(templateId);
 
-    // manifest 최소 요구:
-    // { template_id, template_ver, sections: ["a.html","b.html", ...] }
-    const tid = String(manifest.template_id || templateId).trim();
-    const tver = String(manifest.template_ver || "").trim();
-    const sections = Array.isArray(manifest.sections) ? manifest.sections : null;
-    if (!sections || sections.length === 0){
-      throw new Error("TEMPLATE_SECTIONS_EMPTY");
+  // ✅ library_manage 매니페스트 호환:
+  // - old: { template_id, template_ver, sections: ["a.html","b.html"] }
+  // - new: { id, name, sections: [{name:"a.html", vars:{...}}, ...] }
+  
+  const tid = String(manifest.template_id || manifest.id || templateId).trim();
+  const tver = String(manifest.template_ver || manifest.ver || "").trim();
+  
+  const sections = Array.isArray(manifest.sections) ? manifest.sections : null;
+  if (!sections || sections.length === 0){
+    throw new Error("TEMPLATE_SECTIONS_EMPTY");
+  }
+  
+  // 2) 섹션 순서대로 로드 + 합치기
+  const parts = [];
+  for (const sec of sections){
+    // ✅ sec가 "문자열"이든 "{name, vars}" 객체든 둘 다 처리
+    const secName =
+      (typeof sec === "string") ? sec.trim() :
+      (sec && typeof sec === "object") ? String(sec.name || "").trim() : "";
+  
+    if (!secName) continue;
+  
+    let secHtml = await getSectionHtml_(secName);
+  
+    // ✅ (선택) 섹션별 vars 지원: sec.vars가 있으면 그 값으로 치환
+    // - global vars(제목/본문 등) + section vars를 합쳐서 섹션 단위 치환
+    if (sec && typeof sec === "object" && sec.vars && typeof sec.vars === "object"){
+      secHtml = replaceVars_(secHtml, { ...vars, ...sec.vars });
+    }else{
+      secHtml = replaceVars_(secHtml, vars);
     }
+  
+    parts.push(secHtml);
+  }
+  
+  // 3) 조립본 + 메타 주석
+  let assembled = parts.join("\n");
+  
+  const metaHeader =
+    `<!-- template_id: ${tid} -->\n` +
+    (tver ? `<!-- template_ver: ${tver} -->\n` : "");
+  
+  assembled = metaHeader + assembled;
+  
+  // ✅ 이미 섹션 단위로 replaceVars_를 했으니, 여기서 한 번 더 치환할 필요는 없음.
+  //    (중복 치환이 필요하면 아래 라인을 남겨도 되지만, 보통은 주석/중복 문제 생길 수 있음)
+  // assembled = replaceVars_(assembled, vars);
+  
+  return { html: assembled, manifest };
 
-    // 2) 섹션 순서대로 로드 + 합치기
-    const parts = [];
-    for (const secNameRaw of sections){
-      const secName = String(secNameRaw || "").trim();
-      if (!secName) continue;
-      const secHtml = await getSectionHtml_(secName);
-      parts.push(secHtml);
-    }
 
     // 3) 조립본 + 메타 주석
     let assembled = parts.join("\n");
