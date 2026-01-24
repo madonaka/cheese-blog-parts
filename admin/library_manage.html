@@ -187,6 +187,7 @@
                 <input id="secName" class="input" placeholder="예: year_nav.html" />
                 <button class="btn secondary" id="btnSecLoad">불러오기</button>
                 <button class="btn" id="btnSecSave">저장</button>
+                <button class="btn secondary" id="btnSecMakeBody">본문 섹션 템플릿 넣기</button>
                 <label class="row" style="gap:6px;">
                   <input type="checkbox" id="secAutoMarker" />
                   <span class="muted">저장 시 섹션 구분 주석 자동 삽입</span>
@@ -316,41 +317,45 @@ function apiUrl(){
 async function apiGet(mode, params={}){
   const url = new URL(apiUrl());
   url.searchParams.set("mode", mode);
+  url.searchParams.set("_ts", String(Date.now())); // ✅ 캐시 방지
   Object.entries(params||{}).forEach(([k,v])=>{
     if (v===undefined || v===null) return;
     url.searchParams.set(k, String(v));
   });
-  const r = await fetch(url.toString(), { method:"GET" });
-  const j = await r.json().catch(()=>null);
+
+  const r = await fetch(url.toString(), { method:"GET", cache:"no-store", credentials:"omit" });
+  const text = await r.text().catch(()=> "");
+  let j = null;
+  try{ j = JSON.parse(text); }catch(_){}
+
+  if (!r.ok) throw new Error(`HTTP ${r.status}\n${text.slice(0,300)}`);
+  if (!j) throw new Error(`JSON 아님\n${text.slice(0,300)}`);
+
   return j;
 }
 
 async function apiPost(mode, bodyObj){
   const url = new URL(apiUrl());
-  url.searchParams.set("_ts", String(Date.now())); // 캐시 방지(선택)
+  url.searchParams.set("_ts", String(Date.now()));
 
   const body = new URLSearchParams();
   body.set("mode", String(mode || ""));
-
-  if (bodyObj && typeof bodyObj === "object"){
-    for (const [k,v] of Object.entries(bodyObj)){
-      if (v === undefined || v === null) continue;
-      body.set(k, String(v));
-    }
+  for (const [k,v] of Object.entries(bodyObj||{})){
+    if (v===undefined || v===null) continue;
+    body.set(k, String(v));
   }
 
-  const r = await fetch(url.toString(), {
-    method: "POST",
-    body,
-    cache: "no-store",
-    credentials: "omit"
-  });
-
+  const r = await fetch(url.toString(), { method:"POST", body, cache:"no-store", credentials:"omit" });
   const text = await r.text().catch(()=> "");
   let j = null;
-  try { j = JSON.parse(text); } catch(_){}
+  try{ j = JSON.parse(text); }catch(_){}
+
+  if (!r.ok) throw new Error(`HTTP ${r.status}\n${text.slice(0,300)}`);
+  if (!j) throw new Error(`JSON 아님\n${text.slice(0,300)}`);
+
   return j;
 }
+
 
 
 /** =========================
@@ -496,6 +501,20 @@ $("btnSaveTemplate").addEventListener("click", async ()=>{
     const name = $("tplName").value.trim();
     if (!id) return alert("템플릿 ID를 입력하세요.");
     const json = buildTemplateJson();
+
+    // ✅ 저장 전 BODY 슬롯 검사
+    let obj = null;
+    try { obj = JSON.parse(json); } catch(_){ obj = null; }
+    
+    if (obj && Array.isArray(obj.sections)){
+      const hasBody = await templateHasBodySlot_(obj.sections);
+      if (!hasBody){
+        // “알림만” 띄우고 저장 계속할지 여부 선택
+        const ok = confirm("경고: 이 템플릿 구성에는 {{BODY}}가 포함된 섹션이 없습니다.\n본문이 최종 HTML에 들어가지 않을 수 있습니다.\n그래도 저장할까요?");
+        if (!ok) return;
+      }
+    }
+    
     const res = await apiPost("templateUpsert", { template_id: id, name, json });
     if (!res || !res.ok) throw new Error(res && res.message ? res.message : "templateUpsert 실패");
     setMsg($("jsonMsg"), "저장 완료");
@@ -591,6 +610,27 @@ $("btnSecSave").addEventListener("click", async ()=>{
     setMsg($("secMsg"), "저장 실패: " + String(e.message||e), true);
   }
 });
+  
+$("btnSecMakeBody").addEventListener("click", ()=>{
+  // 파일명 기본값
+  if (!$("secName").value.trim()) $("secName").value = "body.html";
+
+  // ✅ .html 자동 보정(일관성)
+  if (!/\.html$/i.test($("secName").value.trim())) {
+    $("secName").value = $("secName").value.trim() + ".html";
+  }
+
+  // 본문 섹션 기본 템플릿
+  $("secHtml").value =
+`<!-- SECTION:body.html START -->
+<!-- BODY_START -->
+{{BODY}}
+<!-- BODY_END -->
+<!-- SECTION:body.html END -->`;
+
+  setMsg($("secMsg"), "본문 섹션 템플릿을 채웠습니다. 파일명/내용 확인 후 저장하세요.");
+});
+
 
 /** =========================
  * Templates tab
@@ -822,6 +862,24 @@ function escapeHtml(s){
   return String(s||"").replace(/[&<>"']/g, (m)=>({
     "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
   }[m]));
+}
+async function templateHasBodySlot_(sections){
+  // sections: ["a.html", ...] 또는 [{name:"a.html"}, ...] 둘 다 지원
+  for (const sec of (sections || [])){
+    const secName =
+      (typeof sec === "string") ? sec.trim() :
+      (sec && typeof sec === "object") ? String(sec.name || "").trim() : "";
+
+    if (!secName) continue;
+
+    // getSection 호출해서 실제 HTML에 {{BODY}}가 있는지 확인
+    const r = await apiGet("getSection", { name: secName });
+    if (r && r.ok){
+      const html = String(r.html || "");
+      if (html.includes("{{BODY}}")) return true;
+    }
+  }
+  return false;
 }
 
 /** =========================
