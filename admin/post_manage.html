@@ -91,6 +91,27 @@
       display:none;
       white-space:pre-line;
     }
+
+    .pm-dyn{
+      display:grid;
+      grid-template-columns: 180px 1fr;
+      gap:10px 12px;
+      margin-top:10px;
+      align-items:center;
+    }
+    @media (max-width: 920px){
+      .pm-dyn{ grid-template-columns: 1fr; }
+    }
+
+    .pm-kbd{
+      display:inline-block;
+      font-size:12px;
+      padding:2px 8px;
+      border-radius:999px;
+      border:1px solid rgba(15,23,42,0.14);
+      background:rgba(15,23,42,0.03);
+      font-weight:800;
+    }
   </style>
 </head>
 
@@ -168,8 +189,22 @@
             </div>
           </section>
 
+          <!-- ✅ 동적 토큰 입력 영역 -->
           <section class="pm-card">
             <div class="pm-row">
+              <div class="pm-label">동적 입력</div>
+              <div class="pm-muted">
+                템플릿에 포함된 토큰(<span class="pm-kbd">{{BODY}}</span>, <span class="pm-kbd">{{THUMB_URL}}</span> 등)을 자동 감지해 입력칸을 만듭니다.
+              </div>
+            </div>
+            <div id="dynHint" class="pm-muted pm-small" style="margin-top:8px;">
+              템플릿을 선택하면 자동으로 감지됩니다.
+            </div>
+            <div id="dynFields" class="pm-dyn"></div>
+          </section>
+
+          <section class="pm-card">
+            <div class="pm-row" id="titleRow">
               <div class="pm-label">Title</div>
               <input id="title" class="pm-input pm-title" type="text" placeholder="글 제목" />
               <div class="pm-muted" id="charCount">0 chars</div>
@@ -180,11 +215,11 @@
               <textarea id="html" class="pm-textarea" placeholder="여기에 최종 HTML이 생성됩니다. (디버그/직접편집 가능)"></textarea>
             </div>
 
-            <div style="margin-top:10px;">
+            <div style="margin-top:10px;" id="bodyBlock">
               <div class="pm-label" style="margin-bottom:6px;">본문(BODY)</div>
               <textarea id="body" class="pm-textarea" style="min-height:260px;"
                 placeholder="<!-- BODY_START --> ~ <!-- BODY_END --> 사이에 들어갈 내용만 편집합니다."></textarea>
-              <div class="pm-muted pm-small">
+              <div class="pm-muted pm-small" id="bodyHelp">
                 ※ 저장/래퍼 재적용 시: 선택한 템플릿(Drive) + 본문을 합쳐 최종 HTML을 자동 생성합니다.
               </div>
             </div>
@@ -248,8 +283,13 @@
   const API_BASE =
     "https://script.google.com/macros/s/AKfycbzj5LUEUKMyQqJfVsVlftO1f4CTYb3NhAQMT2QL6VADBlnjleAXLtBVVhuVHOfwkhQYqQ/exec";
 
-  // 섹션 HTML 캐시(같은 섹션을 여러 번 조립할 때 API 호출 최소화)
+  // 섹션 HTML 캐시
   const sectionCache = new Map(); // key: sectionName, value: html
+
+  // 템플릿 토큰 감지 결과
+  let lastTemplateId = "";
+  let lastTemplateTokens = new Set(); // uppercase token names (BODY, TITLE, ...)
+  const dynValues = {}; // token -> value
 
   function setStatus(msg, ok=true){
     const el = $("status");
@@ -261,6 +301,12 @@
     const b = $("banner");
     b.textContent = msg;
     b.style.display = "block";
+  }
+
+  function hideBanner(){
+    const b = $("banner");
+    b.textContent = "";
+    b.style.display = "none";
   }
 
   function setDebug(obj){
@@ -317,7 +363,7 @@
     return `${API_BASE}?${params.toString()}`;
   }
 
-  // ===== meta/body parsing (기존 글 수정용) =====
+  // ===== meta/body parsing =====
   function readTemplateMeta_(html){
     const get = (key) => {
       const re = new RegExp(`<!--\\s*${key}\\s*:\\s*([^>]+?)\\s*-->`, "i");
@@ -339,7 +385,6 @@
     if (si >= 0 && ei >= 0 && ei > si){
       return t.slice(si + s.length, ei).trim();
     }
-    // 마커가 없으면: 구형 글 호환(전체를 본문으로 추측)
     return t.trim();
   }
 
@@ -383,15 +428,12 @@
     const res = await apiGet("getTemplate", { template_id: templateId });
     if (!res || !res.ok) throw new Error(res?.message || "GET_TEMPLATE_FAILED");
 
-    // 서버가 json 문자열로 내려주는 형태(이전 제안안 기준)
     const txt = String(res.json || "").trim();
     if (!txt) throw new Error("TEMPLATE_JSON_EMPTY");
 
     let manifest = null;
     try{ manifest = JSON.parse(txt); }
-    catch(e){
-      throw new Error("TEMPLATE_JSON_PARSE_FAILED: " + (e?.message || e));
-    }
+    catch(e){ throw new Error("TEMPLATE_JSON_PARSE_FAILED: " + (e?.message || e)); }
     return manifest;
   }
 
@@ -406,62 +448,233 @@
     return html;
   }
 
-  function replaceVars_(html, vars){
-    let out = String(html || "");
-    out = out.replaceAll("{{TITLE}}", vars.title || "");
-    out = out.replaceAll("{{BODY}}", vars.body || "");
-    out = out.replaceAll("{{NAV}}", vars.nav || "");
-    out = out.replaceAll("{{FOOTER}}", vars.footer || "");
+  function normalizeVars_(obj){
+    const out = {};
+    if (!obj || typeof obj !== "object") return out;
+    for (const [k,v] of Object.entries(obj)){
+      const kk = String(k||"").trim().toUpperCase();
+      out[kk] = (v===undefined || v===null) ? "" : String(v);
+    }
     return out;
   }
 
+  function replaceTokens_(html, vars){
+    const map = normalizeVars_(vars);
+    return String(html || "").replace(/{{\s*([A-Z0-9_]+)\s*}}/g, (m, key)=>{
+      const k = String(key||"").toUpperCase();
+      return (k in map) ? map[k] : m; // 값 없으면 토큰 유지(누락이 눈에 보이게)
+    });
+  }
+
   async function assembleHtmlFromTemplate_(templateId, vars){
-    // 1) manifest 로드
     const manifest = await getTemplateManifest_(templateId);
-  
-    // ✅ library_manage 매니페스트 호환:
-    // - old: { template_id, template_ver, sections: ["a.html","b.html"] }
-    // - new: { id, name, sections: [{name:"a.html", vars:{...}}, ...] }
+
+    // old/new 호환
     const tid = String(manifest.template_id || manifest.id || templateId).trim();
     const tver = String(manifest.template_ver || manifest.ver || "").trim();
-  
+
     const sections = Array.isArray(manifest.sections) ? manifest.sections : null;
-    if (!sections || sections.length === 0){
-      throw new Error("TEMPLATE_SECTIONS_EMPTY");
-    }
-  
-    // 2) 섹션 순서대로 로드 + 합치기 (섹션 단위 치환까지 여기서 수행)
+    if (!sections || sections.length === 0) throw new Error("TEMPLATE_SECTIONS_EMPTY");
+
     const parts = [];
     for (const sec of sections){
       const secName =
         (typeof sec === "string") ? sec.trim() :
         (sec && typeof sec === "object") ? String(sec.name || "").trim() : "";
-  
+
       if (!secName) continue;
-  
+
       let secHtml = await getSectionHtml_(secName);
-  
-      // 섹션별 vars 지원
-      if (sec && typeof sec === "object" && sec.vars && typeof sec.vars === "object"){
-        secHtml = replaceVars_(secHtml, { ...vars, ...sec.vars });
-      } else {
-        secHtml = replaceVars_(secHtml, vars);
-      }
-  
+
+      // 섹션별 vars (옵션)
+      const merged = { ...normalizeVars_(vars), ...normalizeVars_(sec && sec.vars ? sec.vars : null) };
+      secHtml = replaceTokens_(secHtml, merged);
       parts.push(secHtml);
     }
-  
-    // 3) 조립본 + 메타 주석
+
     let assembled = parts.join("\n");
-  
+
     const metaHeader =
       `<!-- template_id: ${tid} -->\n` +
       (tver ? `<!-- template_ver: ${tver} -->\n` : "");
-  
+
     assembled = metaHeader + assembled;
-  
-    // ✅ 여기서 다시 replaceVars_를 돌리면 중복치환/예상치 못한 변형이 생길 수 있어서 생략
     return { html: assembled, manifest };
+  }
+
+  // ===== 템플릿 토큰 스캔 & 동적 입력 UI =====
+  function scanTokensFromHtml_(html){
+    const s = new Set();
+    const t = String(html || "");
+    const re = /{{\s*([A-Z0-9_]+)\s*}}/g;
+    let m;
+    while ((m = re.exec(t))){
+      s.add(String(m[1]||"").toUpperCase());
+    }
+    return s;
+  }
+
+  function parseYearMonthFromId_(id){
+    // NM_20260121_01 같은 형태에서 YEAR/MONTH 추출 (없으면 null)
+    const t = String(id||"");
+    const m = t.match(/_(\d{4})(\d{2})(\d{2})_/);
+    if (!m) return null;
+    return { year: m[1], month: m[2] };
+  }
+
+  function renderDynFields_(tokens){
+    const box = $("dynFields");
+    const hint = $("dynHint");
+    box.innerHTML = "";
+
+    const arr = Array.from(tokens || []).sort();
+
+    if (!arr.length){
+      hint.textContent = "이 템플릿에서 감지된 토큰이 없습니다. ({{...}} 없음)";
+    }else{
+      hint.textContent = "감지된 토큰: " + arr.map(t=>`{{${t}}}`).join(", ");
+    }
+
+    // BODY가 없으면 본문 입력 비활성/안내
+    const hasBody = tokens.has("BODY");
+    const bodyBlock = $("bodyBlock");
+    const bodyHelp = $("bodyHelp");
+    if (hasBody){
+      bodyBlock.style.opacity = "1";
+      $("body").disabled = false;
+      bodyHelp.textContent = "※ 템플릿에 {{BODY}}가 있어 본문이 최종 HTML에 반영됩니다.";
+    }else{
+      bodyBlock.style.opacity = "0.6";
+      $("body").disabled = true;
+      bodyHelp.textContent = "※ 이 템플릿에는 {{BODY}}가 없습니다. 본문 입력은 반영되지 않습니다.";
+    }
+
+    // TITLE도 템플릿에 없을 수 있지만, 제목 입력은 유지.
+    // 대신 안내만 보여줌.
+    const titleRow = $("titleRow");
+    titleRow.style.opacity = "1";
+
+    // built-in 토큰은 별도 입력칸을 중복 생성하지 않고, “연결 안내”만 표시
+    const builtIn = new Set(["TITLE","BODY","NAV","FOOTER"]);
+    const autoFields = new Set(["THUMB_URL","CANONICAL_URL","YEAR","MONTH"]);
+
+    for (const tok of arr){
+      if (builtIn.has(tok)) continue; // UI는 기존 타이틀/바디가 담당
+
+      const label = document.createElement("div");
+      label.className = "pm-muted";
+      label.style.fontWeight = "800";
+      label.textContent = `{{${tok}}}`;
+
+      const inputWrap = document.createElement("div");
+
+      // YEAR/MONTH는 짧은 입력
+      const isShort = (tok === "YEAR" || tok === "MONTH");
+      const isUrl = (tok === "THUMB_URL" || tok === "CANONICAL_URL");
+
+      const inp = document.createElement("input");
+      inp.type = "text";
+      inp.className = "pm-input";
+      inp.style.minWidth = isShort ? "180px" : "420px";
+      inp.placeholder = isUrl ? "URL" : "값 입력";
+      inp.value = (dynValues[tok] ?? "");
+
+      inp.addEventListener("input", ()=>{
+        dynValues[tok] = inp.value;
+      });
+
+      inputWrap.appendChild(inp);
+
+      // 작은 설명
+      const desc = document.createElement("div");
+      desc.className = "pm-small pm-muted";
+      if (tok === "THUMB_URL") desc.textContent = "썸네일 이미지 URL(Drive thumbnail 등)";
+      else if (tok === "CANONICAL_URL") desc.textContent = "Blogger 글 URL(발행 후 자동 채움 가능)";
+      else if (tok === "YEAR") desc.textContent = "연도(비워두면 ID에서 추출 시도)";
+      else if (tok === "MONTH") desc.textContent = "월(비워두면 ID에서 추출 시도)";
+      else desc.textContent = "";
+      inputWrap.appendChild(desc);
+
+      box.appendChild(label);
+      box.appendChild(inputWrap);
+
+      // auto: YEAR/MONTH 기본값
+      if (autoFields.has(tok) && !dynValues[tok]){
+        const ym = parseYearMonthFromId_($("id").value);
+        if (ym){
+          if (tok === "YEAR") { dynValues.YEAR = dynValues.YEAR || ym.year; inp.value = dynValues.YEAR; }
+          if (tok === "MONTH"){ dynValues.MONTH = dynValues.MONTH || ym.month; inp.value = dynValues.MONTH; }
+        }
+      }
+    }
+  }
+
+  async function inspectTemplateTokens_(templateId){
+    if (!templateId) {
+      lastTemplateId = "";
+      lastTemplateTokens = new Set();
+      renderDynFields_(lastTemplateTokens);
+      return;
+    }
+
+    try{
+      setStatus("템플릿 토큰 감지 중...", true);
+      hideBanner();
+
+      const manifest = await getTemplateManifest_(templateId);
+      const sections = Array.isArray(manifest.sections) ? manifest.sections : [];
+      const tokens = new Set();
+
+      // 섹션마다 실제 HTML 가져와서 토큰 스캔
+      for (const sec of sections){
+        const secName =
+          (typeof sec === "string") ? sec.trim() :
+          (sec && typeof sec === "object") ? String(sec.name || "").trim() : "";
+
+        if (!secName) continue;
+        const html = await getSectionHtml_(secName);
+        for (const t of scanTokensFromHtml_(html)) tokens.add(t);
+      }
+
+      lastTemplateId = templateId;
+      lastTemplateTokens = tokens;
+      renderDynFields_(tokens);
+
+      // BODY 없는 템플릿이면 경고(알림성)
+      if (!tokens.has("BODY")){
+        showBanner("경고: 이 템플릿 구성에는 {{BODY}}가 없습니다.\n본문 입력은 최종 HTML에 반영되지 않습니다.");
+      }
+
+      setStatus("토큰 감지 완료", true);
+    }catch(e){
+      setStatus("토큰 감지 실패: " + (e.message || e), false);
+      showBanner(String(e && e.stack ? e.stack : e));
+    }
+  }
+
+  function buildVarsFromUI_(){
+    const vars = {};
+
+    // built-in
+    vars.TITLE = ($("title").value || "").trim();
+    vars.BODY  = ($("body").value || "");
+    // 옵션: NAV/FOOTER는 지금 UI에 별도 입력이 없으니 동적 토큰으로 들어오면 dynValues에서 받음
+    vars.NAV   = dynValues.NAV || "";
+    vars.FOOTER= dynValues.FOOTER || "";
+
+    // dynamic
+    for (const k of Object.keys(dynValues)){
+      vars[String(k).toUpperCase()] = dynValues[k];
+    }
+
+    // YEAR/MONTH auto fill (비었고 토큰이 있는 경우)
+    const ym = parseYearMonthFromId_($("id").value);
+    if (ym){
+      if (lastTemplateTokens.has("YEAR") && !vars.YEAR) vars.YEAR = ym.year;
+      if (lastTemplateTokens.has("MONTH") && !vars.MONTH) vars.MONTH = ym.month;
+    }
+
+    return vars;
   }
 
   async function initTemplateSelect_(){
@@ -478,7 +691,6 @@
       const items = await listTemplates_();
 
       for (const it of items){
-        // API가 {id, name}를 어떤 형태로 내려주든 최대한 대응
         const id = String(it.id || it.template_id || it.name || "").replace(/\.json$/i, "").trim();
         if (!id) continue;
 
@@ -499,24 +711,25 @@
   async function applyTemplateNew(){
     const tplId = $("templateSelect").value;
     if (!tplId) return setStatus("템플릿을 먼저 선택하세요.", false);
-  
+
     try{
       setStatus("템플릿 적용 중...", true);
-  
-      // ✅ body를 지우지 말고, 현재 입력값을 그대로 사용
-      const body = $("body").value || "";
-  
-      const out = await assembleHtmlFromTemplate_(tplId, {
-        title: $("title").value.trim(),
-        body,            // ✅ 입력한 본문이 반영됨
-        nav: "",
-        footer: ""
-      });
-  
+
+      // 토큰 감지 최신화(사용자가 템플릿만 바꾼 경우 대비)
+      if (tplId !== lastTemplateId) await inspectTemplateTokens_(tplId);
+
+      const vars = buildVarsFromUI_();
+      const out = await assembleHtmlFromTemplate_(tplId, vars);
+
       $("html").value = out.html;
       syncCharCount();
-      setStatus("템플릿 적용 완료.", true);
-  
+
+      if (!lastTemplateTokens.has("BODY")){
+        setStatus("템플릿 적용 완료. (주의: {{BODY}} 없음)", true);
+      }else{
+        setStatus("템플릿 적용 완료.", true);
+      }
+
     }catch(e){
       setStatus("템플릿 적용 오류: " + e.message, false);
       setDebug(String(e && e.stack ? e.stack : e));
@@ -530,14 +743,10 @@
     try{
       setStatus("래퍼 재적용(본문 유지) 중...", true);
 
-      const body = $("body").value || "";
+      if (tplId !== lastTemplateId) await inspectTemplateTokens_(tplId);
 
-      const out = await assembleHtmlFromTemplate_(tplId, {
-        title: $("title").value.trim(),
-        body,
-        nav: "",
-        footer: ""
-      });
+      const vars = buildVarsFromUI_();
+      const out = await assembleHtmlFromTemplate_(tplId, vars);
 
       $("html").value = out.html;
       syncCharCount();
@@ -611,7 +820,7 @@
       $("title").value = current.title || "";
       $("html").value = current.html || "";
 
-      // template_id 자동 선택 (기존 글 수정용)
+      // template_id 자동 선택
       const meta = readTemplateMeta_(current.html || "");
       if (meta.template_id && $("templateSelect")) $("templateSelect").value = meta.template_id;
 
@@ -621,6 +830,10 @@
       syncCharCount();
       setMeta(current);
       setBloggerMeta(null);
+
+      // 템플릿 토큰 감지
+      const tid = $("templateSelect").value;
+      if (tid) await inspectTemplateTokens_(tid);
 
       setStatus("불러오기 완료", true);
     }catch(e){
@@ -634,23 +847,22 @@
     if (!id) return setStatus("id가 필요합니다.", false);
 
     try{
-      // 템플릿 선택되어 있으면: Drive 템플릿으로 최종 html 재생성 (본문 우선)
       const tplId = $("templateSelect").value;
+
+      // 템플릿 선택되어 있으면 최종 html 재생성
       if (tplId){
         setStatus("저장 전 최종 HTML 생성(템플릿 조립) 중...", true);
-        const out = await assembleHtmlFromTemplate_(tplId, {
-          title: $("title").value.trim(),
-          body: $("body").value || "",
-          nav: "",
-          footer: ""
-        });
+        if (tplId !== lastTemplateId) await inspectTemplateTokens_(tplId);
+
+        const vars = buildVarsFromUI_();
+        const out = await assembleHtmlFromTemplate_(tplId, vars);
         $("html").value = out.html;
         syncCharCount();
       }
 
       const payload = {
         id,
-        title: $("title").value.trim(),
+        title: ($("title").value || "").trim(),
         html: $("html").value
       };
 
@@ -689,6 +901,11 @@
       if (meta.template_id) $("templateSelect").value = meta.template_id;
 
       syncCharCount();
+
+      // 토큰 감지
+      const tid = $("templateSelect").value;
+      if (tid) await inspectTemplateTokens_(tid);
+
       setStatus("Drive 불러오기 완료", true);
 
     }catch(e){
@@ -703,7 +920,7 @@
 
     const payload = {
       id,
-      title: $("title").value.trim(),
+      title: ($("title").value || "").trim(),
       html: $("html").value,
       publish: $("bloggerPublish").checked ? "true" : "false"
     };
@@ -716,6 +933,13 @@
       if (!res || !res.ok) return setStatus("Blogger 업로드 실패: " + (res?.message||""), false);
 
       setBloggerMeta({ url: res.url, post_id: res.post_id, status: res.status });
+
+      // ✅ CANONICAL_URL 자동 채움(토큰이 있을 때만)
+      if (res.url && lastTemplateTokens.has("CANONICAL_URL")){
+        dynValues.CANONICAL_URL = dynValues.CANONICAL_URL || res.url;
+        renderDynFields_(lastTemplateTokens);
+      }
+
       setStatus(`Blogger ${res.status === 'published' ? '발행' : '초안'} 완료`, true);
     }catch(e){
       setStatus("Blogger 업로드 오류: " + e.message, false);
@@ -737,13 +961,24 @@
       $("html").value = res.html || "";
       syncCharCount();
 
-      // Blogger HTML 기준으로 본문/템플릿 자동 복원
+      // 본문/템플릿 복원
       const html = $("html").value || "";
       $("body").value = extractBody_(html);
       const meta = readTemplateMeta_(html);
       if (meta.template_id) $("templateSelect").value = meta.template_id;
 
       setBloggerMeta({ url: res.url, post_id: res.post_id, status: "loaded" });
+
+      // 토큰 감지
+      const tid = $("templateSelect").value;
+      if (tid) await inspectTemplateTokens_(tid);
+
+      // CANONICAL_URL 자동 채움
+      if (res.url && lastTemplateTokens.has("CANONICAL_URL")){
+        dynValues.CANONICAL_URL = dynValues.CANONICAL_URL || res.url;
+        renderDynFields_(lastTemplateTokens);
+      }
+
       setStatus("Blogger 불러오기 완료", true);
     }catch(e){
       setStatus("Blogger 불러오기 오류: " + e.message, false);
@@ -754,7 +989,7 @@
     const id = getTargetId();
     if (!id) return setStatus("id가 필요합니다.", false);
 
-    const labels = $("bloggerLabels").value.trim(); // "a,b,c"
+    const labels = $("bloggerLabels").value.trim();
     const action = $("bloggerLabelsAction").value || "replace";
 
     try{
@@ -795,6 +1030,8 @@
     $("title").value = "";
     $("html").value = "";
     $("body").value = "";
+    for (const k of Object.keys(dynValues)) delete dynValues[k];
+    renderDynFields_(lastTemplateTokens || new Set());
     syncCharCount();
     setStatus("편집창을 비웠습니다.", true);
   }
@@ -859,6 +1096,14 @@
       $("id").value = `${base}${nextSeq}`;
       $("id").disabled = true;
 
+      // YEAR/MONTH 자동 채움(있다면)
+      const ym = parseYearMonthFromId_($("id").value);
+      if (ym){
+        if (!dynValues.YEAR) dynValues.YEAR = ym.year;
+        if (!dynValues.MONTH) dynValues.MONTH = ym.month;
+        renderDynFields_(lastTemplateTokens);
+      }
+
       setStatus(`ID 생성 완료: ${$("id").value}`, true);
     }catch(e){
       setStatus("ID 생성 오류: " + (e.message || e), false);
@@ -902,10 +1147,17 @@
   $("btnRegenId").addEventListener("click", regenId);
   $("category").addEventListener("change", onCategoryChange);
 
+  // ✅ 템플릿 선택 변경 시 토큰 감지 & 입력칸 갱신
+  $("templateSelect").addEventListener("change", async ()=>{
+    const tid = $("templateSelect").value;
+    await inspectTemplateTokens_(tid);
+  });
+
   // init
   setDebug("");
   refreshList();
   initTemplateSelect_();
+  renderDynFields_(new Set());
 })();
 </script>
 
