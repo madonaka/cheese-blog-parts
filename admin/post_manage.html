@@ -316,21 +316,41 @@
 
   async function runAssemblePreview_(){
     const tplId = $("templateSelect") ? $("templateSelect").value : "";
-    if (!tplId) return; // 템플릿이 없으면 프리뷰 조립하지 않음
+    if (!tplId){
+      // 템플릿이 없으면 프리뷰 조립할 수 없음(슬롯 입력만으로 최종본 생성 불가)
+      return;
+    }
 
     const seq = ++previewSeq;
     try{
       const out = await assembleHtmlUsingState_(tplId, buildVarsForAssemble_());
+
       // 오래된 결과는 버림 (빠르게 타이핑할 때 순서 꼬임 방지)
       if (seq !== previewSeq) return;
 
       $("html").value = out.html;
       syncCharCount();
+      // 프리뷰는 조용히 동작(상태 문구는 버튼 액션에서만 크게 변경)
     }catch(e){
-      // 타이핑 중 에러는 배너/상태를 과하게 흔들지 않고, 디버그만 남김
+      // ✅ 프리뷰가 안 바뀌는 대부분의 원인은 여기에서 조립 실패가 나는 경우
+      // 상태/디버그를 남겨서 원인을 바로 볼 수 있게 함
+      setStatus("프리뷰 조립 실패: " + (e?.message || e), false);
       setDebug(String(e && e.stack ? e.stack : e));
     }
   }
+
+  // ✅ 이벤트 위임 방식: 동적 필드가 재렌더링되어도 항상 input/change가 잡힘
+  (function bindPreviewDelegation_(){
+    const bind = (boxId) => {
+      const box = $(boxId);
+      if (!box || box.__pmDelegationBound) return;
+      box.addEventListener("input", scheduleAssemblePreview_, true);
+      box.addEventListener("change", scheduleAssemblePreview_, true);
+      box.__pmDelegationBound = true;
+    };
+    bind("slotFields");
+    bind("tokenFields");
+  })();
 
   function attachDynamicPreviewListeners_(){
     // SLOT(TEXTAREA)
@@ -640,10 +660,6 @@
       empty.className = "pm-muted pm-small";
       empty.textContent = "추가 토큰(THUMB_URL, CANONICAL_URL, YEAR, MONTH)이 감지되지 않았습니다.";
       tokBox.appendChild(empty);
-
-      // ✅ 동적 입력칸 생성 후: 실시간 프리뷰 이벤트 바인딩
-      attachDynamicPreviewListeners_();
-
       return;
     }
 
@@ -660,6 +676,7 @@
 
     // ✅ 동적 입력칸 생성 후: 실시간 프리뷰 이벤트 바인딩
     attachDynamicPreviewListeners_();
+
   }
 
   function tokenPlaceholder_(tok){
@@ -742,6 +759,7 @@
   
     return vars;
   }
+
 
   async function analyzeAndRenderTemplate_(tplId){
     templateState.templateId = tplId || "";
@@ -867,6 +885,7 @@ async function assembleHtmlUsingState_(templateId, vars){
 
 
   async function initTemplateSelect_(){
+(){
     const sel = $("templateSelect");
     sel.innerHTML = "";
 
@@ -1103,43 +1122,43 @@ async function assembleHtmlUsingState_(templateId, vars){
     }
   }
 
-  // ===== Blogger =====
-  async function exportToBlogger(){
-    const id = getTargetId();
-    if (!id) return setStatus("id가 필요합니다.", false);
+// ===== Blogger =====
+async function exportToBlogger(){
+  const id = getTargetId();
+  if (!id) return setStatus("id가 필요합니다.", false);
 
-    try{
-      // 1) 업로드 전 조립
-      const tplId = $("templateSelect").value;
-      if (tplId){
-        setStatus("업로드 전 최종 HTML 생성(템플릿 조립) 중...", true);
-        const out = await assembleHtmlFromTemplate_(tplId, buildVarsForAssemble_());
-        $("html").value = out.html;
-        syncCharCount();
-      }
-
-      // 2) 조립이 끝난 뒤 payload 생성
-      const payload = {
-        id,
-        title: $("title").value.trim(),
-        html: $("html").value,
-        publish: $("bloggerPublish").checked ? "true" : "false"
-      };
-
-      hideBanner();
-      setStatus("Blogger 업로드/수정 중...", true);
-      const res = await apiPost("bloggerUpsert", payload);
-      setDebug(res);
-
-      if (!res || !res.ok) return setStatus("Blogger 업로드 실패: " + (res?.message||""), false);
-
-      setBloggerMeta({ url: res.url, post_id: res.post_id, status: res.status });
-      setStatus(`Blogger ${res.status === 'published' ? '발행' : '초안'} 완료`, true);
-    }catch(e){
-      setStatus("Blogger 업로드 오류: " + e.message, false);
-      setDebug(String(e && e.stack ? e.stack : e));
+  try{
+    // 1) 업로드 전 조립
+    const tplId = $("templateSelect").value;
+    if (tplId){
+      setStatus("업로드 전 최종 HTML 생성(템플릿 조립) 중...", true);
+      const out = await assembleHtmlFromTemplate_(tplId, buildVarsForAssemble_());
+      $("html").value = out.html;
+      syncCharCount();
     }
+
+    // 2) 조립이 끝난 뒤 payload 생성
+    const payload = {
+      id,
+      title: $("title").value.trim(),
+      html: $("html").value,
+      publish: $("bloggerPublish").checked ? "true" : "false"
+    };
+
+    hideBanner();
+    setStatus("Blogger 업로드/수정 중...", true);
+    const res = await apiPost("bloggerUpsert", payload);
+    setDebug(res);
+
+    if (!res || !res.ok) return setStatus("Blogger 업로드 실패: " + (res?.message||""), false);
+
+    setBloggerMeta({ url: res.url, post_id: res.post_id, status: res.status });
+    setStatus(`Blogger ${res.status === 'published' ? '발행' : '초안'} 완료`, true);
+  }catch(e){
+    setStatus("Blogger 업로드 오류: " + e.message, false);
+    setDebug(String(e && e.stack ? e.stack : e));
   }
+}
 
   async function importFromBlogger(){
     const id = getTargetId();
