@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>이미지 업로드 · 미리보기</title>
+
+  <!-- ✅ 메인 관리자 CSS 재사용 (head에 두는 게 안전) -->
+  <link rel="stylesheet" href="./admin.css" />
+
+  <!-- ✅ 너가 쓰던 라이트박스(줌 모달) -->
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/lightbox/cheese-lightbox.css">
+  <script src="https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/lightbox/cheese-lightbox.js"
+          defer></script>
+
+  <style>
+    /* ===== page local styles (admin.css 위에 얹는 최소 스타일) ===== */
+    .im-wrap{ padding:14px; }
+    .im-card{
+      background:#fff;
+      border:1px solid rgba(15,23,42,0.14);
+      border-radius:14px;
+      padding:14px;
+      margin-bottom:12px;
+      box-shadow:0 10px 24px rgba(15,23,42,0.06);
+    }
+    .im-title{ font-weight:900; font-size:16px; margin:0 0 10px; }
+    .im-row{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:10px 0; }
+    .im-label{ font-weight:800; min-width:120px; }
+    .im-input{ padding:10px 12px; border:1px solid rgba(15,23,42,0.2); border-radius:10px; }
+    .im-range{ width:220px; }
+    .im-btn{
+      border:1px solid rgba(15,23,42,.14);
+      background:#fff;
+      border-radius:12px;
+      padding:10px 12px;
+      cursor:pointer;
+      font-weight:800;
+    }
+    .im-btn.primary{
+      background:rgba(59,130,246,.12);
+      border-color:rgba(59,130,246,.35);
+    }
+    .im-btn:disabled{ opacity:.5; cursor:not-allowed; }
+    .im-help{ opacity:.75; font-size:12px; line-height:1.4; }
+
+    .im-grid{
+      display:grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap:12px;
+      margin-top:12px;
+    }
+    @media (max-width: 980px){
+      .im-grid{ grid-template-columns:1fr; }
+      .im-label{ min-width:auto; }
+    }
+
+    .im-chiprow{ display:flex; gap:8px; flex-wrap:wrap; }
+    .im-chip{
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid rgba(15,23,42,.2);
+      background:#fff;
+      font-weight:700;
+      font-size:12px;
+    }
+    .im-chip.on{
+      background:rgba(59,130,246,.15);
+      border-color:rgba(59,130,246,.35);
+      font-weight:900;
+    }
+
+    /* 선택 강조 */
+    .im-selected{
+      outline:3px solid rgba(59,130,246,.9);
+      border-radius:12px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="admin-shell">
+    <div id="admin-header-slot"></div>
+
+    <div class="admin-main">
+      <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+
+      <main class="admin-content">
+        <div class="im-wrap">
+
+          <div class="im-card">
+            <h1 class="im-title">이미지 40% / 50% / 60% 미리보기 (줌 확인 후 업로드)</h1>
+            <p class="im-help">
+              업로드 전에 브라우저에서 리사이즈 + (선택) 블러 + (선택) 워터마크를 적용한 결과물을 생성합니다.
+              각 미리보기는 “이미지 크게 보기” 버튼으로 확대(라이트박스) 확인할 수 있습니다.
+            </p>
+
+            <div class="im-row">
+              <div class="im-label">원본 이미지</div>
+              <input id="imgFile" class="im-input" type="file" accept="image/*" />
+            </div>
+
+            <div class="im-row">
+              <div class="im-label">워터마크 PNG</div>
+              <input id="wmFile" class="im-input" type="file" accept="image/png" />
+              <label style="display:flex; gap:8px; align-items:center;">
+                <input id="wmOn" type="checkbox" checked />
+                워터마크 적용
+              </label>
+            </div>
+
+            <div class="im-row">
+              <div class="im-label">JPEG 품질</div>
+              <input id="jpegQ" class="im-range" type="range" min="0.4" max="0.9" step="0.01" value="0.72" />
+              <span id="jpegQVal" style="font-weight:900;">0.72</span>
+              <span class="im-help">낮을수록 용량↓ / 글자 뭉개짐↑</span>
+            </div>
+
+            <div class="im-row">
+              <div class="im-label">미세 블러(px)</div>
+              <input id="blurPx" class="im-range" type="range" min="0" max="1.2" step="0.1" value="0.5" />
+              <span id="blurPxVal" style="font-weight:900;">0.5</span>
+              <span class="im-help">0.4~0.6부터 권장</span>
+            </div>
+
+            <div class="im-row" style="margin-top:12px;">
+              <button id="btnMakePreviews" class="im-btn primary" type="button">
+                40% / 50% / 60% 미리보기 생성
+              </button>
+              <button id="btnUploadSelected" class="im-btn" type="button" disabled>
+                선택한 미리보기 업로드
+              </button>
+            </div>
+
+            <div class="im-row">
+              <div class="im-label">업로드 선택</div>
+              <div id="scalePick" class="im-chiprow"></div>
+            </div>
+
+            <div id="previewGrid" class="im-grid"></div>
+          </div>
+
+          <div class="im-card">
+            <h2 class="im-title" style="font-size:14px;">업로드 연결 안내</h2>
+            <p class="im-help">
+              현재 파일은 “미리보기 생성 + 확대 확인 + 업로드 대상 선택”까지 포함합니다.
+              “선택한 미리보기 업로드” 버튼 클릭 시점에 Apps Script(WebApp)로 전송하는 코드를 붙이면 끝입니다.
+            </p>
+          </div>
+
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- ✅ 반드시 포함해야 하는 공통 스크립트 유지 -->
+  <script src="./admin-common.js"></script>
+
+  <script>
+  (() => {
+    // ====== DOM ======
+    const $file   = document.getElementById("imgFile");
+    const $wmFile = document.getElementById("wmFile");
+    const $wmOn   = document.getElementById("wmOn");
+
+    const $jpegQ = document.getElementById("jpegQ");
+    const $jpegQVal = document.getElementById("jpegQVal");
+    const $blurPx = document.getElementById("blurPx");
+    const $blurPxVal = document.getElementById("blurPxVal");
+
+    const $btnMake = document.getElementById("btnMakePreviews");
+    const $btnUpload = document.getElementById("btnUploadSelected");
+    const $grid = document.getElementById("previewGrid");
+    const $scalePick = document.getElementById("scalePick");
+
+    $jpegQ.addEventListener("input", () => $jpegQVal.textContent = Number($jpegQ.value).toFixed(2));
+    $blurPx.addEventListener("input", () => $blurPxVal.textContent = Number($blurPx.value).toFixed(1));
+
+    // ====== 상태 ======
+    const SCALES = [0.4, 0.5, 0.6];
+    let sourceImg = null;     // HTMLImageElement
+    let watermarkImg = null;  // HTMLImageElement
+
+    // previews: scale -> { blob, url, w, h, bytes }
+    const previews = new Map();
+    let selectedScale = null;
+
+    function revokeAllPreviewUrls() {
+      for (const v of previews.values()) {
+        if (v.url) URL.revokeObjectURL(v.url);
+      }
+      previews.clear();
+    }
+
+    function loadFileAsImage(file) {
+      return new Promise((resolve, reject) => {
+        if (!file) return reject(new Error("no file"));
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("image load fail")); };
+        img.src = url;
+      });
+    }
+
+    async function renderPreviewBlob(scale) {
+      if (!sourceImg) throw new Error("source image not loaded");
+
+      const blur = Number($blurPx.value) || 0;
+      const q = Number($jpegQ.value) || 0.72;
+
+      const sw = sourceImg.naturalWidth;
+      const sh = sourceImg.naturalHeight;
+
+      const tw = Math.max(1, Math.round(sw * scale));
+      const th = Math.max(1, Math.round(sh * scale));
+
+      const canvas = document.createElement("canvas");
+      canvas.width = tw;
+      canvas.height = th;
+
+      const ctx = canvas.getContext("2d", { alpha: false });
+
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+
+      // 1) 다운스케일 + (선택) 블러
+      ctx.filter = blur > 0 ? `blur(${blur}px)` : "none";
+      ctx.drawImage(sourceImg, 0, 0, tw, th);
+      ctx.filter = "none";
+
+      // 2) 워터마크 합성(선택)
+      if ($wmOn.checked && watermarkImg) {
+        const wmW = Math.round(tw * 0.22);
+        const ratio = watermarkImg.naturalHeight / watermarkImg.naturalWidth;
+        const wmH = Math.round(wmW * ratio);
+
+        const pad = Math.max(8, Math.round(tw * 0.015));
+        const x = tw - wmW - pad;
+        const y = th - wmH - pad;
+
+        ctx.globalAlpha = 0.28;
+        ctx.drawImage(watermarkImg, x, y, wmW, wmH);
+        ctx.globalAlpha = 1;
+      }
+
+      const blob = await new Promise((resolve) => {
+        canvas.toBlob((b) => resolve(b), "image/jpeg", q);
+      });
+
+      if (!blob) throw new Error("toBlob failed");
+      return { blob, w: tw, h: th, bytes: blob.size };
+    }
+
+    function makeCheesePreviewCard({ scale, url, w, h, bytes }) {
+      const pct = Math.round(scale * 100);
+      const sizeKB = Math.round(bytes / 1024);
+
+      const wrap = document.createElement("div");
+      wrap.innerHTML = `
+        <div style="font-weight:900; margin-bottom:6px;">
+          ${pct}% · ${w}×${h} · ${sizeKB}KB
+        </div>
+
+        <div class="cheese-img-wrapper" data-scale="${scale}">
+          <div class="cheese-img-inner">
+            <a href="${url}">
+              <img src="${url}" alt="">
+            </a>
+          </div>
+          <button type="button" class="cheese-view-button">이미지 크게 보기</button>
+          <div class="cheese-img-overlay"></div>
+        </div>
+
+        <button type="button" class="im-btn" style="margin-top:8px; width:100%;">
+          이 버전 선택(업로드 대상)
+        </button>
+      `;
+
+      wrap.querySelector("button.im-btn").addEventListener("click", () => {
+        selectedScale = scale;
+        highlightSelected();
+        $btnUpload.disabled = false;
+      });
+
+      return wrap;
+    }
+
+    function highlightSelected() {
+      const wrappers = $grid.querySelectorAll(".cheese-img-wrapper");
+      wrappers.forEach(el => {
+        const sc = Number(el.getAttribute("data-scale"));
+        el.classList.toggle("im-selected", selectedScale === sc);
+      });
+
+      $scalePick.innerHTML = SCALES.map(s => {
+        const pct = Math.round(s * 100);
+        const on = selectedScale === s;
+        return `<span class="im-chip ${on ? "on" : ""}">${pct}%</span>`;
+      }).join("");
+    }
+
+    // ====== 이벤트 ======
+    $file.addEventListener("change", async () => {
+      revokeAllPreviewUrls();
+      $grid.innerHTML = "";
+      selectedScale = null;
+      $btnUpload.disabled = true;
+      $scalePick.innerHTML = "";
+
+      const f = $file.files?.[0];
+      if (!f) return;
+
+      try {
+        sourceImg = await loadFileAsImage(f);
+      } catch (e) {
+        sourceImg = null;
+        alert("원본 이미지 로딩 실패");
+      }
+    });
+
+    $wmFile.addEventListener("change", async () => {
+      const f = $wmFile.files?.[0];
+      try {
+        watermarkImg = f ? await loadFileAsImage(f) : null;
+      } catch (e) {
+        watermarkImg = null;
+        alert("워터마크 이미지 로딩 실패");
+      }
+    });
+
+    $btnMake.addEventListener("click", async () => {
+      if (!sourceImg) {
+        alert("원본 이미지를 먼저 선택해줘.");
+        return;
+      }
+
+      revokeAllPreviewUrls();
+      $grid.innerHTML = "";
+      selectedScale = null;
+      $btnUpload.disabled = true;
+      $scalePick.innerHTML = "";
+
+      try {
+        for (const s of SCALES) {
+          const r = await renderPreviewBlob(s);
+          const url = URL.createObjectURL(r.blob);
+          previews.set(s, { ...r, url });
+        }
+
+        for (const s of SCALES) {
+          const v = previews.get(s);
+          $grid.appendChild(makeCheesePreviewCard({
+            scale: s, url: v.url, w: v.w, h: v.h, bytes: v.bytes
+          }));
+        }
+
+        // 기본 선택: 50%
+        selectedScale = 0.5;
+        highlightSelected();
+        $btnUpload.disabled = false;
+
+      } catch (e) {
+        console.error(e);
+        alert("미리보기 생성 실패: " + (e?.message || e));
+      }
+    });
+
+    // ====== 업로드 연결 포인트 ======
+    $btnUpload.addEventListener("click", async () => {
+      if (selectedScale == null) return;
+      const v = previews.get(selectedScale);
+      if (!v) return;
+
+      // TODO: 여기서 Apps Script WebApp 업로드 함수 연결
+      // 예: await uploadToDrive(v.blob, { scale: selectedScale, ... });
+
+      alert(
+        `업로드 대상: ${Math.round(selectedScale*100)}%\n` +
+        `크기: ${v.w}×${v.h}\n` +
+        `용량: ${(v.bytes/1024).toFixed(0)}KB\n\n` +
+        `※ 현재는 업로드 연결 전(데모) 상태`
+      );
+    });
+
+    window.addEventListener("beforeunload", revokeAllPreviewUrls);
+  })();
+  </script>
+</body>
+</html>
