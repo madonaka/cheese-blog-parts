@@ -1032,11 +1032,22 @@ async function assembleHtmlFromTemplate_(templateId, vars){
     }
   }
 
-  // ===== Blogger =====
-  async function exportToBlogger(){
-    const id = getTargetId();
-    if (!id) return setStatus("id가 필요합니다.", false);
+// ===== Blogger =====
+async function exportToBlogger(){
+  const id = getTargetId();
+  if (!id) return setStatus("id가 필요합니다.", false);
 
+  try{
+    // 1) 업로드 전 조립
+    const tplId = $("templateSelect").value;
+    if (tplId){
+      setStatus("업로드 전 최종 HTML 생성(템플릿 조립) 중...", true);
+      const out = await assembleHtmlFromTemplate_(tplId, buildVarsForAssemble_());
+      $("html").value = out.html;
+      syncCharCount();
+    }
+
+    // 2) 조립이 끝난 뒤 payload 생성
     const payload = {
       id,
       title: $("title").value.trim(),
@@ -1044,21 +1055,20 @@ async function assembleHtmlFromTemplate_(templateId, vars){
       publish: $("bloggerPublish").checked ? "true" : "false"
     };
 
-    try{
-      hideBanner();
-      setStatus("Blogger 업로드/수정 중...", true);
-      const res = await apiPost("bloggerUpsert", payload);
-      setDebug(res);
+    hideBanner();
+    setStatus("Blogger 업로드/수정 중...", true);
+    const res = await apiPost("bloggerUpsert", payload);
+    setDebug(res);
 
-      if (!res || !res.ok) return setStatus("Blogger 업로드 실패: " + (res?.message||""), false);
+    if (!res || !res.ok) return setStatus("Blogger 업로드 실패: " + (res?.message||""), false);
 
-      setBloggerMeta({ url: res.url, post_id: res.post_id, status: res.status });
-      setStatus(`Blogger ${res.status === 'published' ? '발행' : '초안'} 완료`, true);
-    }catch(e){
-      setStatus("Blogger 업로드 오류: " + e.message, false);
-      setDebug(String(e && e.stack ? e.stack : e));
-    }
+    setBloggerMeta({ url: res.url, post_id: res.post_id, status: res.status });
+    setStatus(`Blogger ${res.status === 'published' ? '발행' : '초안'} 완료`, true);
+  }catch(e){
+    setStatus("Blogger 업로드 오류: " + e.message, false);
+    setDebug(String(e && e.stack ? e.stack : e));
   }
+}
 
   async function importFromBlogger(){
     const id = getTargetId();
