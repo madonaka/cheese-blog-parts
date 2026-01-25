@@ -741,37 +741,71 @@
         ? sec.vars
         : {};
 
-    // 1) SLOT 치환: 섹션 안의 {{BODY}}를 SLOT 값으로 대체 (body 섹션 재사용용)
-    // ✅ (추가) 같은 body 섹션을 여러 번 쓸 때, BODY 마커 충돌 방지용
-    // 기본 마커(이름 없는 BODY_START/END or BODY) -> SLOT명으로 이름 붙여서 저장
-    secHtml = secHtml
-      // 이름 없는 기본형
-      .replace(/<!--\s*BODY_START\s*-->/gi, `<!-- BODY_START:${slotName} -->`)
-      .replace(/<!--\s*BODY_END\s*-->/gi, `<!-- BODY_END:${slotName} -->`)
-      // 혹시 BODY로 고정돼 있는 변형도 처리
-      .replace(/<!--\s*BODY_START\s*:\s*BODY\s*-->/gi, `<!-- BODY_START:${slotName} -->`)
-      .replace(/<!--\s*BODY_END\s*:\s*BODY\s*-->/gi, `<!-- BODY_END:${slotName} -->`);
+      async function assembleHtmlFromTemplate_(templateId, vars){
+        const manifest = await getTemplateManifest_(templateId);
+      
+        // meta
+        const tid = String(manifest.template_id || manifest.id || templateId).trim();
+        const tver = String(manifest.template_ver || manifest.ver || "").trim();
+      
+        const sections = Array.isArray(manifest.sections) ? manifest.sections : [];
+        if (!sections.length) throw new Error("TEMPLATE_SECTIONS_EMPTY");
+      
+        const parts = [];
+      
+        for (const sec of sections){
+          const secName =
+            (typeof sec === "string") ? sec.trim() :
+            (sec && typeof sec === "object") ? String(sec.name || "").trim() : "";
+      
+          if (!secName) continue;
+      
+          let secHtml = await getSectionHtml_(secName);
+      
+          // 섹션별 vars (SLOT 포함 가능)
+          const secVarsRaw = (sec && typeof sec === "object" && sec.vars && typeof sec.vars === "object")
+            ? sec.vars
+            : {};
+      
+          // 1) SLOT 치환: 섹션 안의 {{BODY}}를 SLOT 값으로 대체 (body 섹션 재사용용)
+          //    + 같은 body 섹션을 여러 번 쓸 때, BODY 마커 충돌 방지용(섹션별 SLOT명으로 이름 붙이기)
+          const slotName = (secVarsRaw && secVarsRaw.SLOT) ? String(secVarsRaw.SLOT).trim() : "";
+      
+          if (slotName){
+            // {{BODY}}가 있으면 SLOT의 값(vars[slotName])으로 치환
+            const slotVal = (vars && (vars[slotName] ?? vars[String(slotName).toUpperCase()])) ?? "";
+            secHtml = secHtml.replace(/{{\s*BODY\s*}}/g, String(slotVal));
+      
+            // 기본 BODY 마커(이름 없는 BODY_START/END 또는 BODY로 고정된 변형)를 SLOT명으로 이름 붙여서 저장
+            secHtml = secHtml
+              // 이름 없는 기본형
+              .replace(/<!--\s*BODY_START\s*-->/gi, `<!-- BODY_START:${slotName} -->`)
+              .replace(/<!--\s*BODY_END\s*-->/gi, `<!-- BODY_END:${slotName} -->`)
+              // 혹시 BODY로 고정돼 있는 변형도 처리
+              .replace(/<!--\s*BODY_START\s*:\s*BODY\s*-->/gi, `<!-- BODY_START:${slotName} -->`)
+              .replace(/<!--\s*BODY_END\s*:\s*BODY\s*-->/gi, `<!-- BODY_END:${slotName} -->`);
+          }
+      
+          // 2) 섹션 vars도 함께 토큰 치환 대상으로 사용 ({{SLOT}} 같은 표기도 지원)
+          const secVars = { ...secVarsRaw };
+      
+          // 3) 토큰 치환 (전역 vars + 섹션 vars)
+          secHtml = replaceTokens_(secHtml, { ...vars, ...secVars });
+      
+          parts.push(secHtml);
+        }
+      
+        let assembled = parts.join("\n");
+      
+        const metaHeader =
+          `<!-- template_id: ${tid} -->\n` +
+          (tver ? `<!-- template_ver: ${tver} -->\n` : "");
+      
+        assembled = metaHeader + assembled;
+      
+        return { html: assembled, manifest };
+      }
 
-
-      // 2) 섹션 vars도 함께 토큰 치환 대상으로 사용 ({{SLOT}} 같은 표기도 지원)
-      const secVars = { ...secVarsRaw };
-
-      // 3) 토큰 치환
-      secHtml = replaceTokens_(secHtml, { ...vars, ...secVars });
-
-      parts.push(secHtml);
-    }
-
-    let assembled = parts.join("\n");
-
-    const metaHeader =
-      `<!-- template_id: ${tid} -->\n` +
-      (tver ? `<!-- template_ver: ${tver} -->\n` : "");
-
-    assembled = metaHeader + assembled;
-
-    return { html: assembled, manifest };
-  }
 
   async function initTemplateSelect_(){
     const sel = $("templateSelect");
