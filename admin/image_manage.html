@@ -3,16 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>이미지 업로드 · 미리보기</title>
+  <title>이미지 관리 툴</title>
 
   <!-- ✅ 메인 관리자 CSS 재사용 (head에 두는 게 안전) -->
   <link rel="stylesheet" href="./admin.css" />
-
-  <!-- ✅ 너가 쓰던 라이트박스(줌 모달) -->
-  <link rel="stylesheet"
-        href="https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/lightbox/cheese-lightbox.css">
-  <script src="https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/lightbox/cheese-lightbox.js"
-          defer></script>
 
   <style>
     /* ===== page local styles (admin.css 위에 얹는 최소 스타일) ===== */
@@ -64,6 +58,8 @@
       background:#fff;
       font-weight:700;
       font-size:12px;
+      cursor:pointer;
+      user-select:none;
     }
     .im-chip.on{
       background:rgba(59,130,246,.15);
@@ -76,6 +72,17 @@
       outline:3px solid rgba(59,130,246,.9);
       border-radius:12px;
     }
+
+    /* 이미지 클릭 안내 */
+    .im-clickhint{
+      opacity:.7;
+      font-weight:700;
+      font-size:12px;
+      margin-left:6px;
+    }
+
+    /* 이미지가 링크라는 걸 더 명확히 */
+    .im-preview-link img{ cursor:zoom-in; }
   </style>
 </head>
 
@@ -90,10 +97,10 @@
         <div class="im-wrap">
 
           <div class="im-card">
-            <h1 class="im-title">이미지 40% / 50% / 60% 미리보기 (줌 확인 후 업로드)</h1>
+            <h1 class="im-title">이미지 40% / 50% / 60% 미리보기 (클릭 시 새 창)</h1>
             <p class="im-help">
               업로드 전에 브라우저에서 리사이즈 + (선택) 블러 + (선택) 워터마크를 적용한 결과물을 생성합니다.
-              각 미리보기는 “이미지 크게 보기” 버튼으로 확대(라이트박스) 확인할 수 있습니다.
+              미리보기 이미지를 클릭하면 새 창(탭)에서 원본 크기로 확인할 수 있습니다.
             </p>
 
             <div class="im-row">
@@ -136,6 +143,7 @@
             <div class="im-row">
               <div class="im-label">업로드 선택</div>
               <div id="scalePick" class="im-chiprow"></div>
+              <span class="im-help">칩(40/50/60)을 눌러 업로드 대상을 바꿀 수 있어요.</span>
             </div>
 
             <div id="previewGrid" class="im-grid"></div>
@@ -144,7 +152,7 @@
           <div class="im-card">
             <h2 class="im-title" style="font-size:14px;">업로드 연결 안내</h2>
             <p class="im-help">
-              현재 파일은 “미리보기 생성 + 확대 확인 + 업로드 대상 선택”까지 포함합니다.
+              현재 파일은 “미리보기 생성 + 새 창 확인 + 업로드 대상 선택”까지 포함합니다.
               “선택한 미리보기 업로드” 버튼 클릭 시점에 Apps Script(WebApp)로 전송하는 코드를 붙이면 끝입니다.
             </p>
           </div>
@@ -253,7 +261,7 @@
       return { blob, w: tw, h: th, bytes: blob.size };
     }
 
-    function makeCheesePreviewCard({ scale, url, w, h, bytes }) {
+    function makePreviewCard({ scale, url, w, h, bytes }) {
       const pct = Math.round(scale * 100);
       const sizeKB = Math.round(bytes / 1024);
 
@@ -261,24 +269,26 @@
       wrap.innerHTML = `
         <div style="font-weight:900; margin-bottom:6px;">
           ${pct}% · ${w}×${h} · ${sizeKB}KB
+          <span class="im-clickhint">(이미지 클릭 → 새 창)</span>
         </div>
 
         <div class="cheese-img-wrapper" data-scale="${scale}">
           <div class="cheese-img-inner">
-            <a href="${url}">
+            <a class="im-preview-link" href="${url}" target="_blank" rel="noopener">
               <img src="${url}" alt="">
             </a>
           </div>
-          <button type="button" class="cheese-view-button">이미지 크게 보기</button>
-          <div class="cheese-img-overlay"></div>
+          <div class="im-help" style="margin-top:6px;">
+            업로드 대상: 아래 칩(40/50/60) 선택 또는 카드 선택 버튼 사용
+          </div>
         </div>
 
-        <button type="button" class="im-btn" style="margin-top:8px; width:100%;">
+        <button type="button" class="im-btn pick-btn" style="margin-top:8px; width:100%;">
           이 버전 선택(업로드 대상)
         </button>
       `;
 
-      wrap.querySelector("button.im-btn").addEventListener("click", () => {
+      wrap.querySelector(".pick-btn").addEventListener("click", () => {
         selectedScale = scale;
         highlightSelected();
         $btnUpload.disabled = false;
@@ -287,18 +297,32 @@
       return wrap;
     }
 
+    function renderScaleChips() {
+      $scalePick.innerHTML = SCALES.map(s => {
+        const pct = Math.round(s * 100);
+        const on = selectedScale === s;
+        return `<span class="im-chip ${on ? "on" : ""}" data-scale="${s}">${pct}%</span>`;
+      }).join("");
+
+      // 칩 클릭 시 선택 변경
+      $scalePick.querySelectorAll(".im-chip").forEach(chip => {
+        chip.addEventListener("click", () => {
+          const sc = Number(chip.getAttribute("data-scale"));
+          if (!previews.has(sc)) return; // 미리보기 생성 전이면 무시
+          selectedScale = sc;
+          highlightSelected();
+          $btnUpload.disabled = false;
+        });
+      });
+    }
+
     function highlightSelected() {
       const wrappers = $grid.querySelectorAll(".cheese-img-wrapper");
       wrappers.forEach(el => {
         const sc = Number(el.getAttribute("data-scale"));
         el.classList.toggle("im-selected", selectedScale === sc);
       });
-
-      $scalePick.innerHTML = SCALES.map(s => {
-        const pct = Math.round(s * 100);
-        const on = selectedScale === s;
-        return `<span class="im-chip ${on ? "on" : ""}">${pct}%</span>`;
-      }).join("");
+      renderScaleChips();
     }
 
     // ====== 이벤트 ======
@@ -343,6 +367,7 @@
       $scalePick.innerHTML = "";
 
       try {
+        // 40/50/60 모두 생성해 비교 가능하게 표시
         for (const s of SCALES) {
           const r = await renderPreviewBlob(s);
           const url = URL.createObjectURL(r.blob);
@@ -351,13 +376,14 @@
 
         for (const s of SCALES) {
           const v = previews.get(s);
-          $grid.appendChild(makeCheesePreviewCard({
+          $grid.appendChild(makePreviewCard({
             scale: s, url: v.url, w: v.w, h: v.h, bytes: v.bytes
           }));
         }
 
         // 기본 선택: 50%
         selectedScale = 0.5;
+        renderScaleChips();
         highlightSelected();
         $btnUpload.disabled = false;
 
