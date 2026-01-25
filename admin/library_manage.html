@@ -122,16 +122,27 @@
                 <input id="apiUrl" class="input" style="min-width:520px" />
                 <span class="muted">배포 /exec 주소</span>
               </div>
+
               <div class="row" style="margin-top:10px;">
                 <label style="font-weight:900;">템플릿 ID</label>
                 <input id="tplId" class="input" placeholder="예: news_year_nav_v1" />
                 <label style="font-weight:900;">템플릿 이름</label>
                 <input id="tplName" class="input" placeholder="예: 뉴스 연도네비 + CSS" />
+
+                <!-- ✅ 추가: BODY 슬롯 자동 지정 -->
+                <button class="btn secondary" id="btnAutoBodySlots">BODY 슬롯 자동지정</button>
+
                 <button class="btn" id="btnSaveTemplate">템플릿 저장</button>
                 <button class="btn secondary" id="btnPreviewJson">JSON 미리보기</button>
               </div>
-              <p class="muted" style="margin-top:10px;">
-                왼쪽 섹션 목록에서 “추가”를 누르면 오른쪽(선택 영역)에 들어갑니다. 오른쪽에서 ↑↓로 순서를 바꾸고 저장하면 템플릿(JSON)이 Drive에 저장됩니다.
+
+              <p class="muted" style="margin-top:10px; white-space:pre-line;">
+                왼쪽 섹션 목록에서 “추가”를 누르면 오른쪽(선택 영역)에 들어갑니다.
+                같은 섹션(예: 본문2.html)을 여러 번 넣는 경우, 각 항목에 vars.SLOT을 반드시 다르게 지정해야 post_manage에서 BODY_1/2/3/4 입력칸이 분리됩니다.
+
+                ✅ 빠른 방법
+                - 선택 카드의 “SLOT” 버튼: 해당 항목에 {"SLOT":"BODY_N"} 자동 부여
+                - 상단 “BODY 슬롯 자동지정”: 선택 목록에서 {{BODY}}를 포함한 섹션들을 찾아 BODY_1.. 순서대로 자동 부여
               </p>
             </div>
 
@@ -188,10 +199,12 @@
                 <button class="btn secondary" id="btnSecLoad">불러오기</button>
                 <button class="btn" id="btnSecSave">저장</button>
                 <button class="btn secondary" id="btnSecMakeBody">본문 섹션 템플릿 넣기</button>
+
                 <label class="row" style="gap:6px;">
                   <input type="checkbox" id="secAutoMarker" />
-                  <span class="muted">저장 시 섹션 구분 주석 자동 삽입</span>
+                  <span class="muted">저장 시 섹션 구분 주석 자동 삽입(현재는 안내용)</span>
                 </label>
+
                 <span class="muted" id="secMsg"></span>
               </div>
               <div style="margin-top:10px;">
@@ -356,8 +369,6 @@ async function apiPost(mode, bodyObj){
   return j;
 }
 
-
-
 /** =========================
  * Tabs
  * ========================= */
@@ -377,11 +388,14 @@ document.querySelectorAll(".tab-btn").forEach(btn=>{
  * 데이터
  * ========================= */
 let ALL_SECTIONS = [];   // [{name,file_id,url}]
-let SELECTED = [];     // [{name, varsText:""}]
+let SELECTED = [];       // [{name, varsText:""}]
 
-let CURRENT_TPL = null;    // {id,name,sections:[{name,vars?}]}
-let TPL_SECTIONS = [];     // 편집용 복사본
+let CURRENT_TPL = null;  // {id,name,sections:[{name,vars?}]}
+let TPL_SECTIONS = [];   // 편집용 복사본
 let _dragIndex = -1;
+
+// 섹션 HTML에 {{BODY}} 포함 여부 캐시
+const BODY_SECTION_CACHE = new Map(); // key: sectionName => boolean
 
 function renderSectionList(){
   const q = $("secSearch").value.trim().toLowerCase();
@@ -404,9 +418,118 @@ function renderSectionList(){
     row.querySelector('[data-act="add"]').addEventListener("click", ()=>{
       SELECTED.push({ name: s.name, varsText: "" });
       renderSelected();
+      updateJsonPreviewSafe_();
     });
     list.appendChild(row);
   });
+}
+
+function varsSummary_(varsText){
+  const t = (varsText || "").trim();
+  if (!t) return "";
+  try{
+    const o = JSON.parse(t);
+    if (!o || typeof o !== "object") return "";
+    const keys = Object.keys(o);
+    if (!keys.length) return "";
+    const pairs = keys.slice(0,4).map(k=>`${k}=${String(o[k])}`);
+    const more = keys.length > 4 ? ` …(+${keys.length-4})` : "";
+    return pairs.join(", ") + more;
+  }catch(_){
+    return "vars(JSON) 오류";
+  }
+}
+
+function parseVarsStrict_(varsText, hint){
+  const t = (varsText || "").trim();
+  if (!t) return undefined;
+  try{
+    const v = JSON.parse(t);
+    if (!v || typeof v !== "object" || Array.isArray(v)) {
+      throw new Error("vars는 객체(JSON object)여야 합니다.");
+    }
+    return v;
+  }catch(e){
+    throw new Error(`${hint} vars JSON 파싱 실패: ${e.message || e}`);
+  }
+}
+
+function findMaxBodySlotNumber_(){
+  let maxN = 0;
+  for (const s of (SELECTED || [])){
+    const t = (s.varsText || "").trim();
+    if (!t) continue;
+    try{
+      const v = JSON.parse(t);
+      const slot = String(v?.SLOT || "").trim();
+      const m = slot.match(/^BODY_(\d+)$/i);
+      if (m){
+        const n = parseInt(m[1], 10);
+        if (!isNaN(n)) maxN = Math.max(maxN, n);
+      }
+    }catch(_){}
+  }
+  return maxN;
+}
+
+function setSlotOnItem_(idx, slotValue){
+  if (idx < 0 || idx >= SELECTED.length) return;
+  const item = SELECTED[idx];
+  let v = {};
+  const t = (item.varsText || "").trim();
+  if (t){
+    // 기존 vars 유지 (단, JSON 오류면 강제 덮어쓰기 대신 안내)
+    try{ v = JSON.parse(t) || {}; } catch(_){ v = {}; }
+  }
+  v.SLOT = slotValue;
+  item.varsText = JSON.stringify(v, null, 2);
+}
+
+async function isBodySection_(secName){
+  const key = String(secName || "").trim();
+  if (!key) return false;
+  if (BODY_SECTION_CACHE.has(key)) return BODY_SECTION_CACHE.get(key);
+
+  try{
+    const r = await apiGet("getSection", { name: key });
+    const html = String(r?.html || "");
+    const yes = html.includes("{{BODY}}");
+    BODY_SECTION_CACHE.set(key, yes);
+    return yes;
+  }catch(_){
+    BODY_SECTION_CACHE.set(key, false);
+    return false;
+  }
+}
+
+async function autoAssignBodySlots_(){
+  if (!SELECTED.length) return;
+
+  // 이미 지정된 SLOT이 있으면 그 뒤부터 이어서
+  let n = findMaxBodySlotNumber_();
+
+  for (let i=0; i<SELECTED.length; i++){
+    const item = SELECTED[i];
+
+    // 이미 SLOT이 있으면 건드리지 않음
+    const t = (item.varsText || "").trim();
+    if (t){
+      try{
+        const v = JSON.parse(t);
+        if (v && typeof v === "object" && String(v.SLOT || "").trim()) continue;
+      }catch(_){}
+    }
+
+    // 본문 섹션인지 검사(실제 HTML에 {{BODY}}가 있어야 대상)
+    const ok = await isBodySection_(item.name);
+    if (!ok) continue;
+
+    n += 1;
+    setSlotOnItem_(i, `BODY_${n}`);
+  }
+
+  renderSelected();
+  updateJsonPreviewSafe_();
 }
 
 function renderSelected(){
@@ -417,14 +540,19 @@ function renderSelected(){
   SELECTED.forEach((s, idx)=>{
     const row = document.createElement("div");
     row.className = "item";
+
+    const vs = varsSummary_(s.varsText);
+    const meta = `#${idx+1}` + (vs ? ` · ${vs}` : "");
+
     row.innerHTML = `
       <div style="min-width:0;">
         <div class="name">${escapeHtml(s.name)}</div>
-        <div class="meta">#${idx+1}</div>
+        <div class="meta">${escapeHtml(meta)}</div>
       </div>
       <div style="flex:1"></div>
       <button class="mini-btn" data-act="up">↑</button>
       <button class="mini-btn" data-act="down">↓</button>
+      <button class="mini-btn" data-act="slot">SLOT</button>
       <button class="mini-btn" data-act="vars">vars</button>
       <button class="mini-btn" data-act="rm">제거</button>
     `;
@@ -433,39 +561,73 @@ function renderSelected(){
       if (idx<=0) return;
       const t = SELECTED[idx-1]; SELECTED[idx-1]=SELECTED[idx]; SELECTED[idx]=t;
       renderSelected();
+      updateJsonPreviewSafe_();
     });
     row.querySelector('[data-act="down"]').addEventListener("click", ()=>{
       if (idx>=SELECTED.length-1) return;
       const t = SELECTED[idx+1]; SELECTED[idx+1]=SELECTED[idx]; SELECTED[idx]=t;
       renderSelected();
+      updateJsonPreviewSafe_();
     });
     row.querySelector('[data-act="rm"]').addEventListener("click", ()=>{
       SELECTED.splice(idx,1);
       renderSelected();
+      updateJsonPreviewSafe_();
     });
+
+    // ✅ SLOT 버튼: BODY_N 자동 할당(해당 아이템만)
+    row.querySelector('[data-act="slot"]').addEventListener("click", async ()=>{
+      // 본문 섹션인지 한번 확인(없어도 강제 지정은 가능하지만, 실수 방지용)
+      const ok = await isBodySection_(s.name);
+      if (!ok){
+        const go = confirm(`"${s.name}" 섹션 HTML에서 {{BODY}}를 찾지 못했습니다.\n그래도 SLOT을 지정할까요?`);
+        if (!go) return;
+      }
+      const next = findMaxBodySlotNumber_() + 1;
+      setSlotOnItem_(idx, `BODY_${next}`);
+      renderSelected();
+      updateJsonPreviewSafe_();
+    });
+
     row.querySelector('[data-act="vars"]').addEventListener("click", ()=>{
-      const v = prompt("vars(JSON). 비우면 삭제.\n예: {\"year\":\"2026\"}", s.varsText || "");
+      const hint = `vars(JSON) 입력. 비우면 삭제.\n예: {"SLOT":"BODY_1"}\n또는: {"SLOT":"BODY_2","YEAR":"2026"}`;
+      const v = prompt(hint, s.varsText || "");
       if (v===null) return;
       s.varsText = v.trim();
+      renderSelected();
+      updateJsonPreviewSafe_();
     });
 
     list.appendChild(row);
   });
 }
 
-function buildTemplateJson(){
+function buildTemplateObjStrict_(){
   const id = $("tplId").value.trim();
   const name = $("tplName").value.trim();
-  const sections = SELECTED.map(s=>{
-    let vars = undefined;
-    const t = (s.varsText||"").trim();
-    if (t){
-      try{ vars = JSON.parse(t); }catch(_){ vars = undefined; }
-    }
+  const sections = SELECTED.map((s, idx)=>{
+    const hint = `선택 #${idx+1} (${s.name})`;
+    const vars = parseVarsStrict_(s.varsText, hint); // ✅ 여기서 vars 오류면 즉시 throw
     return vars ? { name: s.name, vars } : { name: s.name };
   });
-  const obj = { id, name, sections };
+
+  return { id, name, sections };
+}
+
+function buildTemplateJsonStrict_(){
+  const obj = buildTemplateObjStrict_();
   return JSON.stringify(obj, null, 2);
+}
+
+function updateJsonPreviewSafe_(){
+  // 자동 미리보기: vars JSON이 깨져있으면 안내만 표시
+  try{
+    $("jsonPreview").value = buildTemplateJsonStrict_();
+    setMsg($("jsonMsg"), "OK");
+  }catch(e){
+    $("jsonPreview").value = "";
+    setMsg($("jsonMsg"), String(e.message||e), true);
+  }
 }
 
 async function reloadSections(){
@@ -487,11 +649,27 @@ $("btnClearSel").addEventListener("click", ()=>{
   if (!confirm("선택 목록을 비울까요?")) return;
   SELECTED = [];
   renderSelected();
+  updateJsonPreviewSafe_();
+});
+
+// ✅ BODY 슬롯 자동 지정 버튼
+$("btnAutoBodySlots").addEventListener("click", async ()=>{
+  try{
+    await autoAssignBodySlots_();
+    alert("BODY 슬롯 자동지정 완료(가능한 항목만 적용).");
+  }catch(e){
+    alert("자동지정 실패: " + String(e.message||e));
+  }
 });
 
 $("btnPreviewJson").addEventListener("click", ()=>{
-  $("jsonPreview").value = buildTemplateJson();
-  setMsg($("jsonMsg"), "OK");
+  try{
+    $("jsonPreview").value = buildTemplateJsonStrict_();
+    setMsg($("jsonMsg"), "OK");
+  }catch(e){
+    setMsg($("jsonMsg"), String(e.message||e), true);
+    alert(String(e.message||e));
+  }
 });
 
 $("btnSaveTemplate").addEventListener("click", async ()=>{
@@ -499,24 +677,27 @@ $("btnSaveTemplate").addEventListener("click", async ()=>{
     const id = $("tplId").value.trim();
     const name = $("tplName").value.trim();
     if (!id) return alert("템플릿 ID를 입력하세요.");
-    const json = buildTemplateJson();
+
+    // ✅ vars JSON 유효성 강제 체크 + 최종 JSON 생성
+    const json = buildTemplateJsonStrict_();
 
     // ✅ 저장 전 BODY 슬롯 검사
     let obj = null;
     try { obj = JSON.parse(json); } catch(_){ obj = null; }
-    
+
     if (obj && Array.isArray(obj.sections)){
       const hasBody = await templateHasBodySlot_(obj.sections);
       if (!hasBody){
-        // “알림만” 띄우고 저장 계속할지 여부 선택
         const ok = confirm("경고: 이 템플릿 구성에는 {{BODY}}가 포함된 섹션이 없습니다.\n본문이 최종 HTML에 들어가지 않을 수 있습니다.\n그래도 저장할까요?");
         if (!ok) return;
       }
     }
-    
+
     const res = await apiPost("templateUpsert", { template_id: id, name, json });
     if (!res || !res.ok) throw new Error(res && res.message ? res.message : "templateUpsert 실패");
+
     setMsg($("jsonMsg"), "저장 완료");
+    updateJsonPreviewSafe_();
     await loadTemplates();
   }catch(e){
     alert("저장 실패: " + String(e.message||e));
@@ -554,7 +735,6 @@ function renderSectionsList2_(){
     row.querySelector('[data-act="load"]').addEventListener("click", async ()=>{
       $("secName").value = s.name;
       await loadSectionByName_();
-      // 섹션 탭으로 이동
       document.querySelector('.tab-btn[data-tab="sections"]').click();
     });
     list.appendChild(row);
@@ -609,17 +789,13 @@ $("btnSecSave").addEventListener("click", async ()=>{
     setMsg($("secMsg"), "저장 실패: " + String(e.message||e), true);
   }
 });
-  
-$("btnSecMakeBody").addEventListener("click", ()=>{
-  // 파일명 기본값
-  if (!$("secName").value.trim()) $("secName").value = "body.html";
 
-  // ✅ .html 자동 보정(일관성)
+$("btnSecMakeBody").addEventListener("click", ()=>{
+  if (!$("secName").value.trim()) $("secName").value = "body.html";
   if (!/\.html$/i.test($("secName").value.trim())) {
     $("secName").value = $("secName").value.trim() + ".html";
   }
 
-  // 본문 섹션 기본 템플릿
   $("secHtml").value =
 `<!-- SECTION:body.html START -->
 <!-- BODY_START -->
@@ -629,7 +805,6 @@ $("btnSecMakeBody").addEventListener("click", ()=>{
 
   setMsg($("secMsg"), "본문 섹션 템플릿을 채웠습니다. 파일명/내용 확인 후 저장하세요.");
 });
-
 
 /** =========================
  * Templates tab
@@ -660,7 +835,6 @@ async function loadTemplates(){
         $("tplJson").value = r.json || "";
         $("tplMsg").textContent = "OK";
 
-        // ✅ 템플릿 섹션 카드 편집기 세팅
         try{
           const obj = JSON.parse(r.json || "{}");
           if (!obj || typeof obj !== "object") throw new Error("템플릿 JSON 파싱 실패");
@@ -669,7 +843,7 @@ async function loadTemplates(){
           if (!obj.name) obj.name = it.name || it.id;
 
           CURRENT_TPL = obj;
-          TPL_SECTIONS = (obj.sections || []).map(s=>({ ...s })); // shallow copy
+          TPL_SECTIONS = (obj.sections || []).map(s=>({ ...s }));
           renderTplSectionsEditor_();
         }catch(_e){
           CURRENT_TPL = null;
@@ -724,7 +898,6 @@ function renderTplSectionsEditor_(){
       </div>
     `;
 
-    // 버튼 이동
     row.querySelector('[data-act="up"]').addEventListener("click", ()=>{
       if (idx<=0) return;
       const t = TPL_SECTIONS[idx-1]; TPL_SECTIONS[idx-1]=TPL_SECTIONS[idx]; TPL_SECTIONS[idx]=t;
@@ -740,7 +913,6 @@ function renderTplSectionsEditor_(){
       renderTplSectionsEditor_();
     });
 
-    // ✅ Drag & Drop
     row.addEventListener("dragstart", (e)=>{
       _dragIndex = idx;
       row.classList.add("dragging");
@@ -775,7 +947,6 @@ function renderTplSectionsEditor_(){
   });
 }
 
-// ✅ “순서 저장” (templateUpsert)
 $("btnTplSaveOrder") && $("btnTplSaveOrder").addEventListener("click", async ()=>{
   try{
     if (!CURRENT_TPL) return alert("템플릿을 먼저 열어주세요.");
@@ -798,7 +969,6 @@ $("btnTplSaveOrder") && $("btnTplSaveOrder").addEventListener("click", async ()=
   }
 });
 
-// ✅ “빌더로 불러오기” (Templates -> Builder)
 $("btnTplToBuilder") && $("btnTplToBuilder").addEventListener("click", ()=>{
   if (!CURRENT_TPL) return alert("템플릿을 먼저 열어주세요.");
 
@@ -813,10 +983,10 @@ $("btnTplToBuilder") && $("btnTplToBuilder").addEventListener("click", ()=>{
   });
 
   renderSelected();
+  updateJsonPreviewSafe_();
   document.querySelector('.tab-btn[data-tab="builder"]').click();
 });
 
-// ✅ “HTML 조합 미리보기” (getSection 여러 번 호출해서 합치기 + 구분자 삽입)
 $("btnTplBuildHtml") && $("btnTplBuildHtml").addEventListener("click", async ()=>{
   try{
     if (!CURRENT_TPL) return alert("템플릿을 먼저 열어주세요.");
@@ -833,12 +1003,10 @@ $("btnTplBuildHtml") && $("btnTplBuildHtml").addEventListener("click", async ()=
 
       let html = r.html || "";
 
-      // (선택) 섹션 래핑
       if (wrapSec){
         html = `<section data-section="${escapeHtml(s.name)}">\n${html}\n</section>\n`;
       }
 
-      // (선택) 구분자(주석) 삽입
       if (useMarkers){
         out += `<!-- SECTION:${s.name} START -->\n${html}\n<!-- SECTION:${s.name} END -->\n\n`;
       }else{
@@ -862,8 +1030,8 @@ function escapeHtml(s){
     "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
   }[m]));
 }
+
 async function templateHasBodySlot_(sections){
-  // sections: ["a.html", ...] 또는 [{name:"a.html"}, ...] 둘 다 지원
   for (const sec of (sections || [])){
     const secName =
       (typeof sec === "string") ? sec.trim() :
@@ -871,7 +1039,6 @@ async function templateHasBodySlot_(sections){
 
     if (!secName) continue;
 
-    // getSection 호출해서 실제 HTML에 {{BODY}}가 있는지 확인
     const r = await apiGet("getSection", { name: secName });
     if (r && r.ok){
       const html = String(r.html || "");
@@ -887,6 +1054,7 @@ async function templateHasBodySlot_(sections){
 (function init(){
   $("apiUrl").value = DEFAULT_API_URL;
   renderSelected();
+  updateJsonPreviewSafe_();
   reloadSections().catch(()=>{});
   loadSectionsList2().catch(()=>{});
   loadTemplates().catch(()=>{});
