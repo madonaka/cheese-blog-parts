@@ -138,7 +138,7 @@
               <span class="im-help">낮을수록 약하게 보임 (1.00 = 워터마크 원본 그대로)</span>
             </div>
 
-            <!-- ✅ 문구(사용자 입력) + 버전 표기 옵션 -->
+            <!-- ✅ 텍스트(검정/투명배경) 옵션 -->
             <div class="im-row">
               <div class="im-label">표시 문구</div>
               <input id="noteText" class="im-input" type="text"
@@ -149,6 +149,13 @@
                 우측 상단 표시
               </label>
               <span class="im-help">자동으로 “원본 대비 % / 블러 px”가 붙고, 위에 “VYYYYMMDD”가 표시됩니다.</span>
+            </div>
+
+            <div class="im-row">
+              <div class="im-label">글자 크기</div>
+              <input id="noteFont" class="im-range" type="range" min="10" max="48" step="1" value="18" />
+              <span id="noteFontVal" style="font-weight:900;">18px</span>
+              <span class="im-help">텍스트만 적용(배경 없음, 글자 검정)</span>
             </div>
 
             <div class="im-row" style="margin-top:12px;">
@@ -200,9 +207,11 @@
     const $wmAlpha = document.getElementById("wmAlpha");
     const $wmAlphaVal = document.getElementById("wmAlphaVal");
 
-    // ✅ 문구/표시 옵션
+    // ✅ 텍스트 옵션
     const $noteText = document.getElementById("noteText");
     const $noteOn = document.getElementById("noteOn");
+    const $noteFont = document.getElementById("noteFont");
+    const $noteFontVal = document.getElementById("noteFontVal");
 
     const $btnMake = document.getElementById("btnMakePreviews");
     const $btnUpload = document.getElementById("btnUploadSelected");
@@ -213,6 +222,9 @@
     $blurPx.addEventListener("input", () => $blurPxVal.textContent = Number($blurPx.value).toFixed(1));
     $wmAlpha.addEventListener("input", () => $wmAlphaVal.textContent = Number($wmAlpha.value).toFixed(2));
     $wmAlphaVal.textContent = Number($wmAlpha.value).toFixed(2);
+
+    $noteFont.addEventListener("input", () => $noteFontVal.textContent = `${Number($noteFont.value)}px`);
+    $noteFontVal.textContent = `${Number($noteFont.value)}px`;
 
     // ====== 상태 ======
     const SCALES = [0.4, 0.5, 0.6];
@@ -247,39 +259,42 @@
       return `V${d.getFullYear()}${pad2(d.getMonth()+1)}${pad2(d.getDate())}`;
     }
 
-    function drawTopRightLabel(ctx, tw, th, lines) {
-      // lines: ["V20260126", "문구 ..."]
+    function ellipsisToFit(ctx, text, maxW) {
+      if (ctx.measureText(text).width <= maxW) return text;
+      const E = "…";
+      let lo = 0, hi = text.length;
+      while (lo < hi) {
+        const mid = Math.floor((lo + hi) / 2);
+        const t = text.slice(0, mid) + E;
+        if (ctx.measureText(t).width <= maxW) lo = mid + 1;
+        else hi = mid;
+      }
+      return text.slice(0, Math.max(0, lo - 1)) + E;
+    }
+
+    // ✅ 배경 없이(완전 투명) / 글자 검정 / 폰트 크기 사용자 조절
+    function drawTopRightTextNoBg(ctx, tw, th, lines, fontSizePx) {
       const pad = Math.max(10, Math.round(tw * 0.015));
-      const fontSize = Math.max(12, Math.round(tw * 0.024));
-      const lineGap = Math.max(4, Math.round(fontSize * 0.25));
+      const lineGap = Math.max(3, Math.round(fontSizePx * 0.25));
 
       ctx.save();
-      ctx.font = `900 ${fontSize}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
+      ctx.font = `900 ${fontSizePx}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
       ctx.textBaseline = "top";
+      ctx.fillStyle = "#000";      // ✅ 검정
+      ctx.globalAlpha = 1;         // ✅ 그대로
 
-      // 각 줄 너비 측정
-      const measures = lines.map(t => ({ t, w: Math.ceil(ctx.measureText(t).width) }));
-      const boxW = Math.max(...measures.map(m => m.w));
-      const boxH = Math.ceil(lines.length * fontSize * 1.15 + (lines.length - 1) * lineGap);
+      const maxW = tw - pad * 2;
 
-      const x = tw - pad - boxW;
-      const y = pad;
+      // 말줄임 처리(각 줄)
+      const fitted = lines.map(t => ellipsisToFit(ctx, t, maxW));
 
-      // 배경 박스
-      ctx.globalAlpha = 0.55;
-      ctx.fillStyle = "#000";
-      ctx.fillRect(x - 10, y - 8, boxW + 20, boxH + 16);
-
-      // 텍스트
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = "#fff";
-
-      let cy = y;
-      for (const m of measures) {
-        // 우측 정렬(줄마다 길이 달라도 오른쪽 맞춤)
-        const tx = tw - pad - m.w;
-        ctx.fillText(m.t, tx, cy);
-        cy += Math.ceil(fontSize * 1.15) + lineGap;
+      // 오른쪽 상단에 "우측 정렬" 느낌으로 출력
+      let y = pad;
+      for (const t of fitted) {
+        const w = ctx.measureText(t).width;
+        const x = Math.max(pad, tw - pad - w);
+        ctx.fillText(t, x, y);
+        y += Math.ceil(fontSizePx * 1.15) + lineGap;
       }
 
       ctx.restore();
@@ -330,14 +345,17 @@
         ctx.globalAlpha = 1;
       }
 
-      // 3) 버전 + 사용자 문구(우측 상단)
+      // 3) ✅ 워터마크까지 끝난 "최상단 레이어"에 텍스트 적용
       if ($noteOn?.checked) {
         const pct = Math.round(scale * 100);
-        const base = ($noteText?.value || "").trim() || "원본은 고화질입니다";
+        const base = ($noteText?.value || "").trim() || "";
         const blurPart = blur > 0 ? ` · 블러 ${blur.toFixed(1)}px` : "";
+
         const line1 = versionToday();
-        const line2 = `${base} · 게시용: 원본 대비 ${pct}%${blurPart}`;
-        drawTopRightLabel(ctx, tw, th, [line1, line2]);
+        const line2 = `${base} · <블로그게시용>: 원본 대비 ${pct}%${blurPart}`;
+
+        const fontSizePx = Math.max(10, Math.min(80, Number($noteFont.value) || 18));
+        drawTopRightTextNoBg(ctx, tw, th, [line1, line2], fontSizePx);
       }
 
       const blob = await new Promise((resolve) => {
@@ -378,7 +396,7 @@
       wrap.querySelector(".pick-btn").addEventListener("click", () => {
         selectedScale = scale;
         highlightSelected();
-        $btnUpload.disabled = false;
+        document.getElementById("btnUploadSelected").disabled = false;
       });
 
       return wrap;
@@ -391,11 +409,10 @@
         return `<span class="im-chip ${on ? "on" : ""}" data-scale="${s}">${pct}%</span>`;
       }).join("");
 
-      // 칩 클릭 시 선택 변경
       $scalePick.querySelectorAll(".im-chip").forEach(chip => {
         chip.addEventListener("click", () => {
           const sc = Number(chip.getAttribute("data-scale"));
-          if (!previews.has(sc)) return; // 미리보기 생성 전이면 무시
+          if (!previews.has(sc)) return;
           selectedScale = sc;
           highlightSelected();
           $btnUpload.disabled = false;
@@ -454,7 +471,6 @@
       $scalePick.innerHTML = "";
 
       try {
-        // 40/50/60 모두 생성해 비교 가능하게 표시
         for (const s of SCALES) {
           const r = await renderPreviewBlob(s);
           const url = URL.createObjectURL(r.blob);
@@ -468,7 +484,6 @@
           }));
         }
 
-        // 기본 선택: 50%
         selectedScale = 0.5;
         renderScaleChips();
         highlightSelected();
@@ -485,9 +500,6 @@
       if (selectedScale == null) return;
       const v = previews.get(selectedScale);
       if (!v) return;
-
-      // TODO: 여기서 Apps Script WebApp 업로드 함수 연결
-      // 예: await uploadToDrive(v.blob, { scale: selectedScale, ... });
 
       alert(
         `업로드 대상: ${Math.round(selectedScale*100)}%\n` +
