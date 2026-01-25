@@ -301,6 +301,55 @@
     tokens: []   // ["THUMB_URL", "CANONICAL_URL", ...] (필요한 것만 노출)
   };
 
+  /* =========================
+     ✅ 실시간 프리뷰(동적 슬롯/토큰 입력 → 최종 HTML 자동 조립)
+     - 입력 이벤트에서 디바운스로 조립 실행
+     - 템플릿 manifest는 templateState.manifest 캐시 사용(매 타이핑마다 getTemplate 호출 방지)
+  ========================= */
+  let previewTimer = null;
+  let previewSeq = 0;
+
+  function scheduleAssemblePreview_(){
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(runAssemblePreview_, 250);
+  }
+
+  async function runAssemblePreview_(){
+    const tplId = $("templateSelect") ? $("templateSelect").value : "";
+    if (!tplId) return; // 템플릿이 없으면 프리뷰 조립하지 않음
+
+    const seq = ++previewSeq;
+    try{
+      const out = await assembleHtmlUsingState_(tplId, buildVarsForAssemble_());
+      // 오래된 결과는 버림 (빠르게 타이핑할 때 순서 꼬임 방지)
+      if (seq !== previewSeq) return;
+
+      $("html").value = out.html;
+      syncCharCount();
+    }catch(e){
+      // 타이핑 중 에러는 배너/상태를 과하게 흔들지 않고, 디버그만 남김
+      setDebug(String(e && e.stack ? e.stack : e));
+    }
+  }
+
+  function attachDynamicPreviewListeners_(){
+    // SLOT(TEXTAREA)
+    document.querySelectorAll("[data-slot]").forEach(el=>{
+      if (el.__pmPreviewBound) return;
+      el.addEventListener("input", scheduleAssemblePreview_);
+      el.addEventListener("change", scheduleAssemblePreview_);
+      el.__pmPreviewBound = true;
+    });
+
+    // Token(INPUT)
+    document.querySelectorAll("[data-token]").forEach(el=>{
+      if (el.__pmPreviewBound) return;
+      el.addEventListener("input", scheduleAssemblePreview_);
+      el.addEventListener("change", scheduleAssemblePreview_);
+      el.__pmPreviewBound = true;
+    });
+  }
+
   function setStatus(msg, ok=true){
     const el = $("status");
     el.textContent = msg;
@@ -362,6 +411,7 @@
     $("charCount").textContent = ($("html").value || "").length + " chars";
   }
   $("html").addEventListener("input", syncCharCount);
+  $("title").addEventListener("input", ()=>{ attachDynamicPreviewListeners_(); scheduleAssemblePreview_(); });
 
   function buildUrl(mode, paramsObj){
     const params = new URLSearchParams();
@@ -590,6 +640,10 @@
       empty.className = "pm-muted pm-small";
       empty.textContent = "추가 토큰(THUMB_URL, CANONICAL_URL, YEAR, MONTH)이 감지되지 않았습니다.";
       tokBox.appendChild(empty);
+
+      // ✅ 동적 입력칸 생성 후: 실시간 프리뷰 이벤트 바인딩
+      attachDynamicPreviewListeners_();
+
       return;
     }
 
@@ -603,6 +657,9 @@
       `;
       tokBox.appendChild(wrap);
     }
+
+    // ✅ 동적 입력칸 생성 후: 실시간 프리뷰 이벤트 바인딩
+    attachDynamicPreviewListeners_();
   }
 
   function tokenPlaceholder_(tok){
@@ -686,7 +743,6 @@
     return vars;
   }
 
-
   async function analyzeAndRenderTemplate_(tplId){
     templateState.templateId = tplId || "";
     templateState.manifest = null;
@@ -725,14 +781,12 @@
     }
   }
 
-async function assembleHtmlFromTemplate_(templateId, vars){
-  const manifest = await getTemplateManifest_(templateId);
-
+async function assembleHtmlFromManifest_(manifest, templateId, vars){
   // meta
-  const tid = String(manifest.template_id || manifest.id || templateId).trim();
-  const tver = String(manifest.template_ver || manifest.ver || "").trim();
+  const tid = String(manifest?.template_id || manifest?.id || templateId).trim();
+  const tver = String(manifest?.template_ver || manifest?.ver || "").trim();
 
-  const sections = Array.isArray(manifest.sections) ? manifest.sections : [];
+  const sections = Array.isArray(manifest?.sections) ? manifest.sections : [];
   if (!sections.length) throw new Error("TEMPLATE_SECTIONS_EMPTY");
 
   const parts = [];
@@ -757,7 +811,7 @@ async function assembleHtmlFromTemplate_(templateId, vars){
     if (slotName){
       // SLOT의 실제 값
       const slotVal = (vars && (vars[slotName] ?? vars[String(slotName).toUpperCase()])) ?? "";
-    
+
       // ✅ 값이 비어있으면 {{BODY}}를 지우지 말고, {{BODY_1}} 같은 표시용 플레이스홀더로 남김
       // (값이 있으면 실제 값으로 치환)
       if (String(slotVal).length > 0){
@@ -765,7 +819,7 @@ async function assembleHtmlFromTemplate_(templateId, vars){
       } else {
         secHtml = secHtml.replace(/{{\s*BODY\s*}}/g, `{{${slotName}}}`);
       }
-    
+
       // 기본 BODY 마커를 SLOT명으로 이름 붙여서 저장 (다중 BODY 충돌 방지)
       secHtml = secHtml
         .replace(/<!--\s*BODY_START\s*-->/gi, `<!-- BODY_START:${slotName} -->`)
@@ -792,6 +846,23 @@ async function assembleHtmlFromTemplate_(templateId, vars){
   assembled = metaHeader + assembled;
 
   return { html: assembled, manifest };
+}
+
+async function assembleHtmlFromTemplate_(templateId, vars){
+  const manifest = await getTemplateManifest_(templateId);
+  return assembleHtmlFromManifest_(manifest, templateId, vars);
+}
+
+// ✅ 실시간 프리뷰용: manifest 캐시(templateState.manifest)를 우선 사용
+async function assembleHtmlUsingState_(templateId, vars){
+  if (!templateId) throw new Error("TEMPLATE_ID_REQUIRED");
+
+  // templateState에 manifest가 없거나, 다른 템플릿이면 다시 로드
+  if (!templateState.manifest || templateState.templateId !== templateId){
+    templateState.templateId = templateId;
+    templateState.manifest = await getTemplateManifest_(templateId);
+  }
+  return assembleHtmlFromManifest_(templateState.manifest, templateId, vars);
 }
 
 
@@ -1032,43 +1103,43 @@ async function assembleHtmlFromTemplate_(templateId, vars){
     }
   }
 
-// ===== Blogger =====
-async function exportToBlogger(){
-  const id = getTargetId();
-  if (!id) return setStatus("id가 필요합니다.", false);
+  // ===== Blogger =====
+  async function exportToBlogger(){
+    const id = getTargetId();
+    if (!id) return setStatus("id가 필요합니다.", false);
 
-  try{
-    // 1) 업로드 전 조립
-    const tplId = $("templateSelect").value;
-    if (tplId){
-      setStatus("업로드 전 최종 HTML 생성(템플릿 조립) 중...", true);
-      const out = await assembleHtmlFromTemplate_(tplId, buildVarsForAssemble_());
-      $("html").value = out.html;
-      syncCharCount();
+    try{
+      // 1) 업로드 전 조립
+      const tplId = $("templateSelect").value;
+      if (tplId){
+        setStatus("업로드 전 최종 HTML 생성(템플릿 조립) 중...", true);
+        const out = await assembleHtmlFromTemplate_(tplId, buildVarsForAssemble_());
+        $("html").value = out.html;
+        syncCharCount();
+      }
+
+      // 2) 조립이 끝난 뒤 payload 생성
+      const payload = {
+        id,
+        title: $("title").value.trim(),
+        html: $("html").value,
+        publish: $("bloggerPublish").checked ? "true" : "false"
+      };
+
+      hideBanner();
+      setStatus("Blogger 업로드/수정 중...", true);
+      const res = await apiPost("bloggerUpsert", payload);
+      setDebug(res);
+
+      if (!res || !res.ok) return setStatus("Blogger 업로드 실패: " + (res?.message||""), false);
+
+      setBloggerMeta({ url: res.url, post_id: res.post_id, status: res.status });
+      setStatus(`Blogger ${res.status === 'published' ? '발행' : '초안'} 완료`, true);
+    }catch(e){
+      setStatus("Blogger 업로드 오류: " + e.message, false);
+      setDebug(String(e && e.stack ? e.stack : e));
     }
-
-    // 2) 조립이 끝난 뒤 payload 생성
-    const payload = {
-      id,
-      title: $("title").value.trim(),
-      html: $("html").value,
-      publish: $("bloggerPublish").checked ? "true" : "false"
-    };
-
-    hideBanner();
-    setStatus("Blogger 업로드/수정 중...", true);
-    const res = await apiPost("bloggerUpsert", payload);
-    setDebug(res);
-
-    if (!res || !res.ok) return setStatus("Blogger 업로드 실패: " + (res?.message||""), false);
-
-    setBloggerMeta({ url: res.url, post_id: res.post_id, status: res.status });
-    setStatus(`Blogger ${res.status === 'published' ? '발행' : '초안'} 완료`, true);
-  }catch(e){
-    setStatus("Blogger 업로드 오류: " + e.message, false);
-    setDebug(String(e && e.stack ? e.stack : e));
   }
-}
 
   async function importFromBlogger(){
     const id = getTargetId();
@@ -1243,6 +1314,9 @@ async function exportToBlogger(){
   $("templateSelect").addEventListener("change", async ()=>{
     const tplId = $("templateSelect").value || "";
     await analyzeAndRenderTemplate_(tplId);
+    // ✅ 선택 즉시 1회 프리뷰 갱신
+    attachDynamicPreviewListeners_();
+    scheduleAssemblePreview_();
   });
 
   /* =========================
