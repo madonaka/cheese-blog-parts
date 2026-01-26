@@ -83,6 +83,28 @@
 
     /* 이미지가 링크라는 걸 더 명확히 */
     .im-preview-link img{ cursor:zoom-in; }
+
+    /* 업로드 결과 */
+    .im-result{
+      margin-top:10px;
+      padding:10px 12px;
+      border-radius:12px;
+      border:1px solid rgba(15,23,42,.12);
+      background:rgba(15,23,42,.03);
+      font-size:12px;
+      line-height:1.5;
+      white-space:pre-wrap;
+      word-break:break-word;
+    }
+    .im-smallbtn{
+      border:1px solid rgba(15,23,42,.14);
+      background:#fff;
+      border-radius:10px;
+      padding:8px 10px;
+      cursor:pointer;
+      font-weight:800;
+      font-size:12px;
+    }
   </style>
 </head>
 
@@ -99,8 +121,8 @@
           <div class="im-card">
             <h1 class="im-title">이미지 40% / 50% / 60% 미리보기 (클릭 시 새 창)</h1>
             <p class="im-help">
-              업로드 전에 브라우저에서 리사이즈 + (선택) 블러 + (선택) 워터마크를 적용한 결과물을 생성합니다.
-              미리보기 이미지를 클릭하면 새 창(탭)에서 원본 크기로 확인할 수 있습니다.
+              업로드 전에 브라우저에서 리사이즈 + (선택) 블러 + (선택) 워터마크(오버레이) + (선택) 문구를 적용합니다.
+              미리보기 이미지를 클릭하면 새 창(탭)에서 확인할 수 있습니다.
             </p>
 
             <div class="im-row">
@@ -138,7 +160,7 @@
               <span class="im-help">낮을수록 약하게 보임 (1.00 = 워터마크 원본 그대로)</span>
             </div>
 
-            <!-- ✅ 텍스트(검정/투명배경) 옵션 -->
+            <!-- ✅ 문구 옵션 (배경 투명 / 글자 검정 / 크기 조절) -->
             <div class="im-row">
               <div class="im-label">표시 문구</div>
               <input id="noteText" class="im-input" type="text"
@@ -148,14 +170,14 @@
                 <input id="noteOn" type="checkbox" checked />
                 우측 상단 표시
               </label>
-              <span class="im-help">자동으로 “원본 대비 % / 블러 px”가 붙고, 위에 “VYYYYMMDD”가 표시됩니다.</span>
+              <span class="im-help">자동으로 “VYYYYMMDD” + “원본 대비 % / 블러 px”가 함께 붙습니다.</span>
             </div>
 
             <div class="im-row">
               <div class="im-label">글자 크기</div>
               <input id="noteFont" class="im-range" type="range" min="10" max="48" step="1" value="18" />
               <span id="noteFontVal" style="font-weight:900;">18px</span>
-              <span class="im-help">텍스트만 적용(배경 없음, 글자 검정)</span>
+              <span class="im-help">배경 없음(투명) / 글자 검정</span>
             </div>
 
             <div class="im-row" style="margin-top:12px;">
@@ -163,7 +185,7 @@
                 40% / 50% / 60% 미리보기 생성
               </button>
               <button id="btnUploadSelected" class="im-btn" type="button" disabled>
-                선택한 미리보기 업로드
+                선택한 미리보기 업로드(DB 저장)
               </button>
             </div>
 
@@ -174,13 +196,21 @@
             </div>
 
             <div id="previewGrid" class="im-grid"></div>
+
+            <div class="im-row" style="justify-content:space-between; margin-top:12px;">
+              <div class="im-help">
+                업로드가 성공하면 아래에 “HTML 스니펫”이 나오고, 바로 복사할 수 있습니다.
+              </div>
+              <button id="btnCopySnippet" class="im-smallbtn" type="button" disabled>스니펫 복사</button>
+            </div>
+            <div id="uploadResult" class="im-result" style="display:none;"></div>
           </div>
 
           <div class="im-card">
-            <h2 class="im-title" style="font-size:14px;">업로드 연결 안내</h2>
+            <h2 class="im-title" style="font-size:14px;">업로드 연결(현재 활성)</h2>
             <p class="im-help">
-              현재 파일은 “미리보기 생성 + 새 창 확인 + 업로드 대상 선택”까지 포함합니다.
-              “선택한 미리보기 업로드” 버튼 클릭 시점에 Apps Script(WebApp)로 전송하는 코드를 붙이면 끝입니다.
+              현재 파일은 “미리보기 생성 + 새 창 확인 + 선택 업로드 + DB 저장 + HTML 스니펫 생성”까지 포함합니다.
+              Apps Script 쪽에서는 mode=upload(JSON)로 받아 Drive 저장 + 시트 기록을 수행해야 합니다.
             </p>
           </div>
 
@@ -194,6 +224,9 @@
 
   <script>
   (() => {
+    // ✅ 네 WebApp URL 반영
+    const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyIsoT-0JY2nxCPFx2JH-G3Ja8tztjlJ6fiVAyxLgd-8Mzxjob8YDGgRO-biOCXe5WU/exec";
+
     // ====== DOM ======
     const $file   = document.getElementById("imgFile");
     const $wmFile = document.getElementById("wmFile");
@@ -207,7 +240,6 @@
     const $wmAlpha = document.getElementById("wmAlpha");
     const $wmAlphaVal = document.getElementById("wmAlphaVal");
 
-    // ✅ 텍스트 옵션
     const $noteText = document.getElementById("noteText");
     const $noteOn = document.getElementById("noteOn");
     const $noteFont = document.getElementById("noteFont");
@@ -217,6 +249,9 @@
     const $btnUpload = document.getElementById("btnUploadSelected");
     const $grid = document.getElementById("previewGrid");
     const $scalePick = document.getElementById("scalePick");
+
+    const $result = document.getElementById("uploadResult");
+    const $btnCopy = document.getElementById("btnCopySnippet");
 
     $jpegQ.addEventListener("input", () => $jpegQVal.textContent = Number($jpegQ.value).toFixed(2));
     $blurPx.addEventListener("input", () => $blurPxVal.textContent = Number($blurPx.value).toFixed(1));
@@ -235,11 +270,21 @@
     const previews = new Map();
     let selectedScale = null;
 
+    // 업로드 성공 후 복사용 스니펫 저장
+    let lastSnippetText = "";
+
     function revokeAllPreviewUrls() {
       for (const v of previews.values()) {
         if (v.url) URL.revokeObjectURL(v.url);
       }
       previews.clear();
+    }
+
+    function resetUploadResult() {
+      lastSnippetText = "";
+      $btnCopy.disabled = true;
+      $result.style.display = "none";
+      $result.textContent = "";
     }
 
     function loadFileAsImage(file) {
@@ -254,9 +299,12 @@
     }
 
     function pad2(n){ return String(n).padStart(2, "0"); }
-    function versionToday() {
+    function yyyymmdd() {
       const d = new Date();
-      return `V${d.getFullYear()}${pad2(d.getMonth()+1)}${pad2(d.getDate())}`;
+      return `${d.getFullYear()}${pad2(d.getMonth()+1)}${pad2(d.getDate())}`;
+    }
+    function versionToday() {
+      return `V${yyyymmdd()}`;
     }
 
     function ellipsisToFit(ctx, text, maxW) {
@@ -280,15 +328,12 @@
       ctx.save();
       ctx.font = `900 ${fontSizePx}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
       ctx.textBaseline = "top";
-      ctx.fillStyle = "#000";      // ✅ 검정
-      ctx.globalAlpha = 1;         // ✅ 그대로
+      ctx.fillStyle = "#000";
+      ctx.globalAlpha = 1;
 
       const maxW = tw - pad * 2;
-
-      // 말줄임 처리(각 줄)
       const fitted = lines.map(t => ellipsisToFit(ctx, t, maxW));
 
-      // 오른쪽 상단에 "우측 정렬" 느낌으로 출력
       let y = pad;
       for (const t of fitted) {
         const w = ctx.measureText(t).width;
@@ -316,6 +361,7 @@
       canvas.width = tw;
       canvas.height = th;
 
+      // alpha:false => JPEG(불투명)
       const ctx = canvas.getContext("2d", { alpha: false });
 
       ctx.imageSmoothingEnabled = true;
@@ -345,15 +391,13 @@
         ctx.globalAlpha = 1;
       }
 
-      // 3) ✅ 워터마크까지 끝난 "최상단 레이어"에 텍스트 적용
-      if ($noteOn?.checked) {
+      // 3) ✅ 최상단 레이어: 텍스트(배경 투명 / 글자 검정)
+      if ($noteOn.checked) {
         const pct = Math.round(scale * 100);
-        const base = ($noteText?.value || "").trim() || "cheesehistory.com";
-        const blurPart = blur > 0 ? ` · 블러 ${blur.toFixed(1)}px` : "";
-
+        const base = ($noteText.value || "").trim() || "원본은 고화질입니다";
+        const blurPart = blur > 0 ? ` · 미세블러 ${blur.toFixed(1)}px` : "";
         const line1 = versionToday();
-        const line2 = `${base} · <블로그게시용>: 원본 대비 ${pct}%${blurPart}`;
-
+        const line2 = `${base} · 원본 대비 품질 ${pct}%${blurPart}`;
         const fontSizePx = Math.max(10, Math.min(80, Number($noteFont.value) || 18));
         drawTopRightTextNoBg(ctx, tw, th, [line1, line2], fontSizePx);
       }
@@ -396,7 +440,7 @@
       wrap.querySelector(".pick-btn").addEventListener("click", () => {
         selectedScale = scale;
         highlightSelected();
-        document.getElementById("btnUploadSelected").disabled = false;
+        $btnUpload.disabled = false;
       });
 
       return wrap;
@@ -429,6 +473,44 @@
       renderScaleChips();
     }
 
+    async function blobToBase64(blob){
+      return new Promise((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onload = () => {
+          const dataUrl = fr.result; // data:image/jpeg;base64,...
+          const b64 = String(dataUrl).split(",")[1] || "";
+          resolve(b64);
+        };
+        fr.onerror = reject;
+        fr.readAsDataURL(blob);
+      });
+    }
+
+    function safeTrim(s){ return (s == null ? "" : String(s)).trim(); }
+
+    async function copyToClipboard(text) {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch (e) {
+        // fallback
+        try {
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          ta.style.position = "fixed";
+          ta.style.left = "-9999px";
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
+          const ok = document.execCommand("copy");
+          document.body.removeChild(ta);
+          return ok;
+        } catch (e2) {
+          return false;
+        }
+      }
+    }
+
     // ====== 이벤트 ======
     $file.addEventListener("change", async () => {
       revokeAllPreviewUrls();
@@ -436,6 +518,7 @@
       selectedScale = null;
       $btnUpload.disabled = true;
       $scalePick.innerHTML = "";
+      resetUploadResult();
 
       const f = $file.files?.[0];
       if (!f) return;
@@ -469,6 +552,7 @@
       selectedScale = null;
       $btnUpload.disabled = true;
       $scalePick.innerHTML = "";
+      resetUploadResult();
 
       try {
         for (const s of SCALES) {
@@ -495,18 +579,90 @@
       }
     });
 
-    // ====== 업로드 연결 포인트 ======
+    // ====== 업로드 (Drive + DB) ======
     $btnUpload.addEventListener("click", async () => {
       if (selectedScale == null) return;
       const v = previews.get(selectedScale);
       if (!v) return;
 
-      alert(
-        `업로드 대상: ${Math.round(selectedScale*100)}%\n` +
-        `크기: ${v.w}×${v.h}\n` +
-        `용량: ${(v.bytes/1024).toFixed(0)}KB\n\n` +
-        `※ 현재는 업로드 연결 전(데모) 상태`
-      );
+      try {
+        $btnUpload.disabled = true;
+
+        const b64 = await blobToBase64(v.blob);
+
+        const origW = sourceImg?.naturalWidth || 0;
+        const origH = sourceImg?.naturalHeight || 0;
+
+        const label = safeTrim($noteText.value) || "원본은 고화질입니다";
+        const version = versionToday();
+
+        const pct = Math.round(selectedScale * 100);
+        const blur = Number($blurPx.value) || 0;
+
+        const alt = `${label} · 원본 대비 품질 ${pct}%${blur > 0 ? ` · 미세블러 ${blur.toFixed(1)}px` : ""}`;
+        const title = alt;
+
+        const payload = {
+          mode: "upload",
+          filename: `img_${version}_${pct}.jpg`,
+          mime: "image/jpeg",
+          base64: b64,
+          meta: {
+            label,
+            version,
+            scale: selectedScale,
+            scale_pct: pct,
+            blur_px: blur,
+            wm_alpha: Number($wmAlpha.value) || 0,
+            orig_w: origW,
+            orig_h: origH,
+            out_w: v.w,
+            out_h: v.h,
+            bytes: v.bytes,
+            img_alt: alt,
+            img_title: title
+          }
+        };
+
+        const res = await fetch(WEBAPP_URL, {
+          method: "POST",
+          // GAS에서 가장 호환 좋은 패턴(특히 CORS/본문 파싱 이슈 줄임)
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify(payload),
+        });
+
+        const json = await res.json();
+        if (!json.ok) throw new Error(json.error || "upload failed");
+
+        // 결과 표시 + 복사 버튼 활성화
+        lastSnippetText = json.snippet || "";
+        $btnCopy.disabled = !lastSnippetText;
+
+        $result.style.display = "block";
+        $result.textContent =
+          `업로드 완료!\n` +
+          `DB ID: ${json.id}\n` +
+          `Drive: ${json.drive_view_url}\n` +
+          `IMG_SRC: ${json.img_src}\n` +
+          `IMG_HREF: ${json.img_href}\n\n` +
+          `HTML 스니펫(복사해서 바로 사용):\n` +
+          `${lastSnippetText}`;
+
+        alert(`업로드 완료! (DB ID: ${json.id})`);
+
+      } catch (e) {
+        console.error(e);
+        alert("업로드 실패: " + (e?.message || e));
+      } finally {
+        $btnUpload.disabled = false;
+      }
+    });
+
+    // 스니펫 복사
+    $btnCopy.addEventListener("click", async () => {
+      if (!lastSnippetText) return;
+      const ok = await copyToClipboard(lastSnippetText);
+      alert(ok ? "스니펫 복사 완료!" : "복사 실패(브라우저 권한 확인)");
     });
 
     window.addEventListener("beforeunload", revokeAllPreviewUrls);
