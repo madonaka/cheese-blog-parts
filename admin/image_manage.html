@@ -167,7 +167,6 @@
       background:rgba(59,130,246,.10);
       border-color:rgba(59,130,246,.25);
     }
-
     /* ===== tabs ===== */
     .im-tabs{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
     .im-tab{
@@ -190,7 +189,6 @@
       display:grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap:12px;
-      margin-top:12px;
     }
     @media (max-width: 980px){
       .im-list{ grid-template-columns:1fr; }
@@ -209,7 +207,7 @@
       display:block;
     }
     .im-item-head{
-      display:flex; justify-content:space-between; gap:8px; align-items:flex-start;
+      display:flex; justify-content:space-between; gap:8px; align-items:center;
       margin-bottom:8px;
     }
     .im-item-id{ font-weight:900; }
@@ -228,7 +226,6 @@
       <main class="admin-content">
         <div class="im-wrap">
 
-          <!-- ✅ 탭 -->
           <div class="im-tabs">
             <button id="tabUpload" class="im-tab on" type="button">업로드</button>
             <button id="tabList" class="im-tab" type="button">업로드 목록</button>
@@ -348,12 +345,14 @@
                 <input type="hidden" name="__form" value="1" />
                 <input type="hidden" name="payload" id="formPayload" value="" />
               </form>
+
+              <!-- ✅ 목록/상세 조회는 JSONP로 호출 (iframe 불필요) -->
             </div>
 
             <div class="im-card">
               <h2 class="im-title" style="font-size:14px;">업로드 연결(현재 활성)</h2>
               <p class="im-help">
-                이 HTML은 <b>폼(iframe) 업로드</b>로 Apps Script의 <code>__form=1</code> 경로를 호출합니다.
+                업로드는 <b>폼(iframe)</b>로 Apps Script의 <code>__form=1</code> 경로를 호출합니다.
                 성공 시 Apps Script가 <code>parent.postMessage(...)</code>로 결과를 보내고, 여기서 결과를 받아 스니펫을 표시합니다.
               </p>
             </div>
@@ -378,13 +377,8 @@
               <div id="listArea" class="im-list"></div>
 
               <p class="im-help" style="margin-top:10px;">
-                ※ 목록 탭 기능은 Apps Script가 <code>mode=list</code>/<code>mode=get</code> 결과를
-                <code>postMessage</code>로 보내는 경로(<code>__pm=1</code>)가 있어야 정상 동작합니다.
-                <br>※ 목록이 “응답없음”이면, Apps Script의 HTML 응답이 iframe에서 차단(X-Frame-Options)되는 케이스가 많습니다.
+                ※ 목록 탭은 Apps Script의 <code>mode=list</code>/<code>mode=get</code>를 <b>JSONP</b>로 호출합니다. (CORS/iframe 차단 회피)
               </p>
-
-              <!-- ✅ 목록/상세 조회용 hidden iframe (목록 패널 안으로 이동) -->
-              <iframe id="listFrame" name="listFrame" class="im-hidden"></iframe>
             </div>
           </section>
 
@@ -398,7 +392,6 @@
 
   <script>
   (() => {
-    // ✅ 네 WebApp URL 반영
     const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyIsoT-0JY2nxCPFx2JH-G3Ja8tztjlJ6fiVAyxLgd-8Mzxjob8YDGgRO-biOCXe5WU/exec";
 
     // ====== DOM ======
@@ -433,7 +426,6 @@
     // form/iframe
     const $form = document.getElementById("uploadForm");
     const $formPayload = document.getElementById("formPayload");
-    const $listFrame = document.getElementById("listFrame");
 
     // tabs
     const $tabUpload = document.getElementById("tabUpload");
@@ -464,14 +456,10 @@
     let selectedScale = null;
 
     let lastSnippetText = "";
-
-    // nonce
     let currentUploadNonce = "";
+
     let currentListNonce = "";
     let lastListItems = [];
-
-    // get(상세) 대기열: nonce -> resolve
-    const pendingGet = new Map();
 
     function escapeHtml(s){
       return String(s || "")
@@ -512,9 +500,7 @@
       const d = new Date();
       return `${d.getFullYear()}${pad2(d.getMonth()+1)}${pad2(d.getDate())}`;
     }
-    function versionToday() {
-      return `V${yyyymmdd()}`;
-    }
+    function versionToday() { return `V${yyyymmdd()}`; }
 
     function ellipsisToFit(ctx, text, maxW) {
       if (ctx.measureText(text).width <= maxW) return text;
@@ -549,7 +535,6 @@
         ctx.fillText(t, x, y);
         y += Math.ceil(fontSizePx * 1.15) + lineGap;
       }
-
       ctx.restore();
     }
 
@@ -570,7 +555,6 @@
       canvas.height = th;
 
       const ctx = canvas.getContext("2d", { alpha: false });
-
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = "high";
 
@@ -609,7 +593,6 @@
       const blob = await new Promise((resolve) => {
         canvas.toBlob((b) => resolve(b), "image/jpeg", q);
       });
-
       if (!blob) throw new Error("toBlob failed");
       return { blob, w: tw, h: th, bytes: blob.size };
     }
@@ -717,10 +700,8 @@
     function makeNonce_() {
       return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
     }
-
     let toastTimer = null;
-    let uploadWatchdogTimer = null;
-    let listWatchdogTimer = null;
+    let watchdogTimer = null;
 
     function toast_(msg, type = "sub") {
       if (!$toast) return;
@@ -739,31 +720,18 @@
     }
 
     function startUploadWatchdog_() {
-      clearTimeout(uploadWatchdogTimer);
-      uploadWatchdogTimer = setTimeout(() => {
+      clearTimeout(watchdogTimer);
+      watchdogTimer = setTimeout(() => {
         if (currentUploadNonce) {
           toast_("응답을 아직 받지 못했어요. 저장은 되었을 수 있으니 결과 영역/Drive를 확인해줘.", "bad");
           $btnUpload.disabled = false;
         }
       }, 15000);
     }
-    function stopUploadWatchdog_() {
-      clearTimeout(uploadWatchdogTimer);
-      uploadWatchdogTimer = null;
-    }
 
-    function startListWatchdog_(nonce){
-      clearTimeout(listWatchdogTimer);
-      listWatchdogTimer = setTimeout(() => {
-        if (currentListNonce && currentListNonce === nonce) {
-          toast_("목록 응답 없음(iframe 차단/X-Frame-Options 가능). Apps Script htmlPostMessage_에 ALLOWALL 필요.", "bad");
-          alert("목록 응답 없음.\n\n가능성이 큰 원인:\n- Apps Script HTML 응답이 iframe에서 차단(X-Frame-Options)\n\n조치:\n- Apps Script의 htmlPostMessage_()에서 setXFrameOptionsMode(ALLOWALL) 설정");
-        }
-      }, 12000);
-    }
-    function stopListWatchdog_(){
-      clearTimeout(listWatchdogTimer);
-      listWatchdogTimer = null;
+    function stopUploadWatchdog_() {
+      clearTimeout(watchdogTimer);
+      watchdogTimer = null;
     }
 
     function showUploadResult_(json) {
@@ -870,37 +838,80 @@
     $listFilter.addEventListener("input", () => renderList(lastListItems));
     $btnReloadList.addEventListener("click", () => loadList());
 
-    function loadList(){
-      currentListNonce = makeNonce_();
+    // ====== JSONP 호출 (목록/상세) ======
+    // Apps Script JSON 응답은 CORS 헤더가 없어서 fetch가 막히는 경우가 많음.
+    // 그래서 <script src="..."> 방식(JSONP)으로 호출한다. (iframe 불필요)
+    function jsonpCall_(url, cbName, timeoutMs = 12000){
+      return new Promise((resolve) => {
+        let done = false;
+        const timer = setTimeout(() => {
+          if (done) return;
+          done = true;
+          cleanup();
+          resolve({ ok:false, error:"timeout" });
+        }, timeoutMs);
 
-      // 캐시/중복 네비게이션 방지용 ts 추가
-      const url = `${WEBAPP_URL}?mode=list&__pm=1&nonce=${encodeURIComponent(currentListNonce)}&_ts=${Date.now()}`;
+        function cleanup(){
+          clearTimeout(timer);
+          try { delete window[cbName]; } catch(e){}
+          if (script && script.parentNode) script.parentNode.removeChild(script);
+        }
+
+        window[cbName] = (data) => {
+          if (done) return;
+          done = true;
+          cleanup();
+          resolve(data);
+        };
+
+        const script = document.createElement("script");
+        script.src = url + (url.includes("?") ? "&" : "?") + `_=${Date.now()}`; // cache-bust
+        script.onerror = () => {
+          if (done) return;
+          done = true;
+          cleanup();
+          resolve({ ok:false, error:"script_load_failed" });
+        };
+        document.head.appendChild(script);
+      });
+    }
+
+    async function loadList(){
+      currentListNonce = makeNonce_();
+      const cb = `__im_list_cb_${currentListNonce.replace(/[^a-zA-Z0-9_]/g,"_")}`;
+      const url = `${WEBAPP_URL}?mode=list&callback=${encodeURIComponent(cb)}&nonce=${encodeURIComponent(currentListNonce)}`;
 
       toast_("목록 요청 전송…", "sub");
-      startListWatchdog_(currentListNonce);
-      $listFrame.src = url;
+      const data = await jsonpCall_(url, cb, 12000);
+
+      if (data && data.ok) {
+        lastListItems = Array.isArray(data.items) ? data.items : [];
+        renderList(lastListItems);
+        toast_(`목록 로드 완료 (${lastListItems.length}개)`, "ok");
+      } else {
+        toast_("목록 응답 없음.", "bad");
+        alert("목록 응답 없음.\n\n가능성이 큰 원인:\n- Apps Script 배포가 최신이 아님\n- Apps Script에 JSONP(mode=list&callback=...) 라우트가 없음\n- 네 도메인/브라우저에서 script 로드가 차단(CSP)\n\n조치:\n- Apps Script에 JSONP 라우트를 추가하고 재배포\n- 브라우저 콘솔(Network)에서 script 요청이 200인지 확인");
+      }
     }
 
     function loadOne(id){
       const nonce = makeNonce_();
-      const url = `${WEBAPP_URL}?mode=get&id=${encodeURIComponent(id)}&__pm=1&nonce=${encodeURIComponent(nonce)}&_ts=${Date.now()}`;
+      const cb = `__im_get_cb_${nonce.replace(/[^a-zA-Z0-9_]/g,"_")}`;
+      const url = `${WEBAPP_URL}?mode=get&id=${encodeURIComponent(id)}&callback=${encodeURIComponent(cb)}&nonce=${encodeURIComponent(nonce)}`;
       toast_("상세 요청…", "sub");
 
-      return new Promise((resolve) => {
-        pendingGet.set(nonce, resolve);
-        $listFrame.src = url;
-
-        setTimeout(() => {
-          if (pendingGet.has(nonce)) {
-            pendingGet.delete(nonce);
-            resolve(null);
-            toast_("상세 응답 없음(서버/nonce/iframe 차단 확인)", "bad");
-          }
-        }, 12000);
+      return new Promise(async (resolve) => {
+        const data = await jsonpCall_(url, cb, 12000);
+        if (data && data.ok && data.item) resolve(data.item);
+        else {
+          resolve(null);
+          toast_("상세 응답 없음(서버 라우트/배포 확인)", "bad");
+          alert("상세 불러오기 실패: " + (data?.error || "unknown"));
+        }
       });
     }
 
-    // ✅ Apps Script (iframe form 업로드 + 목록/상세) 응답 수신
+    // ✅ Apps Script (iframe form 업로드) 응답 수신
     window.addEventListener("message", (ev) => {
       let data = ev.data;
 
@@ -912,14 +923,15 @@
 
       const nonce = data.nonce || "";
 
-      // 1) 업로드 응답
       if (nonce && currentUploadNonce && nonce === currentUploadNonce) {
         stopUploadWatchdog_();
 
         if (data.ok) {
           showUploadResult_(data);
           toast_(`업로드 완료! DB ID: ${data.id}`, "ok");
-          alert(`업로드 완료!\nDB ID: ${data.id}\nDrive: ${data.drive_view_url}`);
+          alert(`업로드 완료!
+DB ID: ${data.id}
+Drive: ${data.drive_view_url}`);
         } else {
           toast_("업로드 실패: " + (data.error || "unknown"), "bad");
           alert("업로드 실패: " + (data.error || "unknown"));
@@ -929,36 +941,9 @@
         currentUploadNonce = "";
         return;
       }
-
-      // 2) 목록 응답
-      if (nonce && currentListNonce && nonce === currentListNonce) {
-        stopListWatchdog_();
-        if (data.ok) {
-          lastListItems = Array.isArray(data.items) ? data.items : [];
-          renderList(lastListItems);
-          toast_(`목록 로드 완료 (${lastListItems.length}개)`, "ok");
-        } else {
-          toast_("목록 로드 실패: " + (data.error || "unknown"), "bad");
-          alert("목록 로드 실패: " + (data.error || "unknown"));
-        }
-        return;
-      }
-
-      // 3) 상세(get) 응답
-      if (nonce && pendingGet.has(nonce)) {
-        const resolve = pendingGet.get(nonce);
-        pendingGet.delete(nonce);
-
-        if (data.ok && data.item) resolve(data.item);
-        else {
-          resolve(null);
-          alert("상세 불러오기 실패: " + (data.error || "unknown"));
-        }
-        return;
-      }
     });
 
-    // ====== 업로드 기존 로직 ======
+    // ====== 이벤트 ======
     $file.addEventListener("change", async () => {
       revokeAllPreviewUrls();
       $grid.innerHTML = "";
@@ -1026,6 +1011,7 @@
       }
     });
 
+    // ====== 업로드 (Drive + DB) ======
     $btnUpload.addEventListener("click", async () => {
       const baseName = safeTrim($baseName.value);
       if (!baseName) {
@@ -1055,6 +1041,8 @@
         const alt = `${label} · 원본 대비 품질 ${pct}%${blur > 0 ? ` · 미세블러 ${blur.toFixed(1)}px` : ""}`;
         const title = alt;
 
+        const baseName2 = safeTrim($baseName.value);
+
         currentUploadNonce = makeNonce_();
 
         const payload = {
@@ -1063,7 +1051,7 @@
           mime: "image/jpeg",
           base64: b64,
           meta: {
-            base_name: baseName,
+            base_name: baseName2,
             label,
             version,
             scale: selectedScale,
