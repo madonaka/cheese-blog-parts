@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>이미지 관리 툴</title>
 
-  <!-- ✅ 메인 관리자 CSS 재사용 (head에 두는 게 안전) -->
+  <!-- ✅ 메인 관리자 CSS 재사용 -->
   <link rel="stylesheet" href="./admin.css" />
 
   <style>
@@ -105,6 +105,29 @@
       font-weight:800;
       font-size:12px;
     }
+
+    /* 상태 라벨 */
+    .im-status{
+      display:inline-block;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid rgba(15,23,42,.14);
+      background:#fff;
+      font-weight:900;
+      font-size:12px;
+    }
+    .im-status.ok{ background:rgba(34,197,94,.12); border-color:rgba(34,197,94,.35); }
+    .im-status.bad{ background:rgba(239,68,68,.10); border-color:rgba(239,68,68,.35); }
+
+    /* 숨김 iframe */
+    .im-hidden{
+      position:fixed;
+      left:-9999px;
+      top:-9999px;
+      width:1px;
+      height:1px;
+      overflow:hidden;
+    }
   </style>
 </head>
 
@@ -124,6 +147,13 @@
               업로드 전에 브라우저에서 리사이즈 + (선택) 블러 + (선택) 워터마크(오버레이) + (선택) 문구를 적용합니다.
               미리보기 이미지를 클릭하면 새 창(탭)에서 확인할 수 있습니다.
             </p>
+
+            <div class="im-row" style="justify-content:space-between;">
+              <div class="im-help">
+                업로드 방식: <b>폼(iframe)</b> 업로드 (CORS 회피, 실패율 낮음)
+              </div>
+              <span id="uploadModeBadge" class="im-status ok">FORM</span>
+            </div>
 
             <div class="im-row">
               <div class="im-label">원본 이미지</div>
@@ -204,13 +234,21 @@
               <button id="btnCopySnippet" class="im-smallbtn" type="button" disabled>스니펫 복사</button>
             </div>
             <div id="uploadResult" class="im-result" style="display:none;"></div>
+
+            <!-- ✅ CORS 회피용 hidden form + iframe -->
+            <iframe id="uploadFrame" name="uploadFrame" class="im-hidden"></iframe>
+            <form id="uploadForm" class="im-hidden" method="POST" target="uploadFrame"
+                  action="https://script.google.com/macros/s/AKfycbyIsoT-0JY2nxCPFx2JH-G3Ja8tztjlJ6fiVAyxLgd-8Mzxjob8YDGgRO-biOCXe5WU/exec">
+              <input type="hidden" name="__form" value="1" />
+              <input type="hidden" name="payload" id="formPayload" value="" />
+            </form>
           </div>
 
           <div class="im-card">
             <h2 class="im-title" style="font-size:14px;">업로드 연결(현재 활성)</h2>
             <p class="im-help">
-              현재 파일은 “미리보기 생성 + 새 창 확인 + 선택 업로드 + DB 저장 + HTML 스니펫 생성”까지 포함합니다.
-              Apps Script 쪽에서는 mode=upload(JSON)로 받아 Drive 저장 + 시트 기록을 수행해야 합니다.
+              이 HTML은 <b>폼(iframe) 업로드</b>로 Apps Script의 <code>__form=1</code> 경로를 호출합니다.
+              성공 시 Apps Script가 <code>parent.postMessage(...)</code>로 결과를 보내고, 여기서 결과를 받아 스니펫을 표시합니다.
             </p>
           </div>
 
@@ -253,6 +291,10 @@
     const $result = document.getElementById("uploadResult");
     const $btnCopy = document.getElementById("btnCopySnippet");
 
+    // form/iframe
+    const $form = document.getElementById("uploadForm");
+    const $formPayload = document.getElementById("formPayload");
+
     $jpegQ.addEventListener("input", () => $jpegQVal.textContent = Number($jpegQ.value).toFixed(2));
     $blurPx.addEventListener("input", () => $blurPxVal.textContent = Number($blurPx.value).toFixed(1));
     $wmAlpha.addEventListener("input", () => $wmAlphaVal.textContent = Number($wmAlpha.value).toFixed(2));
@@ -272,6 +314,9 @@
 
     // 업로드 성공 후 복사용 스니펫 저장
     let lastSnippetText = "";
+
+    // iframe 업로드 매칭용 nonce
+    let currentNonce = "";
 
     function revokeAllPreviewUrls() {
       for (const v of previews.values()) {
@@ -493,7 +538,6 @@
         await navigator.clipboard.writeText(text);
         return true;
       } catch (e) {
-        // fallback
         try {
           const ta = document.createElement("textarea");
           ta.value = text;
@@ -510,6 +554,47 @@
         }
       }
     }
+
+    function makeNonce_() {
+      // 간단한 랜덤 토큰 (응답 매칭/중복 방지)
+      return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    }
+
+    function showUploadResult_(json) {
+      lastSnippetText = json.snippet || "";
+      $btnCopy.disabled = !lastSnippetText;
+
+      $result.style.display = "block";
+      $result.textContent =
+        `업로드 완료!\n` +
+        `DB ID: ${json.id}\n` +
+        `Drive: ${json.drive_view_url}\n` +
+        `IMG_SRC: ${json.img_src}\n` +
+        `IMG_HREF: ${json.img_href}\n\n` +
+        `HTML 스니펫(복사해서 바로 사용):\n` +
+        `${lastSnippetText}`;
+
+      alert(`업로드 완료! (DB ID: ${json.id})`);
+    }
+
+    // ✅ Apps Script (iframe form 업로드) 응답 수신
+    window.addEventListener("message", (ev) => {
+      const data = ev.data;
+      if (!data || typeof data !== "object") return;
+      if (!("ok" in data)) return;
+
+      // nonce가 있으면 매칭 (다른 탭/이전 응답 섞임 방지)
+      if (data.nonce && currentNonce && data.nonce !== currentNonce) return;
+
+      if (data.ok) {
+        showUploadResult_(data);
+      } else {
+        alert("업로드 실패: " + (data.error || "unknown"));
+      }
+
+      $btnUpload.disabled = false;
+      currentNonce = "";
+    });
 
     // ====== 이벤트 ======
     $file.addEventListener("change", async () => {
@@ -602,6 +687,9 @@
         const alt = `${label} · 원본 대비 품질 ${pct}%${blur > 0 ? ` · 미세블러 ${blur.toFixed(1)}px` : ""}`;
         const title = alt;
 
+        // ✅ iframe 업로드 응답 매칭용
+        currentNonce = makeNonce_();
+
         const payload = {
           mode: "upload",
           filename: `img_${version}_${pct}.jpg`,
@@ -620,41 +708,23 @@
             out_h: v.h,
             bytes: v.bytes,
             img_alt: alt,
-            img_title: title
+            img_title: title,
+            nonce: currentNonce
           }
         };
 
-        const res = await fetch(WEBAPP_URL, {
-          method: "POST",
-          // GAS에서 가장 호환 좋은 패턴(특히 CORS/본문 파싱 이슈 줄임)
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify(payload),
-        });
+        // ✅ CORS 회피: hidden form으로 업로드
+        $form.action = WEBAPP_URL;
+        $formPayload.value = JSON.stringify(payload);
+        $form.submit();
 
-        const json = await res.json();
-        if (!json.ok) throw new Error(json.error || "upload failed");
-
-        // 결과 표시 + 복사 버튼 활성화
-        lastSnippetText = json.snippet || "";
-        $btnCopy.disabled = !lastSnippetText;
-
-        $result.style.display = "block";
-        $result.textContent =
-          `업로드 완료!\n` +
-          `DB ID: ${json.id}\n` +
-          `Drive: ${json.drive_view_url}\n` +
-          `IMG_SRC: ${json.img_src}\n` +
-          `IMG_HREF: ${json.img_href}\n\n` +
-          `HTML 스니펫(복사해서 바로 사용):\n` +
-          `${lastSnippetText}`;
-
-        alert(`업로드 완료! (DB ID: ${json.id})`);
+        // 응답은 postMessage로 들어오며, listener에서 처리
 
       } catch (e) {
         console.error(e);
-        alert("업로드 실패: " + (e?.message || e));
-      } finally {
+        currentNonce = "";
         $btnUpload.disabled = false;
+        alert("업로드 실패: " + (e?.message || e));
       }
     });
 
