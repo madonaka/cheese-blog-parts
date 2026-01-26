@@ -514,6 +514,15 @@
   // ===== 이미지 관리 (✅ image_manage.html 과 동일: JSONP로 list/get) =====
   const IMG_DB_URL =
     "https://script.google.com/macros/s/AKfycbyIsoT-0JY2nxCPFx2JH-G3Ja8tztjlJ6fiVAyxLgd-8Mzxjob8YDGgRO-biOCXe5WU/exec";
+
+  // ✅ Blogger에서 안전하게 보이는 Drive 썸네일 URL (크기 조절 가능)
+  const IMG_THUMB_W = 1200; // 필요하면 800/1600 등으로 조정
+  function imgThumbUrl_(fileId, w = IMG_THUMB_W){
+    const id = String(fileId || "").trim();
+    if (!id) return "";
+    return `https://drive.google.com/thumbnail?id=${encodeURIComponent(id)}&sz=w${encodeURIComponent(String(w||IMG_THUMB_W))}`;
+  }
+
   
   // ⚠️ 다른 곳 함수명과 충돌 방지 위해 img 접두사 사용
   function imgMakeNonce_(){
@@ -757,8 +766,10 @@
       "IMG_HREF",
       "IMG_ALT",
       "IMG_TITLE",
-      "IMG_SNIPPET"
-    ]);
+      "IMG_SNIPPET",
+      "IMG_OW",
+      "IMG_OH"
+    ]));
 
     const reserved = new Set(["TITLE","NAV","FOOTER","BODY"]);
     (slotNames || []).forEach(s=>reserved.add(String(s)));
@@ -821,7 +832,7 @@
           const id = sel.value;
           const hit = (__imgListCache || []).find(x => String(x.id) === String(id));
           if (!hit) { pv.textContent = ""; return; }
-          const thumb = hit.img_src || "";
+          const thumb = imgThumbUrl_(hit.drive_file_id) || hit.img_src || "";
           const href  = hit.img_href || hit.drive_view_url || "";
           pv.innerHTML = thumb
             ? `미리보기: <a class="pm-link" href="${href}" target="_blank">Drive 열기</a><br><img src="${thumb}" style="max-width:260px;border-radius:10px;border:1px solid rgba(15,23,42,0.14);margin-top:6px;" />`
@@ -841,14 +852,16 @@
     
           const patch = {};
           if (toks.has("IMG_ID")) patch.IMG_ID = item.id || "";
-          if (toks.has("IMG_SRC")) patch.IMG_SRC = item.img_src || "";
+          if (toks.has("IMG_SRC")) patch.IMG_SRC = imgThumbUrl_(item.drive_file_id) || item.img_src || "";
           if (toks.has("IMG_HREF")) patch.IMG_HREF = item.img_href || item.drive_view_url || "";
           if (toks.has("IMG_ALT")) patch.IMG_ALT = item.img_alt || "";
           if (toks.has("IMG_TITLE")) patch.IMG_TITLE = item.img_title || "";
           if (toks.has("IMG_SNIPPET")) patch.IMG_SNIPPET = item.snippet || "";
-    
-          // THUMB_URL 토큰도 이미지 src로 자동 채움(원하면 다른 매핑도 가능)
-          if (toks.has("THUMB_URL")) patch.THUMB_URL = item.img_src || "";
+          if (toks.has("IMG_OW")) patch.IMG_OW = item.orig_w || "";
+          if (toks.has("IMG_OH")) patch.IMG_OH = item.orig_h || "";
+
+          // THUMB_URL 토큰도 Drive 썸네일로 자동 채움
+          if (toks.has("THUMB_URL")) patch.THUMB_URL = imgThumbUrl_(item.drive_file_id) || item.img_src || "";
     
           setTokenValues_(patch);
     
