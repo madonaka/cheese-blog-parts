@@ -250,7 +250,6 @@
                 <span id="uploadModeBadge" class="im-status ok">FORM</span>
               </div>
 
-              <!-- ✅ 추가: 파일명(기본) -->
               <div class="im-row">
                 <div class="im-label">파일명(기본)</div>
                 <input id="baseName" class="im-input" type="text"
@@ -296,7 +295,6 @@
                 <span class="im-help">낮을수록 약하게 보임 (1.00 = 워터마크 원본 그대로)</span>
               </div>
 
-              <!-- ✅ 문구 옵션 (배경 투명 / 글자 검정 / 크기 조절) -->
               <div class="im-row">
                 <div class="im-label">표시 문구</div>
                 <input id="noteText" class="im-input" type="text"
@@ -350,9 +348,6 @@
                 <input type="hidden" name="__form" value="1" />
                 <input type="hidden" name="payload" id="formPayload" value="" />
               </form>
-
-              <!-- ✅ 목록/상세 조회용 hidden iframe -->
-              <iframe id="listFrame" name="listFrame" class="im-hidden"></iframe>
             </div>
 
             <div class="im-card">
@@ -385,7 +380,11 @@
               <p class="im-help" style="margin-top:10px;">
                 ※ 목록 탭 기능은 Apps Script가 <code>mode=list</code>/<code>mode=get</code> 결과를
                 <code>postMessage</code>로 보내는 경로(<code>__pm=1</code>)가 있어야 정상 동작합니다.
+                <br>※ 목록이 “응답없음”이면, Apps Script의 HTML 응답이 iframe에서 차단(X-Frame-Options)되는 케이스가 많습니다.
               </p>
+
+              <!-- ✅ 목록/상세 조회용 hidden iframe (목록 패널 안으로 이동) -->
+              <iframe id="listFrame" name="listFrame" class="im-hidden"></iframe>
             </div>
           </section>
 
@@ -458,28 +457,21 @@
 
     // ====== 상태 ======
     const SCALES = [0.4, 0.5, 0.6];
-    let sourceImg = null;     // HTMLImageElement
-    let watermarkImg = null;  // HTMLImageElement
+    let sourceImg = null;
+    let watermarkImg = null;
 
-    // previews: scale -> { blob, url, w, h, bytes }
     const previews = new Map();
     let selectedScale = null;
 
-    // 업로드 성공 후 복사용 스니펫 저장
     let lastSnippetText = "";
 
-    // iframe 업로드 매칭용 nonce
+    // nonce
     let currentUploadNonce = "";
-
-    // 목록 nonce
     let currentListNonce = "";
     let lastListItems = [];
 
     // get(상세) 대기열: nonce -> resolve
     const pendingGet = new Map();
-
-    // 목록 로딩 잠금(연타/nonce mismatch 방지)
-    let listLoading = false;
 
     function escapeHtml(s){
       return String(s || "")
@@ -537,7 +529,6 @@
       return text.slice(0, Math.max(0, lo - 1)) + E;
     }
 
-    // ✅ 배경 없이(완전 투명) / 글자 검정 / 폰트 크기 사용자 조절
     function drawTopRightTextNoBg(ctx, tw, th, lines, fontSizePx) {
       const pad = Math.max(10, Math.round(tw * 0.015));
       const lineGap = Math.max(3, Math.round(fontSizePx * 0.25));
@@ -578,18 +569,15 @@
       canvas.width = tw;
       canvas.height = th;
 
-      // alpha:false => JPEG(불투명)
       const ctx = canvas.getContext("2d", { alpha: false });
 
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = "high";
 
-      // 1) 다운스케일 + (선택) 블러
       ctx.filter = blur > 0 ? `blur(${blur}px)` : "none";
       ctx.drawImage(sourceImg, 0, 0, tw, th);
       ctx.filter = "none";
 
-      // 2) 워터마크 오버레이(cover)
       if ($wmOn.checked && watermarkImg) {
         const WM_ALPHA = Number($wmAlpha.value);
         ctx.globalAlpha = Number.isFinite(WM_ALPHA) ? WM_ALPHA : 0.25;
@@ -608,7 +596,6 @@
         ctx.globalAlpha = 1;
       }
 
-      // 3) ✅ 최상단 레이어: 텍스트(배경 투명 / 글자 검정)
       if ($noteOn.checked) {
         const pct = Math.round(scale * 100);
         const base = ($noteText.value || "").trim() || "원본은 고화질입니다";
@@ -694,7 +681,7 @@
       return new Promise((resolve, reject) => {
         const fr = new FileReader();
         fr.onload = () => {
-          const dataUrl = fr.result; // data:image/jpeg;base64,...
+          const dataUrl = fr.result;
           const b64 = String(dataUrl).split(",")[1] || "";
           resolve(b64);
         };
@@ -730,8 +717,10 @@
     function makeNonce_() {
       return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
     }
+
     let toastTimer = null;
-    let watchdogTimer = null;
+    let uploadWatchdogTimer = null;
+    let listWatchdogTimer = null;
 
     function toast_(msg, type = "sub") {
       if (!$toast) return;
@@ -740,9 +729,7 @@
       $toast.classList.remove("ok","bad","sub","show");
       $toast.classList.add(type);
 
-      // reflow
       void $toast.offsetWidth;
-
       $toast.classList.add("show");
 
       clearTimeout(toastTimer);
@@ -752,19 +739,31 @@
     }
 
     function startUploadWatchdog_() {
-      clearTimeout(watchdogTimer);
-      watchdogTimer = setTimeout(() => {
-        // postMessage 응답이 늦거나 누락된 경우를 대비
+      clearTimeout(uploadWatchdogTimer);
+      uploadWatchdogTimer = setTimeout(() => {
         if (currentUploadNonce) {
           toast_("응답을 아직 받지 못했어요. 저장은 되었을 수 있으니 결과 영역/Drive를 확인해줘.", "bad");
           $btnUpload.disabled = false;
         }
       }, 15000);
     }
-
     function stopUploadWatchdog_() {
-      clearTimeout(watchdogTimer);
-      watchdogTimer = null;
+      clearTimeout(uploadWatchdogTimer);
+      uploadWatchdogTimer = null;
+    }
+
+    function startListWatchdog_(nonce){
+      clearTimeout(listWatchdogTimer);
+      listWatchdogTimer = setTimeout(() => {
+        if (currentListNonce && currentListNonce === nonce) {
+          toast_("목록 응답 없음(iframe 차단/X-Frame-Options 가능). Apps Script htmlPostMessage_에 ALLOWALL 필요.", "bad");
+          alert("목록 응답 없음.\n\n가능성이 큰 원인:\n- Apps Script HTML 응답이 iframe에서 차단(X-Frame-Options)\n\n조치:\n- Apps Script의 htmlPostMessage_()에서 setXFrameOptionsMode(ALLOWALL) 설정");
+        }
+      }, 12000);
+    }
+    function stopListWatchdog_(){
+      clearTimeout(listWatchdogTimer);
+      listWatchdogTimer = null;
     }
 
     function showUploadResult_(json) {
@@ -790,14 +789,13 @@
       $panelUpload.classList.toggle("on", isUpload);
       $panelList.classList.toggle("on", !isUpload);
 
-      // 목록 탭 진입 시 자동 로드
       if (!isUpload) loadList();
     }
 
     $tabUpload.addEventListener("click", () => setTab("upload"));
     $tabList.addEventListener("click", () => setTab("list"));
 
-    // ====== 목록 ======
+    // ====== 목록 렌더링 ======
     function renderList(items){
       const q = String($listFilter.value || "").trim().toLowerCase();
       const filtered = !q ? items : items.filter(it => {
@@ -870,68 +868,42 @@
     }
 
     $listFilter.addEventListener("input", () => renderList(lastListItems));
-
-    // ✅ iframe 캐시/연속 클릭 방지용 네비게이터
-    function iframeNavigate_(url){
-      $listFrame.src = "about:blank";
-      setTimeout(() => { $listFrame.src = url; }, 20);
-    }
+    $btnReloadList.addEventListener("click", () => loadList());
 
     function loadList(){
-      if (listLoading) return; // ✅ 연타 방지
-      listLoading = true;
-      $btnReloadList.disabled = true;
-
       currentListNonce = makeNonce_();
-      const url =
-        `${WEBAPP_URL}?mode=list&__pm=1` +
-        `&nonce=${encodeURIComponent(currentListNonce)}` +
-        `&_ts=${Date.now()}`; // ✅ 캐시 버스터
+
+      // 캐시/중복 네비게이션 방지용 ts 추가
+      const url = `${WEBAPP_URL}?mode=list&__pm=1&nonce=${encodeURIComponent(currentListNonce)}&_ts=${Date.now()}`;
 
       toast_("목록 요청 전송…", "sub");
-      iframeNavigate_(url);
-
-      // ✅ watchdog
-      setTimeout(() => {
-        if (listLoading && currentListNonce) {
-          listLoading = false;
-          $btnReloadList.disabled = false;
-          toast_("목록 응답 없음(캐시/배포/권한/iframe 차단 가능)", "bad");
-        }
-      }, 12000);
+      startListWatchdog_(currentListNonce);
+      $listFrame.src = url;
     }
 
     function loadOne(id){
       const nonce = makeNonce_();
-      const url =
-        `${WEBAPP_URL}?mode=get&id=${encodeURIComponent(id)}&__pm=1` +
-        `&nonce=${encodeURIComponent(nonce)}` +
-        `&_ts=${Date.now()}`; // ✅ 캐시 버스터
-
+      const url = `${WEBAPP_URL}?mode=get&id=${encodeURIComponent(id)}&__pm=1&nonce=${encodeURIComponent(nonce)}&_ts=${Date.now()}`;
       toast_("상세 요청…", "sub");
 
       return new Promise((resolve) => {
         pendingGet.set(nonce, resolve);
-        iframeNavigate_(url);
+        $listFrame.src = url;
 
-        // 안전장치(응답 누락 대비)
         setTimeout(() => {
           if (pendingGet.has(nonce)) {
             pendingGet.delete(nonce);
             resolve(null);
-            toast_("상세 응답 없음(서버/nonce 확인)", "bad");
+            toast_("상세 응답 없음(서버/nonce/iframe 차단 확인)", "bad");
           }
         }, 12000);
       });
     }
 
-    $btnReloadList.addEventListener("click", () => loadList());
-
     // ✅ Apps Script (iframe form 업로드 + 목록/상세) 응답 수신
     window.addEventListener("message", (ev) => {
       let data = ev.data;
 
-      // 문자열로 오는 경우 파싱
       if (typeof data === "string") {
         try { data = JSON.parse(data); } catch (e) { return; }
       }
@@ -947,9 +919,7 @@
         if (data.ok) {
           showUploadResult_(data);
           toast_(`업로드 완료! DB ID: ${data.id}`, "ok");
-          alert(`업로드 완료!
-DB ID: ${data.id}
-Drive: ${data.drive_view_url}`);
+          alert(`업로드 완료!\nDB ID: ${data.id}\nDrive: ${data.drive_view_url}`);
         } else {
           toast_("업로드 실패: " + (data.error || "unknown"), "bad");
           alert("업로드 실패: " + (data.error || "unknown"));
@@ -962,6 +932,7 @@ Drive: ${data.drive_view_url}`);
 
       // 2) 목록 응답
       if (nonce && currentListNonce && nonce === currentListNonce) {
+        stopListWatchdog_();
         if (data.ok) {
           lastListItems = Array.isArray(data.items) ? data.items : [];
           renderList(lastListItems);
@@ -970,10 +941,6 @@ Drive: ${data.drive_view_url}`);
           toast_("목록 로드 실패: " + (data.error || "unknown"), "bad");
           alert("목록 로드 실패: " + (data.error || "unknown"));
         }
-
-        // ✅ 잠금 해제
-        listLoading = false;
-        $btnReloadList.disabled = false;
         return;
       }
 
@@ -991,7 +958,7 @@ Drive: ${data.drive_view_url}`);
       }
     });
 
-    // ====== 업로드 파트 이벤트 ======
+    // ====== 업로드 기존 로직 ======
     $file.addEventListener("change", async () => {
       revokeAllPreviewUrls();
       $grid.innerHTML = "";
@@ -1059,7 +1026,6 @@ Drive: ${data.drive_view_url}`);
       }
     });
 
-    // ====== 업로드 (Drive + DB) ======
     $btnUpload.addEventListener("click", async () => {
       const baseName = safeTrim($baseName.value);
       if (!baseName) {
@@ -1089,7 +1055,6 @@ Drive: ${data.drive_view_url}`);
         const alt = `${label} · 원본 대비 품질 ${pct}%${blur > 0 ? ` · 미세블러 ${blur.toFixed(1)}px` : ""}`;
         const title = alt;
 
-        // ✅ iframe 업로드 응답 매칭용
         currentUploadNonce = makeNonce_();
 
         const payload = {
@@ -1116,7 +1081,6 @@ Drive: ${data.drive_view_url}`);
           }
         };
 
-        // ✅ CORS 회피: hidden form으로 업로드
         $form.action = WEBAPP_URL;
         $formPayload.value = JSON.stringify(payload);
         toast_("업로드 요청 전송… (완료 신호 대기 중)", "sub");
@@ -1132,7 +1096,6 @@ Drive: ${data.drive_view_url}`);
       }
     });
 
-    // 스니펫 복사
     $btnCopy.addEventListener("click", async () => {
       if (!lastSnippetText) return;
       const ok = await copyToClipboard(lastSnippetText);
@@ -1140,9 +1103,6 @@ Drive: ${data.drive_view_url}`);
     });
 
     window.addEventListener("beforeunload", revokeAllPreviewUrls);
-
-    // 초기 탭: 업로드
-    setTab("upload");
   })();
   </script>
 </body>
