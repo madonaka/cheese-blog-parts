@@ -266,8 +266,6 @@
     </div>
   </div>
   
-  <iframe id="imgDbFrame" class="pm-hidden" style="position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;overflow:hidden;"></iframe>
-
   <!-- ✅ 반드시 포함해야 하는 공통 스크립트 유지 -->
   <script src="./admin-common.js"></script>
 
@@ -512,61 +510,73 @@
     catch { throw new Error("JSON_PARSE_FAILED\n" + text.slice(0,500)); }
   }
   
-  // ===== 이미지 관리 =====
-  // ✅ 이미지 관리 WebApp (image_manage.html이 쓰는 것과 동일한 프로젝트 URL)
+  // ===== 이미지 관리 (✅ image_manage.html 과 동일: JSONP로 list/get) =====
   const IMG_DB_URL =
     "https://script.google.com/macros/s/AKfycbyIsoT-0JY2nxCPFx2JH-G3Ja8tztjlJ6fiVAyxLgd-8Mzxjob8YDGgRO-biOCXe5WU/exec";
   
-  // postMessage 응답 대기 레지스트리
-  const __imgPmWait = new Map();
+  // image_manage.html과 같은 nonce 생성
+  function makeNonce_(){
+    return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  }
   
-  // ✅ postMessage 수신 (nonce로 매칭)
-  window.addEventListener("message", (ev) => {
-    // ✅ origin 제한 (Apps Script는 script.google.com / script.googleusercontent.com 쪽에서 올 수 있음)
-    const okOrigin =
-      typeof ev.origin === "string" &&
-      (ev.origin.includes("script.google.com") || ev.origin.includes("script.googleusercontent.com"));
-    if (!okOrigin) return;
-  
-    let data = ev.data;
-    if (typeof data === "string") {
-      try { data = JSON.parse(data); } catch { return; }
-    }
-    if (!data || typeof data !== "object") return;
-    if (!data.nonce) return;
-  
-    const cb = __imgPmWait.get(data.nonce);
-    if (cb) {
-      __imgPmWait.delete(data.nonce);
-      cb(data);
-    }
-  });
-  
-  // ✅ iframe로 PM 호출 (list/get 지원: Apps Script에 이미 구현됨)
-  function imgPmCall_(params, timeoutMs = 12000){
+  // JSONP 호출 (CORS/iframe 차단 회피)
+  function jsonpCall_(url, cbName, timeoutMs = 12000){
     return new Promise((resolve) => {
-      const nonce = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
-      const qs = new URLSearchParams({
-        ...params,
-        __pm: "1",
-        nonce
-      });
+      let done = false;
   
       const timer = setTimeout(() => {
-        __imgPmWait.delete(nonce);
+        if (done) return;
+        done = true;
+        cleanup();
         resolve({ ok:false, error:"timeout" });
       }, timeoutMs);
   
-      __imgPmWait.set(nonce, (data) => {
+      function cleanup(){
         clearTimeout(timer);
-        resolve(data);
-      });
+        try { delete window[cbName]; } catch(e){}
+        if (script && script.parentNode) script.parentNode.removeChild(script);
+      }
   
-      // ✅ hidden iframe으로 요청
-      const f = document.getElementById("imgDbFrame");
-      f.src = `${IMG_DB_URL}?${qs.toString()}`;
+      window[cbName] = (data) => {
+        if (done) return;
+        done = true;
+        cleanup();
+        resolve(data);
+      };
+  
+      const script = document.createElement("script");
+      script.src = url + (url.includes("?") ? "&" : "?") + `_=${Date.now()}`; // cache-bust
+      script.onerror = () => {
+        if (done) return;
+        done = true;
+        cleanup();
+        resolve({ ok:false, error:"script_load_failed" });
+      };
+  
+      document.head.appendChild(script);
     });
   }
+  
+  async function imgList_(){
+    const nonce = makeNonce_();
+    const cb = `__pm_img_list_cb_${nonce.replace(/[^a-zA-Z0-9_]/g,"_")}`;
+    const url = `${IMG_DB_URL}?mode=list&callback=${encodeURIComponent(cb)}&nonce=${encodeURIComponent(nonce)}`;
+  
+    const res = await jsonpCall_(url, cb, 12000);
+    if (!res || !res.ok) throw new Error(res?.error || "IMG_LIST_FAILED");
+    return Array.isArray(res.items) ? res.items : [];
+  }
+  
+  async function imgGet_(id){
+    const nonce = makeNonce_();
+    const cb = `__pm_img_get_cb_${nonce.replace(/[^a-zA-Z0-9_]/g,"_")}`;
+    const url = `${IMG_DB_URL}?mode=get&id=${encodeURIComponent(String(id||""))}&callback=${encodeURIComponent(cb)}&nonce=${encodeURIComponent(nonce)}`;
+  
+    const res = await jsonpCall_(url, cb, 12000);
+    if (!res || !res.ok) throw new Error(res?.error || "IMG_GET_FAILED");
+    return res.item || null;
+  }
+
   
   async function imgList_(){
     const res = await imgPmCall_({ mode:"list" });
