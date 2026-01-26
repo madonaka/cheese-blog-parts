@@ -112,6 +112,9 @@
     .pm-dyn-help{ margin:0 0 10px; }
     .pm-dyn-textarea{ min-height:200px; }
     .pm-hr{ height:1px; background:rgba(15,23,42,0.10); margin:12px 0; }
+
+    .pm-hidden{ display:none !important; }
+
   </style>
 </head>
 
@@ -262,6 +265,8 @@
       </main>
     </div>
   </div>
+  
+  <iframe id="imgDbFrame" class="pm-hidden" style="position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;overflow:hidden;"></iframe>
 
   <!-- ✅ 반드시 포함해야 하는 공통 스크립트 유지 -->
   <script src="./admin-common.js"></script>
@@ -506,7 +511,76 @@
     try { return JSON.parse(text); }
     catch { throw new Error("JSON_PARSE_FAILED\n" + text.slice(0,500)); }
   }
+  
+  // ===== 이미지 관리 =====
+  // ✅ 이미지 관리 WebApp (image_manage.html이 쓰는 것과 동일한 프로젝트 URL)
+  const IMG_DB_URL =
+    "https://script.google.com/macros/s/AKfycbyIsoT-0JY2nxCPFx2JH-G3Ja8tztjlJ6fiVAyxLgd-8Mzxjob8YDGgRO-biOCXe5WU/exec";
+  
+  // postMessage 응답 대기 레지스트리
+  const __imgPmWait = new Map();
+  
+  // ✅ postMessage 수신 (nonce로 매칭)
+  window.addEventListener("message", (ev) => {
+    // ✅ origin 제한 (Apps Script는 script.google.com / script.googleusercontent.com 쪽에서 올 수 있음)
+    const okOrigin =
+      typeof ev.origin === "string" &&
+      (ev.origin.includes("script.google.com") || ev.origin.includes("script.googleusercontent.com"));
+    if (!okOrigin) return;
+  
+    let data = ev.data;
+    if (typeof data === "string") {
+      try { data = JSON.parse(data); } catch { return; }
+    }
+    if (!data || typeof data !== "object") return;
+    if (!data.nonce) return;
+  
+    const cb = __imgPmWait.get(data.nonce);
+    if (cb) {
+      __imgPmWait.delete(data.nonce);
+      cb(data);
+    }
+  });
+  
+  // ✅ iframe로 PM 호출 (list/get 지원: Apps Script에 이미 구현됨)
+  function imgPmCall_(params, timeoutMs = 12000){
+    return new Promise((resolve) => {
+      const nonce = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+      const qs = new URLSearchParams({
+        ...params,
+        __pm: "1",
+        nonce
+      });
+  
+      const timer = setTimeout(() => {
+        __imgPmWait.delete(nonce);
+        resolve({ ok:false, error:"timeout" });
+      }, timeoutMs);
+  
+      __imgPmWait.set(nonce, (data) => {
+        clearTimeout(timer);
+        resolve(data);
+      });
+  
+      // ✅ hidden iframe으로 요청
+      const f = document.getElementById("imgDbFrame");
+      f.src = `${IMG_DB_URL}?${qs.toString()}`;
+    });
+  }
+  
+  async function imgList_(){
+    const res = await imgPmCall_({ mode:"list" });
+    if (!res || !res.ok) throw new Error(res?.error || "IMG_LIST_FAILED");
+    return Array.isArray(res.items) ? res.items : [];
+  }
+  
+  async function imgGet_(id){
+    const res = await imgPmCall_({ mode:"get", id:String(id||"") });
+    if (!res || !res.ok) throw new Error(res?.error || "IMG_GET_FAILED");
+    return res.item || null;
+  }
 
+  
   async function apiPost(mode, bodyObj){
     const url = `${API_BASE}?_ts=${Date.now()}`;
     const body = new URLSearchParams();
@@ -605,7 +679,15 @@
       "THUMB_URL",
       "CANONICAL_URL",
       "YEAR",
-      "MONTH"
+      "MONTH",
+
+       // ✅ 이미지 DB 연동 토큰(추가)
+      "IMG_ID",
+      "IMG_SRC",
+      "IMG_HREF",
+      "IMG_ALT",
+      "IMG_TITLE",
+      "IMG_SNIPPET"
     ]);
 
     const reserved = new Set(["TITLE","NAV","FOOTER","BODY"]);
@@ -642,6 +724,75 @@
     slotBox.innerHTML = "";
     tokBox.innerHTML = "";
 
+    let __imgListCache = null;
+    
+    async function initImgPickerUI_(){
+      const sel = document.getElementById("imgDbSelect");
+      const btn = document.getElementById("btnImgDbApply");
+      const pv  = document.getElementById("imgDbPreview");
+      if (!sel || !btn) return;
+    
+      sel.innerHTML = `<option value="">이미지 선택...</option>`;
+    
+      try{
+        // ✅ 캐시(같은 페이지에서 반복 렌더링 시 재호출 최소화)
+        if (!__imgListCache) __imgListCache = await imgList_();
+    
+        for (const it of __imgListCache){
+          const id = String(it.id || "");
+          const name = String(it.base_name || it.drive_name || "");
+          const opt = document.createElement("option");
+          opt.value = id;
+          opt.textContent = name ? `${id} — ${name}` : id;
+          sel.appendChild(opt);
+        }
+    
+        sel.addEventListener("change", () => {
+          const id = sel.value;
+          const hit = (__imgListCache || []).find(x => String(x.id) === String(id));
+          if (!hit) { pv.textContent = ""; return; }
+          const thumb = hit.img_src || "";
+          const href  = hit.img_href || hit.drive_view_url || "";
+          pv.innerHTML = thumb
+            ? `미리보기: <a class="pm-link" href="${href}" target="_blank">Drive 열기</a><br><img src="${thumb}" style="max-width:260px;border-radius:10px;border:1px solid rgba(15,23,42,0.14);margin-top:6px;" />`
+            : `미리보기 없음`;
+        });
+    
+        btn.addEventListener("click", async () => {
+          const id = sel.value;
+          if (!id) { setStatus("이미지를 먼저 선택하세요.", false); return; }
+    
+          setStatus("이미지 상세 불러오는 중...", true);
+          const item = await imgGet_(id);
+          if (!item) { setStatus("이미지 상세를 가져오지 못했습니다.", false); return; }
+    
+          // ✅ 템플릿에 존재하는 토큰만 채움
+          const toks = new Set(templateState.tokens || []);
+    
+          const patch = {};
+          if (toks.has("IMG_ID")) patch.IMG_ID = item.id || "";
+          if (toks.has("IMG_SRC")) patch.IMG_SRC = item.img_src || "";
+          if (toks.has("IMG_HREF")) patch.IMG_HREF = item.img_href || item.drive_view_url || "";
+          if (toks.has("IMG_ALT")) patch.IMG_ALT = item.img_alt || "";
+          if (toks.has("IMG_TITLE")) patch.IMG_TITLE = item.img_title || "";
+          if (toks.has("IMG_SNIPPET")) patch.IMG_SNIPPET = item.snippet || "";
+    
+          // THUMB_URL 토큰도 이미지 src로 자동 채움(원하면 다른 매핑도 가능)
+          if (toks.has("THUMB_URL")) patch.THUMB_URL = item.img_src || "";
+    
+          setTokenValues_(patch);
+    
+          // ✅ 즉시 프리뷰 조립
+          scheduleAssemblePreview_();
+          setStatus(`이미지 토큰 자동입력 완료: ${id}`, true);
+        });
+    
+      }catch(e){
+        setStatus("이미지 DB 목록 로드 실패: " + (e?.message || e), false);
+        if (pv) pv.textContent = String(e?.message || e);
+      }
+    }
+    
     // SLOT(TEXTAREA)
     for (const slot of (slotNames || [])){
       const wrap = document.createElement("div");
@@ -654,6 +805,11 @@
       slotBox.appendChild(wrap);
     }
 
+    // ✅ 이미지 토큰이 하나라도 있으면 이미지 선택 UI를 먼저 렌더
+    const needsImg =
+      (tokenNames || []).some(t => /^IMG_/.test(String(t||""))) ||
+      (tokenNames || []).includes("THUMB_URL"); // THUMB_URL도 이미지로 자동채움 가능하게
+    
     // Token(INPUT)
     if (!tokenNames || tokenNames.length === 0){
       const empty = document.createElement("div");
@@ -663,6 +819,25 @@
       return;
     }
 
+    if (needsImg) {
+      const wrap = document.createElement("div");
+      wrap.className = "pm-dyn-item";
+      wrap.style.gridColumn = "1 / -1";
+      wrap.innerHTML = `
+        <div class="pm-dyn-key">이미지(DB) 선택</div>
+        <div class="pm-row" style="margin:8px 0 0;">
+          <select id="imgDbSelect" class="pm-select" style="min-width:320px;"></select>
+          <button id="btnImgDbApply" class="pm-btn">선택 이미지 토큰 자동입력</button>
+          <span class="pm-muted pm-small">※ 템플릿에 IMG_* 또는 THUMB_URL 토큰이 있을 때만 표시</span>
+        </div>
+        <div id="imgDbPreview" class="pm-muted pm-small" style="margin-top:8px;"></div>
+      `;
+      tokBox.appendChild(wrap);
+    
+      // 목록 로드 + 이벤트 바인딩
+      initImgPickerUI_();
+    }
+ 
     for (const tok of tokenNames){
       const wrap = document.createElement("div");
       wrap.className = "pm-dyn-item";
@@ -1364,10 +1539,12 @@ async function exportToBlogger(){
   $("category").addEventListener("change", onCategoryChange);
 
   // init
-  setDebug("");
-  renderDynamicFields_(["BODY"], []); // 템플릿 선택 전 기본
-  refreshList();
-  initTemplateSelect_();
+  (async function init(){
+    setDebug("");
+    renderDynamicFields_(["BODY"], []);
+    await refreshList();
+    await initTemplateSelect_();
+  })();
 })();
 
 function escapeHtml(s){
