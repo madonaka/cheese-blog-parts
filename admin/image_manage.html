@@ -478,6 +478,9 @@
     // get(상세) 대기열: nonce -> resolve
     const pendingGet = new Map();
 
+    // 목록 로딩 잠금(연타/nonce mismatch 방지)
+    let listLoading = false;
+
     function escapeHtml(s){
       return String(s || "")
         .replace(/&/g,"&amp;")
@@ -794,7 +797,7 @@
     $tabUpload.addEventListener("click", () => setTab("upload"));
     $tabList.addEventListener("click", () => setTab("list"));
 
-    // ====== 목록 렌더링 ======
+    // ====== 목록 ======
     function renderList(items){
       const q = String($listFilter.value || "").trim().toLowerCase();
       const filtered = !q ? items : items.filter(it => {
@@ -867,23 +870,49 @@
     }
 
     $listFilter.addEventListener("input", () => renderList(lastListItems));
-    $btnReloadList.addEventListener("click", () => loadList());
+
+    // ✅ iframe 캐시/연속 클릭 방지용 네비게이터
+    function iframeNavigate_(url){
+      $listFrame.src = "about:blank";
+      setTimeout(() => { $listFrame.src = url; }, 20);
+    }
 
     function loadList(){
+      if (listLoading) return; // ✅ 연타 방지
+      listLoading = true;
+      $btnReloadList.disabled = true;
+
       currentListNonce = makeNonce_();
-      const url = `${WEBAPP_URL}?mode=list&__pm=1&nonce=${encodeURIComponent(currentListNonce)}`;
+      const url =
+        `${WEBAPP_URL}?mode=list&__pm=1` +
+        `&nonce=${encodeURIComponent(currentListNonce)}` +
+        `&_ts=${Date.now()}`; // ✅ 캐시 버스터
+
       toast_("목록 요청 전송…", "sub");
-      $listFrame.src = url;
+      iframeNavigate_(url);
+
+      // ✅ watchdog
+      setTimeout(() => {
+        if (listLoading && currentListNonce) {
+          listLoading = false;
+          $btnReloadList.disabled = false;
+          toast_("목록 응답 없음(캐시/배포/권한/iframe 차단 가능)", "bad");
+        }
+      }, 12000);
     }
 
     function loadOne(id){
       const nonce = makeNonce_();
-      const url = `${WEBAPP_URL}?mode=get&id=${encodeURIComponent(id)}&__pm=1&nonce=${encodeURIComponent(nonce)}`;
+      const url =
+        `${WEBAPP_URL}?mode=get&id=${encodeURIComponent(id)}&__pm=1` +
+        `&nonce=${encodeURIComponent(nonce)}` +
+        `&_ts=${Date.now()}`; // ✅ 캐시 버스터
+
       toast_("상세 요청…", "sub");
 
       return new Promise((resolve) => {
         pendingGet.set(nonce, resolve);
-        $listFrame.src = url;
+        iframeNavigate_(url);
 
         // 안전장치(응답 누락 대비)
         setTimeout(() => {
@@ -896,11 +925,13 @@
       });
     }
 
+    $btnReloadList.addEventListener("click", () => loadList());
+
     // ✅ Apps Script (iframe form 업로드 + 목록/상세) 응답 수신
     window.addEventListener("message", (ev) => {
       let data = ev.data;
 
-      // ✅ 문자열로 오는 경우 파싱
+      // 문자열로 오는 경우 파싱
       if (typeof data === "string") {
         try { data = JSON.parse(data); } catch (e) { return; }
       }
@@ -939,6 +970,10 @@ Drive: ${data.drive_view_url}`);
           toast_("목록 로드 실패: " + (data.error || "unknown"), "bad");
           alert("목록 로드 실패: " + (data.error || "unknown"));
         }
+
+        // ✅ 잠금 해제
+        listLoading = false;
+        $btnReloadList.disabled = false;
         return;
       }
 
@@ -954,11 +989,9 @@ Drive: ${data.drive_view_url}`);
         }
         return;
       }
-
-      // (nonce 없는 응답은 무시)
     });
 
-    // ====== 이벤트 ======
+    // ====== 업로드 파트 이벤트 ======
     $file.addEventListener("change", async () => {
       revokeAllPreviewUrls();
       $grid.innerHTML = "";
@@ -1061,12 +1094,11 @@ Drive: ${data.drive_view_url}`);
 
         const payload = {
           mode: "upload",
-          // 서버에서 최종 파일명을 재구성하므로, 여기 filename은 "fallback"로만 사용
           filename: `img_${version}_${pct}.jpg`,
           mime: "image/jpeg",
           base64: b64,
           meta: {
-            base_name: baseName,      // ✅ 추가
+            base_name: baseName,
             label,
             version,
             scale: selectedScale,
@@ -1090,8 +1122,6 @@ Drive: ${data.drive_view_url}`);
         toast_("업로드 요청 전송… (완료 신호 대기 중)", "sub");
         $form.submit();
         startUploadWatchdog_();
-
-        // 응답은 postMessage로 들어오며, listener에서 처리
 
       } catch (e) {
         console.error(e);
