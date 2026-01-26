@@ -788,11 +788,11 @@
       let html = "";
       try{ 
         html = await getSectionHtml_(name); 
-      }catch(_){
-        html = ""; 
+      }catch(e){
+        html = "";
         const prev = $("debug").textContent || "";
         $("debug").textContent =
-        prev + `\n[SECTION LOAD FAIL] ${name} :: ` + (e?.message || e);
+          prev + `\n[SECTION LOAD FAIL] ${name} :: ` + (e?.message || e);
       }
       const re = /{{\s*([A-Z0-9_]+)\s*}}/g;
       let m;
@@ -934,18 +934,22 @@
     for (const tok of tokenNames){
       const wrap = document.createElement("div");
       wrap.className = "pm-dyn-item";
+    
+      const isYearNav = String(tok) === "YEAR_NAV_JSON";
+    
       wrap.innerHTML = `
         <div class="pm-dyn-key">${escapeHtml(tok)}</div>
-        <input class="pm-input" data-token="${escapeHtml(tok)}" style="min-width:0; width:100%;"
-          placeholder="${tokenPlaceholder_(tok)}" />
+        ${
+          isYearNav
+            ? `<textarea class="pm-textarea pm-dyn-textarea" data-token="${escapeHtml(tok)}"
+                 placeholder="${escapeHtml(tokenPlaceholder_(tok))}"></textarea>`
+            : `<input class="pm-input" data-token="${escapeHtml(tok)}" style="min-width:0; width:100%;"
+                 placeholder="${tokenPlaceholder_(tok)}" />`
+        }
       `;
       tokBox.appendChild(wrap);
     }
 
-    // ✅ 동적 입력칸 생성 후: 실시간 프리뷰 이벤트 바인딩
-    attachDynamicPreviewListeners_();
-
-  }
 
   function tokenPlaceholder_(tok){
     switch(String(tok||"")){
@@ -953,7 +957,7 @@
       case "CANONICAL_URL": return "예: https://www.cheesehistory.com/... (정식 URL)";
       case "YEAR": return "예: 2026";
       case "MONTH": return "예: 01";
-      case "YEAR_NAV_JSON": return "예: [{\"year\":2022,\"href\":\"https://.../2022.html\"}, {\"year\":2023,\"href\":\"https://.../2023.html\"}]";
+      case "YEAR_NAV_JSON":   return "줄입력 예:\n2022,https://.../2022.html\n2023,https://.../2023.html\n2024,";
 
       default: return "";
     }
@@ -1012,7 +1016,12 @@
   
     const slotVals  = getSlotValues_();
     const tokenVals = getTokenValues_();
-  
+
+    // ✅ YEAR_NAV_JSON: 사용자가 "연도,URL" 줄로 입력해도 자동으로 JSON으로 변환
+    if (tokenVals.YEAR_NAV_JSON && !String(tokenVals.YEAR_NAV_JSON).trim().startsWith("[")) {
+      tokenVals.YEAR_NAV_JSON = lineToYearNavJson_(tokenVals.YEAR_NAV_JSON);
+    }
+
     // ✅ 빈 값은 vars에서 제외 → {{BODY}}/{{BODY_1}}가 빈칸으로 지워지지 않음
     const vars = {
       TITLE: title,
@@ -1028,6 +1037,29 @@
     };
   
     return vars;
+  }
+
+  function lineToYearNavJson_(txt){
+    // 입력 예:
+    // 2022,https://.../2022.html
+    // 2023,https://.../2023.html
+    // 2024,
+    const items = String(txt || "")
+      .trim()
+      .split(/\r?\n/)             // 줄 단위
+      .map(s => s.trim())
+      .filter(Boolean)
+      .map(line => {
+        const idx = line.indexOf(",");
+        if (idx < 0) return null;
+        const year = line.slice(0, idx).trim();
+        const href = line.slice(idx + 1).trim(); // 비어도 OK
+        if (!year) return null;
+        return { year: year, href: href };
+      })
+      .filter(Boolean);
+  
+    return JSON.stringify(items);
   }
 
 
