@@ -510,19 +510,21 @@
     catch { throw new Error("JSON_PARSE_FAILED\n" + text.slice(0,500)); }
   }
   
+
   // ===== 이미지 관리 (✅ image_manage.html 과 동일: JSONP로 list/get) =====
   const IMG_DB_URL =
     "https://script.google.com/macros/s/AKfycbyIsoT-0JY2nxCPFx2JH-G3Ja8tztjlJ6fiVAyxLgd-8Mzxjob8YDGgRO-biOCXe5WU/exec";
   
-  // image_manage.html과 같은 nonce 생성
-  function makeNonce_(){
+  // ⚠️ 다른 곳 함수명과 충돌 방지 위해 img 접두사 사용
+  function imgMakeNonce_(){
     return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
   }
   
   // JSONP 호출 (CORS/iframe 차단 회피)
-  function jsonpCall_(url, cbName, timeoutMs = 12000){
+  function imgJsonpCall_(url, cbName, timeoutMs = 12000){
     return new Promise((resolve) => {
       let done = false;
+      let script = null;
   
       const timer = setTimeout(() => {
         if (done) return;
@@ -544,7 +546,7 @@
         resolve(data);
       };
   
-      const script = document.createElement("script");
+      script = document.createElement("script");
       script.src = url + (url.includes("?") ? "&" : "?") + `_=${Date.now()}`; // cache-bust
       script.onerror = () => {
         if (done) return;
@@ -558,13 +560,43 @@
   }
   
   async function imgList_(){
+    const nonce = imgMakeNonce_();
+    const cb = `__img_list_cb_${nonce.replace(/[^a-zA-Z0-9_]/g,"_")}`;
+    const url = `${IMG_DB_URL}?mode=list&callback=${encodeURIComponent(cb)}&nonce=${encodeURIComponent(nonce)}`;
+  
+    const res = await imgJsonpCall_(url, cb, 12000);
+    if (!res || !res.ok) throw new Error(res?.error || "IMG_LIST_FAILED");
+    return Array.isArray(res.items) ? res.items : [];
+  }
+  
+  async function imgGet_(id){
+    const nonce = imgMakeNonce_();
+    const cb = `__img_get_cb_${nonce.replace(/[^a-zA-Z0-9_]/g,"_")}`;
+    const url = `${IMG_DB_URL}?mode=get&id=${encodeURIComponent(String(id||""))}&callback=${encodeURIComponent(cb)}&nonce=${encodeURIComponent(nonce)}`;
+  
+    const res = await imgJsonpCall_(url, cb, 12000);
+    if (!res || !res.ok) throw new Error(res?.error || "IMG_GET_FAILED");
+    return res.item || null;
+  }
+  
+  async function imgList_(){
     const nonce = makeNonce_();
-    const cb = `__pm_img_list_cb_${nonce.replace(/[^a-zA-Z0-9_]/g,"_")}`;
+    const cb = `__img_list_cb_${nonce.replace(/[^a-zA-Z0-9_]/g,"_")}`;
     const url = `${IMG_DB_URL}?mode=list&callback=${encodeURIComponent(cb)}&nonce=${encodeURIComponent(nonce)}`;
   
     const res = await jsonpCall_(url, cb, 12000);
     if (!res || !res.ok) throw new Error(res?.error || "IMG_LIST_FAILED");
     return Array.isArray(res.items) ? res.items : [];
+  }
+  
+  async function imgGet_(id){
+    const nonce = makeNonce_();
+    const cb = `__img_get_cb_${nonce.replace(/[^a-zA-Z0-9_]/g,"_")}`;
+    const url = `${IMG_DB_URL}?mode=get&id=${encodeURIComponent(String(id||""))}&callback=${encodeURIComponent(cb)}&nonce=${encodeURIComponent(nonce)}`;
+  
+    const res = await jsonpCall_(url, cb, 12000);
+    if (!res || !res.ok) throw new Error(res?.error || "IMG_GET_FAILED");
+    return res.item || null;
   }
   
   async function imgGet_(id){
@@ -577,19 +609,47 @@
     return res.item || null;
   }
 
-  
-  async function imgList_(){
-    const res = await imgPmCall_({ mode:"list" });
-    if (!res || !res.ok) throw new Error(res?.error || "IMG_LIST_FAILED");
-    return Array.isArray(res.items) ? res.items : [];
+  function makeNonce_(){
+    return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
   }
   
-  async function imgGet_(id){
-    const res = await imgPmCall_({ mode:"get", id:String(id||"") });
-    if (!res || !res.ok) throw new Error(res?.error || "IMG_GET_FAILED");
-    return res.item || null;
+  function jsonpCall_(url, cbName, timeoutMs = 12000){
+    return new Promise((resolve) => {
+      let done = false;
+      let script = null;
+  
+      const timer = setTimeout(() => {
+        if (done) return;
+        done = true;
+        cleanup();
+        resolve({ ok:false, error:"timeout" });
+      }, timeoutMs);
+  
+      function cleanup(){
+        clearTimeout(timer);
+        try { delete window[cbName]; } catch(e){}
+        if (script && script.parentNode) script.parentNode.removeChild(script);
+      }
+  
+      window[cbName] = (data) => {
+        if (done) return;
+        done = true;
+        cleanup();
+        resolve(data);
+      };
+  
+      script = document.createElement("script");
+      script.src = url + (url.includes("?") ? "&" : "?") + `_=${Date.now()}`; // cache bust
+      script.onerror = () => {
+        if (done) return;
+        done = true;
+        cleanup();
+        resolve({ ok:false, error:"script_load_failed" });
+      };
+  
+      document.head.appendChild(script);
+    });
   }
-
   
   async function apiPost(mode, bodyObj){
     const url = `${API_BASE}?_ts=${Date.now()}`;
