@@ -128,6 +128,45 @@
       height:1px;
       overflow:hidden;
     }
+
+    /* 토스트 알림 */
+    .im-toast{
+      position:fixed;
+      right:16px;
+      top:16px;
+      z-index:99999;
+      min-width:240px;
+      max-width:420px;
+      padding:12px 14px;
+      border-radius:14px;
+      border:1px solid rgba(15,23,42,.14);
+      background:#fff;
+      box-shadow:0 14px 30px rgba(15,23,42,.12);
+      font-weight:900;
+      font-size:13px;
+      line-height:1.35;
+
+      opacity:0;
+      transform:translateY(-8px);
+      pointer-events:none;
+      transition:opacity .18s ease, transform .18s ease;
+    }
+    .im-toast.show{
+      opacity:1;
+      transform:translateY(0);
+    }
+    .im-toast.ok{
+      background:rgba(34,197,94,.12);
+      border-color:rgba(34,197,94,.35);
+    }
+    .im-toast.bad{
+      background:rgba(239,68,68,.10);
+      border-color:rgba(239,68,68,.35);
+    }
+    .im-toast.sub{
+      background:rgba(59,130,246,.10);
+      border-color:rgba(59,130,246,.25);
+    }
   </style>
 </head>
 
@@ -246,6 +285,8 @@
             </div>
             <div id="uploadResult" class="im-result" style="display:none;"></div>
 
+            <div id="toast" class="im-toast" aria-live="polite"></div>
+
             <!-- ✅ CORS 회피용 hidden form + iframe -->
             <iframe id="uploadFrame" name="uploadFrame" class="im-hidden"></iframe>
             <form id="uploadForm" class="im-hidden" method="POST" target="uploadFrame"
@@ -303,6 +344,7 @@
 
     const $result = document.getElementById("uploadResult");
     const $btnCopy = document.getElementById("btnCopySnippet");
+    const $toast  = document.getElementById("toast");
 
     // form/iframe
     const $form = document.getElementById("uploadForm");
@@ -571,6 +613,42 @@
     function makeNonce_() {
       return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
     }
+    let toastTimer = null;
+    let watchdogTimer = null;
+
+    function toast_(msg, type = "sub") {
+      if (!$toast) return;
+
+      $toast.textContent = String(msg || "");
+      $toast.classList.remove("ok","bad","sub","show");
+      $toast.classList.add(type);
+
+      // reflow
+      void $toast.offsetWidth;
+
+      $toast.classList.add("show");
+
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        $toast.classList.remove("show");
+      }, 2600);
+    }
+
+    function startUploadWatchdog_() {
+      clearTimeout(watchdogTimer);
+      watchdogTimer = setTimeout(() => {
+        // postMessage 응답이 늦거나 누락된 경우를 대비
+        if (currentNonce) {
+          toast_("응답을 아직 받지 못했어요. 저장은 되었을 수 있으니 결과 영역/Drive를 확인해줘.", "bad");
+          $btnUpload.disabled = false;
+        }
+      }, 15000);
+    }
+
+    function stopUploadWatchdog_() {
+      clearTimeout(watchdogTimer);
+      watchdogTimer = null;
+    }
 
     function showUploadResult_(json) {
       lastSnippetText = json.snippet || "";
@@ -586,37 +664,44 @@
         `HTML 스니펫(복사해서 바로 사용):\n` +
         `${lastSnippetText}`;
 
-      alert(`업로드 완료! (DB ID: ${json.id})`);
     }
 
     // ✅ Apps Script (iframe form 업로드) 응답 수신
     window.addEventListener("message", (ev) => {
       let data = ev.data;
-    
+
       // ✅ 문자열로 오는 경우 파싱
       if (typeof data === "string") {
         try { data = JSON.parse(data); } catch (e) { return; }
       }
-    
+
       // ✅ 객체만 처리
       if (!data || typeof data !== "object") return;
       if (!("ok" in data)) return;
-    
+
       // nonce 매칭
       if (data.nonce && currentNonce && data.nonce !== currentNonce) return;
-    
+
+      // 수신되었으니 watchdog 종료
+      stopUploadWatchdog_();
+
       if (data.ok) {
         showUploadResult_(data);
-    
-        // ✅ 업로드 완료 alert (showUploadResult_ 안에 alert 있으면 중복이므로 하나만 남겨)
-        alert(`업로드 완료!\nDB ID: ${data.id}\nDrive: ${data.drive_view_url}`);
+
+        // ✅ 화면 피드백
+        toast_(`업로드 완료! DB ID: ${data.id}`, "ok");
+        alert(`업로드 완료!
+DB ID: ${data.id}
+Drive: ${data.drive_view_url}`);
       } else {
+        toast_("업로드 실패: " + (data.error || "unknown"), "bad");
         alert("업로드 실패: " + (data.error || "unknown"));
       }
-    
+
       $btnUpload.disabled = false;
       currentNonce = "";
     });
+
 
 
     // ====== 이벤트 ======
@@ -751,12 +836,15 @@
         // ✅ CORS 회피: hidden form으로 업로드
         $form.action = WEBAPP_URL;
         $formPayload.value = JSON.stringify(payload);
+        toast_("업로드 요청 전송… (완료 신호 대기 중)", "sub");
         $form.submit();
+        startUploadWatchdog_();
 
         // 응답은 postMessage로 들어오며, listener에서 처리
 
       } catch (e) {
         console.error(e);
+        stopUploadWatchdog_();
         currentNonce = "";
         $btnUpload.disabled = false;
         alert("업로드 실패: " + (e?.message || e));
