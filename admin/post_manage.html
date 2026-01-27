@@ -617,6 +617,34 @@
       return html;
     }
 
+    function buildTokensMetaComment_(vars){
+      // 복원 대상으로 쓸 토큰만 저장 (현재 지원 토큰 기준)
+      const keys = ["THUMB_URL","CANONICAL_URL","YEAR","MONTH"];
+      const obj = {};
+      for (const k of keys){
+        if (vars && vars[k] !== undefined && vars[k] !== null && String(vars[k]).trim() !== ""){
+          obj[k] = String(vars[k]);
+        }
+      }
+      // 저장할 게 없으면 주석도 생략
+      if (!Object.keys(obj).length) return "";
+      // JSON을 주석으로 저장
+      return `<!-- tokens: ${JSON.stringify(obj)} -->\n`;
+    }
+    
+    function extractTokensMetaFromHtml_(html){
+      const t = String(html || "");
+      const m = t.match(/<!--\s*tokens\s*:\s*({[\s\S]*?})\s*-->/i);
+      if (!m) return {};
+      try{
+        const obj = JSON.parse(m[1]);
+        return (obj && typeof obj === "object" && !Array.isArray(obj)) ? obj : {};
+      }catch(_){
+        return {};
+      }
+    }
+
+    
     function escapeRegExp(s){
       return String(s||"").replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
@@ -1038,8 +1066,11 @@
       const metaHeader =
         `<!-- template_id: ${tid} -->\n` +
         (tver ? `<!-- template_ver: ${tver} -->\n` : "");
+      
+      const tokensMeta = buildTokensMetaComment_(vars);
+      
+      assembled = metaHeader + tokensMeta + assembled;
 
-      assembled = metaHeader + assembled;
 
       return { html: assembled, manifest };
     }
@@ -1211,6 +1242,9 @@
         const bodies = extractBodies_(current.html || "");
         setSlotValues_(bodies);
 
+        const toks = extractTokensMetaFromHtml_(current.html || "");
+        setTokenValues_(toks);
+        
         syncCharCount();
         setMeta(current);
         setBloggerMeta(null);
@@ -1283,6 +1317,7 @@
         }
 
         setSlotValues_(extractBodies_(html));
+        setTokenValues_(extractTokensMetaFromHtml_(html));
 
         syncCharCount();
         setStatus("Drive 불러오기 완료", true);
@@ -1355,6 +1390,7 @@
         }
 
         setSlotValues_(extractBodies_(html));
+        setTokenValues_(extractTokensMetaFromHtml_(html));
 
         setBloggerMeta({ url: res.url, post_id: res.post_id, status: "loaded" });
         setStatus("Blogger 불러오기 완료", true);
