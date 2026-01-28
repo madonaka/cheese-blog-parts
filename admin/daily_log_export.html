@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <title>Daily Log Export</title>
+  <title>주요 사건, 이슈, 뉴스 월별 총정리</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <!-- ✅ 관리자 공통 CSS 유지 -->
@@ -548,7 +548,21 @@
                     <option value="only">숨김만</option>
                   </select>
                 </label>
+              <!-- ✅ 추가: 날짜 정렬 -->
+              <label style="display:flex; gap:8px; align-items:center; font-weight:700;">
+                정렬
+                <select id="tgSort" class="tg-select">
+                  <option value="date_desc" selected>날짜 내림차순</option>
+                  <option value="date_asc">날짜 오름차순</option>
+                </select>
+              </label>
               
+              <!-- ✅ 추가: 검색 -->
+              <label style="display:flex; gap:8px; align-items:center; font-weight:700;">
+                검색
+                <input id="tgQuery" type="text" placeholder="제목/내용/태그/ID 검색" style="height:34px; padding:6px 10px; border-radius:10px; border:1px solid rgba(15,23,42,0.14); min-width:240px;" />
+              </label>
+
                 <span id="tgStatus" class="desc" style="margin-left:auto;"></span>
               </div>
 
@@ -1198,17 +1212,27 @@
     const tg = {
       load: document.getElementById("tgLoad"),
       onlyEmpty: document.getElementById("tgOnlyEmpty"),
+      sort: document.getElementById("tgSort"),      // ✅ 추가
+      query: document.getElementById("tgQuery"),    // ✅ 추가
       hiddenView: document.getElementById("tgHiddenView"), // ✅ 추가
       status: document.getElementById("tgStatus"),
       cards: document.getElementById("tgCards"),
     };
+    
+    // ✅ 로드된 “원본 목록”을 저장해두고, 화면에서만 필터/정렬
+    tg._allItems = [];
 
     const SAVE_DEBOUNCE_MS = 450;
     const saveTimers = new Map();
 
     tg.load.addEventListener("click", loadTagCards);
-    tg.hiddenView.addEventListener("change", loadTagCards); // ✅ 옵션 바꾸면 바로 다시 로드(선택)
+    tg.hiddenView.addEventListener("change", applyTgView_);
 
+    // ✅ 추가: 정렬/검색은 재호출(fetch) 없이 화면만 갱신
+    if (tg.sort)  tg.sort.addEventListener("change", applyTgView_);
+    if (tg.query) tg.query.addEventListener("input", debounce_(applyTgView_, 120));
+    tg.onlyEmpty.addEventListener("change", applyTgView_);
+        
     function buildListUrl(){
       const year  = String(el.year.value || "").trim();
       const month = String(el.month.value || "").trim();
@@ -1556,6 +1580,66 @@
     }
 
 
+    function debounce_(fn, ms){
+      let t = null;
+      return (...args)=>{
+        clearTimeout(t);
+        t = setTimeout(()=>fn(...args), ms);
+      };
+    }
+    
+    function applyTgView_(){
+      const allItems = Array.isArray(tg._allItems) ? tg._allItems : [];
+      let items = allItems.slice();
+    
+      // 1) 태그 비어있는 것만
+      if (tg.onlyEmpty && tg.onlyEmpty.checked) {
+        items = items.filter(it => !String(it.tags || "").trim());
+      }
+    
+      // 2) 숨김 보기 필터(기존 로직과 동일)
+      const view = tg.hiddenView ? tg.hiddenView.value : "all";
+      if (view === "exclude") items = items.filter(it => it.hidden !== true);
+      if (view === "only")    items = items.filter(it => it.hidden === true);
+    
+      // 3) 검색(제목/내용/태그/ID/날짜/party)
+      const q = String(tg.query?.value || "").trim().toLowerCase();
+      if (q){
+        const tokens = q.split(/\s+/g).filter(Boolean); // 공백 기준 AND 검색
+        items = items.filter(it=>{
+          const hay = [
+            it.id, it.title, it.content_raw, it.tags, it.date_start, it.date_end, it.party, it.country
+          ].map(v=>String(v||"")).join(" ").toLowerCase();
+          return tokens.every(tok => hay.includes(tok));
+        });
+      }
+    
+      // 4) 날짜 정렬
+      const sort = String(tg.sort?.value || "date_desc");
+      const toTime = (d)=> {
+        const s = String(d||"").trim();
+        if (!s) return 0;
+        const t = Date.parse(s);
+        return Number.isFinite(t) ? t : 0;
+      };
+    
+      items.sort((a,b)=>{
+        const ta = toTime(a.date_start);
+        const tb = toTime(b.date_start);
+        if (ta !== tb) return (sort === "date_asc") ? (ta - tb) : (tb - ta);
+        // tie-breaker: id (안정적으로)
+        return String(a.id||"").localeCompare(String(b.id||""), "ko");
+      });
+    
+      // 5) 렌더 + 바인딩
+      tg.cards.innerHTML = items.map(it => renderEventCardHtml(it)).join("");
+      items.forEach(it => bindEventCard(it));
+    
+      // 상태 표시(원본 대비)
+      const hiddenCnt = allItems.filter(it => it.hidden === true).length;
+      tg.status.textContent =
+        `${items.length}건 표시 / 전체 ${allItems.length}건 (숨김 ${hiddenCnt}건)`;
+    }
     
     async function loadTagCards(){
       try{
@@ -1570,27 +1654,8 @@
         if (!data || data.ok !== true) throw new Error((data && data.error) ? data.error : "UNKNOWN_ERROR");
     
         const allItems = Array.isArray(data.items) ? data.items : [];
-        let items = allItems.slice();
-    
-        // 태그 비어있는 것만
-        if (tg.onlyEmpty.checked) {
-          items = items.filter(it => !String(it.tags || "").trim());
-        }
-    
-        // ✅ 숨김 보기 필터
-        const view = tg.hiddenView ? tg.hiddenView.value : "all";
-        if (view === "exclude") items = items.filter(it => it.hidden !== true);
-        if (view === "only")    items = items.filter(it => it.hidden === true);
-    
-        const hiddenCnt = allItems.filter(it => it.hidden === true).length;
-    
-        tg.status.textContent =
-          view === "all"     ? `${items.length}건 (숨김 ${hiddenCnt}건 포함)`
-        : view === "exclude" ? `${items.length}건 (숨김 ${hiddenCnt}건 제외)`
-        :                    `${items.length}건 (숨김만)`;
-    
-        tg.cards.innerHTML = items.map(it => renderEventCardHtml(it)).join("");
-        items.forEach(it => bindEventCard(it));
+        tg._allItems = allItems.slice();   // ✅ 원본 저장
+        applyTgView_();                    // ✅ 정렬/검색/필터 + 렌더까지 여기서 처리
       }catch(e){
         tg.status.textContent = "";
         alert("태그 검수 목록 불러오기 실패: " + (e && e.message ? e.message : String(e)));
