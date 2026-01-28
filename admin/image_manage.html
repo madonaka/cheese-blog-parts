@@ -312,13 +312,22 @@
               <div class="im-row">
                 <div class="im-label">표시 문구</div>
                 <input id="noteText" class="im-input" type="text"
-                       value="원본은 고화질입니다"
-                       placeholder="예: 원본은 고화질입니다" />
+                       value="© Cheesehistory.com"
+                       placeholder="예: © Cheesehistory.com" />
                 <label style="display:flex; gap:8px; align-items:center;">
                   <input id="noteOn" type="checkbox" checked />
-                  우측 상단 표시
+                  표시
                 </label>
-                <span class="im-help">자동으로 “VYYYYMMDD” + “원본 대비 % / 블러 px”가 함께 붙습니다.</span>
+
+                <!-- ✅ 추가: 라벨 위치 선택 -->
+                <select id="notePos" class="im-input" style="max-width:140px;">
+                  <option value="tr" selected>우측 상단</option>
+                  <option value="tl">좌측 상단</option>
+                  <option value="br">우측 하단</option>
+                  <option value="bl">좌측 하단</option>
+                </select>
+                
+                  <span class="im-help">자동으로 “VYYYYMMDD” + “원본 대비 % / 블러 px”가 함께 붙습니다.</span>
               </div>
 
               <div class="im-row">
@@ -412,8 +421,7 @@
     const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyIsoT-0JY2nxCPFx2JH-G3Ja8tztjlJ6fiVAyxLgd-8Mzxjob8YDGgRO-biOCXe5WU/exec";
 
     // ====== DOM ======
-    const $baseName = document.getElementById("baseName");
-
+    const $baseName = document.getElementById("baseName");    
     const $file   = document.getElementById("imgFile");
     const $wmFile = document.getElementById("wmFile");
     const $wmOn   = document.getElementById("wmOn");
@@ -428,7 +436,9 @@
 
     const $noteText = document.getElementById("noteText");
     const $noteOn = document.getElementById("noteOn");
+    const $notePos = document.getElementById("notePos");
     const $noteFont = document.getElementById("noteFont");
+    
     const $noteFontVal = document.getElementById("noteFontVal");
 
     const $btnMake = document.getElementById("btnMakePreviews");
@@ -531,26 +541,34 @@
       }
       return text.slice(0, Math.max(0, lo - 1)) + E;
     }
-
-    function drawTopRightTextNoBg(ctx, tw, th, lines, fontSizePx) {
+    
+    function drawCornerTextNoBg(ctx, tw, th, lines, fontSizePx, pos) {
       const pad = Math.max(10, Math.round(tw * 0.015));
       const lineGap = Math.max(3, Math.round(fontSizePx * 0.25));
-
+    
       ctx.save();
       ctx.font = `900 ${fontSizePx}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
       ctx.textBaseline = "top";
       ctx.fillStyle = "#000";
       ctx.globalAlpha = 1;
-
+    
       const maxW = tw - pad * 2;
       const fitted = lines.map(t => ellipsisToFit(ctx, t, maxW));
-
-      let y = pad;
+    
+      const lineH = Math.ceil(fontSizePx * 1.15);
+      const totalH = fitted.length * lineH + (fitted.length - 1) * lineGap;
+    
+      const p = (pos || "tr");
+      const isTop = p.includes("t");
+      const isLeft = p.includes("l");
+    
+      let y = isTop ? pad : Math.max(pad, th - pad - totalH);
+    
       for (const t of fitted) {
         const w = ctx.measureText(t).width;
-        const x = Math.max(pad, tw - pad - w);
+        const x = isLeft ? pad : Math.max(pad, tw - pad - w);
         ctx.fillText(t, x, y);
-        y += Math.ceil(fontSizePx * 1.15) + lineGap;
+        y += lineH + lineGap;
       }
       ctx.restore();
     }
@@ -599,12 +617,12 @@
 
       if ($noteOn.checked) {
         const pct = Math.round(scale * 100);
-        const base = ($noteText.value || "").trim() || "원본은 고화질입니다";
+        const base = ($noteText.value || "").trim() || "© Cheesehistory.com";
         const blurPart = blur > 0 ? ` · 미세블러 ${blur.toFixed(1)}px` : "";
         const line1 = versionToday();
         const line2 = `${base} · 원본 대비 품질 ${pct}%${blurPart}`;
         const fontSizePx = Math.max(10, Math.min(80, Number($noteFont.value) || 18));
-        drawTopRightTextNoBg(ctx, tw, th, [line1, line2], fontSizePx);
+        drawCornerTextNoBg(ctx, tw, th, [line1, line2], fontSizePx, ($notePos && $notePos.value) ? $notePos.value : "tr");
       }
 
       const blob = await new Promise((resolve) => {
@@ -1055,7 +1073,7 @@ Drive: ${data.drive_view_url}`);
         const origW = sourceImg?.naturalWidth || 0;
         const origH = sourceImg?.naturalHeight || 0;
 
-        const label = safeTrim($noteText.value) || "원본은 고화질입니다";
+        const label = safeTrim($noteText.value) || "© Cheesehistory.com";
         const version = versionToday();
 
         const pct = Math.round(selectedScale * 100);
