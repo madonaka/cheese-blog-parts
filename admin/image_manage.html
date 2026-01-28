@@ -311,9 +311,14 @@
 
               <div class="im-row">
                 <div class="im-label">표시 문구</div>
-                <input id="noteText" class="im-input" type="text"
-                       value="© Cheesehistory.com"
-                       placeholder="예: © Cheesehistory.com" />
+                <textarea id="noteText" class="im-input" rows="3"
+                  placeholder="예: © Cheesehistory.com&#10;{VER} · 원본 대비 품질 {PCT}%{BLUR}"
+                >© Cheesehistory.com</textarea>
+                
+                <div id="notePreview" class="im-help"
+                  style="border:1px solid rgba(15,23,42,.12); border-radius:12px; padding:10px; white-space:pre-wrap; font-weight:900;">
+                  <!-- 실시간 미리보기 -->
+                </div>
                 <label style="display:flex; gap:8px; align-items:center;">
                   <input id="noteOn" type="checkbox" checked />
                   표시
@@ -327,7 +332,7 @@
                   <option value="bl">좌측 하단</option>
                 </select>
                 
-                  <span class="im-help">자동으로 “VYYYYMMDD” + “원본 대비 % / 블러 px”가 함께 붙습니다.</span>
+                  <span class="im-help">  줄바꿈(Enter)로 라인 배치 가능. 토큰: {VER} / {PCT} / {BLUR}</span>
               </div>
 
               <div class="im-row">
@@ -438,6 +443,7 @@
     const $noteOn = document.getElementById("noteOn");
     const $notePos = document.getElementById("notePos");
     const $noteFont = document.getElementById("noteFont");
+    const $notePreview = document.getElementById("notePreview");
     
     const $noteFontVal = document.getElementById("noteFontVal");
 
@@ -472,6 +478,15 @@
     $wmAlphaVal.textContent = Number($wmAlpha.value).toFixed(2);
 
     $noteFont.addEventListener("input", () => $noteFontVal.textContent = `${Number($noteFont.value)}px`);
+
+    function refreshNotePreview_(){
+      if (!$notePreview) return;
+      const t = ($noteText.value || "").replace(/\r\n/g, "\n");
+      $notePreview.textContent = t;
+    }
+    $noteText.addEventListener("input", refreshNotePreview_);
+    refreshNotePreview_();
+    
     $noteFontVal.textContent = `${Number($noteFont.value)}px`;
 
     // ====== 상태 ======
@@ -617,12 +632,26 @@
 
       if ($noteOn.checked) {
         const pct = Math.round(scale * 100);
-        const base = ($noteText.value || "").trim() || "© Cheesehistory.com";
-        const blurPart = blur > 0 ? ` · 미세블러 ${blur.toFixed(1)}px` : "";
-        const line1 = versionToday();
-        const line2 = `${base} · 원본 대비 품질 ${pct}%${blurPart}`;
-        const fontSizePx = Math.max(10, Math.min(80, Number($noteFont.value) || 18));
-        drawCornerTextNoBg(ctx, tw, th, [line1, line2], fontSizePx, ($notePos && $notePos.value) ? $notePos.value : "tr");
+        const ver = versionToday();
+        const blurToken = blur > 0 ? ` · 미세블러 ${blur.toFixed(1)}px` : "";
+        
+        let raw = ($noteText.value || "").replace(/\r\n/g, "\n").trim();
+        if (!raw) raw = "© Cheesehistory.com";
+        
+        // 토큰 치환(사용자가 원하는 위치에 배치 가능)
+        raw = raw
+          .replace(/\{VER\}/g, ver)
+          .replace(/\{PCT\}/g, String(pct))
+          .replace(/\{BLUR\}/g, blurToken);
+        
+        // 줄바꿈 라인 그대로 사용
+        const lines = raw
+          .split("\n")
+          .map(s => s.trim())
+          .filter(s => s.length > 0);
+        
+      const fontSizePx = Math.max(10, Math.min(80, Number($noteFont.value) || 18));
+      drawCornerTextNoBg(ctx, tw, th, lines, fontSizePx, ($notePos && $notePos.value) ? $notePos.value : "tr");
       }
 
       const blob = await new Promise((resolve) => {
@@ -1073,7 +1102,7 @@ Drive: ${data.drive_view_url}`);
         const origW = sourceImg?.naturalWidth || 0;
         const origH = sourceImg?.naturalHeight || 0;
 
-        const label = safeTrim($noteText.value) || "© Cheesehistory.com";
+        const label = (safeTrim($noteText.value).split("\n")[0] || "").trim() || "© Cheesehistory.com";
         const version = versionToday();
 
         const pct = Math.round(selectedScale * 100);
