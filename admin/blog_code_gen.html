@@ -199,6 +199,26 @@
       user-select:none;
     }
     .bcg-check input{ width:16px; height:16px; }
+.bcg-toolbar{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  align-items:center;
+  margin:6px 0 8px;
+}
+.bcg-pill input[type="color"]{
+  width:34px;
+  height:20px;
+  padding:0;
+  border:0;
+  background:transparent;
+  cursor:pointer;
+}
+.bcg-pill input[type="color"]::-webkit-color-swatch-wrapper{ padding:0; }
+.bcg-pill input[type="color"]::-webkit-color-swatch{
+  border:1px solid rgba(15,23,42,0.18);
+  border-radius:6px;
+}
   </style>
 </head>
 
@@ -239,7 +259,7 @@
 
             <div class="bcg-row">
               <span class="bcg-muted">
-                ※ 변환 규칙: 빈 줄 기준으로 문단 분리(<code>&lt;p&gt;</code>), 문단 내부 줄바꿈은 <code>&lt;br&gt;</code> 처리. 기본은 HTML 이스케이프(안전).
+                ※ 변환 규칙: 빈 줄 기준으로 문단 분리(<code>&lt;p&gt;</code>), 문단 내부 줄바꿈은 <code>&lt;br&gt;</code> 처리. 기본은 HTML 이스케이프(안전). ‘서식/태그 허용’이 켜져 있으면 strong/span/mark/br만 허용해.
               </span>
             </div>
           </div>
@@ -270,31 +290,83 @@
         showToast._t = setTimeout(()=>toast.classList.remove("show"), 1600);
       }
 
-      function escapeHtml(s){
-        return String(s ?? "")
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;")
-          .replace(/"/g, "&quot;")
-          .replace(/'/g, "&#39;");
-      }
+      // ✅ 안전 이스케이프(기본): &, <, > 만 변환 (따옴표는 그대로 보여주기)
+function escapeHtmlLite(s){
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
 
-      // 빈 줄 기준 문단 분리 → <p>..</p>, 문단 내부 줄바꿈은 <br>
-      function textToParagraphHtml(text){
-        const raw = String(text ?? "").replace(/\r\n/g, "\n");
-        const blocks = raw
-          .split(/\n{2,}/g)              // 2줄 이상 빈줄 = 문단 분리
-          .map(p => p.trim())
-          .filter(Boolean);
+// ✅ 서식 버튼이 넣는 "일부 태그"만 허용 (나머지는 전부 이스케이프)
+// 허용: <strong>, <span style="color:#xxxxxx">, <mark style="background:#xxxxxx">, <br>
+function protectAllowedTags_(s){
+  const src = String(s ?? "");
+  const map = [];
+  const re = /<\/?(?:strong|em|u|s)\s*>|<br\s*\/?>|<mark\s+style="background:\s*#[0-9a-fA-F]{3,8}\s*"\s*>|<\/mark>|<span\s+style="color:\s*#[0-9a-fA-F]{3,8}\s*"\s*>|<\/span>/gi;
+  const out = src.replace(re, (m)=>{
+    const key = `@@ALLOWED_TAG_${map.length}@@`;
+    map.push(m);
+    return key;
+  });
+  return { out, map };
+}
 
-        if (blocks.length === 0) return "";
+function restoreAllowedTags_(s, map){
+  let out = String(s ?? "");
+  (map || []).forEach((tag, i)=>{
+    out = out.split(`@@ALLOWED_TAG_${i}@@`).join(tag);
+  });
+  return out;
+}
 
-        return blocks.map(p => {
-          const lines = p.split("\n").map(l => l.trimEnd());
-          const joined = lines.map(line => escapeHtml(line)).join("<br>\n");
-          return `<p>${joined}</p>`;
-        }).join("\n");
-      }
+function escapeText_(s, allowTags){
+  if (!allowTags) return escapeHtmlLite(s);
+  const { out, map } = protectAllowedTags_(s);
+  const escaped = escapeHtmlLite(out);
+  return restoreAllowedTags_(escaped, map);
+}
+
+// 빈 줄 기준 문단 분리 → <p>..</p>, 문단 내부 줄바꿈은 <br>
+// allowTags=true면 "허용 태그"는 유지하면서 나머지만 이스케이프
+function textToParagraphHtml(text, allowTags){
+  const raw = String(text ?? "").replace(/\r\n/g, "\n");
+  const blocks = raw
+    .split(/\n{2,}/g)              // 2줄 이상 빈줄 = 문단 분리
+    .map(p => p.trim())
+    .filter(Boolean);
+
+  if (blocks.length === 0) return "";
+
+  return blocks.map(p => {
+    const lines = p.split("\n").map(l => l.trimEnd());
+    const joined = lines.map(line => escapeText_(line, allowTags)).join("<br>\n");
+    return `<p>${joined}</p>`;
+  }).join("\n");
+}
+
+// ✅ textarea 선택영역 감싸기(드래그 → 버튼)
+function wrapSelection(textarea, left, right){
+  if (!textarea) return;
+  const s = textarea.selectionStart ?? 0;
+  const e = textarea.selectionEnd ?? 0;
+  const v = textarea.value ?? "";
+
+  if (s === e){
+    const next = v.slice(0, s) + left + right + v.slice(e);
+    textarea.value = next;
+    const pos = s + left.length;
+    textarea.setSelectionRange(pos, pos);
+    textarea.focus();
+    return;
+  }
+
+  const mid = v.slice(s, e);
+  const next = v.slice(0, s) + left + mid + right + v.slice(e);
+  textarea.value = next;
+  textarea.setSelectionRange(s + left.length, e + left.length);
+  textarea.focus();
+}
 
       async function copyToClipboard(text){
         try{
@@ -325,23 +397,20 @@
         pill.textContent = `블록 ${n}개`;
       }
 
-      function buildHtml({level, heading, body, keepRawHtml}){
-        const tag = (level === "h1" || level === "h2" || level === "h3") ? level : "h2";
-        const headText = keepRawHtml ? String(heading ?? "").trim() : escapeHtml(String(heading ?? "").trim());
-        let bodyHtml = "";
+      function buildHtml({level, heading, body, allowTags}){
+  const tag = (level === "h1" || level === "h2" || level === "h3") ? level : "h2";
 
-        if (keepRawHtml){
-          // 사용자가 HTML을 붙여넣을 수 있는 모드: 그대로 사용 (최소 트림)
-          bodyHtml = String(body ?? "").trim();
-        }else{
-          bodyHtml = textToParagraphHtml(body);
-        }
+  // 제목은 항상 텍스트로 처리 (태그 금지)
+  const headText = escapeHtmlLite(String(heading ?? "").trim());
 
-        // 소제목이 비었으면 본문만 반환 (유연하게)
-        const headPart = headText ? `<${tag}>${headText}</${tag}>` : "";
-        const parts = [headPart, bodyHtml].filter(Boolean);
-        return parts.join("\n");
-      }
+  // 본문은 기본 이스케이프 + (옵션) 일부 태그 허용
+  const bodyHtml = textToParagraphHtml(body, !!allowTags);
+
+  // 소제목이 비었으면 본문만 반환 (유연하게)
+  const headPart = headText ? `<${tag}>${headText}</${tag}>` : "";
+  const parts = [headPart, bodyHtml].filter(Boolean);
+  return parts.join("\n");
+}
 
       function createBlock(){
         seq += 1;
@@ -356,9 +425,9 @@
             <span class="bcg-badge">블록 #${seq}</span>
 
             <div class="bcg-right bcg-row" style="margin-top:0;">
-              <label class="bcg-check" title="체크하면 입력한 내용을 HTML로 그대로 사용해요(이스케이프/문단 변환 없음).">
+              <label class="bcg-check" title="체크하면 서식 버튼이 넣는 태그(strong/span/mark/br)만 허용해요. 그 외 태그는 자동 이스케이프돼요.">
                 <input type="checkbox" data-keep-raw />
-                HTML 그대로
+                서식/태그 허용
               </label>
               <button class="bcg-btn bcg-mini" type="button" data-generate>코드 생성</button>
               <button class="bcg-btn bcg-mini bcg-btn--primary" type="button" data-copy>복사</button>
@@ -389,7 +458,26 @@
               <div class="bcg-row">
                 <div style="display:flex; flex-direction:column; gap:6px; width:100%;">
                   <span class="bcg-label">본문(원문 붙여넣기)</span>
-                  <textarea class="bcg-textarea" data-body placeholder="여기에 블로그 원문을 붙여넣어.&#10;빈 줄은 문단으로 처리돼."></textarea>
+
+<!-- ✅ 서식 툴바: 드래그(선택) 후 버튼을 누르면 선택영역만 감싸져요 -->
+<div class="bcg-toolbar">
+  <button class="bcg-btn bcg-mini" type="button" data-fmt="bold">굵게</button>
+  <button class="bcg-btn bcg-mini" type="button" data-fmt="br">줄바꿈</button>
+
+  <span class="bcg-pill">
+    글자색 <input type="color" data-color value="#111827" />
+  </span>
+  <button class="bcg-btn bcg-mini" type="button" data-fmt="color">적용</button>
+
+  <span class="bcg-pill">
+    배경 <input type="color" data-bg value="#fde68a" />
+  </span>
+  <button class="bcg-btn bcg-mini" type="button" data-fmt="bg">적용</button>
+
+  <span class="bcg-muted">※ 서식 버튼을 쓰면 “서식/태그 허용”이 자동으로 켜져.</span>
+</div>
+
+<textarea class="bcg-textarea" data-body placeholder="여기에 블로그 원문을 붙여넣어.&#10;빈 줄은 문단으로 처리돼."></textarea>
                   <div class="bcg-muted">팁) 포스트 관리에서 BODY_1/2/3로 나눌 거면, 여기서 블록을 그 개수만큼 만들어서 각각 생성/복사하면 돼.</div>
                 </div>
               </div>
@@ -423,7 +511,7 @@
             level: levelEl.value,
             heading: headingEl.value,
             body: bodyEl.value,
-            keepRawHtml: keepRawEl.checked
+            allowTags: keepRawEl.checked
           });
           outEl.value = html;
         }
@@ -455,10 +543,45 @@
         levelEl.addEventListener("change", schedule);
         headingEl.addEventListener("input", schedule);
         bodyEl.addEventListener("input", schedule);
-        keepRawEl.addEventListener("change", schedule);
+keepRawEl.addEventListener("change", schedule);
 
-        // 초기 1회 생성
-        regenerate();
+// ✅ 서식 툴바(드래그 → 버튼)
+const colorEl = wrap.querySelector("[data-color]");
+const bgEl = wrap.querySelector("[data-bg]");
+
+function ensureAllowTagsOn_(){
+  if (!keepRawEl.checked){
+    keepRawEl.checked = true;
+    showToast("서식/태그 허용을 켰어.");
+  }
+}
+
+wrap.querySelectorAll("[data-fmt]").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    const fmt = btn.getAttribute("data-fmt");
+    if (!fmt) return;
+
+    // 서식 버튼 사용 시: 허용 태그 모드 자동 ON
+    ensureAllowTagsOn_();
+
+    if (fmt === "bold"){
+      wrapSelection(bodyEl, "<strong>", "</strong>");
+    }else if (fmt === "br"){
+      wrapSelection(bodyEl, "<br>", "");
+    }else if (fmt === "color"){
+      const c = (colorEl && colorEl.value) ? colorEl.value : "#111827";
+      wrapSelection(bodyEl, `<span style="color:${c}">`, "</span>");
+    }else if (fmt === "bg"){
+      const b = (bgEl && bgEl.value) ? bgEl.value : "#fde68a";
+      wrapSelection(bodyEl, `<mark style="background:${b}">`, "</mark>");
+    }
+
+    schedule();
+  });
+});
+
+// 초기 1회 생성
+regenerate();
 
         return wrap;
       }
