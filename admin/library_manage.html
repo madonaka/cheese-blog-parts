@@ -130,6 +130,7 @@
                 <input id="tplName" class="input" placeholder="예: 뉴스 연도네비 + CSS" />
 
                 <!-- ✅ 추가: BODY 슬롯 자동 지정 -->
+                <button class="btn secondary" id="btnAutoImgSlots">IMG 슬롯 자동지정</button>
                 <button class="btn secondary" id="btnAutoBodySlots">BODY 슬롯 자동지정</button>
 
                 <button class="btn" id="btnSaveTemplate">템플릿 저장</button>
@@ -472,6 +473,35 @@ function findMaxBodySlotNumber_(){
   return maxN;
 }
 
+function findMaxSlotNumber_(prefix){
+  const p = String(prefix || "").trim().toUpperCase();
+  if (!p) return 0;
+
+  let maxN = 0;
+  for (const s of (SELECTED || [])){
+    const t = (s.varsText || "").trim();
+    if (!t) continue;
+    try{
+      const v = JSON.parse(t);
+      const slot = String(v?.SLOT || "").trim().toUpperCase();
+      const m = slot.match(new RegExp(`^${p}_(\\d+)$`));
+      if (m){
+        const n = parseInt(m[1], 10);
+        if (!isNaN(n)) maxN = Math.max(maxN, n);
+      }
+    }catch(_){}
+  }
+  return maxN;
+}
+
+// ✅ 파일명 규칙으로 "이미지 섹션" 판별(필요하면 규칙 확장)
+function isImageSectionName_(secName){
+  const n = String(secName || "").toLowerCase();
+  // 너 프로젝트 기준: cheese_img_... / img / image 같은 이름이면 이미지로 간주
+  return n.includes("cheese_img") || n.includes("_img") || n.includes("img_") || n.includes("image") || n.includes("img");
+}
+
+  
 function setSlotOnItem_(idx, slotValue){
   if (idx < 0 || idx >= SELECTED.length) return;
   const item = SELECTED[idx];
@@ -531,6 +561,38 @@ async function autoAssignBodySlots_(){
   renderSelected();
   updateJsonPreviewSafe_();
 }
+  
+async function autoAssignImgSlots_(){
+  if (!SELECTED.length) return;
+
+  let n = findMaxSlotNumber_("IMG");
+
+  for (let i=0; i<SELECTED.length; i++){
+    const item = SELECTED[i];
+
+    // 이미 SLOT 있으면 패스
+    const t = (item.varsText || "").trim();
+    if (t){
+      try{
+        const v = JSON.parse(t);
+        if (v && typeof v === "object" && String(v.SLOT || "").trim()) continue;
+      }catch(_){}
+    }
+
+    // ✅ SLOT 섹션은 실제로 {{BODY}}가 있어야 의미가 있음
+    const okSlotSection = await isBodySection_(item.name); // (이 함수는 "{{BODY}}" 포함 여부 체크)
+    if (!okSlotSection) continue;
+
+    // ✅ 이미지 섹션만 대상
+    if (!isImageSectionName_(item.name)) continue;
+
+    n += 1;
+    setSlotOnItem_(i, `IMG_${n}`);
+  }
+
+  renderSelected();
+  updateJsonPreviewSafe_();
+}
 
 function renderSelected(){
   const list = $("selList");
@@ -583,8 +645,9 @@ function renderSelected(){
         const go = confirm(`"${s.name}" 섹션 HTML에서 {{BODY}}를 찾지 못했습니다.\n그래도 SLOT을 지정할까요?`);
         if (!go) return;
       }
-      const next = findMaxBodySlotNumber_() + 1;
-      setSlotOnItem_(idx, `BODY_${next}`);
+      const prefix = isImageSectionName_(s.name) ? "IMG" : "BODY";
+      const next = findMaxSlotNumber_(prefix) + 1;
+      setSlotOnItem_(idx, `${prefix}_${next}`);
       renderSelected();
       updateJsonPreviewSafe_();
     });
@@ -662,6 +725,15 @@ $("btnAutoBodySlots").addEventListener("click", async ()=>{
   }
 });
 
+$("btnAutoImgSlots")?.addEventListener("click", async ()=>{
+  try{
+    await autoAssignImgSlots_();
+    alert("IMG 슬롯 자동지정 완료(가능한 항목만 적용).");
+  }catch(e){
+    alert("자동지정 실패: " + String(e.message||e));
+  }
+});
+  
 $("btnPreviewJson").addEventListener("click", ()=>{
   try{
     $("jsonPreview").value = buildTemplateJsonStrict_();
