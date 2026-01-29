@@ -98,9 +98,9 @@
     /* ===== dynamic fields ===== */
     .pm-dyn-grid{
       display:grid;
-      grid-template-columns: 120px 1fr;
+      grid-template-columns: repeat(2, minmax(0, 1fr)); /* ✅ 카드 2열 */
       gap:10px 12px;
-      align-items:start;
+      align-items:stretch;
     }
     @media (max-width: 980px){
       .pm-dyn-grid{ grid-template-columns: 1fr; }
@@ -112,12 +112,37 @@
       background:rgba(15,23,42,0.02);
     }
     .pm-dyn-key{ font-weight:900; margin:0 0 6px; }
+    /* ✅ 동적 카드 헤더(타이틀 + 비우기 버튼) */
+    .pm-dyn-head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:8px;
+      margin:0 0 6px;
+    }
+    .pm-dyn-key{ margin:0; } /* 기존 margin-bottom 대신 head에서 관리 */
+    
+    /* 비우기 버튼을 조금 더 가볍게 */
+    .pm-dyn-clear{
+      padding:6px 10px;
+      font-size:12px;
+      border-radius:9px;
+    }
     .pm-dyn-help{ margin:0 0 10px; }
     .pm-dyn-textarea{ min-height:200px; }
     .pm-hr{ height:1px; background:rgba(15,23,42,0.10); margin:12px 0; }
 
     .pm-hidden{ display:none !important; }
 
+    /* ✅ SLOT 카드만 textarea를 꽉 차게(높이 밸런스) */
+    #slotFields .pm-dyn-item{
+      display:flex;
+      flex-direction:column;
+    }
+    #slotFields .pm-dyn-textarea{
+      flex:1 1 auto;
+      min-height:260px; /* 원하면 220~360 사이로 조절 */
+    }
     /* ==============================
        ✅ Sticky Action Bar (NEW)
     ============================== */
@@ -544,6 +569,39 @@
         box.addEventListener("change", scheduleAssemblePreview_, true);
         box.__pmDelegationBound = true;
       };
+      bind("slotFields");
+      bind("tokenFields");
+    })();
+
+    // ✅ 동적 카드 "비우기" 버튼 (이벤트 위임)
+    (function bindClearDelegation_(){
+      const clearBySelector = (sel) => {
+        const el = document.querySelector(sel);
+        if (!el) return;
+        el.value = "";
+        // 프리뷰 자동 갱신 트리거
+        el.dispatchEvent(new Event("input", { bubbles:true }));
+        el.dispatchEvent(new Event("change", { bubbles:true }));
+      };
+    
+      const bind = (boxId) => {
+        const box = $(boxId);
+        if (!box || box.__pmClearBound) return;
+    
+        box.addEventListener("click", (e) => {
+          const btn = e.target.closest(".pm-dyn-clear");
+          if (!btn) return;
+    
+          const slot = btn.getAttribute("data-clear-slot");
+          const tok  = btn.getAttribute("data-clear-token");
+    
+          if (slot) clearBySelector(`[data-slot="${CSS.escape(slot)}"]`);
+          if (tok)  clearBySelector(`[data-token="${CSS.escape(tok)}"]`);
+        });
+    
+        box.__pmClearBound = true;
+      };
+    
       bind("slotFields");
       bind("tokenFields");
     })();
@@ -1042,7 +1100,13 @@
         const wrap = document.createElement("div");
         wrap.className = "pm-dyn-item";
         wrap.innerHTML = `
-          <div class="pm-dyn-key">${escapeHtml(slot)}</div>
+          <div class="pm-dyn-head">
+            <div class="pm-dyn-key">${escapeHtml(slot)}</div>
+            <button type="button"
+              class="pm-btn small ghost pm-dyn-clear"
+              data-clear-slot="${escapeHtml(slot)}">비우기</button>
+          </div>
+        
           <textarea class="pm-textarea pm-dyn-textarea" data-slot="${escapeHtml(slot)}"
             placeholder="템플릿 SLOT: ${escapeHtml(slot)}"></textarea>
         `;
@@ -1087,7 +1151,13 @@
         const isYearNav = String(tok) === "YEAR_NAV_JSON";
 
         wrap.innerHTML = `
-          <div class="pm-dyn-key">${escapeHtml(tok)}</div>
+          <div class="pm-dyn-head">
+            <div class="pm-dyn-key">${escapeHtml(tok)}</div>
+            <button type="button"
+              class="pm-btn small ghost pm-dyn-clear"
+              data-clear-token="${escapeHtml(tok)}">비우기</button>
+          </div>
+        
           ${
             isYearNav
               ? `<textarea class="pm-textarea pm-dyn-textarea" data-token="${escapeHtml(tok)}"
@@ -1096,6 +1166,7 @@
                    placeholder="${tokenPlaceholder_(tok)}" />`
           }
         `;
+
         tokBox.appendChild(wrap);
       }
 
