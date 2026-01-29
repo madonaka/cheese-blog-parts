@@ -472,7 +472,27 @@ function findMaxBodySlotNumber_(){
   }
   return maxN;
 }
+  
+function findMaxImgSlotNumber_(){
+  let maxN = 0;
+  for (const s of (SELECTED || [])){
+    const t = (s.varsText || "").trim();
+    if (!t) continue;
+    try{
+      const v = JSON.parse(t);
+      const slot = String(v?.IMG_SLOT || "").trim();
+      const m = slot.match(/^IMG_(\d+)$/i);
+      if (m){
+        const n = parseInt(m[1], 10);
+        if (!isNaN(n)) maxN = Math.max(maxN, n);
+      }
+    }catch(_){}
+  }
+  return maxN;
+}
 
+
+  
 function findMaxSlotNumber_(prefix){
   const p = String(prefix || "").trim().toUpperCase();
   if (!p) return 0;
@@ -562,37 +582,50 @@ async function autoAssignBodySlots_(){
   updateJsonPreviewSafe_();
 }
   
-async function autoAssignImgSlots_(){
+async function autoAssignImgVars_(){
   if (!SELECTED.length) return;
 
-  let n = findMaxSlotNumber_("IMG");
+  // 이미 지정된 IMG_SLOT 최대 번호 찾기
+  let n = 0;
+  for (const s of SELECTED){
+    const t = (s.varsText || "").trim();
+    if (!t) continue;
+    try{
+      const v = JSON.parse(t);
+      const slot = String(v?.IMG_SLOT || "").trim();
+      const m = slot.match(/^IMG_(\d+)$/i);
+      if (m){
+        const nn = parseInt(m[1],10);
+        if (!isNaN(nn)) n = Math.max(n, nn);
+      }
+    }catch(_){}
+  }
 
   for (let i=0; i<SELECTED.length; i++){
     const item = SELECTED[i];
 
-    // 이미 SLOT 있으면 패스
+    // 이미 IMG_SLOT 있으면 패스
     const t = (item.varsText || "").trim();
     if (t){
       try{
         const v = JSON.parse(t);
-        if (v && typeof v === "object" && String(v.SLOT || "").trim()) continue;
+        if (v && typeof v === "object" && String(v.IMG_SLOT || "").trim()) continue;
       }catch(_){}
     }
 
-    // ✅ SLOT 섹션은 실제로 {{BODY}}가 있어야 의미가 있음
-    const okSlotSection = await isBodySection_(item.name); // (이 함수는 "{{BODY}}" 포함 여부 체크)
-    if (!okSlotSection) continue;
-
-    // ✅ 이미지 섹션만 대상
+    // ✅ 이미지 섹션 판정(파일명 규칙 + 실제 토큰)
     if (!isImageSectionName_(item.name)) continue;
+    const ok = await isImgTokenSection_(item.name);
+    if (!ok) continue;
 
     n += 1;
-    setSlotOnItem_(i, `IMG_${n}`);
+    setImgSlotOnItem_(i, `IMG_${n}`);
   }
 
   renderSelected();
   updateJsonPreviewSafe_();
 }
+
 
 function renderSelected(){
   const list = $("selList");
@@ -645,9 +678,13 @@ function renderSelected(){
         const go = confirm(`"${s.name}" 섹션 HTML에서 {{BODY}}를 찾지 못했습니다.\n그래도 SLOT을 지정할까요?`);
         if (!go) return;
       }
-      const prefix = isImageSectionName_(s.name) ? "IMG" : "BODY";
-      const next = findMaxSlotNumber_(prefix) + 1;
-      setSlotOnItem_(idx, `${prefix}_${next}`);
+      if (isImageSectionName_(s.name)){
+        const next = findMaxImgSlotNumber_() + 1;
+        setImgSlotOnItem_(idx, `IMG_${next}`);
+      }else{
+        const next = findMaxBodySlotNumber_() + 1;
+        setSlotOnItem_(idx, `BODY_${next}`);
+      }
       renderSelected();
       updateJsonPreviewSafe_();
     });
@@ -727,13 +764,13 @@ $("btnAutoBodySlots").addEventListener("click", async ()=>{
 
 $("btnAutoImgSlots")?.addEventListener("click", async ()=>{
   try{
-    await autoAssignImgSlots_();
+    await autoAssignImgVars_();
     alert("IMG 슬롯 자동지정 완료(가능한 항목만 적용).");
   }catch(e){
     alert("자동지정 실패: " + String(e.message||e));
   }
 });
-  
+
 $("btnPreviewJson").addEventListener("click", ()=>{
   try{
     $("jsonPreview").value = buildTemplateJsonStrict_();
@@ -934,6 +971,39 @@ $("btnTplReload").addEventListener("click", async ()=>{
   try{ await loadTemplates(); }catch(e){ alert(String(e.message||e)); }
 });
 
+  /** =========================
+ * IMG_SLOT 세팅” 함수
+ * ========================= */
+function setImgSlotOnItem_(idx, imgSlotValue){
+  if (idx < 0 || idx >= SELECTED.length) return;
+  const item = SELECTED[idx];
+  let v = {};
+  const t = (item.varsText || "").trim();
+  if (t){
+    try{ v = JSON.parse(t) || {}; } catch(_){ v = {}; }
+  }
+  v.IMG_SLOT = imgSlotValue;            // ✅ SLOT 말고 IMG_SLOT
+  item.varsText = JSON.stringify(v, null, 2);
+}
+
+const IMG_SECTION_CACHE = new Map();
+
+async function isImgTokenSection_(secName){
+  const key = String(secName || "").trim();
+  if (!key) return false;
+  if (IMG_SECTION_CACHE.has(key)) return IMG_SECTION_CACHE.get(key);
+
+  try{
+    const r = await apiGet("getSection", { name: key });
+    const html = String(r?.html || "");
+    const yes = /{{\s*(IMG_[A-Z0-9_]+|THUMB_URL)\s*}}/i.test(html);
+    IMG_SECTION_CACHE.set(key, yes);
+    return yes;
+  }catch(_){
+    IMG_SECTION_CACHE.set(key, false);
+    return false;
+  }
+}
 /** =========================
  * Templates: 카드 편집기 / 조합 미리보기
  * ========================= */
