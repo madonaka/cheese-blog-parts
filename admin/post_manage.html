@@ -844,25 +844,69 @@
       return html;
     }
 
-    function buildTokensMetaComment_(vars){
-      const keys = [
+            function buildTokensMetaComment_(vars){
+      // ✅ 템플릿에서 감지된 token 목록 + 현재 vars 키를 합쳐서 저장
+      // - IMG_SRC_1 같이 번호 토큰도 그대로 저장됨
+      // - reserved/slot 계열은 제외
+      const fallbackKeys = [
         "THUMB_URL","CANONICAL_URL","YEAR","MONTH",
         "YEAR_NAV_JSON",
         "IMG_ID","IMG_SRC","IMG_HREF","IMG_OW","IMG_OH",
         "IMG_ALT","IMG_TITLE","IMG_SNIPPET","ZOOM_LABEL"
       ];
 
-      const obj = {};
-      for (const k of keys){
-        if (vars && vars[k] !== undefined && vars[k] !== null && String(vars[k]).trim() !== ""){
-          obj[k] = String(vars[k]);
-        }
+      const reserved = new Set(["TITLE","NAV","FOOTER","title","nav","footer"]);
+
+      // slots는 토큰 메타로 저장하지 않음(BODY 마커로 별도 보존)
+      const slotNames = Array.isArray(templateState?.slots) ? templateState.slots : [];
+      for (const s of slotNames){
+        const a = String(s || "").trim();
+        if (!a) continue;
+        reserved.add(a);
+        reserved.add(a.toUpperCase());
       }
+
+      const keySet = new Set();
+
+      // 1) 템플릿 분석 결과 token 목록 우선
+      const tplTokens = Array.isArray(templateState?.tokens) ? templateState.tokens : [];
+      if (tplTokens.length){
+        tplTokens.forEach(k => keySet.add(String(k || "").trim()));
+      }else{
+        // 분석이 없는 경우(구형 HTML 등) fallback
+        fallbackKeys.forEach(k => keySet.add(k));
+      }
+
+      // 2) 현재 vars에 존재하는 키도 합침(분석 누락 방지)
+      if (vars && typeof vars === "object"){
+        Object.keys(vars).forEach(k => keySet.add(String(k || "").trim()));
+      }
+
+      const obj = {};
+      for (const key0 of keySet){
+        const key = String(key0 || "").trim();
+        if (!key) continue;
+        if (reserved.has(key)) continue;
+
+        // BODY/BODY_1 같은 슬롯성 키는 제외
+        if (/^BODY(_\d+)?$/i.test(key)) continue;
+
+        // 토큰처럼 생긴 키만 저장(너무 잡다한 키 방지)
+        if (!/^[A-Za-z0-9_]+$/.test(key)) continue;
+
+        const v = vars ? vars[key] : undefined;
+        if (v === undefined || v === null) continue;
+
+        const s = String(v);
+        if (s.trim() === "") continue;
+        obj[key] = s;
+      }
+
       if (!Object.keys(obj).length) return "";
       return `<!-- tokens: ${JSON.stringify(obj)} -->\n`;
     }
 
-    function extractTokensMetaFromHtml_(html){
+function extractTokensMetaFromHtml_(html){
       const t = String(html || "");
       const m = t.match(/<!--\s*tokens\s*:\s*({[\s\S]*?})\s*-->/i);
       if (!m) return {};
@@ -1112,7 +1156,7 @@
             // 일부 템플릿은 THUMB_URL을 이미지로도 사용
             put("THUMB_URL", imgThumbUrl_(item.drive_file_id) || item.img_src || "");
 
-            patchTokenValues_(patch);
+            setTokenValues_(patch);
             scheduleAssemblePreview_();
             setStatus(`이미지 토큰 자동입력 완료: ${id} → ${n ? "IMG_"+n : "IMG"}`, true);
           });
@@ -1247,17 +1291,6 @@
         const k = el.getAttribute("data-token");
         if (!k) return;
         el.value = (m[k] !== undefined && m[k] !== null) ? String(m[k]) : "";
-      });
-    }
-
-    // ✅ 부분 업데이트(merge)용: map에 있는 토큰만 반영하고, 나머지는 유지
-    function patchTokenValues_(map){
-      const m = map || {};
-      document.querySelectorAll("[data-token]").forEach(el=>{
-        const k = el.getAttribute("data-token");
-        if (!k) return;
-        if (m[k] === undefined || m[k] === null) return; // ✅ 없는 키는 건드리지 않음
-        el.value = String(m[k]);
       });
     }
 
