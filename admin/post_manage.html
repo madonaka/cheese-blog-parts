@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>포스트 관리</title>
 
+  <!-- ✅ 메인 관리자 CSS 재사용 -->
   <link rel="stylesheet" href="./admin.css" />
 
   <style>
@@ -248,6 +249,11 @@
 
           <div id="banner" class="pm-banner"></div>
 
+          <!-- ==============================
+               ✅ Sticky Action Bar (NEW)
+               - 항상 상단에 고정
+               - 핵심 액션 + 진행상태 표시
+          ============================== -->
           <div class="pm-stickybar" id="stickyBar">
             <div class="bar-row">
               <div class="bar-left">
@@ -261,11 +267,13 @@
 
               <div class="bar-right">
                 <div class="pm-sticky-actions">
+                  <!-- 원클릭 파이프라인 -->
                   <button id="btnQuickPublish" class="pm-btn primary">원클릭 발행</button>
                   <button id="btnQuickDraft" class="pm-btn ghost">원클릭 초안 저장</button>
 
                   <div class="pm-divider"></div>
 
+                  <!-- 자주 쓰는 단일 액션 -->
                   <button id="btnQuickDriveSave" class="pm-btn">Drive 저장</button>
                   <button id="btnQuickBloggerUpsert" class="pm-btn">Blogger 업로드</button>
 
@@ -376,13 +384,16 @@
                 ※ 템플릿에서 SLOT(예: BODY_1/2/3) 또는 토큰(예: {{THUMB_URL}})을 감지해 입력칸이 자동 생성됩니다.
               </p>
 
+              <!-- SLOT(TEXTAREA) -->
               <div id="slotFields" class="pm-dyn-grid"></div>
 
               <div class="pm-hr"></div>
 
+              <!-- Token(INPUT) -->
               <div id="tokenFields" class="pm-dyn-grid"></div>
             </div>
 
+            <!-- 기존 하단 버튼(유지) -->
             <div class="pm-row" style="margin-top:12px;">
               <button id="btnDriveUpsert" class="pm-btn">Drive로 저장/업데이트</button>
               <button id="btnDriveRead" class="pm-btn">Drive에서 불러오기</button>
@@ -432,6 +443,7 @@
     </div>
   </div>
 
+  <!-- ✅ 반드시 포함해야 하는 공통 스크립트 유지 -->
   <script src="./admin-common.js"></script>
 
   <script>
@@ -456,22 +468,22 @@
 
     // ✅ 고정: Apps Script 주소
     const API_BASE =
+     //"https://script.google.com/macros/s/AKfycbzj5LUEUKMyQqJfVsVlftO1f4CTYb3NhAQMT2QL6VADBlnjleAXLtBVVhuVHOfwkhQYqQ/exec";
        "https://script.google.com/macros/s/AKfycbwXqz1uMy3EOrisCEKIe0Fk7yu0P6MQ1ddHDvo7Sr_CPEYY0RHP2GyUBL8YhaBqxnmBJg/exec";
 
-    // 섹션 HTML 캐시
+    // 섹션 HTML 캐시(같은 섹션을 여러 번 조립할 때 API 호출 최소화)
     const sectionCache = new Map(); // key: sectionName, value: html
 
-    // 현재 템플릿 분석 결과 (✅ imgSlots 추가)
+    // 현재 템플릿 분석 결과
     const templateState = {
       templateId: "",
       manifest: null,
       slots: [],   // ["BODY_1", "BODY_2", ...]
-      tokens: [],   // ["THUMB_URL", "CANONICAL_URL", ...]
-      imgSlots: []  // ["1", "2"] (IMG_1, IMG_2가 감지된 경우)
+      tokens: []   // ["THUMB_URL", "CANONICAL_URL", ...]
     };
 
     /* =========================
-       ✅ Sticky bar helpers
+       ✅ Sticky bar helpers (NEW)
     ========================= */
     function setBusy_(on){
       const sp = $("stickySpinner");
@@ -485,6 +497,7 @@
     }
 
     function syncTopLabelControls_(){
+      // 상단 ↔ 하단 라벨 입력을 한쪽만 써도 되게 “동기화”
       const topL = $("bloggerLabelsTop");
       const botL = $("bloggerLabels");
       const topA = $("bloggerLabelsActionTop");
@@ -499,7 +512,7 @@
       }
     }
 
-    // 상단/하단 라벨 입력 실시간 동기화
+    // 상단/하단 라벨 입력은 서로 실시간 동기화
     ["bloggerLabelsTop","bloggerLabels"].forEach(id=>{
       const el = $(id);
       if (el) el.addEventListener("input", ()=>{
@@ -520,7 +533,7 @@
     });
 
     /* =========================
-       ✅ 실시간 프리뷰
+       ✅ 실시간 프리뷰(동적 슬롯/토큰 입력 → 최종 HTML 자동 조립)
     ========================= */
     let previewTimer = null;
     let previewSeq = 0;
@@ -547,7 +560,7 @@
       }
     }
 
-    // ✅ 이벤트 위임 방식
+    // ✅ 이벤트 위임 방식: 동적 필드가 재렌더링되어도 항상 input/change가 잡힘
     (function bindPreviewDelegation_(){
       const bind = (boxId) => {
         const box = $(boxId);
@@ -560,12 +573,13 @@
       bind("tokenFields");
     })();
 
-    // ✅ 동적 카드 "비우기" 버튼
+    // ✅ 동적 카드 "비우기" 버튼 (이벤트 위임)
     (function bindClearDelegation_(){
       const clearBySelector = (sel) => {
         const el = document.querySelector(sel);
         if (!el) return;
         el.value = "";
+        // 프리뷰 자동 갱신 트리거
         el.dispatchEvent(new Event("input", { bubbles:true }));
         el.dispatchEvent(new Event("change", { bubbles:true }));
       };
@@ -609,10 +623,12 @@
     }
 
     function setStatus(msg, ok=true){
+      // 기존 하단 status
       const el = $("status");
       el.textContent = msg;
       el.className = "pm-status " + (ok ? "ok" : "err");
 
+      // ✅ Sticky bar status도 같이 갱신
       const st = $("stickyStatus");
       const tx = $("stickyStatusText");
       if (tx) tx.textContent = msg;
@@ -675,6 +691,7 @@
         }
       }
 
+      // ✅ sticky link도 같이 세팅
       if (stickyLink){
         if (info && info.url){
           stickyLink.href = info.url;
@@ -705,11 +722,10 @@
       return `${API_BASE}?${params.toString()}`;
     }
 
-    // ===== meta/body parsing =====
+    // ===== meta/body parsing (기존 글 수정용) =====
     function readTemplateMeta_(html){
       const get = (key) => {
-        // ✅ 복구: Regex 누락 수정
-        const re = new RegExp(``, "i");
+        const re = new RegExp(`<!--\\s*${key}\\s*:\\s*([^>]+?)\\s*-->`, "i");
         const m = String(html||"").match(re);
         return m ? m[1].trim() : "";
       };
@@ -719,21 +735,20 @@
       };
     }
 
+    // ✅ 다중 BODY 마커도 지원
     function extractBodies_(html){
       const t = String(html || "");
       const out = {};
 
-      // ✅ 복구: Regex 누락 수정
-      const reStart = //ig;
+      const reStart = /<!--\s*BODY_START(?::([A-Z0-9_]+))?\s*-->/ig;
       let m;
       while ((m = reStart.exec(t)) !== null){
         const name = (m[1] || "BODY").trim();
         const startIdx = reStart.lastIndex;
 
-        // ✅ 복구: Regex 누락 수정
         const endMark = name === "BODY"
-          ? //ig
-          : new RegExp(``, "ig");
+          ? /<!--\s*BODY_END\s*-->/ig
+          : new RegExp(`<!--\\s*BODY_END\\s*:\\s*${escapeRegExp(name)}\\s*-->`, "ig");
 
         endMark.lastIndex = startIdx;
         const em = endMark.exec(t);
@@ -780,7 +795,7 @@
       return data;
     }
 
-    // ===== 이미지 관리 (JSONP) =====
+    // ===== 이미지 관리 (✅ JSONP로 list/get) =====
     const IMG_DB_URL =
       "https://script.google.com/macros/s/AKfycbyIsoT-0JY2nxCPFx2JH-G3Ja8tztjlJ6fiVAyxLgd-8Mzxjob8YDGgRO-biOCXe5WU/exec";
 
@@ -895,10 +910,6 @@
         "IMG_ID","IMG_SRC","IMG_HREF","IMG_OW","IMG_OH",
         "IMG_ALT","IMG_TITLE","IMG_SNIPPET","ZOOM_LABEL"
       ];
-      // 동적 IMG 토큰들도 저장되도록 필터링
-      for (const k of Object.keys(vars)) {
-        if(/^IMG_\d+_(ID|SRC|HREF|OW|OH|ALT|TITLE|SNIPPET)$/.test(k)) keys.push(k);
-      }
 
       const obj = {};
       for (const k of keys){
@@ -907,13 +918,12 @@
         }
       }
       if (!Object.keys(obj).length) return "";
-      return `\n`;
+      return `<!-- tokens: ${JSON.stringify(obj)} -->\n`;
     }
 
     function extractTokensMetaFromHtml_(html){
       const t = String(html || "");
-      // ✅ 복구: Regex 누락 수정
-      const m = t.match(//i);
+      const m = t.match(/<!--\s*tokens\s*:\s*({[\s\S]*?})\s*-->/i);
       if (!m) return {};
       try{
         const obj = JSON.parse(m[1]);
@@ -945,30 +955,21 @@
     function collectSlotsFromManifest_(manifest){
       const slots = [];
       const seen = new Set();
+
       const sections = Array.isArray(manifest?.sections) ? manifest.sections : [];
       for (const sec of sections){
         const slot = (sec && typeof sec === "object" && sec.vars && sec.vars.SLOT)
           ? String(sec.vars.SLOT).trim()
           : "";
+
         if (slot && !seen.has(slot)){
           seen.add(slot);
           slots.push(slot);
         }
       }
+
       if (slots.length === 0) slots.push("BODY");
       return slots;
-    }
-
-    // ✅ IMG_SLOT(예: IMG_1, IMG_2) 감지 함수 추가
-    function collectImgSlots_(manifest) {
-      const imgIdxSet = new Set();
-      (manifest?.sections || []).forEach(sec => {
-        // vars: { "IMG_SLOT": "IMG_1" } 형태 감지
-        const imgSlot = sec?.vars?.IMG_SLOT || "";
-        const m = String(imgSlot).match(/^IMG_(\d+)$/i);
-        if (m) imgIdxSet.add(m[1]);
-      });
-      return Array.from(imgIdxSet).sort((a, b) => Number(a) - Number(b));
     }
 
     async function collectTokensFromTemplate_(manifest, slotNames){
@@ -980,7 +981,11 @@
 
       function isSupportedToken_(token){
         if (supported.has(token)) return true;
+      
+        // ✅ IMG_1_SRC, IMG_2_HREF ... 지원
+        // 허용: IMG_<번호>_(ID|SRC|HREF|OW|OH|ALT|TITLE|SNIPPET)
         if (/^IMG_\d+_(ID|SRC|HREF|OW|OH|ALT|TITLE|SNIPPET)$/.test(token)) return true;
+      
         return false;
       }
       
@@ -991,15 +996,20 @@
       const sections = Array.isArray(manifest?.sections) ? manifest.sections : [];
 
       for (const sec of sections){
-        const name = (typeof sec === "string") ? sec.trim() : (sec && typeof sec === "object") ? String(sec.name || "").trim() : "";
+        const name =
+          (typeof sec === "string") ? sec.trim() :
+          (sec && typeof sec === "object") ? String(sec.name || "").trim() : "";
+
         if (!name) continue;
 
         let html = "";
-        try{ html = await getSectionHtml_(name); }
-        catch(e){
+        try{
+          html = await getSectionHtml_(name);
+        }catch(e){
           html = "";
           const prev = $("debug").textContent || "";
-          $("debug").textContent = prev + `\n[SECTION LOAD FAIL] ${name} :: ` + (e?.message || e);
+          $("debug").textContent =
+            prev + `\n[SECTION LOAD FAIL] ${name} :: ` + (e?.message || e);
         }
 
         const re = /{{\s*([A-Z0-9_]+)\s*}}/g;
@@ -1012,66 +1022,15 @@
         }
 
         if (/\{\s*zoom_label\s*\}/i.test(String(html))) {
-          if (!reserved.has("ZOOM_LABEL") && supported.has("ZOOM_LABEL")) found.add("ZOOM_LABEL");
+          if (!reserved.has("ZOOM_LABEL") && supported.has("ZOOM_LABEL")) {
+            found.add("ZOOM_LABEL");
+          }
         }
       }
+
       return Array.from(found);
     }
 
-    // ✅ analyzeAndRenderTemplate_: IMG_SLOT 감지 및 토큰 동적 생성 로직 통합
-    async function analyzeAndRenderTemplate_(tplId){
-      templateState.templateId = tplId || "";
-      templateState.manifest = null;
-      templateState.slots = [];
-      templateState.tokens = [];
-      templateState.imgSlots = [];
-
-      if (!tplId){
-        renderDynamicFields_(["BODY"], []);
-        return;
-      }
-
-      try{
-        const manifest = await getTemplateManifest_(tplId);
-        templateState.manifest = manifest;
-
-        const slotNames = collectSlotsFromManifest_(manifest);
-        
-        // 1. IMG_SLOT 번호 감지 (예: ["1", "2"])
-        const imgSlotNums = collectImgSlots_(manifest);
-        templateState.imgSlots = imgSlotNums;
-
-        // 2. 동적 이미지 토큰 생성 (IMG_1_SRC, IMG_1_ALT 등)
-        const dynamicImgTokens = [];
-        imgSlotNums.forEach(n => {
-          ["ID","SRC","HREF","ALT","TITLE","SNIPPET","OW","OH"].forEach(suffix => {
-            dynamicImgTokens.push(`IMG_${n}_${suffix}`);
-          });
-        });
-
-        // 3. 기존 토큰 수집 로직 + 동적 토큰 병합
-        const baseTokens = await collectTokensFromTemplate_(manifest, slotNames);
-        const allTokens = Array.from(new Set([...baseTokens, ...dynamicImgTokens]));
-
-        templateState.slots = slotNames;
-        templateState.tokens = allTokens;
-
-        const prevSlots = getSlotValues_();
-        const prevToks  = getTokenValues_();
-
-        renderDynamicFields_(slotNames, allTokens);
-
-        setSlotValues_(prevSlots);
-        setTokenValues_(prevToks);
-
-      }catch(e){
-        renderDynamicFields_(["BODY"], []);
-        setStatus("템플릿 분석 실패: " + (e?.message || e), false);
-        setDebug(String(e && e.stack ? e.stack : e));
-      }
-    }
-
-    // ✅ renderDynamicFields_: 이미지 DB 선택기 강화 (Target Select 추가)
     function renderDynamicFields_(slotNames, tokenNames){
       const slotBox = $("slotFields");
       const tokBox  = $("tokenFields");
@@ -1084,8 +1043,31 @@
         const sel = document.getElementById("imgDbSelect");
         const btn = document.getElementById("btnImgDbApply");
         const pv  = document.getElementById("imgDbPreview");
+        const target = document.getElementById("imgTokTarget");
+        if (target){
+          // 템플릿에서 감지된 IMG_<n>_* 인덱스 뽑기
+          const idxSet = new Set();
+          (templateState.tokens || []).forEach(t=>{
+            const m = String(t).match(/^IMG_(\d+)_/);
+            if (m) idxSet.add(m[1]);
+          });
         
+          target.innerHTML = "";
+          const opt0 = document.createElement("option");
+          opt0.value = ""; // 빈 값 = 기본(IMG_ 단일 세트)
+          opt0.textContent = "대상: IMG(기본)";
+          target.appendChild(opt0);
+        
+          Array.from(idxSet).sort((a,b)=>Number(a)-Number(b)).forEach(n=>{
+            const opt = document.createElement("option");
+            opt.value = n;
+            opt.textContent = `대상: IMG_${n}`;
+            target.appendChild(opt);
+          });
+        }
+
         if (!sel || !btn) return;
+
         sel.innerHTML = `<option value="">이미지 선택...</option>`;
 
         try{
@@ -1104,12 +1086,16 @@
             const id = sel.value;
             const hit = (__imgListCache || []).find(x => String(x.id) === String(id));
             if (!hit) { if (pv) pv.textContent = ""; return; }
+
             const thumb = imgThumbUrl_(hit.drive_file_id) || hit.img_src || "";
             const href  = hit.img_href || hit.drive_view_url || "";
-            if (pv) pv.innerHTML = thumb ? `미리보기: <a class="pm-link" href="${href}" target="_blank">Drive 열기</a><br><img src="${thumb}" style="max-width:260px;border-radius:10px;border:1px solid rgba(15,23,42,0.14);margin-top:6px;" />` : `미리보기 없음`;
+
+            if (!pv) return;
+            pv.innerHTML = thumb
+              ? `미리보기: <a class="pm-link" href="${href}" target="_blank">Drive 열기</a><br><img src="${thumb}" style="max-width:260px;border-radius:10px;border:1px solid rgba(15,23,42,0.14);margin-top:6px;" />`
+              : `미리보기 없음`;
           });
 
-          // ✅ "적용" 버튼 로직: Target Select 값에 따라 접두사(IMG_ vs IMG_1_) 변경
           btn.addEventListener("click", async () => {
             const id = sel.value;
             if (!id) { setStatus("이미지를 먼저 선택하세요.", false); return; }
@@ -1118,43 +1104,50 @@
             const item = await imgGet_(id);
             if (!item) { setStatus("이미지 상세를 가져오지 못했습니다.", false); return; }
 
-            const n = document.getElementById("imgTokTarget")?.value || ""; // "1", "2" OR ""
-            const prefix = n ? `IMG_${n}_` : `IMG_`; 
-
-            // 현재 화면에 렌더링된 토큰 필드 중에서 해당 prefix를 가진 것만 업데이트
+            const toks = new Set(templateState.tokens || []);
             const patch = {};
-            const keys = ["ID","SRC","HREF","ALT","TITLE","SNIPPET","OW","OH"];
-            const itemMap = {
-              "ID": item.id,
-              "SRC": imgThumbUrl_(item.drive_file_id) || item.img_src,
-              "HREF": item.img_href || item.drive_view_url,
-              "ALT": item.img_alt,
-              "TITLE": item.img_title,
-              "SNIPPET": item.snippet,
-              "OW": item.orig_w,
-              "OH": item.orig_h
+            
+            const n = (document.getElementById("imgTokTarget")?.value || "").trim(); // "" or "1" or "2"
+            const prefix = n ? `IMG_${n}_` : `IMG_`; // ✅ n이 있으면 IMG_1_, 없으면 기본 IMG_
+            
+            // helper: 토큰 존재하면 채우기
+            const put = (key, val) => {
+              if (toks.has(key)) patch[key] = val;
             };
-
-            keys.forEach(k => {
-              // 화면에 존재하는 필드라면 값 할당
-              const tokenKey = prefix + k;
-              if (document.querySelector(`[data-token="${tokenKey}"]`)) {
-                patch[tokenKey] = itemMap[k] || "";
-              }
-            });
-
-            // THUMB_URL은 대표 썸네일(기존 유지)
-            if (document.querySelector(`[data-token="THUMB_URL"]`)) {
-              patch["THUMB_URL"] = itemMap["SRC"] || "";
+            
+            // 기본 세트
+            if (!n){
+              put("IMG_ID", item.id || "");
+              put("IMG_SRC", imgThumbUrl_(item.drive_file_id) || item.img_src || "");
+              put("IMG_HREF", item.img_href || item.drive_view_url || "");
+              put("IMG_ALT", item.img_alt || "");
+              put("IMG_TITLE", item.img_title || "");
+              put("IMG_SNIPPET", item.snippet || "");
+              put("IMG_OW", item.orig_w || "");
+              put("IMG_OH", item.orig_h || "");
+            }else{
+              // ✅ 번호 세트
+              put(prefix + "ID", item.id || "");
+              put(prefix + "SRC", imgThumbUrl_(item.drive_file_id) || item.img_src || "");
+              put(prefix + "HREF", item.img_href || item.drive_view_url || "");
+              put(prefix + "ALT", item.img_alt || "");
+              put(prefix + "TITLE", item.img_title || "");
+              put(prefix + "SNIPPET", item.snippet || "");
+              put(prefix + "OW", item.orig_w || "");
+              put(prefix + "OH", item.orig_h || "");
             }
+            
+            // THUMB_URL은 기존대로(대표 썸네일) 유지
+            if (toks.has("THUMB_URL")) patch.THUMB_URL = imgThumbUrl_(item.drive_file_id) || item.img_src || "";
             
             setTokenValues_(patch);
             scheduleAssemblePreview_();
-            setStatus(`이미지 토큰 입력 완료 (${prefix})`, true);
+            setStatus(`이미지 토큰 자동입력 완료: ${item.id}${n ? ` → IMG_${n}` : ""}`, true);
           });
 
         }catch(e){
-          setStatus("이미지 DB 로드 실패: " + (e?.message || e), false);
+          setStatus("이미지 DB 목록 로드 실패: " + (e?.message || e), false);
+          if (pv) pv.textContent = String(e?.message || e);
         }
       }
 
@@ -1164,34 +1157,42 @@
         wrap.innerHTML = `
           <div class="pm-dyn-head">
             <div class="pm-dyn-key">${escapeHtml(slot)}</div>
-            <button type="button" class="pm-btn small ghost pm-dyn-clear" data-clear-slot="${escapeHtml(slot)}">비우기</button>
+            <button type="button"
+              class="pm-btn small ghost pm-dyn-clear"
+              data-clear-slot="${escapeHtml(slot)}">비우기</button>
           </div>
-          <textarea class="pm-textarea pm-dyn-textarea" data-slot="${escapeHtml(slot)}" placeholder="SLOT: ${escapeHtml(slot)}"></textarea>
+        
+          <textarea class="pm-textarea pm-dyn-textarea" data-slot="${escapeHtml(slot)}"
+            placeholder="템플릿 SLOT: ${escapeHtml(slot)}"></textarea>
         `;
         slotBox.appendChild(wrap);
       }
 
-      // 토큰 필드 생성
-      // 1. 이미지 연동 UI 먼저 (필요한 경우)
-      const needsImg = (tokenNames || []).some(t => /^IMG_/.test(String(t||""))) || (tokenNames || []).includes("THUMB_URL");
+      if (!tokenNames || tokenNames.length === 0){
+        const empty = document.createElement("div");
+        empty.className = "pm-muted pm-small";
+        empty.textContent = "추가 토큰(THUMB_URL, CANONICAL_URL, YEAR, MONTH)이 감지되지 않았습니다.";
+        tokBox.appendChild(empty);
+
+        attachDynamicPreviewListeners_();
+        return;
+      }
+
+      const needsImg =
+        (tokenNames || []).some(t => /^IMG_/.test(String(t||""))) ||
+        (tokenNames || []).includes("THUMB_URL");
 
       if (needsImg) {
         const wrap = document.createElement("div");
         wrap.className = "pm-dyn-item";
         wrap.style.gridColumn = "1 / -1";
-        
-        // 감지된 슬롯(IMG_1, IMG_2...) 옵션 생성
-        const targetOptions = templateState.imgSlots.map(n => `<option value="${n}">대상: IMG_${n}</option>`).join('');
-
         wrap.innerHTML = `
           <div class="pm-dyn-key">이미지(DB) 선택</div>
           <div class="pm-row" style="margin:8px 0 0;">
             <select id="imgDbSelect" class="pm-select" style="min-width:320px;"></select>
-            <select id="imgTokTarget" class="pm-select" style="min-width:160px;">
-              <option value="">기본 (IMG_)</option>
-              ${targetOptions}
-            </select>
+            <select id="imgTokTarget" class="pm-select" style="min-width:160px;"></select>
             <button id="btnImgDbApply" class="pm-btn">선택 이미지 토큰 자동입력</button>
+            <span class="pm-muted pm-small">※ 템플릿에 IMG_* 또는 THUMB_URL 토큰이 있을 때만 표시</span>
           </div>
           <div id="imgDbPreview" class="pm-muted pm-small" style="margin-top:8px;"></div>
         `;
@@ -1202,33 +1203,42 @@
       for (const tok of tokenNames){
         const wrap = document.createElement("div");
         wrap.className = "pm-dyn-item";
+
         const isYearNav = String(tok) === "YEAR_NAV_JSON";
 
         wrap.innerHTML = `
           <div class="pm-dyn-head">
             <div class="pm-dyn-key">${escapeHtml(tok)}</div>
-            <button type="button" class="pm-btn small ghost pm-dyn-clear" data-clear-token="${escapeHtml(tok)}">비우기</button>
+            <button type="button"
+              class="pm-btn small ghost pm-dyn-clear"
+              data-clear-token="${escapeHtml(tok)}">비우기</button>
           </div>
+        
           ${
             isYearNav
-              ? `<textarea class="pm-textarea pm-dyn-textarea" data-token="${escapeHtml(tok)}" placeholder="${escapeHtml(tokenPlaceholder_(tok))}"></textarea>`
-              : `<input class="pm-input" data-token="${escapeHtml(tok)}" style="min-width:0; width:100%;" placeholder="${tokenPlaceholder_(tok)}" />`
+              ? `<textarea class="pm-textarea pm-dyn-textarea" data-token="${escapeHtml(tok)}"
+                   placeholder="${escapeHtml(tokenPlaceholder_(tok))}"></textarea>`
+              : `<input class="pm-input" data-token="${escapeHtml(tok)}" style="min-width:0; width:100%;"
+                   placeholder="${tokenPlaceholder_(tok)}" />`
           }
         `;
+
         tokBox.appendChild(wrap);
       }
+
       attachDynamicPreviewListeners_();
     }
 
     function tokenPlaceholder_(tok){
-      tok = String(tok||"").replace(/^IMG_\d+_/, "IMG_"); 
+      tok = String(tok||"").replace(/^IMG_\d+_/, "IMG_"); // ✅ 번호 토큰도 기본 안내 문구 재사용
+
       switch(String(tok||"")){
         case "THUMB_URL": return "예: https://... (썸네일 이미지 URL)";
-        case "CANONICAL_URL": return "예: https://... (정식 URL)";
+        case "CANONICAL_URL": return "예: https://www.cheesehistory.com/... (정식 URL)";
         case "YEAR": return "예: 2026";
         case "MONTH": return "예: 01";
-        case "YEAR_NAV_JSON": return "줄입력 예:\n2022,https://.../2022.html\n2023,https://.../2023.html";
-        case "ZOOM_LABEL": return "예: 이미지 크게보기";
+        case "YEAR_NAV_JSON": return "줄입력 예:\n2022,https://.../2022.html\n2023,https://.../2023.html\n2024,";
+        case "ZOOM_LABEL": return "예: 이미지 크게보기 (확대 링크 문구)";
         default: return "";
       }
     }
@@ -1309,7 +1319,11 @@
     }
 
     function lineToYearNavJson_(txt){
-      const items = String(txt || "").trim().split(/\r?\n/).map(s => s.trim()).filter(Boolean)
+      const items = String(txt || "")
+        .trim()
+        .split(/\r?\n/)
+        .map(s => s.trim())
+        .filter(Boolean)
         .map(line => {
           const idx = line.indexOf(",");
           if (idx < 0) return null;
@@ -1319,48 +1333,100 @@
           return { year: year, href: href };
         })
         .filter(Boolean);
+
       return JSON.stringify(items);
+    }
+
+    async function analyzeAndRenderTemplate_(tplId){
+      templateState.templateId = tplId || "";
+      templateState.manifest = null;
+      templateState.slots = [];
+      templateState.tokens = [];
+
+      if (!tplId){
+        renderDynamicFields_(["BODY"], []);
+        return;
+      }
+
+      try{
+        const manifest = await getTemplateManifest_(tplId);
+        templateState.manifest = manifest;
+
+        const slotNames = collectSlotsFromManifest_(manifest);
+        const tokenNames = await collectTokensFromTemplate_(manifest, slotNames);
+
+        templateState.slots = slotNames;
+        templateState.tokens = tokenNames;
+
+        const prevSlots = getSlotValues_();
+        const prevToks  = getTokenValues_();
+
+        renderDynamicFields_(slotNames, tokenNames);
+
+        setSlotValues_(prevSlots);
+        setTokenValues_(prevToks);
+
+      }catch(e){
+        renderDynamicFields_(["BODY"], []);
+        setStatus("템플릿 분석 실패: " + (e?.message || e), false);
+        setDebug(String(e && e.stack ? e.stack : e));
+      }
     }
 
     async function assembleHtmlFromManifest_(manifest, templateId, vars){
       const tid = String(manifest?.template_id || manifest?.id || templateId).trim();
       const tver = String(manifest?.template_ver || manifest?.ver || "").trim();
+
       const sections = Array.isArray(manifest?.sections) ? manifest.sections : [];
       if (!sections.length) throw new Error("TEMPLATE_SECTIONS_EMPTY");
 
       const parts = [];
 
       for (const sec of sections){
-        const secName = (typeof sec === "string") ? sec.trim() : (sec && typeof sec === "object") ? String(sec.name || "").trim() : "";
+        const secName =
+          (typeof sec === "string") ? sec.trim() :
+          (sec && typeof sec === "object") ? String(sec.name || "").trim() : "";
+
         if (!secName) continue;
 
         let secHtml = await getSectionHtml_(secName);
-        const secVarsRaw = (sec && typeof sec === "object" && sec.vars && typeof sec.vars === "object") ? sec.vars : {};
+
+        const secVarsRaw = (sec && typeof sec === "object" && sec.vars && typeof sec.vars === "object")
+          ? sec.vars
+          : {};
+
         const slotName = (secVarsRaw && secVarsRaw.SLOT) ? String(secVarsRaw.SLOT).trim() : "";
 
         if (slotName){
           const slotVal = (vars && (vars[slotName] ?? vars[String(slotName).toUpperCase()])) ?? "";
+
           if (String(slotVal).length > 0){
             secHtml = secHtml.replace(/{{\s*BODY\s*}}/g, String(slotVal));
           } else {
             secHtml = secHtml.replace(/{{\s*BODY\s*}}/g, `{{${slotName}}}`);
           }
-          // ✅ 복구: Regex 누락 수정
+
           secHtml = secHtml
-            .replace(//gi, ``)
-            .replace(//gi, ``)
-            .replace(//gi, ``)
-            .replace(//gi, ``);
+            .replace(/<!--\s*BODY_START\s*-->/gi, `<!-- BODY_START:${slotName} -->`)
+            .replace(/<!--\s*BODY_END\s*-->/gi, `<!-- BODY_END:${slotName} -->`)
+            .replace(/<!--\s*BODY_START\s*:\s*BODY\s*-->/gi, `<!-- BODY_START:${slotName} -->`)
+            .replace(/<!--\s*BODY_END\s*:\s*BODY\s*-->/gi, `<!-- BODY_END:${slotName} -->`);
         }
 
         const secVars = { ...secVarsRaw };
         secHtml = replaceTokens_(secHtml, { ...vars, ...secVars });
+
         parts.push(secHtml);
       }
 
       let assembled = parts.join("\n");
-      const metaHeader = `\n` + (tver ? `\n` : "");
+
+      const metaHeader =
+        `<!-- template_id: ${tid} -->\n` +
+        (tver ? `<!-- template_ver: ${tver} -->\n` : "");
+
       const tokensMeta = buildTokensMetaComment_(vars);
+
       assembled = metaHeader + tokensMeta + assembled;
       return { html: assembled, manifest };
     }
@@ -1372,6 +1438,7 @@
 
     async function assembleHtmlUsingState_(templateId, vars){
       if (!templateId) throw new Error("TEMPLATE_ID_REQUIRED");
+
       if (!templateState.manifest || templateState.templateId !== templateId){
         templateState.templateId = templateId;
         templateState.manifest = await getTemplateManifest_(templateId);
@@ -1382,18 +1449,28 @@
     async function initTemplateSelect_(){
       const sel = $("templateSelect");
       sel.innerHTML = "";
+
       const opt0 = document.createElement("option");
-      opt0.value = ""; opt0.textContent = "템플릿 선택..."; sel.appendChild(opt0);
+      opt0.value = "";
+      opt0.textContent = "템플릿 선택...";
+      sel.appendChild(opt0);
 
       try{
         setStatus("템플릿 목록 불러오는 중(Drive)...", true);
         const items = await listTemplates_();
+
         for (const it of items){
-          const id = String(it.id || it.template_id || it.name || "").replace(/\.json$/i, "").trim();
+          const id = String(it.id || it.template_id || it.name || "")
+            .replace(/\.json$/i, "")
+            .trim();
           if (!id) continue;
+
           const opt = document.createElement("option");
-          opt.value = id; opt.textContent = id; sel.appendChild(opt);
+          opt.value = id;
+          opt.textContent = id;
+          sel.appendChild(opt);
         }
+
         setStatus(`템플릿 ${items.length}개 로드됨`, true);
       }catch(e){
         setStatus("템플릿 목록 불러오기 실패: " + (e?.message || e), false);
@@ -1405,37 +1482,54 @@
     async function applyTemplateNew(){
       const tplId = $("templateSelect").value;
       if (!tplId) return setStatus("템플릿을 먼저 선택하세요.", false);
+
       try{
-        setBusy_(true); hideBanner();
+        setBusy_(true);
+        hideBanner();
         setStatus("템플릿 적용(새로) 중...", true);
+
         await analyzeAndRenderTemplate_(tplId);
+
         setSlotValues_({});
+
         const out = await assembleHtmlFromTemplate_(tplId, buildVarsForAssemble_());
         $("html").value = out.html;
         syncCharCount();
+
         setStatus("템플릿 적용 완료(새로). SLOT 입력칸을 채운 뒤 저장하세요.", true);
+
       }catch(e){
         setStatus("템플릿 적용 오류: " + (e?.message || e), false);
         setDebug(String(e && e.stack ? e.stack : e));
-      }finally{ setBusy_(false); }
+      }finally{
+        setBusy_(false);
+      }
     }
 
     async function rewrapTemplateKeepBody(){
       const tplId = $("templateSelect").value;
       if (!tplId) return setStatus("템플릿을 먼저 선택하세요.", false);
+
       try{
-        setBusy_(true); hideBanner();
+        setBusy_(true);
+        hideBanner();
         setStatus("래퍼 재적용(본문 유지) 중...", true);
+
         const out = await assembleHtmlFromTemplate_(tplId, buildVarsForAssemble_());
         $("html").value = out.html;
         syncCharCount();
+
         setStatus("래퍼 재적용 완료(본문 유지).", true);
+
       }catch(e){
         setStatus("래퍼 재적용 오류: " + (e?.message || e), false);
         setDebug(String(e && e.stack ? e.stack : e));
-      }finally{ setBusy_(false); }
+      }finally{
+        setBusy_(false);
+      }
     }
 
+    // ===== Post list/load =====
     function setFromSelect(){
       const v = $("postSelect").value;
       if (v) $("id").value = v;
@@ -1450,7 +1544,8 @@
 
     async function refreshList(selectId){
       try{
-        setBusy_(true); hideBanner();
+        setBusy_(true);
+        hideBanner();
         setStatus("목록 불러오는 중...", true);
         const res = await apiGet("listPosts");
         if (!res || !res.ok) return setStatus("목록 불러오기 실패: " + (res?.message||""), false);
@@ -1458,8 +1553,11 @@
         const sel = $("postSelect");
         sel.innerHTML = "";
         const items = res.items || [];
+
         const opt0 = document.createElement("option");
-        opt0.value = ""; opt0.textContent = "선택..."; sel.appendChild(opt0);
+        opt0.value = "";
+        opt0.textContent = "선택...";
+        sel.appendChild(opt0);
 
         for (const it of items){
           const opt = document.createElement("option");
@@ -1467,31 +1565,45 @@
           opt.textContent = it.id + (it.title ? ` — ${it.title}` : "");
           sel.appendChild(opt);
         }
-        if (selectId){ sel.value = selectId; $("id").value = selectId; }
+
+        if (selectId){
+          sel.value = selectId;
+          $("id").value = selectId;
+        }
+
         setStickyId_();
         setStatus(`목록 ${items.length}건`, true);
       }catch(e){
         setStatus("목록 불러오기 오류: " + (e?.message || e), false);
         showBanner(String(e && e.stack ? e.stack : e));
-      }finally{ setBusy_(false); }
+      }finally{
+        setBusy_(false);
+      }
     }
 
     async function loadPost(){
       const id = getTargetId();
       if (!id) return setStatus("id를 선택하거나 입력하세요.", false);
+
       try{
-        setBusy_(true); hideBanner();
+        setBusy_(true);
+        hideBanner();
         setStatus(`불러오는 중: ${id}`, true);
+
         const res = await apiGet("getPost", { id });
         if (!res || !res.ok) return setStatus("불러오기 실패: " + (res?.message||""), false);
 
         current = res.post;
+
+        // ✅ 시트(DB)의 blogger_labels → 라벨 입력칸에 반영 (선언 먼저!)
         const sheetLabels = String(current?.blogger_labels || "").trim();
         if (sheetLabels){
-          $("bloggerLabels").value = sheetLabels; $("bloggerLabelsTop").value = sheetLabels;
+          $("bloggerLabels").value = sheetLabels;
+          $("bloggerLabelsTop").value = sheetLabels;
           $("currentLabelsView").textContent = "현재 라벨: " + sheetLabels;
         } else {
-          $("bloggerLabels").value = ""; $("bloggerLabelsTop").value = "";
+          $("bloggerLabels").value = "";
+          $("bloggerLabelsTop").value = "";
           $("currentLabelsView").textContent = "현재 라벨: -";
         }
         
@@ -1517,18 +1629,25 @@
         setMeta(current);
         setBloggerMeta(null);
         setStickyId_();
+
         setStatus("불러오기 완료", true);
       }catch(e){
         setStatus("불러오기 오류: " + (e?.message || e), false);
         setDebug(String(e && e.stack ? e.stack : e));
-      }finally{ setBusy_(false); }
+      }finally{
+        setBusy_(false);
+      }
     }
 
+    // ===== Drive HTML upsert/read =====
     async function exportToDrive(){
       const id = getTargetId();
       if (!id) return setStatus("id가 필요합니다.", false);
+
       try{
-        setBusy_(true); hideBanner();
+        setBusy_(true);
+        hideBanner();
+
         const tplId = $("templateSelect").value;
         if (tplId){
           setStatus("저장 전 최종 HTML 생성(템플릿 조립) 중...", true);
@@ -1536,28 +1655,43 @@
           $("html").value = out.html;
           syncCharCount();
         }
-        const payload = { id, title: $("title").value.trim(), html: $("html").value };
+
+        const payload = {
+          id,
+          title: $("title").value.trim(),
+          html: $("html").value
+        };
+
         setStatus("Drive 저장/업데이트 중...", true);
         const res = await apiPost("driveUpsert", payload);
         setDebug(res);
+
         if (!res || !res.ok) return setStatus("Drive 저장 실패: " + (res?.message||""), false);
+
         setStatus(`Drive 저장 완료: ${res.file?.name || ""}`, true);
         await refreshList(id);
         await loadPost();
+
       }catch(e){
         setStatus("Drive 저장 오류: " + (e?.message || e), false);
         setDebug(String(e && e.stack ? e.stack : e));
-      }finally{ setBusy_(false); }
+      }finally{
+        setBusy_(false);
+      }
     }
 
     async function importFromDrive(){
       const id = getTargetId();
       if (!id) return setStatus("id가 필요합니다.", false);
+
       try{
-        setBusy_(true); hideBanner();
+        setBusy_(true);
+        hideBanner();
         setStatus("Drive에서 불러오는 중...", true);
+
         const res = await apiGet("driveReadById", { id });
         if (!res || !res.ok) return setStatus("Drive 불러오기 실패: " + (res?.message||""), false);
+
         const html = res.html || "";
         $("html").value = html;
 
@@ -1568,22 +1702,30 @@
         } else {
           await analyzeAndRenderTemplate_($("templateSelect").value || "");
         }
+
         setSlotValues_(extractBodies_(html));
         setTokenValues_(extractTokensMetaFromHtml_(html));
+
         syncCharCount();
         setStickyId_();
         setStatus("Drive 불러오기 완료", true);
+
       }catch(e){
         setStatus("Drive 불러오기 오류: " + (e?.message || e), false);
         setDebug(String(e && e.stack ? e.stack : e));
-      }finally{ setBusy_(false); }
+      }finally{
+        setBusy_(false);
+      }
     }
 
+    // ===== Blogger =====
     async function exportToBlogger(){
       const id = getTargetId();
       if (!id) return setStatus("id가 필요합니다.", false);
+
       try{
         setBusy_(true);
+
         const tplId = $("templateSelect").value;
         if (tplId){
           setStatus("업로드 전 최종 HTML 생성(템플릿 조립) 중...", true);
@@ -1591,39 +1733,59 @@
           $("html").value = out.html;
           syncCharCount();
         }
+
         syncTopLabelControls_();
         let labelsCsv = $("bloggerLabels").value.trim();
         const actionUi = $("bloggerLabelsAction").value || "replace";
-        if (!labelsCsv){ labelsCsv = String(current?.blogger_labels || "").trim(); }
+        
+        // ✅ 입력칸이 비어있으면 DB(현재 로드된 post)의 blogger_labels로 fallback
+        if (!labelsCsv){
+          labelsCsv = String(current?.blogger_labels || "").trim();
+        }
         
         const payload = {
-          id, title: $("title").value.trim(), html: $("html").value,
+          id,
+          title: $("title").value.trim(),
+          html: $("html").value,
           publish: $("bloggerPublish").checked ? "true" : "false",
-          labels: labelsCsv, labels_action: labelsCsv ? actionUi : "keep"
+          labels: labelsCsv,                               // ✅ labelsInput -> labelsCsv
+          labels_action: labelsCsv ? actionUi : "keep"      // ✅ labelsInput -> labelsCsv
         };
+
         hideBanner();
         setStatus("Blogger 업로드/수정 중...", true);
+
         const res = await apiPost("bloggerUpsert", payload);
         setDebug(res);
+
         if (!res || !res.ok) return setStatus("Blogger 업로드 실패: " + (res?.message||""), false);
+
         setBloggerMeta({ url: res.url, post_id: res.post_id, status: res.status });
         setStatus(`Blogger ${res.status === 'published' ? '발행' : '초안'} 완료`, true);
         await loadPost();
+
       }catch(e){
         setStatus("Blogger 업로드 오류: " + (e?.message || e), false);
         setDebug(String(e && e.stack ? e.stack : e));
-      }finally{ setBusy_(false); }
+      }finally{
+        setBusy_(false);
+      }
     }
 
     async function importFromBlogger(){
       const id = getTargetId();
       if (!id) return setStatus("id가 필요합니다.", false);
+
       try{
-        setBusy_(true); hideBanner();
+        setBusy_(true);
+        hideBanner();
         setStatus("Blogger에서 불러오는 중...", true);
+
         const res = await apiGet("bloggerRead", { id });
         setDebug(res);
+
         if (!res || !res.ok) return setStatus("Blogger 불러오기 실패: " + (res?.message||""), false);
+
         $("title").value = res.title || $("title").value;
         $("html").value = res.html || "";
         syncCharCount();
@@ -1636,79 +1798,119 @@
         } else {
           await analyzeAndRenderTemplate_($("templateSelect").value || "");
         }
+
         setSlotValues_(extractBodies_(html));
         setTokenValues_(extractTokensMetaFromHtml_(html));
 
         const labelsArr = Array.isArray(res.labels) ? res.labels : [];
         $("currentLabelsView").textContent = "현재 라벨: " + (labelsArr.length ? labelsArr.join(", ") : "-");
+
+        // 상단/하단 라벨 입력칸에도 반영(비어있을 때만)
         if (!$("bloggerLabels").value.trim()){
           $("bloggerLabels").value = labelsArr.join(", ");
           $("bloggerLabelsTop").value = labelsArr.join(", ");
         }
+
         setBloggerMeta({ url: res.url, post_id: res.post_id, status: "loaded" });
         setStickyId_();
         setStatus("Blogger 불러오기 완료", true);
       }catch(e){
         setStatus("Blogger 불러오기 오류: " + (e?.message || e), false);
         setDebug(String(e && e.stack ? e.stack : e));
-      }finally{ setBusy_(false); }
+      }finally{
+        setBusy_(false);
+      }
     }
 
     async function patchBloggerLabels(){
       const id = getTargetId();
       if (!id) return setStatus("id가 필요합니다.", false);
+
       syncTopLabelControls_();
       const labels = $("bloggerLabels").value.trim();
       const action = $("bloggerLabelsAction").value || "replace";
+
       try{
-        setBusy_(true); hideBanner();
+        setBusy_(true);
+        hideBanner();
         setStatus("라벨 적용 중...", true);
+
         const res = await apiPost("bloggerPatchLabels", { id, labels, action });
         setDebug(res);
+
         if (!res || !res.ok) return setStatus("라벨 적용 실패: " + (res?.message||""), false);
+
         setStatus(`라벨 적용 완료 (${(res.labels||[]).length}개)`, true);
-        await loadPost();
+        await loadPost(); // ✅ 시트에 반영된 blogger_labels 다시 로드해서 UI 갱신
+
         if (res.url) setBloggerMeta({ url: res.url, post_id: res.post_id, status: "labels_updated" });
+
+        // 현재라벨 표시 갱신
         $("currentLabelsView").textContent = "현재 라벨: " + ((res.labels||[]).length ? res.labels.join(", ") : "-");
       }catch(e){
         setStatus("라벨 적용 오류: " + (e?.message || e), false);
         setDebug(String(e && e.stack ? e.stack : e));
-      }finally{ setBusy_(false); }
+      }finally{
+        setBusy_(false);
+      }
     }
 
     async function revertBloggerToDraft(){
       const id = getTargetId();
       if (!id) return setStatus("id가 필요합니다.", false);
+
       try{
-        setBusy_(true); hideBanner();
+        setBusy_(true);
+        hideBanner();
         setStatus("초안으로 되돌리는 중...", true);
+
         const res = await apiPost("bloggerRevert", { id });
         setDebug(res);
+
         if (!res || !res.ok) return setStatus("초안 되돌리기 실패: " + (res?.message||""), false);
+
         setBloggerMeta({ url: res.url, post_id: res.post_id, status: "draft" });
         setStatus("초안으로 되돌리기 완료", true);
       }catch(e){
         setStatus("초안 되돌리기 오류: " + (e?.message || e), false);
         setDebug(String(e && e.stack ? e.stack : e));
-      }finally{ setBusy_(false); }
+      }finally{
+        setBusy_(false);
+      }
     }
 
     function clearEditor(){
-      $("title").value = ""; $("html").value = "";
-      setSlotValues_({}); setTokenValues_({});
-      syncCharCount(); setStatus("편집창을 비웠습니다.", true); setStickyId_();
+      $("title").value = "";
+      $("html").value = "";
+      setSlotValues_({});
+      setTokenValues_({});
+      syncCharCount();
+      setStatus("편집창을 비웠습니다.", true);
+      setStickyId_();
     }
 
+    /* =========================
+       ✅ 원클릭 파이프라인 (NEW)
+       - Drive 저장 → Blogger 업로드
+    ========================= */
     async function pipelinePublish_(publish){
       const id = getTargetId();
       if (!id) return setStatus("id가 필요합니다.", false);
+
+      // publish 강제
       const prev = $("bloggerPublish").checked;
       $("bloggerPublish").checked = !!publish;
+
       try{
         setBusy_(true);
         setStatus(publish ? "원클릭 발행 시작..." : "원클릭 초안 저장 시작...", true);
+
+        // 1) Drive 저장
         await exportToDrive();
+
+        // 2) Blogger 업로드
         await exportToBlogger();
+
         setStatus(publish ? "원클릭 발행 완료" : "원클릭 초안 저장 완료", true);
       }catch(e){
         setStatus("원클릭 작업 오류: " + (e?.message || e), false);
@@ -1719,8 +1921,16 @@
       }
     }
 
+    /* =========================
+       ✅ ID 자동생성(분류 기반)
+    ========================= */
     function mapCategoryToPrefix(cat){
-      const m = { monthly_news: "NM", timeline_kr_cn_jp: "TL", genealogy_series: "GN", etc: "ETC", };
+      const m = {
+        monthly_news: "NM",
+        timeline_kr_cn_jp: "TL",
+        genealogy_series: "GN",
+        etc: "ETC",
+      };
       return m[cat] || "POST";
     }
 
@@ -1734,18 +1944,31 @@
 
     async function regenId(){
       const cat = $("category").value;
-      if (!cat) { setStatus("분류를 먼저 선택하세요.", false); return; }
+
+      if (!cat) {
+        setStatus("분류를 먼저 선택하세요.", false);
+        return;
+      }
+
       if (cat === "manual"){
         setStatus("수동입력 분류입니다. ID를 직접 입력하세요.", true);
-        $("id").disabled = false; $("id").focus(); setStickyId_(); return;
+        $("id").disabled = false;
+        $("id").focus();
+        setStickyId_();
+        return;
       }
+
       const prefix = mapCategoryToPrefix(cat);
       const dateToken = yyyymmddNow();
       const base = `${prefix}_${dateToken}_`;
+
       try{
-        setBusy_(true); setStatus("ID 생성 중...", true);
+        setBusy_(true);
+        setStatus("ID 생성 중...", true);
+
         const res = await apiGet("listPosts");
         if (!res || !res.ok) throw new Error(res?.message || "LIST_FAILED");
+
         let maxSeq = 0;
         for (const it of (res.items || [])){
           const id = String(it.id || "");
@@ -1754,26 +1977,36 @@
           const n = parseInt(tail, 10);
           if (!isNaN(n)) maxSeq = Math.max(maxSeq, n);
         }
+
         const nextSeq = String(maxSeq + 1).padStart(2, "0");
         $("id").value = `${base}${nextSeq}`;
         $("id").disabled = true;
-        setStickyId_(); setStatus(`ID 생성 완료: ${$("id").value}`, true);
+
+        setStickyId_();
+        setStatus(`ID 생성 완료: ${$("id").value}`, true);
       }catch(e){
         setStatus("ID 생성 오류: " + (e?.message || e), false);
         setDebug(String(e && e.stack ? e.stack : e));
-      }finally{ setBusy_(false); }
+      }finally{
+        setBusy_(false);
+      }
     }
 
     function onCategoryChange(){
       const cat = $("category").value;
+
       if (cat === "manual"){
         $("id").disabled = false;
-        setStatus("수동입력: ID를 직접 입력하세요.", true); setStickyId_(); return;
+        setStatus("수동입력: ID를 직접 입력하세요.", true);
+        setStickyId_();
+        return;
       }
+
       $("id").disabled = true;
       if (cat) regenId();
     }
 
+    // templateSelect 변경 시: SLOT/토큰 입력칸 재구성
     $("templateSelect").addEventListener("change", async ()=>{
       const tplId = $("templateSelect").value || "";
       await analyzeAndRenderTemplate_(tplId);
@@ -1781,32 +2014,45 @@
       scheduleAssemblePreview_();
     });
 
+    /* =========================
+       버튼 연결
+    ========================= */
     $("btnRefresh").addEventListener("click", ()=>refreshList());
     $("btnLoad").addEventListener("click", loadPost);
     $("btnSetFromSelect").addEventListener("click", setFromSelect);
+
     $("btnApplyTemplate").addEventListener("click", applyTemplateNew);
     $("btnRewrapTemplate").addEventListener("click", rewrapTemplateKeepBody);
+
     $("btnDriveUpsert").addEventListener("click", exportToDrive);
     $("btnDriveRead").addEventListener("click", importFromDrive);
     $("btnClear").addEventListener("click", clearEditor);
+
     $("btnBloggerUpsert").addEventListener("click", exportToBlogger);
     $("btnBloggerRead").addEventListener("click", importFromBlogger);
+
     $("btnBloggerLabels").addEventListener("click", patchBloggerLabels);
     $("btnBloggerRevert").addEventListener("click", revertBloggerToDraft);
+
     $("btnRegenId").addEventListener("click", regenId);
     $("category").addEventListener("change", onCategoryChange);
+
+    // ✅ Sticky Action Bar buttons (NEW)
     $("btnQuickPublish").addEventListener("click", ()=>pipelinePublish_(true));
     $("btnQuickDraft").addEventListener("click", ()=>pipelinePublish_(false));
     $("btnQuickDriveSave").addEventListener("click", exportToDrive);
     $("btnQuickBloggerUpsert").addEventListener("click", exportToBlogger);
     $("btnQuickBloggerRead").addEventListener("click", importFromBlogger);
     $("btnQuickLabels").addEventListener("click", patchBloggerLabels);
+
+    // postSelect 바뀌면 sticky id 갱신
     $("postSelect").addEventListener("change", ()=>{
       const v = $("postSelect").value || "";
-      if (v) $("id").value = v;
+      if (v) $("id").value = v;   // ✅ 선택값을 ID칸에 자동 반영
       setStickyId_();
     });
 
+    // init
     (async function init(){
       setDebug("");
       renderDynamicFields_(["BODY"], []);
