@@ -21,6 +21,7 @@
       padding:10px 12px;
       cursor:pointer;
       font-weight:800;
+      transition: all 0.2s;
     }
     .tab-btn.active{ background: #0f172a; color: #fff; outline:2px solid rgba(59,130,246,.35); }
 
@@ -42,7 +43,7 @@
       min-height:42px;
       outline:none;
     }
-    .textarea{ width:100%; min-height:220px; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .textarea{ width:100%; min-height:220px; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 13px; }
 
     .btn{
       border:1px solid rgba(15,23,42,0.14);
@@ -61,6 +62,7 @@
       padding:8px 10px;
       cursor:pointer;
       font-weight:800;
+      font-size: 12px;
     }
 
     .muted{ color:rgba(15,23,42,0.65); font-size:13px; }
@@ -88,7 +90,7 @@
       box-shadow:0 10px 24px rgba(15,23,42,0.04);
       background:#fff;
     }
-    .item .name{ font-weight:900; }
+    .item .name{ font-weight:900; font-size: 14px; }
     .item .meta{ font-size:12px; color:rgba(15,23,42,0.65); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:520px; }
 
     /* template editor drag */
@@ -127,7 +129,7 @@
                 <label style="font-weight:900;">템플릿 ID</label>
                 <input id="tplId" class="input" placeholder="예: news_v1" />
                 <label style="font-weight:900;">템플릿 이름</label>
-                <input id="tplName" class="input" placeholder="예: 기본 뉴스 템플릿" />
+                <input id="tplName" class="input" placeholder="예: 뉴스 레이아웃" />
 
                 <button class="btn secondary" id="btnAutoImgSlots">IMG 슬롯 자동지정</button>
                 <button class="btn secondary" id="btnAutoBodySlots">BODY 슬롯 자동지정</button>
@@ -135,6 +137,12 @@
                 <button class="btn" id="btnSaveTemplate">템플릿 저장</button>
                 <button class="btn secondary" id="btnPreviewJson">JSON 미리보기</button>
               </div>
+
+              <p class="muted" style="margin-top:10px; white-space:pre-line;">
+                왼쪽 섹션에서 추가 후 오른쪽 목록에서 관리하세요.
+                ✅ <strong>SLOT</strong> 버튼: 본문형이면 BODY_N, 이미지형이면 IMG_N 자동 개별 부여
+                ✅ <strong>자동지정</strong> 버튼: 전체 목록을 분석하여 한꺼번에 번호 부여
+              </p>
             </div>
 
             <div class="builder-grid">
@@ -144,7 +152,7 @@
                   <div style="font-weight:900;">섹션 목록(Drive)</div>
                   <span class="pill" id="secCount">0</span>
                   <div style="flex:1"></div>
-                  <input id="secSearch" class="input" placeholder="섹션 검색" />
+                  <input id="secSearch" class="input" placeholder="검색 (.html)" />
                   <button class="btn secondary" id="btnReloadSections">새로고침</button>
                 </div>
                 <div class="hr"></div>
@@ -186,12 +194,14 @@
               <div class="hr"></div>
               <div class="row">
                 <label style="font-weight:900;">파일명</label>
-                <input id="secName" class="input" placeholder="예: body_v1.html" />
+                <input id="secName" class="input" placeholder="파일명.html" />
                 <button class="btn secondary" id="btnSecLoad">불러오기</button>
                 <button class="btn" id="btnSecSave">저장</button>
+                <button class="btn secondary" id="btnSecMakeBody">본문 마커 넣기</button>
+                <span class="muted" id="secMsg"></span>
               </div>
               <div style="margin-top:10px;">
-                <textarea id="secHtml" class="textarea" placeholder="섹션 HTML 입력"></textarea>
+                <textarea id="secHtml" class="textarea" placeholder="HTML 입력"></textarea>
               </div>
             </div>
 
@@ -219,26 +229,21 @@
 
             <div class="card">
               <div class="row">
-                <div style="font-weight:900;">템플릿 JSON 보기</div>
-                <div style="flex:1"></div>
+                <div style="font-weight:900;">템플릿 JSON</div>
                 <span class="muted" id="tplMsg"></span>
               </div>
-              <div class="hr"></div>
               <textarea id="tplJson" class="textarea" readonly></textarea>
             </div>
 
             <div class="card">
               <div class="row">
-                <div style="font-weight:900;">템플릿 섹션 편집(카드)</div>
+                <div style="font-weight:900;">섹션 구성 편집</div>
                 <div style="flex:1"></div>
-                <button class="btn secondary" id="btnTplToBuilder">빌더로 불러오기</button>
+                <button class="btn secondary" id="btnTplToBuilder">빌더로 보내기</button>
                 <button class="btn" id="btnTplSaveOrder">순서 저장</button>
-                <button class="btn secondary" id="btnTplBuildHtml">HTML 조합 미리보기</button>
               </div>
               <div class="hr"></div>
               <div class="list" id="tplSectionsList"></div>
-              <div class="hr"></div>
-              <textarea id="tplHtmlPreview" class="textarea" readonly placeholder="조합 결과 표시"></textarea>
             </div>
           </section>
 
@@ -249,11 +254,8 @@
 
 <script>
 /** =========================
- * 초기화 로직
+ * ✅ admin-common.js 연동
  * ========================= */
-const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbwXqz1uMy3EOrisCEKIe0Fk7yu0P6MQ1ddHDvo7Sr_CPEYY0RHP2GyUBL8YhaBqxnmBJg/exec";
-const $ = (id)=>document.getElementById(id);
-
 (function renderShellOnce(){
   try{
     if (window.AdminCommon && typeof window.AdminCommon.renderShell === "function"){
@@ -266,17 +268,14 @@ const $ = (id)=>document.getElementById(id);
   }catch(_){}
 })();
 
-/** =========================
- * 데이터 상태
- * ========================= */
-let ALL_SECTIONS = [];
-let SELECTED = [];
-let CURRENT_TPL = null;
-let TPL_SECTIONS = [];
-let _dragIndex = -1;
+const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbwXqz1uMy3EOrisCEKIe0Fk7yu0P6MQ1ddHDvo7Sr_CPEYY0RHP2GyUBL8YhaBqxnmBJg/exec";
+const $ = (id)=>document.getElementById(id);
 
-const BODY_SECTION_CACHE = new Map();
-const IMG_SECTION_CACHE = new Map();
+function setMsg(el, text, isErr=false){
+  if (!el) return;
+  el.textContent = text || "";
+  el.style.color = isErr ? "crimson" : "rgba(15,23,42,0.65)";
+}
 
 function apiUrl(){ return ($("apiUrl")?.value || "").trim() || DEFAULT_API_URL; }
 
@@ -284,48 +283,53 @@ async function apiGet(mode, params={}){
   const url = new URL(apiUrl());
   url.searchParams.set("mode", mode);
   url.searchParams.set("_ts", String(Date.now()));
-  Object.entries(params).forEach(([k,v])=> url.searchParams.set(k, String(v)));
-  try {
-    const r = await fetch(url.toString());
-    return await r.json();
-  } catch(e) { return { ok: false, message: e.message }; }
+  Object.entries(params||{}).forEach(([k,v])=>{ if (v!==undefined && v!==null) url.searchParams.set(k, String(v)); });
+  const r = await fetch(url.toString(), { method:"GET", cache:"no-store" });
+  return await r.json();
 }
 
 async function apiPost(mode, bodyObj){
   const url = new URL(apiUrl());
   const body = new URLSearchParams();
   body.set("mode", String(mode || ""));
-  Object.entries(bodyObj).forEach(([k,v])=> body.set(k, String(v)));
-  try {
-    const r = await fetch(url.toString(), { method:"POST", body });
-    return await r.json();
-  } catch(e) { return { ok: false, message: e.message }; }
+  Object.entries(bodyObj||{}).forEach(([k,v])=>{ if (v!==undefined && v!==null) body.set(k, String(v)); });
+  const r = await fetch(url.toString(), { method:"POST", body, cache:"no-store" });
+  return await r.json();
 }
 
 /** =========================
- * 탭 전환
+ * Tabs
  * ========================= */
-document.querySelectorAll(".tab-btn").forEach(btn => {
-  btn.onclick = () => {
-    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+document.querySelectorAll(".tab-btn").forEach(btn=>{
+  btn.onclick = ()=>{
+    document.querySelectorAll(".tab-btn").forEach(b=>b.classList.remove("active"));
     btn.classList.add("active");
     const tab = btn.dataset.tab;
-    ["builder", "sections", "templates"].forEach(t => {
-      $( `tab-${t}`).style.display = (t === tab) ? "" : "none";
+    ["builder","sections","templates"].forEach(t=>{
+      const el = $("tab-"+t);
+      if (el) el.style.display = (t===tab) ? "" : "none";
     });
   };
 });
 
 /** =========================
- * 슬롯 분석 및 유틸
+ * 데이터 상태 및 유틸
  * ========================= */
-function findMaxSlotNumber_(keyPrefix){
+let ALL_SECTIONS = [];
+let SELECTED = [];
+let CURRENT_TPL = null;
+let TPL_SECTIONS = [];
+let _dragIndex = -1;
+
+const SECTION_CACHE = new Map();
+
+function findMaxSlotNumber_(prefix){
   let maxN = 0;
   for (const s of SELECTED){
     try{
       const v = JSON.parse(s.varsText || "{}");
-      const slot = String(v?.SLOT || v?.IMG_SLOT || "").trim();
-      const m = slot.match(new RegExp(`^${keyPrefix}_(\\d+)$`, 'i'));
+      const slot = String(v?.SLOT || v?.IMG_SLOT || "").trim().toUpperCase();
+      const m = slot.match(new RegExp(`^${prefix}_(\\d+)$`));
       if (m) maxN = Math.max(maxN, parseInt(m[1], 10));
     }catch(_){}
   }
@@ -337,44 +341,41 @@ function isImageSectionName_(name){
   return n.includes("img") || n.includes("image") || n.includes("cheese_img");
 }
 
-async function isBodySection_(name){
-  if (BODY_SECTION_CACHE.has(name)) return BODY_SECTION_CACHE.get(name);
-  const r = await apiGet("getSection", { name });
-  const yes = String(r?.html || "").includes("{{BODY}}");
-  BODY_SECTION_CACHE.set(name, yes);
-  return yes;
+async function getSectionHtmlCached(name) {
+  if (SECTION_CACHE.has(name)) return SECTION_CACHE.get(name);
+  try {
+    const r = await apiGet("getSection", { name });
+    const html = r.html || "";
+    SECTION_CACHE.set(name, html);
+    return html;
+  } catch(e) { return ""; }
 }
 
-async function isImgTokenSection_(name){
-  if (IMG_SECTION_CACHE.has(name)) return IMG_SECTION_CACHE.get(name);
-  const r = await apiGet("getSection", { name });
-  const yes = /{{\s*(IMG_[A-Z0-9_]+|THUMB_URL)\s*}}/i.test(String(r?.html || ""));
-  IMG_SECTION_CACHE.set(name, yes);
-  return yes;
+async function checkSectionType(name) {
+  const html = await getSectionHtmlCached(name);
+  const isImg = isImageSectionName_(name) || /{{\s*(IMG_[A-Z0-9_]+|THUMB_URL)\s*}}/i.test(html);
+  const isBody = html.includes("{{BODY}}");
+  return { isImg, isBody };
 }
 
 /** =========================
  * 렌더링 로직
  * ========================= */
 function renderSectionList(){
-  const q = $("secSearch").value.toLowerCase();
+  const q = $("secSearch").value.trim().toLowerCase();
   const list = $("secList");
   list.innerHTML = "";
-  const filtered = ALL_SECTIONS.filter(s => s.name.toLowerCase().includes(q));
+  const filtered = ALL_SECTIONS.filter(s=>!q || s.name.toLowerCase().includes(q));
   $("secCount").textContent = filtered.length;
 
-  filtered.forEach(s => {
+  filtered.forEach(s=>{
     const row = document.createElement("div");
     row.className = "item";
-    row.innerHTML = `
-      <div style="min-width:0;"><div class="name">${s.name}</div></div>
-      <div style="flex:1"></div>
-      <button class="mini-btn">추가</button>
-    `;
-    row.querySelector("button").onclick = () => {
+    row.innerHTML = `<div style="min-width:0;"><div class="name">${s.name}</div></div><div style="flex:1"></div><button class="mini-btn">추가</button>`;
+    row.querySelector("button").onclick = ()=>{
       SELECTED.push({ name: s.name, varsText: "" });
       renderSelected();
-      updateJsonPreview();
+      updateJsonPreviewSafe_();
     };
     list.appendChild(row);
   });
@@ -383,6 +384,8 @@ function renderSectionList(){
 function renderSelected(){
   const list = $("selList");
   list.innerHTML = "";
+  $("selCount").textContent = SELECTED.length;
+
   SELECTED.forEach((s, idx)=>{
     const row = document.createElement("div");
     row.className = "item";
@@ -390,7 +393,7 @@ function renderSelected(){
     try {
       const v = JSON.parse(s.varsText || "{}");
       const keys = Object.keys(v);
-      if(keys.length) vSummary = " · " + keys.map(k=>`${k}=${v[k]}`).join(", ").slice(0, 30);
+      if(keys.length) vSummary = " · " + keys.map(k=>`${k}=${v[k]}`).join(", ");
     } catch(e){}
 
     row.innerHTML = `
@@ -399,71 +402,95 @@ function renderSelected(){
         <div class="meta">#${idx+1}${vSummary}</div>
       </div>
       <div style="flex:1"></div>
+      <button class="mini-btn" data-act="up">↑</button>
+      <button class="mini-btn" data-act="down">↓</button>
       <button class="mini-btn" data-act="slot">SLOT</button>
       <button class="mini-btn" data-act="vars">vars</button>
       <button class="mini-btn" data-act="rm">제거</button>
     `;
 
-    row.querySelector('[data-act="slot"]').onclick = async () => {
-      let v = {}; try { v = JSON.parse(s.varsText || "{}"); } catch(e){}
-      if (isImageSectionName_(s.name) || await isImgTokenSection_(s.name)){
-        const n = findMaxSlotNumber_("IMG") + 1;
-        v.IMG_SLOT = `IMG_${n}`;
+    row.querySelector('[data-act="up"]').onclick = ()=>{
+      if(idx<=0) return;
+      [SELECTED[idx-1], SELECTED[idx]] = [SELECTED[idx], SELECTED[idx-1]];
+      renderSelected(); updateJsonPreviewSafe_();
+    };
+    row.querySelector('[data-act="down"]').onclick = ()=>{
+      if(idx>=SELECTED.length-1) return;
+      [SELECTED[idx+1], SELECTED[idx]] = [SELECTED[idx], SELECTED[idx+1]];
+      renderSelected(); updateJsonPreviewSafe_();
+    };
+    row.querySelector('[data-act="rm"]').onclick = ()=>{
+      SELECTED.splice(idx,1); renderSelected(); updateJsonPreviewSafe_();
+    };
+
+    // ✅ SLOT 버튼 개별 지정 로직
+    row.querySelector('[data-act="slot"]').onclick = async ()=>{
+      const type = await checkSectionType(s.name);
+      let vars = {}; try { vars = JSON.parse(s.varsText || "{}"); } catch(e){}
+      
+      if (type.isImg) {
+        const next = findMaxSlotNumber_("IMG") + 1;
+        vars.IMG_SLOT = `IMG_${next}`;
       } else {
-        const n = findMaxSlotNumber_("BODY") + 1;
-        v.SLOT = `BODY_${n}`;
+        const next = findMaxSlotNumber_("BODY") + 1;
+        vars.SLOT = `BODY_${next}`;
       }
-      s.varsText = JSON.stringify(v, null, 2);
-      renderSelected(); updateJsonPreview();
+      s.varsText = JSON.stringify(vars, null, 2);
+      renderSelected(); updateJsonPreviewSafe_();
     };
-    row.querySelector('[data-act="vars"]').onclick = () => {
-      const v = prompt("JSON vars 입력", s.varsText);
-      if (v !== null) { s.varsText = v; renderSelected(); updateJsonPreview(); }
+
+    row.querySelector('[data-act="vars"]').onclick = ()=>{
+      const v = prompt("vars(JSON) 입력", s.varsText || "");
+      if (v!==null) { s.varsText = v.trim(); renderSelected(); updateJsonPreviewSafe_(); }
     };
-    row.querySelector('[data-act="rm"]').onclick = () => {
-      SELECTED.splice(idx,1); renderSelected(); updateJsonPreview();
-    };
+
     list.appendChild(row);
   });
-  $("selCount").textContent = SELECTED.length;
 }
 
-function updateJsonPreview(){
-  const sections = SELECTED.map(s => {
-    let v = {}; try { v = JSON.parse(s.varsText || "{}"); } catch(e){}
-    return Object.keys(v).length ? { name: s.name, vars: v } : { name: s.name };
-  });
-  const tpl = { id: $("tplId").value, name: $("tplName").value, sections };
-  $("jsonPreview").value = JSON.stringify(tpl, null, 2);
+function updateJsonPreviewSafe_(){
+  try{
+    const sections = SELECTED.map(s=>{
+      let vars = undefined;
+      if(s.varsText.trim()) vars = JSON.parse(s.varsText);
+      return vars ? { name: s.name, vars } : { name: s.name };
+    });
+    $("jsonPreview").value = JSON.stringify({ id: $("tplId").value, name: $("tplName").value, sections }, null, 2);
+    setMsg($("jsonMsg"), "OK");
+  }catch(e){
+    setMsg($("jsonMsg"), "JSON 오류", true);
+  }
 }
 
 /** =========================
- * 데이터 액션
+ * 버튼 액션들
  * ========================= */
 async function autoAssignBodySlots_(){
   let n = findMaxSlotNumber_("BODY");
-  for (let item of SELECTED){
+  for (let item of SELECTED) {
     let v = {}; try { v = JSON.parse(item.varsText || "{}"); } catch(e){}
-    if (v.SLOT) continue;
-    if (await isBodySection_(item.name)){
+    if (v.SLOT || v.IMG_SLOT) continue;
+    const type = await checkSectionType(item.name);
+    if (type.isBody) {
       n++; v.SLOT = `BODY_${n}`;
       item.varsText = JSON.stringify(v, null, 2);
     }
   }
-  renderSelected(); updateJsonPreview();
+  renderSelected(); updateJsonPreviewSafe_();
 }
 
 async function autoAssignImgSlots_(){
   let n = findMaxSlotNumber_("IMG");
-  for (let item of SELECTED){
+  for (let item of SELECTED) {
     let v = {}; try { v = JSON.parse(item.varsText || "{}"); } catch(e){}
-    if (v.IMG_SLOT) continue;
-    if (await isImgTokenSection_(item.name) || isImageSectionName_(item.name)){
+    if (v.SLOT || v.IMG_SLOT) continue;
+    const type = await checkSectionType(item.name);
+    if (type.isImg) {
       n++; v.IMG_SLOT = `IMG_${n}`;
       item.varsText = JSON.stringify(v, null, 2);
     }
   }
-  renderSelected(); updateJsonPreview();
+  renderSelected(); updateJsonPreviewSafe_();
 }
 
 async function reloadSections(){
@@ -472,85 +499,94 @@ async function reloadSections(){
   renderSectionList();
   
   const list2 = $("secList2");
-  if(list2) {
-    list2.innerHTML = "";
-    $("secListCount2").textContent = ALL_SECTIONS.length;
-    ALL_SECTIONS.forEach(s => {
-      const row = document.createElement("div");
-      row.className = "item";
-      row.innerHTML = `<div class="name">${s.name}</div><div style="flex:1"></div><button class="mini-btn">편집</button>`;
-      row.querySelector("button").onclick = async () => {
-        $("secName").value = s.name;
-        const detail = await apiGet("getSection", { name: s.name });
-        $("secHtml").value = detail.html || "";
-        document.querySelector('[data-tab="sections"]').click();
-      };
-      list2.appendChild(row);
-    });
-  }
+  list2.innerHTML = "";
+  $("secListCount2").textContent = ALL_SECTIONS.length;
+  ALL_SECTIONS.forEach(s=>{
+    const r = document.createElement("div");
+    r.className = "item";
+    r.innerHTML = `<div class="name">${s.name}</div><div style="flex:1"></div><button class="mini-btn">편집</button>`;
+    r.querySelector("button").onclick = async ()=>{
+      $("secName").value = s.name;
+      const d = await apiGet("getSection", { name: s.name });
+      $("secHtml").value = d.html || "";
+      document.querySelector('[data-tab="sections"]').click();
+    };
+    list2.appendChild(r);
+  });
 }
 
 async function loadTemplates(){
   const res = await apiGet("listTemplates");
   const list = $("tplList");
   list.innerHTML = "";
-  (res.items || []).forEach(t => {
-    const row = document.createElement("div");
-    row.className = "item";
-    row.innerHTML = `<div class="name">${t.id}</div><div style="flex:1"></div><button class="mini-btn">선택</button>`;
-    row.querySelector("button").onclick = async () => {
-      const detail = await apiGet("getTemplate", { template_id: t.id });
-      $("tplJson").value = detail.json;
-      const obj = JSON.parse(detail.json);
+  (res.items||[]).forEach(it=>{
+    const r = document.createElement("div");
+    r.className = "item";
+    r.innerHTML = `<div class="name">${it.id}</div><div style="flex:1"></div><button class="mini-btn">열기</button>`;
+    r.querySelector("button").onclick = async ()=>{
+      const d = await apiGet("getTemplate", { template_id: it.id });
+      $("tplJson").value = d.json || "";
+      const obj = JSON.parse(d.json || "{}");
       CURRENT_TPL = obj;
       TPL_SECTIONS = [...(obj.sections || [])];
       renderTplSectionsEditor();
     };
-    list.appendChild(row);
+    list.appendChild(r);
   });
 }
 
 function renderTplSectionsEditor(){
   const list = $("tplSectionsList");
   list.innerHTML = "";
-  TPL_SECTIONS.forEach((s, idx) => {
-    const row = document.createElement("div");
-    row.className = "item tpl-card";
-    row.innerHTML = `<div><b>${s.name}</b></div><div style="flex:1"></div><button class="mini-btn" data-act="rm">X</button>`;
-    row.querySelector('[data-act="rm"]').onclick = () => { TPL_SECTIONS.splice(idx,1); renderTplSectionsEditor(); };
-    list.appendChild(row);
+  TPL_SECTIONS.forEach((s, i)=>{
+    const r = document.createElement("div");
+    r.className = "item";
+    r.innerHTML = `<div>${s.name}</div><div style="flex:1"></div><button class="mini-btn">삭제</button>`;
+    r.querySelector("button").onclick = ()=>{ TPL_SECTIONS.splice(i,1); renderTplSectionsEditor(); };
+    list.appendChild(r);
   });
 }
 
 /** =========================
- * 이벤트 바인딩
+ * 초기화 및 이벤트 바인딩
  * ========================= */
 $("btnReloadSections").onclick = reloadSections;
 $("secSearch").oninput = renderSectionList;
-$("btnClearSel").onclick = () => { if(confirm("비울까요?")) { SELECTED=[]; renderSelected(); updateJsonPreview(); } };
+$("btnClearSel").onclick = ()=>{ if(confirm("비울까요?")) { SELECTED=[]; renderSelected(); updateJsonPreviewSafe_(); } };
 $("btnAutoBodySlots").onclick = autoAssignBodySlots_;
 $("btnAutoImgSlots").onclick = autoAssignImgSlots_;
-$("btnPreviewJson").onclick = updateJsonPreview;
-$("btnSaveTemplate").onclick = async () => {
+$("btnPreviewJson").onclick = updateJsonPreviewSafe_;
+
+$("btnSaveTemplate").onclick = async ()=>{
   const res = await apiPost("templateUpsert", { template_id: $("tplId").value, json: $("jsonPreview").value, name: $("tplName").value });
-  if(res.ok) alert("저장 성공");
+  if(res.ok) alert("저장 완료");
 };
 
-$("btnSecSave").onclick = async () => {
+$("btnSecSave").onclick = async ()=>{
   const res = await apiPost("sectionUpsert", { name: $("secName").value, html: $("secHtml").value });
-  if(res.ok) { alert("저장 성공"); reloadSections(); }
+  if(res.ok) { alert("저장 완료"); reloadSections(); }
 };
 
-$("btnTplToBuilder").onclick = () => {
+$("btnSecLoad").onclick = async ()=>{
+  const d = await apiGet("getSection", { name: $("secName").value });
+  $("secHtml").value = d.html || "";
+};
+
+$("btnSecMakeBody").onclick = ()=>{
+  $("secHtml").value = `<!-- SECTION:${$("secName").value || 'body.html'} START -->\n{{BODY}}\n<!-- SECTION END -->`;
+};
+
+$("btnTplReload").onclick = loadTemplates;
+$("btnTplToBuilder").onclick = ()=>{
   if(!CURRENT_TPL) return;
   $("tplId").value = CURRENT_TPL.id;
   $("tplName").value = CURRENT_TPL.name;
-  SELECTED = TPL_SECTIONS.map(s => ({ name: s.name, varsText: JSON.stringify(s.vars || {}, null, 2) }));
-  renderSelected(); updateJsonPreview();
+  SELECTED = TPL_SECTIONS.map(s=>({ name: s.name, varsText: JSON.stringify(s.vars||{}, null, 2) }));
+  renderSelected(); updateJsonPreviewSafe_();
   document.querySelector('[data-tab="builder"]').click();
 };
 
-window.onload = () => {
+window.onload = ()=>{
   $("apiUrl").value = DEFAULT_API_URL;
   reloadSections();
   loadTemplates();
