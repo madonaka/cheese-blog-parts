@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>포스트 관리</title>
 
+  <!-- ✅ 메인 관리자 CSS 재사용 -->
   <link rel="stylesheet" href="./admin.css" />
 
   <style>
@@ -97,9 +98,9 @@
     /* ===== dynamic fields ===== */
     .pm-dyn-grid{
       display:grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr)); /* ✅ 카드 2열 */
+      grid-template-columns: 120px 1fr;
       gap:10px 12px;
-      align-items:stretch;
+      align-items:start;
     }
     @media (max-width: 980px){
       .pm-dyn-grid{ grid-template-columns: 1fr; }
@@ -111,37 +112,12 @@
       background:rgba(15,23,42,0.02);
     }
     .pm-dyn-key{ font-weight:900; margin:0 0 6px; }
-    /* ✅ 동적 카드 헤더(타이틀 + 비우기 버튼) */
-    .pm-dyn-head{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:8px;
-      margin:0 0 6px;
-    }
-    .pm-dyn-key{ margin:0; } /* 기존 margin-bottom 대신 head에서 관리 */
-    
-    /* 비우기 버튼을 조금 더 가볍게 */
-    .pm-dyn-clear{
-      padding:6px 10px;
-      font-size:12px;
-      border-radius:9px;
-    }
     .pm-dyn-help{ margin:0 0 10px; }
     .pm-dyn-textarea{ min-height:200px; }
     .pm-hr{ height:1px; background:rgba(15,23,42,0.10); margin:12px 0; }
 
     .pm-hidden{ display:none !important; }
 
-    /* ✅ SLOT 카드만 textarea를 꽉 차게(높이 밸런스) */
-    #slotFields .pm-dyn-item{
-      display:flex;
-      flex-direction:column;
-    }
-    #slotFields .pm-dyn-textarea{
-      flex:1 1 auto;
-      min-height:260px; /* 원하면 220~360 사이로 조절 */
-    }
     /* ==============================
        ✅ Sticky Action Bar (NEW)
     ============================== */
@@ -248,6 +224,11 @@
 
           <div id="banner" class="pm-banner"></div>
 
+          <!-- ==============================
+               ✅ Sticky Action Bar (NEW)
+               - 항상 상단에 고정
+               - 핵심 액션 + 진행상태 표시
+          ============================== -->
           <div class="pm-stickybar" id="stickyBar">
             <div class="bar-row">
               <div class="bar-left">
@@ -261,11 +242,13 @@
 
               <div class="bar-right">
                 <div class="pm-sticky-actions">
+                  <!-- 원클릭 파이프라인 -->
                   <button id="btnQuickPublish" class="pm-btn primary">원클릭 발행</button>
                   <button id="btnQuickDraft" class="pm-btn ghost">원클릭 초안 저장</button>
 
                   <div class="pm-divider"></div>
 
+                  <!-- 자주 쓰는 단일 액션 -->
                   <button id="btnQuickDriveSave" class="pm-btn">Drive 저장</button>
                   <button id="btnQuickBloggerUpsert" class="pm-btn">Blogger 업로드</button>
 
@@ -376,13 +359,16 @@
                 ※ 템플릿에서 SLOT(예: BODY_1/2/3) 또는 토큰(예: {{THUMB_URL}})을 감지해 입력칸이 자동 생성됩니다.
               </p>
 
+              <!-- SLOT(TEXTAREA) -->
               <div id="slotFields" class="pm-dyn-grid"></div>
 
               <div class="pm-hr"></div>
 
+              <!-- Token(INPUT) -->
               <div id="tokenFields" class="pm-dyn-grid"></div>
             </div>
 
+            <!-- 기존 하단 버튼(유지) -->
             <div class="pm-row" style="margin-top:12px;">
               <button id="btnDriveUpsert" class="pm-btn">Drive로 저장/업데이트</button>
               <button id="btnDriveRead" class="pm-btn">Drive에서 불러오기</button>
@@ -432,9 +418,13 @@
     </div>
   </div>
 
+  <!-- ✅ 반드시 포함해야 하는 공통 스크립트 유지 -->
   <script src="./admin-common.js"></script>
 
   <script>
+  /** =========================
+   * ✅ admin-common.js: 헤더/메뉴 슬롯 유지
+   * ========================= */
   (function renderShellOnce(){
     try{
       if (window.AdminCommon && typeof window.AdminCommon.renderShell === "function"){
@@ -452,22 +442,22 @@
     let current = null;
 
     // ✅ 고정: Apps Script 주소
-    const API_BASE = "https://script.google.com/macros/s/AKfycbwXqz1uMy3EOrisCEKIe0Fk7yu0P6MQ1ddHDvo7Sr_CPEYY0RHP2GyUBL8YhaBqxnmBJg/exec";
+    const API_BASE =
+      "https://script.google.com/macros/s/AKfycbzj5LUEUKMyQqJfVsVlftO1f4CTYb3NhAQMT2QL6VADBlnjleAXLtBVVhuVHOfwkhQYqQ/exec";
 
-    // 섹션 HTML 캐시
-    const sectionCache = new Map();
+    // 섹션 HTML 캐시(같은 섹션을 여러 번 조립할 때 API 호출 최소화)
+    const sectionCache = new Map(); // key: sectionName, value: html
 
     // 현재 템플릿 분석 결과
     const templateState = {
       templateId: "",
       manifest: null,
-      slots: [],
-      tokens: [],
-      imgSlots: [] // ✅ 감지된 이미지 슬롯 번호 저장 (예: ["1", "2"])
+      slots: [],   // ["BODY_1", "BODY_2", ...]
+      tokens: []   // ["THUMB_URL", "CANONICAL_URL", ...]
     };
 
     /* =========================
-       ✅ Sticky bar helpers
+       ✅ Sticky bar helpers (NEW)
     ========================= */
     function setBusy_(on){
       const sp = $("stickySpinner");
@@ -481,6 +471,7 @@
     }
 
     function syncTopLabelControls_(){
+      // 상단 ↔ 하단 라벨 입력을 한쪽만 써도 되게 “동기화”
       const topL = $("bloggerLabelsTop");
       const botL = $("bloggerLabels");
       const topA = $("bloggerLabelsActionTop");
@@ -495,6 +486,7 @@
       }
     }
 
+    // 상단/하단 라벨 입력은 서로 실시간 동기화
     ["bloggerLabelsTop","bloggerLabels"].forEach(id=>{
       const el = $(id);
       if (el) el.addEventListener("input", ()=>{
@@ -515,7 +507,7 @@
     });
 
     /* =========================
-       ✅ 실시간 프리뷰
+       ✅ 실시간 프리뷰(동적 슬롯/토큰 입력 → 최종 HTML 자동 조립)
     ========================= */
     let previewTimer = null;
     let previewSeq = 0;
@@ -542,6 +534,7 @@
       }
     }
 
+    // ✅ 이벤트 위임 방식: 동적 필드가 재렌더링되어도 항상 input/change가 잡힘
     (function bindPreviewDelegation_(){
       const bind = (boxId) => {
         const box = $(boxId);
@@ -550,37 +543,6 @@
         box.addEventListener("change", scheduleAssemblePreview_, true);
         box.__pmDelegationBound = true;
       };
-      bind("slotFields");
-      bind("tokenFields");
-    })();
-
-    (function bindClearDelegation_(){
-      const clearBySelector = (sel) => {
-        const el = document.querySelector(sel);
-        if (!el) return;
-        el.value = "";
-        el.dispatchEvent(new Event("input", { bubbles:true }));
-        el.dispatchEvent(new Event("change", { bubbles:true }));
-      };
-    
-      const bind = (boxId) => {
-        const box = $(boxId);
-        if (!box || box.__pmClearBound) return;
-    
-        box.addEventListener("click", (e) => {
-          const btn = e.target.closest(".pm-dyn-clear");
-          if (!btn) return;
-    
-          const slot = btn.getAttribute("data-clear-slot");
-          const tok  = btn.getAttribute("data-clear-token");
-    
-          if (slot) clearBySelector(`[data-slot="${CSS.escape(slot)}"]`);
-          if (tok)  clearBySelector(`[data-token="${CSS.escape(tok)}"]`);
-        });
-    
-        box.__pmClearBound = true;
-      };
-    
       bind("slotFields");
       bind("tokenFields");
     })();
@@ -602,10 +564,12 @@
     }
 
     function setStatus(msg, ok=true){
+      // 기존 하단 status
       const el = $("status");
       el.textContent = msg;
       el.className = "pm-status " + (ok ? "ok" : "err");
 
+      // ✅ Sticky bar status도 같이 갱신
       const st = $("stickyStatus");
       const tx = $("stickyStatusText");
       if (tx) tx.textContent = msg;
@@ -668,6 +632,7 @@
         }
       }
 
+      // ✅ sticky link도 같이 세팅
       if (stickyLink){
         if (info && info.url){
           stickyLink.href = info.url;
@@ -698,10 +663,10 @@
       return `${API_BASE}?${params.toString()}`;
     }
 
-    // ===== meta/body parsing =====
+    // ===== meta/body parsing (기존 글 수정용) =====
     function readTemplateMeta_(html){
       const get = (key) => {
-        const re = new RegExp(``, "i");
+        const re = new RegExp(`<!--\\s*${key}\\s*:\\s*([^>]+?)\\s*-->`, "i");
         const m = String(html||"").match(re);
         return m ? m[1].trim() : "";
       };
@@ -711,19 +676,20 @@
       };
     }
 
+    // ✅ 다중 BODY 마커도 지원
     function extractBodies_(html){
       const t = String(html || "");
       const out = {};
 
-      const reStart = //ig;
+      const reStart = /<!--\s*BODY_START(?::([A-Z0-9_]+))?\s*-->/ig;
       let m;
       while ((m = reStart.exec(t)) !== null){
         const name = (m[1] || "BODY").trim();
         const startIdx = reStart.lastIndex;
 
         const endMark = name === "BODY"
-          ? //ig
-          : new RegExp(``, "ig");
+          ? /<!--\s*BODY_END\s*-->/ig
+          : new RegExp(`<!--\\s*BODY_END\\s*:\\s*${escapeRegExp(name)}\\s*-->`, "ig");
 
         endMark.lastIndex = startIdx;
         const em = endMark.exec(t);
@@ -770,8 +736,9 @@
       return data;
     }
 
-    // ===== 이미지 관리 (JSONP) =====
-    const IMG_DB_URL = "https://script.google.com/macros/s/AKfycbyIsoT-0JY2nxCPFx2JH-G3Ja8tztjlJ6fiVAyxLgd-8Mzxjob8YDGgRO-biOCXe5WU/exec";
+    // ===== 이미지 관리 (✅ JSONP로 list/get) =====
+    const IMG_DB_URL =
+      "https://script.google.com/macros/s/AKfycbyIsoT-0JY2nxCPFx2JH-G3Ja8tztjlJ6fiVAyxLgd-8Mzxjob8YDGgRO-biOCXe5WU/exec";
 
     const IMG_THUMB_W = 1200;
     function imgThumbUrl_(fileId, w = IMG_THUMB_W){
@@ -884,11 +851,6 @@
         "IMG_ID","IMG_SRC","IMG_HREF","IMG_OW","IMG_OH",
         "IMG_ALT","IMG_TITLE","IMG_SNIPPET","ZOOM_LABEL"
       ];
-      
-      // ✅ 추가된 부분: 동적 IMG 토큰들도 저장되도록 필터링
-      for (const k of Object.keys(vars)) {
-        if(/^IMG_\d+_(ID|SRC|HREF|OW|OH|ALT|TITLE|SNIPPET)$/.test(k)) keys.push(k);
-      }
 
       const obj = {};
       for (const k of keys){
@@ -897,12 +859,12 @@
         }
       }
       if (!Object.keys(obj).length) return "";
-      return `\n`;
+      return `<!-- tokens: ${JSON.stringify(obj)} -->\n`;
     }
 
     function extractTokensMetaFromHtml_(html){
       const t = String(html || "");
-      const m = t.match(//i);
+      const m = t.match(/<!--\s*tokens\s*:\s*({[\s\S]*?})\s*-->/i);
       if (!m) return {};
       try{
         const obj = JSON.parse(m[1]);
@@ -931,6 +893,58 @@
       return out;
     }
 
+
+    // =========================
+    // ✅ IMG_SLOT helpers (NEW)
+    // - 이미지 섹션이 여러 개일 때, IMG_SLOT(예: IMG_1)을 기준으로
+    //   {{IMG_SRC}} 같은 "번호 없는 토큰"을 {{IMG_SRC_1}} 형태로 자동 넘버링
+    // =========================
+    function parseImgSlotIndex_(v){
+      const m = String(v || "").trim().toUpperCase().match(/^IMG_(\d+)$/);
+      return m ? Number(m[1]) : 0;
+    }
+
+    function applyImgSlotNumbering_(html, imgSlot){
+      const n = parseImgSlotIndex_(imgSlot);
+      if (!n) return String(html || "");
+
+      // IMG 토큰 패밀리(번호를 붙일 대상)
+      const baseTokens = [
+        "IMG_ID","IMG_SRC","IMG_HREF","IMG_OW","IMG_OH","IMG_ALT","IMG_TITLE","IMG_SNIPPET",
+        // 일부 템플릿은 THUMB_URL을 이미지로도 사용하므로 함께 넘버링
+        "THUMB_URL"
+      ];
+
+      let out = String(html || "");
+      for (const t of baseTokens){
+        const re = new RegExp(`{{\\s*${escapeRegExp(t)}\\s*}}`, "g");
+        out = out.replace(re, `{{${t}_${n}}}`);
+      }
+      return out;
+    }
+
+    function getImgTokenIndices_(tokenNames){
+      const idx = new Set();
+      (tokenNames || []).forEach(t=>{
+        const m = String(t||"").trim().match(/^(IMG_(?:ID|SRC|HREF|OW|OH|ALT|TITLE|SNIPPET)|THUMB_URL)_(\d+)$/);
+        if (m) idx.add(Number(m[2]));
+      });
+      return Array.from(idx).filter(n=>Number.isFinite(n)).sort((a,b)=>a-b);
+    }
+
+    function pickFirstEmptyImgIndex_(tokenNames){
+      const indices = getImgTokenIndices_(tokenNames);
+      if (!indices.length) return 0;
+
+      const currentVals = getTokenValues_();
+      for (const n of indices){
+        // "빈 슬롯" 판단: 대표 키(IMG_SRC_n)가 비어 있으면 우선 타겟으로 선택
+        const key = `IMG_SRC_${n}`;
+        if (!String(currentVals[key] || "").trim()) return n;
+      }
+      return indices[0];
+    }
+
     function collectSlotsFromManifest_(manifest){
       const slots = [];
       const seen = new Set();
@@ -951,18 +965,7 @@
       return slots;
     }
 
-    // ✅ IMG_SLOT(예: IMG_1, IMG_2) 감지 함수 추가
-    function collectImgSlots_(manifest) {
-      const imgIdxSet = new Set();
-      (manifest?.sections || []).forEach(sec => {
-        // vars: { "IMG_SLOT": "IMG_1" } 형태 감지
-        const imgSlot = sec?.vars?.IMG_SLOT || "";
-        const m = String(imgSlot).match(/^IMG_(\d+)$/i);
-        if (m) imgIdxSet.add(m[1]);
-      });
-      return Array.from(imgIdxSet).sort((a, b) => Number(a) - Number(b));
-    }
-
+    
     async function collectTokensFromTemplate_(manifest, slotNames){
       const supported = new Set([
         "THUMB_URL","CANONICAL_URL","YEAR","MONTH","YEAR_NAV_JSON",
@@ -970,15 +973,12 @@
         "ZOOM_LABEL"
       ]);
 
-      function isSupportedToken_(token){
-        if (supported.has(token)) return true;
-      
-        // ✅ IMG_1_SRC, IMG_2_HREF ... 지원
-        if (/^IMG_\d+_(ID|SRC|HREF|OW|OH|ALT|TITLE|SNIPPET)$/.test(token)) return true;
-      
-        return false;
-      }
-      
+      // ✅ 이미지 섹션이 여러 개일 때, IMG_SLOT 기준으로 번호 토큰을 만들기 위한 패밀리
+      const imgFamily = new Set([
+        "IMG_ID","IMG_SRC","IMG_HREF","IMG_OW","IMG_OH","IMG_ALT","IMG_TITLE","IMG_SNIPPET",
+        "THUMB_URL"
+      ]);
+
       const reserved = new Set(["TITLE","NAV","FOOTER","BODY"]);
       (slotNames || []).forEach(s=>reserved.add(String(s)));
 
@@ -986,8 +986,15 @@
       const sections = Array.isArray(manifest?.sections) ? manifest.sections : [];
 
       for (const sec of sections){
-        const name = (typeof sec === "string") ? sec.trim() : (sec && typeof sec === "object") ? String(sec.name || "").trim() : "";
+        const name =
+          (typeof sec === "string") ? sec.trim() :
+          (sec && typeof sec === "object") ? String(sec.name || "").trim() : "";
+
         if (!name) continue;
+
+        const secVarsObj =
+          (sec && typeof sec === "object" && sec.vars && typeof sec.vars === "object") ? sec.vars : {};
+        const imgSlotN = parseImgSlotIndex_(secVarsObj.IMG_SLOT);
 
         let html = "";
         try{
@@ -995,7 +1002,8 @@
         }catch(e){
           html = "";
           const prev = $("debug").textContent || "";
-          $("debug").textContent = prev + `\n[SECTION LOAD FAIL] ${name} :: ` + (e?.message || e);
+          $("debug").textContent =
+            prev + `\n[SECTION LOAD FAIL] ${name} :: ` + (e?.message || e);
         }
 
         const re = /{{\s*([A-Z0-9_]+)\s*}}/g;
@@ -1004,9 +1012,17 @@
           const token = String(m[1] || "").trim();
           if (!token) continue;
           if (reserved.has(token)) continue;
-          if (isSupportedToken_(token)) found.add(token);
+
+          // ✅ IMG_SLOT이 잡히고 + 이미지 토큰이면, 번호를 붙여서 입력칸이 여러 개 생기게 함
+          if (imgSlotN && imgFamily.has(token)){
+            found.add(`${token}_${imgSlotN}`);
+            continue;
+          }
+
+          if (supported.has(token)) found.add(token);
         }
 
+        // {zoom_label} (소문자)도 허용(기존 호환)
         if (/\{\s*zoom_label\s*\}/i.test(String(html))) {
           if (!reserved.has("ZOOM_LABEL") && supported.has("ZOOM_LABEL")) {
             found.add("ZOOM_LABEL");
@@ -1017,61 +1033,8 @@
       return Array.from(found);
     }
 
-    // ✅ analyzeAndRenderTemplate_: IMG_SLOT 감지 및 토큰 동적 생성 로직 통합
-    async function analyzeAndRenderTemplate_(tplId){
-      templateState.templateId = tplId || "";
-      templateState.manifest = null;
-      templateState.slots = [];
-      templateState.tokens = [];
-      templateState.imgSlots = [];
-
-      if (!tplId){
-        renderDynamicFields_(["BODY"], []);
-        return;
-      }
-
-      try{
-        const manifest = await getTemplateManifest_(tplId);
-        templateState.manifest = manifest;
-
-        const slotNames = collectSlotsFromManifest_(manifest);
-        
-        // 1. IMG_SLOT 번호 감지 (예: ["1", "2"])
-        const imgSlotNums = collectImgSlots_(manifest);
-        templateState.imgSlots = imgSlotNums;
-
-        // 2. 동적 이미지 토큰 생성 (IMG_1_SRC, IMG_1_ALT 등)
-        const dynamicImgTokens = [];
-        imgSlotNums.forEach(n => {
-          ["ID","SRC","HREF","ALT","TITLE","SNIPPET","OW","OH"].forEach(suffix => {
-            dynamicImgTokens.push(`IMG_${n}_${suffix}`);
-          });
-        });
-
-        // 3. 기존 토큰 수집 로직 + 동적 토큰 병합
-        const baseTokens = await collectTokensFromTemplate_(manifest, slotNames);
-        const allTokens = Array.from(new Set([...baseTokens, ...dynamicImgTokens]));
-
-        templateState.slots = slotNames;
-        templateState.tokens = allTokens;
-
-        const prevSlots = getSlotValues_();
-        const prevToks  = getTokenValues_();
-
-        renderDynamicFields_(slotNames, allTokens);
-
-        setSlotValues_(prevSlots);
-        setTokenValues_(prevToks);
-
-      }catch(e){
-        renderDynamicFields_(["BODY"], []);
-        setStatus("템플릿 분석 실패: " + (e?.message || e), false);
-        setDebug(String(e && e.stack ? e.stack : e));
-      }
-    }
-
-    // ✅ renderDynamicFields_: 이미지 DB 선택기 강화 (Target Select 추가)
-    function renderDynamicFields_(slotNames, tokenNames){
+    function renderDynamicFields_
+(slotNames, tokenNames){
       const slotBox = $("slotFields");
       const tokBox  = $("tokenFields");
       slotBox.innerHTML = "";
@@ -1083,15 +1046,6 @@
         const sel = document.getElementById("imgDbSelect");
         const btn = document.getElementById("btnImgDbApply");
         const pv  = document.getElementById("imgDbPreview");
-        const target = document.getElementById("imgTokTarget"); // ✅ 타겟 셀렉트 박스
-
-        if (target){
-          // ✅ 감지된 슬롯(IMG_1, IMG_2...) 옵션 생성
-          const options = templateState.imgSlots.map(n => `<option value="${n}">대상: IMG_${n}</option>`).join('');
-          
-          target.innerHTML = `<option value="">기본 (IMG_)</option>` + options;
-        }
-
         if (!sel || !btn) return;
 
         sel.innerHTML = `<option value="">이미지 선택...</option>`;
@@ -1122,7 +1076,6 @@
               : `미리보기 없음`;
           });
 
-          // ✅ "적용" 버튼 로직: Target Select 값에 따라 접두사(IMG_ vs IMG_1_) 변경
           btn.addEventListener("click", async () => {
             const id = sel.value;
             if (!id) { setStatus("이미지를 먼저 선택하세요.", false); return; }
@@ -1131,39 +1084,36 @@
             const item = await imgGet_(id);
             if (!item) { setStatus("이미지 상세를 가져오지 못했습니다.", false); return; }
 
-            const n = document.getElementById("imgTokTarget")?.value || ""; // "1", "2" OR ""
-            const prefix = n ? `IMG_${n}_` : `IMG_`; 
-
-            // 현재 화면에 렌더링된 토큰 필드 중에서 해당 prefix를 가진 것만 업데이트
+            const toksArr = (templateState.tokens || []);
+            const toks = new Set(toksArr);
             const patch = {};
-            const keys = ["ID","SRC","HREF","ALT","TITLE","SNIPPET","OW","OH"];
-            const itemMap = {
-              "ID": item.id,
-              "SRC": imgThumbUrl_(item.drive_file_id) || item.img_src,
-              "HREF": item.img_href || item.drive_view_url,
-              "ALT": item.img_alt,
-              "TITLE": item.img_title,
-              "SNIPPET": item.snippet,
-              "OW": item.orig_w,
-              "OH": item.orig_h
+
+            // ✅ 번호 토큰(IMG_*_1, IMG_*_2 ...)이 있으면 "비어있는 첫 번째" 인덱스에 채움
+            const indices = getImgTokenIndices_(toksArr);
+            const n = indices.length ? pickFirstEmptyImgIndex_(toksArr) : 0;
+
+            const put = (baseKey, val) => {
+              if (n){
+                const k = `${baseKey}_${n}`;
+                if (toks.has(k)) patch[k] = val;
+              } else {
+                if (toks.has(baseKey)) patch[baseKey] = val;
+              }
             };
 
-            keys.forEach(k => {
-              const tokenKey = prefix + k;
-              // 화면에 존재하는 필드라면 값 할당
-              if (document.querySelector(`[data-token="${tokenKey}"]`)) {
-                patch[tokenKey] = itemMap[k] || "";
-              }
-            });
+            put("IMG_ID", item.id || "");
+            put("IMG_SRC", imgThumbUrl_(item.drive_file_id) || item.img_src || "");
+            put("IMG_HREF", item.img_href || item.drive_view_url || "");
+            put("IMG_ALT", item.img_alt || "");
+            put("IMG_TITLE", item.img_title || "");
+            put("IMG_SNIPPET", item.snippet || "");
+            put("IMG_OW", item.orig_w || "");
+            put("IMG_OH", item.orig_h || "");
 
-            // THUMB_URL은 대표 썸네일(기존 유지)
-            if (document.querySelector(`[data-token="THUMB_URL"]`)) {
-              patch["THUMB_URL"] = itemMap["SRC"] || "";
-            }
-            
-            setTokenValues_(patch);
+            put("THUMB_URL", imgThumbUrl_(item.drive_file_id) || item.img_src || "");
+setTokenValues_(patch);
             scheduleAssemblePreview_();
-            setStatus(`이미지 토큰 입력 완료 (${prefix})`, true);
+            setStatus(`이미지 토큰 자동입력 완료: ${id}`, true);
           });
 
         }catch(e){
@@ -1176,38 +1126,35 @@
         const wrap = document.createElement("div");
         wrap.className = "pm-dyn-item";
         wrap.innerHTML = `
-          <div class="pm-dyn-head">
-            <div class="pm-dyn-key">${escapeHtml(slot)}</div>
-            <button type="button"
-              class="pm-btn small ghost pm-dyn-clear"
-              data-clear-slot="${escapeHtml(slot)}">비우기</button>
-          </div>
-        
+          <div class="pm-dyn-key">${escapeHtml(slot)}</div>
           <textarea class="pm-textarea pm-dyn-textarea" data-slot="${escapeHtml(slot)}"
             placeholder="템플릿 SLOT: ${escapeHtml(slot)}"></textarea>
         `;
         slotBox.appendChild(wrap);
       }
 
-      // 토큰 필드 생성
-      // 1. 이미지 연동 UI 먼저 (필요한 경우)
-      const needsImg = (tokenNames || []).some(t => /^IMG_/.test(String(t||""))) || (tokenNames || []).includes("THUMB_URL");
+      if (!tokenNames || tokenNames.length === 0){
+        const empty = document.createElement("div");
+        empty.className = "pm-muted pm-small";
+        empty.textContent = "추가 토큰(THUMB_URL, CANONICAL_URL, YEAR, MONTH)이 감지되지 않았습니다.";
+        tokBox.appendChild(empty);
+
+        attachDynamicPreviewListeners_();
+        return;
+      }
+
+      const needsImg =
+        (tokenNames || []).some(t => /^IMG_/.test(String(t||""))) ||
+        (tokenNames || []).includes("THUMB_URL");
 
       if (needsImg) {
         const wrap = document.createElement("div");
         wrap.className = "pm-dyn-item";
         wrap.style.gridColumn = "1 / -1";
-        
-        // 감지된 슬롯(IMG_1, IMG_2...) 옵션 생성
-        // const targetOptions = templateState.imgSlots.map(n => `<option value="${n}">대상: IMG_${n}</option>`).join('');
-
         wrap.innerHTML = `
           <div class="pm-dyn-key">이미지(DB) 선택</div>
           <div class="pm-row" style="margin:8px 0 0;">
             <select id="imgDbSelect" class="pm-select" style="min-width:320px;"></select>
-            <select id="imgTokTarget" class="pm-select" style="min-width:160px;">
-              <option value="">기본 (IMG_)</option>
-              </select>
             <button id="btnImgDbApply" class="pm-btn">선택 이미지 토큰 자동입력</button>
             <span class="pm-muted pm-small">※ 템플릿에 IMG_* 또는 THUMB_URL 토큰이 있을 때만 표시</span>
           </div>
@@ -1224,13 +1171,7 @@
         const isYearNav = String(tok) === "YEAR_NAV_JSON";
 
         wrap.innerHTML = `
-          <div class="pm-dyn-head">
-            <div class="pm-dyn-key">${escapeHtml(tok)}</div>
-            <button type="button"
-              class="pm-btn small ghost pm-dyn-clear"
-              data-clear-token="${escapeHtml(tok)}">비우기</button>
-          </div>
-        
+          <div class="pm-dyn-key">${escapeHtml(tok)}</div>
           ${
             isYearNav
               ? `<textarea class="pm-textarea pm-dyn-textarea" data-token="${escapeHtml(tok)}"
@@ -1239,7 +1180,6 @@
                    placeholder="${tokenPlaceholder_(tok)}" />`
           }
         `;
-
         tokBox.appendChild(wrap);
       }
 
@@ -1247,15 +1187,13 @@
     }
 
     function tokenPlaceholder_(tok){
-      tok = String(tok||"").replace(/^IMG_\d+_/, "IMG_"); 
-
       switch(String(tok||"")){
         case "THUMB_URL": return "예: https://... (썸네일 이미지 URL)";
-        case "CANONICAL_URL": return "예: https://... (정식 URL)";
+        case "CANONICAL_URL": return "예: https://www.cheesehistory.com/... (정식 URL)";
         case "YEAR": return "예: 2026";
         case "MONTH": return "예: 01";
-        case "YEAR_NAV_JSON": return "줄입력 예:\n2022,https://.../2022.html\n2023,https://.../2023.html";
-        case "ZOOM_LABEL": return "예: 이미지 크게보기";
+        case "YEAR_NAV_JSON": return "줄입력 예:\n2022,https://.../2022.html\n2023,https://.../2023.html\n2024,";
+        case "ZOOM_LABEL": return "예: 이미지 크게보기 (확대 링크 문구)";
         default: return "";
       }
     }
@@ -1354,6 +1292,42 @@
       return JSON.stringify(items);
     }
 
+    async function analyzeAndRenderTemplate_(tplId){
+      templateState.templateId = tplId || "";
+      templateState.manifest = null;
+      templateState.slots = [];
+      templateState.tokens = [];
+
+      if (!tplId){
+        renderDynamicFields_(["BODY"], []);
+        return;
+      }
+
+      try{
+        const manifest = await getTemplateManifest_(tplId);
+        templateState.manifest = manifest;
+
+        const slotNames = collectSlotsFromManifest_(manifest);
+        const tokenNames = await collectTokensFromTemplate_(manifest, slotNames);
+
+        templateState.slots = slotNames;
+        templateState.tokens = tokenNames;
+
+        const prevSlots = getSlotValues_();
+        const prevToks  = getTokenValues_();
+
+        renderDynamicFields_(slotNames, tokenNames);
+
+        setSlotValues_(prevSlots);
+        setTokenValues_(prevToks);
+
+      }catch(e){
+        renderDynamicFields_(["BODY"], []);
+        setStatus("템플릿 분석 실패: " + (e?.message || e), false);
+        setDebug(String(e && e.stack ? e.stack : e));
+      }
+    }
+
     async function assembleHtmlFromManifest_(manifest, templateId, vars){
       const tid = String(manifest?.template_id || manifest?.id || templateId).trim();
       const tver = String(manifest?.template_ver || manifest?.ver || "").trim();
@@ -1388,11 +1362,15 @@
           }
 
           secHtml = secHtml
-            .replace(//gi, ``)
-            .replace(//gi, ``)
-            .replace(//gi, ``)
-            .replace(//gi, ``);
+            .replace(/<!--\s*BODY_START\s*-->/gi, `<!-- BODY_START:${slotName} -->`)
+            .replace(/<!--\s*BODY_END\s*-->/gi, `<!-- BODY_END:${slotName} -->`)
+            .replace(/<!--\s*BODY_START\s*:\s*BODY\s*-->/gi, `<!-- BODY_START:${slotName} -->`)
+            .replace(/<!--\s*BODY_END\s*:\s*BODY\s*-->/gi, `<!-- BODY_END:${slotName} -->`);
         }
+
+        // ✅ IMG_SLOT이 있으면, 섹션 내부의 {{IMG_SRC}} 같은 토큰을 {{IMG_SRC_n}} 형태로 먼저 넘버링
+        const imgSlot = (secVarsRaw && secVarsRaw.IMG_SLOT) ? String(secVarsRaw.IMG_SLOT).trim() : "";
+        if (imgSlot) secHtml = applyImgSlotNumbering_(secHtml, imgSlot);
 
         const secVars = { ...secVarsRaw };
         secHtml = replaceTokens_(secHtml, { ...vars, ...secVars });
@@ -1403,8 +1381,8 @@
       let assembled = parts.join("\n");
 
       const metaHeader =
-        `\n` +
-        (tver ? `\n` : "");
+        `<!-- template_id: ${tid} -->\n` +
+        (tver ? `<!-- template_ver: ${tver} -->\n` : "");
 
       const tokensMeta = buildTokensMetaComment_(vars);
 
@@ -1518,9 +1496,9 @@
     }
 
     function getTargetId(){
-      const fromInput  = $("id").value.trim();
       const fromSelect = $("postSelect").value;
-      return fromInput || fromSelect || "";
+      const fromInput  = $("id").value.trim();
+      return fromSelect || fromInput || "";
     }
 
     async function refreshList(selectId){
@@ -1576,18 +1554,6 @@
 
         current = res.post;
 
-        // ✅ 시트(DB)의 blogger_labels → 라벨 입력칸에 반영 (선언 먼저!)
-        const sheetLabels = String(current?.blogger_labels || "").trim();
-        if (sheetLabels){
-          $("bloggerLabels").value = sheetLabels;
-          $("bloggerLabelsTop").value = sheetLabels;
-          $("currentLabelsView").textContent = "현재 라벨: " + sheetLabels;
-        } else {
-          $("bloggerLabels").value = "";
-          $("bloggerLabelsTop").value = "";
-          $("currentLabelsView").textContent = "현재 라벨: -";
-        }
-        
         $("id").value = current.id;
         $("title").value = current.title || "";
         $("html").value = current.html || "";
@@ -1610,6 +1576,9 @@
         setMeta(current);
         setBloggerMeta(null);
         setStickyId_();
+
+        // 라벨 필드는 시트에 blogger_labels가 있다면 여기서 채울 수도 있지만,
+        // 현재 html엔 그 필드를 직접 받는 로직이 없어서(서버 응답 확장 시) 추후 연결 권장
 
         setStatus("불러오기 완료", true);
       }catch(e){
@@ -1716,21 +1685,16 @@
         }
 
         syncTopLabelControls_();
-        let labelsCsv = $("bloggerLabels").value.trim();
+        const labelsCsv = $("bloggerLabels").value.trim();
         const actionUi = $("bloggerLabelsAction").value || "replace";
-        
-        // ✅ 입력칸이 비어있으면 DB(현재 로드된 post)의 blogger_labels로 fallback
-        if (!labelsCsv){
-          labelsCsv = String(current?.blogger_labels || "").trim();
-        }
-        
+
         const payload = {
           id,
           title: $("title").value.trim(),
           html: $("html").value,
           publish: $("bloggerPublish").checked ? "true" : "false",
-          labels: labelsCsv,                               // ✅ labelsInput -> labelsCsv
-          labels_action: labelsCsv ? actionUi : "keep"      // ✅ labelsInput -> labelsCsv
+          labels: labelsCsv,
+          labels_action: labelsCsv ? actionUi : "keep" // ✅ 비어있으면 기존 라벨 유지
         };
 
         hideBanner();
@@ -1743,8 +1707,6 @@
 
         setBloggerMeta({ url: res.url, post_id: res.post_id, status: res.status });
         setStatus(`Blogger ${res.status === 'published' ? '발행' : '초안'} 완료`, true);
-        await loadPost();
-
       }catch(e){
         setStatus("Blogger 업로드 오류: " + (e?.message || e), false);
         setDebug(String(e && e.stack ? e.stack : e));
@@ -1822,8 +1784,6 @@
         if (!res || !res.ok) return setStatus("라벨 적용 실패: " + (res?.message||""), false);
 
         setStatus(`라벨 적용 완료 (${(res.labels||[]).length}개)`, true);
-        await loadPost(); // ✅ 시트에 반영된 blogger_labels 다시 로드해서 UI 갱신
-
         if (res.url) setBloggerMeta({ url: res.url, post_id: res.post_id, status: "labels_updated" });
 
         // 현재라벨 표시 갱신
