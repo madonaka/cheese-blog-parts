@@ -323,13 +323,17 @@ let _dragIndex = -1;
 
 const SECTION_CACHE = new Map();
 
+/**
+ * 특정 접두사(BODY 또는 IMG)로 시작하는 슬롯 번호의 최대값을 찾음
+ */
 function findMaxSlotNumber_(prefix){
   let maxN = 0;
   for (const s of SELECTED){
     try{
       const v = JSON.parse(s.varsText || "{}");
-      const slot = String(v?.SLOT || v?.IMG_SLOT || "").trim().toUpperCase();
-      const m = slot.match(new RegExp(`^${prefix}_(\\d+)$`));
+      // SLOT 또는 IMG_SLOT 키 모두에서 확인
+      const slotValue = String(v?.SLOT || v?.IMG_SLOT || "").trim().toUpperCase();
+      const m = slotValue.match(new RegExp(`^${prefix}_(\\d+)$`));
       if (m) maxN = Math.max(maxN, parseInt(m[1], 10));
     }catch(_){}
   }
@@ -351,6 +355,9 @@ async function getSectionHtmlCached(name) {
   } catch(e) { return ""; }
 }
 
+/**
+ * 섹션이 본문형인지 이미지형인지 판단
+ */
 async function checkSectionType(name) {
   const html = await getSectionHtmlCached(name);
   const isImg = isImageSectionName_(name) || /{{\s*(IMG_[A-Z0-9_]+|THUMB_URL)\s*}}/i.test(html);
@@ -423,16 +430,20 @@ function renderSelected(){
       SELECTED.splice(idx,1); renderSelected(); updateJsonPreviewSafe_();
     };
 
-    // ✅ SLOT 버튼 개별 지정 로직
+    // ✅ SLOT 버튼 개별 지정 로직 수정
     row.querySelector('[data-act="slot"]').onclick = async ()=>{
       const type = await checkSectionType(s.name);
       let vars = {}; try { vars = JSON.parse(s.varsText || "{}"); } catch(e){}
       
       if (type.isImg) {
         const next = findMaxSlotNumber_("IMG") + 1;
+        // 기존 SLOT 키 제거 후 이미지 전용 키로 할당
+        delete vars.SLOT;
         vars.IMG_SLOT = `IMG_${next}`;
       } else {
         const next = findMaxSlotNumber_("BODY") + 1;
+        // 기존 IMG_SLOT 키 제거 후 본문 전용 키로 할당
+        delete vars.IMG_SLOT;
         vars.SLOT = `BODY_${next}`;
       }
       s.varsText = JSON.stringify(vars, null, 2);
@@ -452,7 +463,9 @@ function updateJsonPreviewSafe_(){
   try{
     const sections = SELECTED.map(s=>{
       let vars = undefined;
-      if(s.varsText.trim()) vars = JSON.parse(s.varsText);
+      if(s.varsText.trim()) {
+        try { vars = JSON.parse(s.varsText); } catch(e) { vars = undefined; }
+      }
       return vars ? { name: s.name, vars } : { name: s.name };
     });
     $("jsonPreview").value = JSON.stringify({ id: $("tplId").value, name: $("tplName").value, sections }, null, 2);
@@ -469,10 +482,15 @@ async function autoAssignBodySlots_(){
   let n = findMaxSlotNumber_("BODY");
   for (let item of SELECTED) {
     let v = {}; try { v = JSON.parse(item.varsText || "{}"); } catch(e){}
-    if (v.SLOT || v.IMG_SLOT) continue;
+    // 이미 본문 슬롯이 지정되어 있으면 패스
+    if (v.SLOT) continue;
+    
     const type = await checkSectionType(item.name);
     if (type.isBody) {
-      n++; v.SLOT = `BODY_${n}`;
+      n++; 
+      v.SLOT = `BODY_${n}`;
+      // 이미지 슬롯 키가 있다면 제거 (중복 방지)
+      delete v.IMG_SLOT;
       item.varsText = JSON.stringify(v, null, 2);
     }
   }
@@ -483,10 +501,15 @@ async function autoAssignImgSlots_(){
   let n = findMaxSlotNumber_("IMG");
   for (let item of SELECTED) {
     let v = {}; try { v = JSON.parse(item.varsText || "{}"); } catch(e){}
-    if (v.SLOT || v.IMG_SLOT) continue;
+    // 이미 이미지 슬롯이 지정되어 있으면 패스
+    if (v.IMG_SLOT) continue;
+
     const type = await checkSectionType(item.name);
     if (type.isImg) {
-      n++; v.IMG_SLOT = `IMG_${n}`;
+      n++; 
+      v.IMG_SLOT = `IMG_${n}`;
+      // 본문 슬롯 키가 있다면 제거 (중복 방지)
+      delete v.SLOT;
       item.varsText = JSON.stringify(v, null, 2);
     }
   }
