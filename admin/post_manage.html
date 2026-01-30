@@ -1042,10 +1042,12 @@
 
       let __imgListCache = null;
 
-      async function initImgPickerUI_(){
-        const sel = document.getElementById("imgDbSelect");
-        const btn = document.getElementById("btnImgDbApply");
-        const pv  = document.getElementById("imgDbPreview");
+      
+      async function initImgPickerUIForIndex_(n){
+        const suffix = n ? String(n) : "base";
+        const sel = document.getElementById(`imgDbSelect_${suffix}`);
+        const btn = document.getElementById(`btnImgDbApply_${suffix}`);
+        const pv  = document.getElementById(`imgDbPreview_${suffix}`);
         if (!sel || !btn) return;
 
         sel.innerHTML = `<option value="">이미지 선택...</option>`;
@@ -1088,10 +1090,7 @@
             const toks = new Set(toksArr);
             const patch = {};
 
-            // ✅ 번호 토큰(IMG_*_1, IMG_*_2 ...)이 있으면 "비어있는 첫 번째" 인덱스에 채움
-            const indices = getImgTokenIndices_(toksArr);
-            const n = indices.length ? pickFirstEmptyImgIndex_(toksArr) : 0;
-
+            // ✅ 이 UI는 특정 IMG 인덱스(n)에만 채운다.
             const put = (baseKey, val) => {
               if (n){
                 const k = `${baseKey}_${n}`;
@@ -1110,10 +1109,12 @@
             put("IMG_OW", item.orig_w || "");
             put("IMG_OH", item.orig_h || "");
 
+            // 일부 템플릿은 THUMB_URL을 이미지로도 사용
             put("THUMB_URL", imgThumbUrl_(item.drive_file_id) || item.img_src || "");
-setTokenValues_(patch);
+
+            setTokenValues_(patch);
             scheduleAssemblePreview_();
-            setStatus(`이미지 토큰 자동입력 완료: ${id}`, true);
+            setStatus(`이미지 토큰 자동입력 완료: ${id} → ${n ? "IMG_"+n : "IMG"}`, true);
           });
 
         }catch(e){
@@ -1121,6 +1122,7 @@ setTokenValues_(patch);
           if (pv) pv.textContent = String(e?.message || e);
         }
       }
+
 
       for (const slot of (slotNames || [])){
         const wrap = document.createElement("div");
@@ -1147,22 +1149,34 @@ setTokenValues_(patch);
         (tokenNames || []).some(t => /^IMG_/.test(String(t||""))) ||
         (tokenNames || []).includes("THUMB_URL");
 
+      
       if (needsImg) {
-        const wrap = document.createElement("div");
-        wrap.className = "pm-dyn-item";
-        wrap.style.gridColumn = "1 / -1";
-        wrap.innerHTML = `
-          <div class="pm-dyn-key">이미지(DB) 선택</div>
-          <div class="pm-row" style="margin:8px 0 0;">
-            <select id="imgDbSelect" class="pm-select" style="min-width:320px;"></select>
-            <button id="btnImgDbApply" class="pm-btn">선택 이미지 토큰 자동입력</button>
-            <span class="pm-muted pm-small">※ 템플릿에 IMG_* 또는 THUMB_URL 토큰이 있을 때만 표시</span>
-          </div>
-          <div id="imgDbPreview" class="pm-muted pm-small" style="margin-top:8px;"></div>
-        `;
-        tokBox.appendChild(wrap);
-        initImgPickerUI_();
+        // ✅ 번호 토큰이 있으면(IMG_*_1, IMG_*_2 ...) 그룹별로 이미지 선택 UI를 각각 만든다.
+        // ✅ 번호 토큰이 없으면 기본(IMG) 1개만 만든다.
+        const indices = getImgTokenIndices_(tokenNames || []);
+        const groups = indices.length ? indices : [0];
+
+        for (const n of groups){
+          const suffix = n ? String(n) : "base";
+          const label  = n ? `IMG_${n}` : "IMG";
+
+          const wrap = document.createElement("div");
+          wrap.className = "pm-dyn-item";
+          wrap.style.gridColumn = "1 / -1";
+          wrap.innerHTML = `
+            <div class="pm-dyn-key">이미지(DB) 선택 · ${label}</div>
+            <div class="pm-row" style="margin:8px 0 0;">
+              <select id="imgDbSelect_${suffix}" class="pm-select" style="min-width:320px;"></select>
+              <button id="btnImgDbApply_${suffix}" class="pm-btn">선택 이미지 토큰 자동입력</button>
+              <span class="pm-muted pm-small">※ ${label} 토큰 묶음에만 반영</span>
+            </div>
+            <div id="imgDbPreview_${suffix}" class="pm-muted pm-small" style="margin-top:8px;"></div>
+          `;
+          tokBox.appendChild(wrap);
+          initImgPickerUIForIndex_(n);
+        }
       }
+
 
       for (const tok of tokenNames){
         const wrap = document.createElement("div");
