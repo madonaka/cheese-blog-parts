@@ -548,9 +548,10 @@ function escapeText_(s, allowTags){
 // 빈 줄 기준 문단 분리 → <p>..</p>, 문단 내부 줄바꿈은 <br>
 // allowTags=true면 "허용 태그"는 유지하면서 나머지만 이스케이프
 function textToParagraphHtml(text, allowTags) {
+  // 1. 기본 정리: 줄바꿈 통일 및 보이지 않는 특수문자 제거
   const raw = String(text ?? "").replace(/\r\n/g, "\n").replace(/\u200B/g, '');
 
-  // 1. 문단 분리 기준을 유지하되, 연속된 빈 줄을 보존하기 위해 split 로직 변경
+  // 2. 2번 이상의 엔터를 기준으로 크게 분리
   const chunks = raw.split(/\n{2,}/g); 
 
   if (chunks.length === 0) return "";
@@ -558,17 +559,19 @@ function textToParagraphHtml(text, allowTags) {
   return chunks.map(chunk => {
     const trimmedChunk = chunk.trim();
     
-    // 테이블 태그 예외 처리
+    // [예외 1] 테이블 태그인 경우 p태그 없이 그대로 반환
     if (allowTags && /^<table\b/i.test(trimmedChunk) && /<\/table>\s*$/i.test(trimmedChunk)) {
       return escapeText_(trimmedChunk, allowTags);
     }
 
-    // 2. 만약 청크 자체가 <br> 태그만 있거나 완전히 비어있다면 독립된 <br>로 반환
-    if (trimmedChunk === "<br>" || trimmedChunk === "<br/>") {
-      return "<br>";
+    // [예외 2] 청크 자체가 하나 이상의 <br> 태그로만 구성된 경우 (p 없이 독립 태그로 반환)
+    // 예: "<br>", "<br><br>", "<br/>" 등
+    const brOnlyRegex = /^(<br\s*\/?>)+$/i;
+    if (brOnlyRegex.test(trimmedChunk.replace(/\s/g, ''))) {
+      return trimmedChunk; 
     }
 
-    // 3. 문단 내부 줄바꿈 처리
+    // 3. 일반적인 문단 내부 줄바꿈 처리
     const lines = chunk.split("\n").map(l => l.trimEnd());
     let processedLines = [];
 
@@ -576,21 +579,21 @@ function textToParagraphHtml(text, allowTags) {
       let escaped = escapeText_(lines[i], allowTags);
       
       if (i < lines.length - 1) {
-        // 이미 <br>이 있으면 중복 방지, 없으면 추가
+        // 이미 줄 끝에 <br>이 있다면 중복 방지, 없으면 추가
         if (/<br\s*\/?>$/i.test(escaped.trim())) {
           processedLines.push(escaped);
         } else {
           processedLines.push(escaped + "<br>");
         }
       } else {
-        // 문단 마지막 줄의 불필요한 <br> 제거
+        // 문단 마지막 줄은 <br>을 붙이지 않음 (p태그가 닫히기 때문)
         processedLines.push(escaped.replace(/<br\s*\/?>$/i, ""));
       }
     }
 
     const content = processedLines.filter(line => line.length > 0).join("\n");
     
-    // 내용이 있으면 p태그로 감싸고, 없으면(엔터만 친 경우) br로 처리
+    // 내용이 있으면 p태그로 감싸고, 내용이 없으면(엔터만 남은 경우) 독립 br로 처리
     return content ? `<p>${content}</p>` : "<br>";
   }).join("\n");
 }
