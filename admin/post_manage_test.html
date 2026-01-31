@@ -1551,10 +1551,25 @@ function extractTokensMetaFromHtml_(html){
       refreshSectionState_();
     };
 
-    // ✅ 커스텀 알림창 함수
-    window.showAlert_ = function(msg, title = "알림", icon = "✅") {
+    // ✅ 커스텀 알림창 함수 (링크 지원 버전으로 교체)
+    window.showAlert_ = function(msg, title = "알림", icon = "✅", url = null) {
       document.getElementById("alertTitle").textContent = title;
-      document.getElementById("alertMsg").textContent = msg;
+      const msgEl = document.getElementById("alertMsg");
+      
+      // 1. 줄바꿈 처리를 위해 innerHTML 사용
+      msgEl.innerHTML = msg.replace(/\n/g, "<br>");
+
+      // 2. URL이 전달되었다면 '바로가기 버튼' 추가
+      if (url) {
+        msgEl.innerHTML += `
+          <div style="margin-top: 20px; padding-top: 15px; border-top: 1px dashed #e2e8f0;">
+            <a href="${url}" target="_blank" class="pm-link" style="font-size: 15px; display:inline-flex; align-items:center; gap:6px;">
+              🌐 블로그 글 확인하기 ↗
+            </a>
+          </div>
+        `;
+      }
+
       document.getElementById("alertIcon").textContent = icon;
       document.getElementById("alertModal").style.display = "flex";
     };
@@ -2080,6 +2095,9 @@ $("html").value = stripAlertModal_(rawHtml);
 
         setBloggerMeta({ url: res.url, post_id: res.post_id, status: res.status });
         setStatus(`Blogger ${res.status === 'published' ? '발행' : '초안'} 완료`, true);
+
+        return res; // ✅ [중요] 이 한 줄을 꼭 추가해야 합니다! (결과 반환)
+        
       }catch(e){
         setStatus("Blogger 업로드 오류: " + (e?.message || e), false);
         setDebug(String(e && e.stack ? e.stack : e));
@@ -2239,13 +2257,15 @@ function clearEditor(){
     
         // 2) Blogger 업로드 (인자로 발행여부 전달)
         await exportToBlogger(publish);
-    
-        // ✅ [수정] 여기서 'msg' 변수를 먼저 만들어줘야 아래에서 쓸 수 있습니다.
+
+        // ✅ URL 추출 (없을 수도 있으므로 안전하게 처리)
+        const postUrl = res ? res.url : null;
+        
         const msg = publish ? "원클릭 발행 완료" : "원클릭 초안 저장 완료";
     
         setStatus(msg, true);
-        showAlert_(msg + "\n편집창을 초기화합니다.", "작업 완료", "🚀");
-        
+        // ✅ 알림창에 URL 전달
+        showAlert_(msg + "\n편집창을 초기화합니다.", "작업 완료", "🚀", postUrl);        
         clearEditor();
         
       }catch(e){
