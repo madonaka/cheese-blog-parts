@@ -425,19 +425,15 @@
           
             <div class="pm-top-grid">
             
-              <section class="pm-card">
-                <div class="pm-row">
-                  <div class="pm-label">Post 선택</div>
-                  <select id="postSelect" class="pm-select"></select>
-            
-                  <button id="btnRefresh" class="pm-btn">목록 새로고침</button>
-                  <button id="btnLoad" class="pm-btn primary">불러오기</button>
+           <section class="pm-card">
+                <div class="pm-row" style="margin-bottom: 16px; border-bottom: 1px dashed rgba(0,0,0,0.1); padding-bottom: 14px;">
+                  <button id="btnOpenNewModal" class="pm-btn primary" style="flex:1; height:44px;">➕ 새 포스트 작성</button>
+                  <button id="btnOpenEditModal" class="pm-btn ghost" style="flex:1; height:44px;">📂 기존 포스트 불러오기</button>
                 </div>
-            
-                <div class="pm-row" style="margin-top:10px;">
-                  <div class="pm-label">ID</div>
-                  <input id="id" class="pm-input" type="text" placeholder="예: NM_20260121_01" disabled />
-                  <button id="btnSetFromSelect" class="pm-btn">선택값을 ID에 반영</button>
+
+                <div class="pm-row">
+                  <div class="pm-label">현재 작업 ID</div>
+                  <input id="id" class="pm-input" type="text" placeholder="작성할 ID가 여기에 표시됩니다." disabled style="flex:1; background:#f8fafc; font-weight:800; color:#2563eb;" />
                 </div>
             
                 <div class="pm-row" style="margin-top:10px;">
@@ -2190,7 +2186,7 @@ $("html").value = stripAlertModal_(rawHtml);
       }
     }
 
- async function patchBloggerLabels(){
+   async function patchBloggerLabels(){
       const id = getTargetId();
       if (!id) return setStatus("id가 필요합니다.", false);
 
@@ -2303,84 +2299,106 @@ $("html").value = stripAlertModal_(rawHtml);
       return `${y}${m}${day}`;
     }
 
-    async function regenId(){
+    // ✅ 공통 모달 닫기
+    window.closeModal_ = (id) => $(id).style.display = "none";
+
+    // 1️⃣ 새 글 모달 로직
+    $("btnOpenNewModal").onclick = () => {
+      $("newPostModal").style.display = "flex";
+      $("category").value = "";
+      $("manualIdArea").style.display = "none";
+    };
+
+    $("category").onchange = () => {
+      $("manualIdArea").style.display = ($("category").value === "manual") ? "block" : "none";
+    };
+
+    $("btnCreateIdConfirm").onclick = async () => {
       const cat = $("category").value;
-
-      if (!cat) {
-        setStatus("분류를 먼저 선택하세요.", false);
-        return;
-      }
-
-      if (cat === "manual"){
-        setStatus("수동입력 분류입니다. ID를 직접 입력하세요.", true);
-        $("id").disabled = false;
-        $("id").focus();
-        setStickyId_();
-        return;
-      }
-
-      const prefix = mapCategoryToPrefix(cat);
-      const dateToken = yyyymmddNow();
-      const base = `${prefix}_${dateToken}_`;
-
-      try{
+      if(!cat) return alert("분류를 선택하세요.");
+      
+      let finalId = "";
+      if(cat === "manual") {
+        finalId = $("manualIdInput").value.trim();
+        if(!finalId) return alert("ID를 입력하세요.");
+      } else {
+        // 기존 regenId 로직 활용하여 ID 생성
         setBusy_(true);
-        setStatus("ID 생성 중...", true);
-
+        const prefix = mapCategoryToPrefix(cat);
+        const base = `${prefix}_${yyyymmddNow()}_`;
         const res = await apiGet("listPosts");
-        if (!res || !res.ok) throw new Error(res?.message || "LIST_FAILED");
-
         let maxSeq = 0;
-        for (const it of (res.items || [])){
-          const id = String(it.id || "");
-          if (!id.startsWith(base)) continue;
-          const tail = id.slice(base.length);
-          const n = parseInt(tail, 10);
-          if (!isNaN(n)) maxSeq = Math.max(maxSeq, n);
-        }
+        (res.items || []).forEach(it => {
+          if (String(it.id).startsWith(base)) {
+            const n = parseInt(it.id.slice(base.length), 10);
+            if (!isNaN(n)) maxSeq = Math.max(maxSeq, n);
+          }
+        });
+        finalId = `${base}${String(maxSeq + 1).padStart(2, "0")}`;
+      }
 
-        const nextSeq = String(maxSeq + 1).padStart(2, "0");
-        $("id").value = `${base}${nextSeq}`;
-        $("id").disabled = true;
+      clearEditor(); // 편집창 비우기
+      $("id").value = finalId;
+      setStickyId_();
+      closeModal_('newPostModal');
+      setStatus(`새 작업 시작: ${finalId}`);
+      setBusy_(false);
+    };
 
-        setStickyId_();
-        setStatus(`ID 생성 완료: ${$("id").value}`, true);
-      }catch(e){
-        setStatus("ID 생성 오류: " + (e?.message || e), false);
-        setDebug(String(e && e.stack ? e.stack : e));
-      }finally{
-        setBusy_(false);
+    // 2️⃣ 기존 글 모달 로직 (불러오기)
+    $("btnOpenEditModal").onclick = () => {
+      $("editPostModal").style.display = "flex";
+      refreshPostList_();
+    };
+
+    async function refreshPostList_() {
+      const listEl = $("postModalList");
+      listEl.innerHTML = `<li class="pm-muted" style="text-align:center; padding:20px;">불러오는 중...</li>`;
+      try {
+        const res = await apiGet("listPosts");
+        const items = res.items || [];
+        window._cachedPostList = items;
+        renderPostModalList_(items);
+      } catch(e) {
+        listEl.innerHTML = `<li class="pm-status err">로드 실패: ${e.message}</li>`;
       }
     }
 
-    function onCategoryChange(){
-      const cat = $("category").value;
-
-      if (cat === "manual"){
-        $("id").disabled = false;
-        setStatus("수동입력: ID를 직접 입력하세요.", true);
-        setStickyId_();
-        return;
-      }
-
-      $("id").disabled = true;
-      if (cat) regenId();
+    function renderPostModalList_(items) {
+      const listEl = $("postModalList");
+      listEl.innerHTML = "";
+      items.forEach(it => {
+        const li = document.createElement("li");
+        li.className = "pm-lib-item";
+        li.innerHTML = `
+          <div style="flex:1;">
+            <div class="pm-lib-name">${it.id}</div>
+            <div class="pm-small pm-muted">${it.title || '(제목 없음)'}</div>
+          </div>
+          <div class="pm-lib-add">열기 →</div>
+        `;
+        li.onclick = () => {
+          $("id").value = it.id;
+          loadPost(); // 기존 불러오기 함수 호출
+          closeModal_('editPostModal');
+        };
+        listEl.appendChild(li);
+      });
     }
 
-    // templateSelect 변경 시: SLOT/토큰 입력칸 재구성
-    $("templateSelect").addEventListener("change", async ()=>{
-      const tplId = $("templateSelect").value || "";
-      await analyzeAndRenderTemplate_(tplId);
-      attachDynamicPreviewListeners_();
-      scheduleAssemblePreview_();
-    });
+    // 검색 필터
+    $("postSearchInput").oninput = (e) => {
+      const kw = e.target.value.toLowerCase();
+      const filtered = (window._cachedPostList || []).filter(it => 
+        it.id.toLowerCase().includes(kw) || (it.title || "").toLowerCase().includes(kw)
+      );
+      renderPostModalList_(filtered);
+    };
 
+ 
     /* =========================
        버튼 연결
     ========================= */
-    $("btnRefresh").addEventListener("click", ()=>refreshList());
-    $("btnLoad").addEventListener("click", loadPost);
-    $("btnSetFromSelect").addEventListener("click", setFromSelect);
 
     $("btnApplyTemplate").addEventListener("click", applyTemplateNew);
     $("btnRewrapTemplate").addEventListener("click", rewrapTemplateKeepBody);
@@ -2592,5 +2610,52 @@ $("html").value = stripAlertModal_(rawHtml);
       </div>
     </div>
   </div>
+
+  <div id="newPostModal" class="pm-modal-overlay" style="display:none;">
+    <div class="pm-modal-content">
+      <div class="pm-modal-header">
+        <h3 style="margin:0;">새 포스트 생성</h3>
+        <button class="pm-btn small ghost" onclick="closeModal_('newPostModal')">✕</button>
+      </div>
+      <div class="pm-modal-body">
+        <div class="pm-label" style="margin-bottom:8px;">1. 카테고리 분류 선택</div>
+        <select id="category" class="pm-select" style="width:100%; margin-bottom:16px; height:42px;">
+          <option value="">분류 선택...</option>
+          <option value="monthly_news">주요 사건, 이슈, 뉴스 월별 총정리 (NM)</option>
+          <option value="timeline_kr_cn_jp">한국사+중국사+일본사 연표 (TL)</option>
+          <option value="genealogy_series">가계도시리즈 (GN)</option>
+          <option value="etc">기타 (ETC)</option>
+          <option value="manual">수동입력</option>
+        </select>
+        <div id="manualIdArea" style="display:none; margin-bottom:16px;">
+          <div class="pm-label" style="margin-bottom:8px;">2. ID 직접 입력</div>
+          <input id="manualIdInput" class="pm-input" type="text" style="width:100%;" placeholder="예: MY_POST_01" />
+        </div>
+        <div class="pm-muted pm-small">분류를 선택하면 자동으로 다음 ID가 생성됩니다.</div>
+      </div>
+      <div class="pm-modal-footer">
+        <button id="btnCreateIdConfirm" class="pm-btn primary" style="width:100%;">이 ID로 새 글 쓰기 시작</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="editPostModal" class="pm-modal-overlay" style="display:none;">
+    <div class="pm-modal-content">
+      <div class="pm-modal-header">
+        <h3 style="margin:0;">기존 포스트 불러오기</h3>
+        <button class="pm-btn small ghost" onclick="closeModal_('editPostModal')">✕</button>
+      </div>
+      <div class="pm-modal-body">
+        <input id="postSearchInput" class="pm-input" type="text" placeholder="ID 또는 제목 검색..." style="width:100%; margin-bottom:12px;" />
+        <ul id="postModalList" class="pm-lib-list" style="max-height:400px; overflow-y:auto;">
+          <li class="pm-muted" style="text-align:center; padding:20px;">목록을 불러오는 중...</li>
+        </ul>
+      </div>
+      <div class="pm-modal-footer">
+        <button class="pm-btn ghost" style="width:100%;" onclick="refreshPostList_()">🔄 목록 새로고침</button>
+      </div>
+    </div>
+  </div>
+  
 </body>
 </html>
