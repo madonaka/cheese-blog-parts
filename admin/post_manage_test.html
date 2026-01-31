@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>포스트 관리 테스트</title>
 
+  <!-- ✅ 메인 관리자 CSS 재사용 -->
   <link rel="stylesheet" href="./admin.css" />
 
   <style>
@@ -362,6 +363,11 @@
 
           <div id="banner" class="pm-banner"></div>
 
+          <!-- ==============================
+               ✅ Sticky Action Bar (NEW)
+               - 항상 상단에 고정
+               - 핵심 액션 + 진행상태 표시
+          ============================== -->
           <div class="pm-stickybar" id="stickyBar">
             <div class="bar-row">
               <div class="bar-left">
@@ -375,11 +381,13 @@
 
               <div class="bar-right">
                 <div class="pm-sticky-actions">
+                  <!-- 원클릭 파이프라인 -->
                   <button id="btnQuickPublish" class="pm-btn primary">원클릭 발행</button>
                   <button id="btnQuickDraft" class="pm-btn ghost">원클릭 초안 저장</button>
 
                   <div class="pm-divider"></div>
 
+                  <!-- 자주 쓰는 단일 액션 -->
                   <button id="btnQuickDriveSave" class="pm-btn">Drive 저장</button>
                   <button id="btnQuickBloggerUpsert" class="pm-btn">Blogger 업로드</button>
 
@@ -415,27 +423,24 @@
             </div>
           </div>
           
-          <div class="pm-top-grid">
+            <div class="pm-top-grid">
             
-            <section class="pm-card">
-              <div class="pm-row" style="justify-content: space-between;">
-                <div style="display:flex; gap:10px; align-items:center;">
-                  <button id="btnOpenPostModal" class="pm-btn" style="min-width:140px;">
-                    📂 기존 글 불러오기
-                  </button>
-                  <button id="btnStartNewPost" class="pm-btn primary" style="min-width:120px;">
-                    📝 새 글 작성
-                  </button>
-                </div>
-                <div id="currentPostInfo" class="pm-pill" style="background:#f1f5f9; padding:8px 12px; font-size:13px;">
-                  선택됨: 없음 (새 글 모드)
-                </div>
-              </div>
-            
-              <div id="newPostConfig" style="margin-top:15px; padding:15px; background:rgba(37,99,235,0.04); border-radius:12px; border:1px solid rgba(37,99,235,0.1); display:block;">
-                <div class="pm-label" style="color:#2563eb; margin-bottom:10px;">새 글 설정 (ID 생성)</div>
-                
+              <section class="pm-card">
                 <div class="pm-row">
+                  <div class="pm-label">Post 선택</div>
+                  <select id="postSelect" class="pm-select"></select>
+            
+                  <button id="btnRefresh" class="pm-btn">목록 새로고침</button>
+                  <button id="btnLoad" class="pm-btn primary">불러오기</button>
+                </div>
+            
+                <div class="pm-row" style="margin-top:10px;">
+                  <div class="pm-label">ID</div>
+                  <input id="id" class="pm-input" type="text" placeholder="예: NM_20260121_01" disabled />
+                  <button id="btnSetFromSelect" class="pm-btn">선택값을 ID에 반영</button>
+                </div>
+            
+                <div class="pm-row" style="margin-top:10px;">
                   <div class="pm-label">분류</div>
                   <select id="category" class="pm-select">
                     <option value="">분류 선택...</option>
@@ -445,19 +450,12 @@
                     <option value="etc">기타</option>
                     <option value="manual">수동입력</option>
                   </select>
-                  
-                  <div class="pm-label" style="margin-left:10px;">ID</div>
-                  <input id="id" class="pm-input" type="text" placeholder="분류 선택 시 자동 생성" disabled style="background:#eee;" />
-                  
-                  <button id="btnRegenId" class="pm-btn small">ID 생성</button>
+                  <button id="btnRegenId" class="pm-btn">ID 새로 생성</button>
+                  <div class="pm-muted pm-small">※ 분류 선택 시 ID 자동생성. “수동입력”만 직접 입력 가능.</div>
                 </div>
-                <div class="pm-muted pm-small" style="margin-top:6px;">
-                  ※ 기존 글을 수정할 때는 ID를 변경할 수 없습니다.
-                </div>
-              </div>
             
-              <div class="pm-row" style="margin-top:10px;">
-                <div class="pm-label">템플릿(Drive)</div>
+                <div class="pm-row" style="margin-top:10px;">
+                  <div class="pm-label">템플릿(Drive)</div>
                   <select id="templateSelect" class="pm-select" style="min-width:280px;"></select>
             
                   <button id="btnApplyTemplate" class="pm-btn">템플릿 적용(새로)</button>
@@ -525,10 +523,12 @@
                 ※ 템플릿에서 SLOT(예: BODY_1/2/3) 또는 토큰(예: {{THUMB_URL}})을 감지해 입력칸이 자동 생성됩니다.
               </p>
 
+              <!-- SLOT(TEXTAREA) -->
               <div id="slotFields" class="pm-dyn-grid"></div>
 
               <div class="pm-hr"></div>
 
+              <!-- Token(INPUT) -->
               <div id="tokenFields" class="pm-dyn-grid"></div>
             </div>
 
@@ -538,9 +538,10 @@
     </div>
   </div>
 
+  <!-- ✅ 반드시 포함해야 하는 공통 스크립트 유지 -->
   <script src="./admin-common.js"></script>
 
-<script>
+  <script>
   /** =========================
    * ✅ admin-common.js: 헤더/메뉴 슬롯 유지
    * ========================= */
@@ -559,26 +560,23 @@
   (() => {
     const $ = (id) => document.getElementById(id);
     let current = null;
-    // 포스트 목록 캐시
-    let _cachedPostList = [];
-    
+
     // ✅ 고정: Apps Script 주소
     const API_BASE = "https://script.google.com/macros/s/AKfycbwXqz1uMy3EOrisCEKIe0Fk7yu0P6MQ1ddHDvo7Sr_CPEYY0RHP2GyUBL8YhaBqxnmBJg/exec";
-    // 섹션 HTML 캐시
-    const sectionCache = new Map();
+    // 섹션 HTML 캐시(같은 섹션을 여러 번 조립할 때 API 호출 최소화)
+    const sectionCache = new Map(); // key: sectionName, value: html
 
     // 현재 템플릿 분석 결과
     const templateState = {
       templateId: "",
       manifest: null,
-      sections: [],   
-      slots: [],   
-      tokens: []   
+      slots: [],   // ["BODY_1", "BODY_2", ...]
+      tokens: []   // ["THUMB_URL", "CANONICAL_URL", ...]
     };
 
     /* =========================
-       ✅ Sticky bar helpers
-       ========================= */
+       ✅ Sticky bar helpers (NEW)
+    ========================= */
     function setBusy_(on){
       const sp = $("stickySpinner");
       if (!sp) return;
@@ -587,18 +585,14 @@
 
     function setStickyId_(){
       const id = getTargetId() || "-";
-      if($("stickyId")) $("stickyId").textContent = "ID: " + id;
+      $("stickyId").textContent = "ID: " + id;
     }
 
-    function getTargetId(){
-      // [수정] 드롭박스 제거됨, ID 입력칸만 확인
-      const fromInput = $("id") ? $("id").value.trim() : "";
-      return fromInput || "";
-    }
+
 
     /* =========================
-       ✅ 실시간 프리뷰
-       ========================= */
+       ✅ 실시간 프리뷰(동적 슬롯/토큰 입력 → 최종 HTML 자동 조립)
+    ========================= */
     let previewTimer = null;
     let previewSeq = 0;
 
@@ -624,7 +618,7 @@
       }
     }
 
-    // 이벤트 위임
+    // ✅ 이벤트 위임 방식: 동적 필드가 재렌더링되어도 항상 input/change가 잡힘
     (function bindPreviewDelegation_(){
       const bind = (boxId) => {
         const box = $(boxId);
@@ -637,33 +631,35 @@
       bind("tokenFields");
     })();
 
+    // ✅ 동적 카드 "비우기" 버튼 (이벤트 위임)
     (function bindClearDelegation_(){
       const clearBySelector = (sel) => {
         const el = document.querySelector(sel);
         if (!el) return;
         el.value = "";
+        // 프리뷰 자동 갱신 트리거
         el.dispatchEvent(new Event("input", { bubbles:true }));
         el.dispatchEvent(new Event("change", { bubbles:true }));
       };
-      
+    
       const bind = (boxId) => {
         const box = $(boxId);
         if (!box || box.__pmClearBound) return;
-        
+    
         box.addEventListener("click", (e) => {
           const btn = e.target.closest(".pm-dyn-clear");
           if (!btn) return;
-          
+    
           const slot = btn.getAttribute("data-clear-slot");
           const tok  = btn.getAttribute("data-clear-token");
-          
+    
           if (slot) clearBySelector(`[data-slot="${CSS.escape(slot)}"]`);
           if (tok)  clearBySelector(`[data-token="${CSS.escape(tok)}"]`);
         });
-        
+    
         box.__pmClearBound = true;
       };
-      
+    
       bind("slotFields");
       bind("tokenFields");
     })();
@@ -685,11 +681,12 @@
     }
 
     function setStatus(msg, ok=true){
+      // 기존 하단 status
       const el = $("status");
-      if(el) {
-        el.textContent = msg;
-        el.className = "pm-status " + (ok ? "ok" : "err");
-      }
+      el.textContent = msg;
+      el.className = "pm-status " + (ok ? "ok" : "err");
+
+      // ✅ Sticky bar status도 같이 갱신
       const st = $("stickyStatus");
       const tx = $("stickyStatusText");
       if (tx) tx.textContent = msg;
@@ -701,12 +698,14 @@
 
     function showBanner(msg){
       const b = $("banner");
-      if(b) { b.textContent = msg; b.style.display = "block"; }
+      b.textContent = msg;
+      b.style.display = "block";
     }
 
     function hideBanner(){
       const b = $("banner");
-      if(b) { b.textContent = ""; b.style.display = "none"; }
+      b.textContent = "";
+      b.style.display = "none";
     }
 
     function setDebug(obj){
@@ -750,6 +749,7 @@
         }
       }
 
+      // ✅ sticky link도 같이 세팅
       if (stickyLink){
         if (info && info.url){
           stickyLink.href = info.url;
@@ -780,9 +780,10 @@
       return `${API_BASE}?${params.toString()}`;
     }
 
+    // ===== meta/body parsing (기존 글 수정용) =====
     function readTemplateMeta_(html){
       const get = (key) => {
-        const re = new RegExp(``, "i");
+        const re = new RegExp(`<!--\\s*${key}\\s*:\\s*([^>]+?)\\s*-->`, "i");
         const m = String(html||"").match(re);
         return m ? m[1].trim() : "";
       };
@@ -792,30 +793,38 @@
       };
     }
 
+    // ✅ 다중 BODY 마커도 지원
     function extractBodies_(html){
       const t = String(html || "");
       const out = {};
-      const reStart = //ig;
+
+      const reStart = /<!--\s*BODY_START(?::([A-Z0-9_]+))?\s*-->/ig;
       let m;
       while ((m = reStart.exec(t)) !== null){
         const name = (m[1] || "BODY").trim();
         const startIdx = reStart.lastIndex;
+
         const endMark = name === "BODY"
-          ? //ig
-          : new RegExp(``, "ig");
+          ? /<!--\s*BODY_END\s*-->/ig
+          : new RegExp(`<!--\\s*BODY_END\\s*:\\s*${escapeRegExp(name)}\\s*-->`, "ig");
+
         endMark.lastIndex = startIdx;
         const em = endMark.exec(t);
         if (!em) continue;
+
         const endIdx = em.index;
         out[name] = t.slice(startIdx, endIdx).trim();
         reStart.lastIndex = endMark.lastIndex;
       }
+
       if (Object.keys(out).length === 0){
         out["BODY"] = t.trim();
       }
+
       return out;
     }
 
+    // ===== API =====
     async function apiGet(mode, paramsObj){
       const url = buildUrl(mode, paramsObj);
       const res = await fetch(url, { method:"GET", cache:"no-store", credentials:"omit" });
@@ -844,38 +853,46 @@
       return data;
     }
 
-    // ===== 이미지 관리 =====
-    const IMG_DB_URL = "https://script.google.com/macros/s/AKfycbyIsoT-0JY2nxCPFx2JH-G3Ja8tztjlJ6fiVAyxLgd-8Mzxjob8YDGgRO-biOCXe5WU/exec";
+    // ===== 이미지 관리 (✅ JSONP로 list/get) =====
+    const IMG_DB_URL =
+      "https://script.google.com/macros/s/AKfycbyIsoT-0JY2nxCPFx2JH-G3Ja8tztjlJ6fiVAyxLgd-8Mzxjob8YDGgRO-biOCXe5WU/exec";
+
     const IMG_THUMB_W = 1200;
     function imgThumbUrl_(fileId, w = IMG_THUMB_W){
       const id = String(fileId || "").trim();
       if (!id) return "";
       return `https://drive.google.com/thumbnail?id=${encodeURIComponent(id)}&sz=w${encodeURIComponent(String(w||IMG_THUMB_W))}`;
     }
+
     function imgMakeNonce_(){
       return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
     }
+
     function imgJsonpCall_(url, cbName, timeoutMs = 12000){
       return new Promise((resolve) => {
         let done = false;
         let script = null;
+
         const timer = setTimeout(() => {
           if (done) return;
           done = true;
           cleanup();
           resolve({ ok:false, error:"timeout" });
         }, timeoutMs);
+
         function cleanup(){
           clearTimeout(timer);
           try { delete window[cbName]; } catch(e){}
           if (script && script.parentNode) script.parentNode.removeChild(script);
         }
+
         window[cbName] = (data) => {
           if (done) return;
           done = true;
           cleanup();
           resolve(data);
         };
+
         script = document.createElement("script");
         script.src = url + (url.includes("?") ? "&" : "?") + `_=${Date.now()}`;
         script.onerror = () => {
@@ -884,21 +901,26 @@
           cleanup();
           resolve({ ok:false, error:"script_load_failed" });
         };
+
         document.head.appendChild(script);
       });
     }
+
     async function imgList_(){
       const nonce = imgMakeNonce_();
       const cb = `__img_list_cb_${nonce.replace(/[^a-zA-Z0-9_]/g,"_")}`;
       const url = `${IMG_DB_URL}?mode=list&callback=${encodeURIComponent(cb)}&nonce=${encodeURIComponent(nonce)}`;
+
       const res = await imgJsonpCall_(url, cb, 12000);
       if (!res || !res.ok) throw new Error(res?.error || "IMG_LIST_FAILED");
       return Array.isArray(res.items) ? res.items : [];
     }
+
     async function imgGet_(id){
       const nonce = imgMakeNonce_();
       const cb = `__img_get_cb_${nonce.replace(/[^a-zA-Z0-9_]/g,"_")}`;
       const url = `${IMG_DB_URL}?mode=get&id=${encodeURIComponent(String(id||""))}&callback=${encodeURIComponent(cb)}&nonce=${encodeURIComponent(nonce)}`;
+
       const res = await imgJsonpCall_(url, cb, 12000);
       if (!res || !res.ok) throw new Error(res?.error || "IMG_GET_FAILED");
       return res.item || null;
@@ -910,35 +932,49 @@
       if (!res || !res.ok) throw new Error(res?.message || "LIST_TEMPLATES_FAILED");
       return res.items || [];
     }
+
     async function getTemplateManifest_(templateId){
       const res = await apiGet("getTemplate", { template_id: templateId });
       if (!res || !res.ok) throw new Error(res?.message || "GET_TEMPLATE_FAILED");
+
       const txt = String(res.json || "").trim();
       if (!txt) throw new Error("TEMPLATE_JSON_EMPTY");
+
       let manifest = null;
       try{ manifest = JSON.parse(txt); }
-      catch(e){ throw new Error("TEMPLATE_JSON_PARSE_FAILED: " + (e?.message || e)); }
+      catch(e){
+        throw new Error("TEMPLATE_JSON_PARSE_FAILED: " + (e?.message || e));
+      }
       return manifest;
     }
+
     async function getSectionHtml_(name){
       const key = String(name || "").trim();
       if (!key) return "";
       if (sectionCache.has(key)) return sectionCache.get(key);
+
       const res = await apiGet("getSection", { name: key });
       if (!res || !res.ok) throw new Error(res?.message || ("GET_SECTION_FAILED: " + key));
+
       const html = String(res.html || "");
       sectionCache.set(key, html);
       return html;
     }
 
-    function buildTokensMetaComment_(vars){
+function buildTokensMetaComment_(vars){
+      // ✅ 템플릿에서 감지된 token 목록 + 현재 vars 키를 합쳐서 저장
+      // - IMG_SRC_1 같이 번호 토큰도 그대로 저장됨
+      // - reserved/slot 계열은 제외
       const fallbackKeys = [
         "THUMB_URL","CANONICAL_URL","YEAR","MONTH",
         "YEAR_NAV_JSON",
         "IMG_ID","IMG_SRC","IMG_HREF","IMG_OW","IMG_OH",
         "IMG_ALT","IMG_TITLE","IMG_SNIPPET","ZOOM_LABEL"
       ];
+
       const reserved = new Set(["TITLE","NAV","FOOTER","title","nav","footer"]);
+
+      // slots는 토큰 메타로 저장하지 않음(BODY 마커로 별도 보존)
       const slotNames = Array.isArray(templateState?.slots) ? templateState.slots : [];
       for (const s of slotNames){
         const a = String(s || "").trim();
@@ -946,41 +982,57 @@
         reserved.add(a);
         reserved.add(a.toUpperCase());
       }
+
       const keySet = new Set();
+
+      // 1) 템플릿 분석 결과 token 목록 우선
       const tplTokens = Array.isArray(templateState?.tokens) ? templateState.tokens : [];
       if (tplTokens.length){
         tplTokens.forEach(k => keySet.add(String(k || "").trim()));
       }else{
+        // 분석이 없는 경우(구형 HTML 등) fallback
         fallbackKeys.forEach(k => keySet.add(k));
       }
+
+      // 2) 현재 vars에 존재하는 키도 합침(분석 누락 방지)
       if (vars && typeof vars === "object"){
         Object.keys(vars).forEach(k => keySet.add(String(k || "").trim()));
       }
+
       const obj = {};
       for (const key0 of keySet){
         const key = String(key0 || "").trim();
         if (!key) continue;
         if (reserved.has(key)) continue;
+
+        // BODY/BODY_1 같은 슬롯성 키는 제외
         if (/^BODY(_\d+)?$/i.test(key)) continue;
+
+        // 토큰처럼 생긴 키만 저장(너무 잡다한 키 방지)
         if (!/^[A-Za-z0-9_]+$/.test(key)) continue;
+
         const v = vars ? vars[key] : undefined;
         if (v === undefined || v === null) continue;
+
         const s = String(v);
         if (s.trim() === "") continue;
         obj[key] = s;
       }
+
       if (!Object.keys(obj).length) return "";
-      return `\n`;
+      return `<!-- tokens: ${JSON.stringify(obj)} -->\n`;
     }
 
-    function extractTokensMetaFromHtml_(html){
+function extractTokensMetaFromHtml_(html){
       const t = String(html || "");
-      const m = t.match(//i);
+      const m = t.match(/<!--\s*tokens\s*:\s*({[\s\S]*?})\s*-->/i);
       if (!m) return {};
       try{
         const obj = JSON.parse(m[1]);
         return (obj && typeof obj === "object" && !Array.isArray(obj)) ? obj : {};
-      }catch(_){ return {}; }
+      }catch(_){
+        return {};
+      }
     }
 
     function escapeRegExp(s){
@@ -990,25 +1042,40 @@
     function replaceTokens_(html, vars){
       let out = String(html || "");
       if (!vars || typeof vars !== "object") return out;
+
       for (const [k,v] of Object.entries(vars)){
         const key = String(k || "").trim();
         if (!key) continue;
         const re = new RegExp(`{{\\s*${escapeRegExp(key)}\\s*}}`, "g");
         out = out.replace(re, String(v ?? ""));
       }
+
       out = out.replace(/\{\s*zoom_label\s*\}/gi, String(vars?.ZOOM_LABEL ?? vars?.zoom_label ?? ""));
       return out;
     }
 
-    // ===== IMG_SLOT helpers =====
+
+    // =========================
+    // ✅ IMG_SLOT helpers (NEW)
+    // - 이미지 섹션이 여러 개일 때, IMG_SLOT(예: IMG_1)을 기준으로
+    //   {{IMG_SRC}} 같은 "번호 없는 토큰"을 {{IMG_SRC_1}} 형태로 자동 넘버링
+    // =========================
     function parseImgSlotIndex_(v){
       const m = String(v || "").trim().toUpperCase().match(/^IMG_(\d+)$/);
       return m ? Number(m[1]) : 0;
     }
+
     function applyImgSlotNumbering_(html, imgSlot){
       const n = parseImgSlotIndex_(imgSlot);
       if (!n) return String(html || "");
-      const baseTokens = ["IMG_ID","IMG_SRC","IMG_HREF","IMG_OW","IMG_OH","IMG_ALT","IMG_TITLE","IMG_SNIPPET","THUMB_URL"];
+
+      // IMG 토큰 패밀리(번호를 붙일 대상)
+      const baseTokens = [
+        "IMG_ID","IMG_SRC","IMG_HREF","IMG_OW","IMG_OH","IMG_ALT","IMG_TITLE","IMG_SNIPPET",
+        // 일부 템플릿은 THUMB_URL을 이미지로도 사용하므로 함께 넘버링
+        "THUMB_URL"
+      ];
+
       let out = String(html || "");
       for (const t of baseTokens){
         const re = new RegExp(`{{\\s*${escapeRegExp(t)}\\s*}}`, "g");
@@ -1016,6 +1083,7 @@
       }
       return out;
     }
+
     function getImgTokenIndices_(tokenNames){
       const idx = new Set();
       (tokenNames || []).forEach(t=>{
@@ -1025,73 +1093,147 @@
       return Array.from(idx).filter(n=>Number.isFinite(n)).sort((a,b)=>a-b);
     }
 
+    function pickFirstEmptyImgIndex_(tokenNames){
+      const indices = getImgTokenIndices_(tokenNames);
+      if (!indices.length) return 0;
+
+      const currentVals = getTokenValues_();
+      for (const n of indices){
+        // "빈 슬롯" 판단: 대표 키(IMG_SRC_n)가 비어 있으면 우선 타겟으로 선택
+        const key = `IMG_SRC_${n}`;
+        if (!String(currentVals[key] || "").trim()) return n;
+      }
+      return indices[0];
+    }
+
     function collectSlotsFromManifest_(manifest){
       const slots = [];
       const seen = new Set();
+
       const sections = Array.isArray(manifest?.sections) ? manifest.sections : [];
       for (const sec of sections){
-        const slot = (sec && typeof sec === "object" && sec.vars && sec.vars.SLOT) ? String(sec.vars.SLOT).trim() : "";
+        const slot = (sec && typeof sec === "object" && sec.vars && sec.vars.SLOT)
+          ? String(sec.vars.SLOT).trim()
+          : "";
+
         if (slot && !seen.has(slot)){
           seen.add(slot);
           slots.push(slot);
         }
       }
+
       if (slots.length === 0) slots.push("BODY");
       return slots;
     }
 
+    
     async function collectTokensFromTemplate_(manifest, slotNames){
       const supported = new Set([
         "THUMB_URL","CANONICAL_URL","YEAR","MONTH","YEAR_NAV_JSON",
-        "IMG_ID","IMG_SRC","IMG_HREF","IMG_OW","IMG_OH","IMG_ALT","IMG_TITLE","IMG_SNIPPET","ZOOM_LABEL"
+        "IMG_ID","IMG_SRC","IMG_HREF","IMG_OW","IMG_OH","IMG_ALT","IMG_TITLE","IMG_SNIPPET",
+        "ZOOM_LABEL"
       ]);
+
+      // ✅ 이미지 섹션이 여러 개일 때, IMG_SLOT 기준으로 번호 토큰을 만들기 위한 패밀리
       const imgFamily = new Set([
-        "IMG_ID","IMG_SRC","IMG_HREF","IMG_OW","IMG_OH","IMG_ALT","IMG_TITLE","IMG_SNIPPET","THUMB_URL"
+        "IMG_ID","IMG_SRC","IMG_HREF","IMG_OW","IMG_OH","IMG_ALT","IMG_TITLE","IMG_SNIPPET",
+        "THUMB_URL"
       ]);
+
       const reserved = new Set(["TITLE","NAV","FOOTER","BODY"]);
       (slotNames || []).forEach(s=>reserved.add(String(s)));
+
       const found = new Set();
       const sections = Array.isArray(manifest?.sections) ? manifest.sections : [];
+
       for (const sec of sections){
-        const name = (typeof sec === "string") ? sec.trim() : (sec && typeof sec === "object") ? String(sec.name || "").trim() : "";
+        const name =
+          (typeof sec === "string") ? sec.trim() :
+          (sec && typeof sec === "object") ? String(sec.name || "").trim() : "";
+
         if (!name) continue;
-        const secVarsObj = (sec && typeof sec === "object" && sec.vars && typeof sec.vars === "object") ? sec.vars : {};
+
+        const secVarsObj =
+          (sec && typeof sec === "object" && sec.vars && typeof sec.vars === "object") ? sec.vars : {};
         const imgSlotN = parseImgSlotIndex_(secVarsObj.IMG_SLOT);
+
         let html = "";
-        try{ html = await getSectionHtml_(name); } catch(e){ html = ""; }
+        try{
+          html = await getSectionHtml_(name);
+        }catch(e){
+          html = "";
+          const prev = $("debug").textContent || "";
+          $("debug").textContent =
+            prev + `\n[SECTION LOAD FAIL] ${name} :: ` + (e?.message || e);
+        }
+
         const re = /{{\s*([A-Z0-9_]+)\s*}}/g;
         let m;
         while ((m = re.exec(String(html))) !== null){
           const token = String(m[1] || "").trim();
           if (!token) continue;
           if (reserved.has(token)) continue;
+
+          // ✅ IMG_SLOT이 잡히고 + 이미지 토큰이면, 번호를 붙여서 입력칸이 여러 개 생기게 함
           if (imgSlotN && imgFamily.has(token)){
             found.add(`${token}_${imgSlotN}`);
             continue;
           }
+
           if (supported.has(token)) found.add(token);
         }
+
+        // {zoom_label} (소문자)도 허용(기존 호환)
         if (/\{\s*zoom_label\s*\}/i.test(String(html))) {
-          if (!reserved.has("ZOOM_LABEL") && supported.has("ZOOM_LABEL")) found.add("ZOOM_LABEL");
+          if (!reserved.has("ZOOM_LABEL") && supported.has("ZOOM_LABEL")) {
+            found.add("ZOOM_LABEL");
+          }
         }
       }
+
       return Array.from(found);
     }
 
-    // ===== 섹션 관리 로직 =====
+    /* ===========================================================
+       ✅ [NEW] 섹션 관리 통합 로직 (순서 변경, 삭제, 드래그)
+       =========================================================== */
+    
+    /**
+     * 1. 상태 갱신 공통 함수
+     * - 섹션 배열이 변경되었을 때 호출하면 UI, 토큰, 프리뷰를 모두 동기화합니다.
+     */
     async function refreshSectionState_() {
       try {
         setBusy_(true);
+    
+        // 1) 현재 입력값(데이터) 백업
         const savedSlots = getSlotValues_();
         const savedTokens = getTokenValues_();
-        const simulatedManifest = { ...templateState.manifest, sections: templateState.sections };
+    
+        // 2) 변경된 섹션 순서대로 토큰 재분석 (비동기)
+        //    (섹션이 삭제/추가되면 토큰 목록이 달라질 수 있음)
+        const simulatedManifest = { 
+          ...templateState.manifest, 
+          sections: templateState.sections 
+        };
+        
+        // 슬롯/토큰 목록 갱신
         templateState.slots = collectSlotsFromManifest_(simulatedManifest);
         templateState.tokens = await collectTokensFromTemplate_(simulatedManifest, templateState.slots);
+    
+        // 3) UI 전면 재렌더링
+        //    - 중앙 입력창 (renderDynamicFields_)
+        //    - 우측 순서 리스트 (renderSortableList_)
         renderDynamicFields_(); 
         renderSortableList_();
+    
+        // 4) 데이터 복구 (키가 같은 데이터는 유지됨)
         setSlotValues_(savedSlots);
         setTokenValues_(savedTokens);
+    
+        // 5) 프리뷰 HTML 재조립 요청
         scheduleAssemblePreview_();
+    
       } catch (e) {
         setStatus("섹션 갱신 오류: " + e.message, false);
         setDebug(e.stack);
@@ -1099,56 +1241,84 @@
         setBusy_(false);
       }
     }
-
+    
+/**
+     * 2. 중앙 입력창 렌더링 (섹션 순서변경 + 이미지 DB 선택 UI 디자인 개선)
+     */
     function renderDynamicFields_() {
       const slotBox = $("slotFields");
       const tokBox = $("tokenFields");
+      
       slotBox.innerHTML = "";
       tokBox.innerHTML = "";
 
+      // ---------------------------------------------------------
+      // [Part 1] 슬롯(SLOT) 입력창 렌더링
+      // ---------------------------------------------------------
       const sections = templateState.sections || [];
+      
       sections.forEach((sec, i) => {
         const secName = (typeof sec === "string") ? sec : (sec.name || "Unknown");
-        const slotKey = (typeof sec === "object" && sec.vars && sec.vars.SLOT) ? sec.vars.SLOT : null;
+        const slotKey = (typeof sec === "object" && sec.vars && sec.vars.SLOT) 
+                        ? sec.vars.SLOT : null;
+
         const wrap = document.createElement("div");
         wrap.className = "pm-dyn-item";
+
         let html = `
           <div class="pm-dyn-head">
             <div class="pm-dyn-key" style="display:flex; align-items:center; gap:4px;">
               <button type="button" class="pm-btn small ghost" onclick="window.moveSection_(${i}, -1)" ${i === 0 ? 'disabled' : ''}>↑</button>
               <button type="button" class="pm-btn small ghost" onclick="window.moveSection_(${i}, 1)" ${i === sections.length - 1 ? 'disabled' : ''}>↓</button>
+              
               <span class="pm-pill" style="margin-left:4px;">${i+1}. ${escapeHtml(secName)}</span>
-              ${slotKey ? `<span style="font-weight:bold; color:#2563eb;">[${escapeHtml(slotKey)}]</span>` : `<span class="pm-small pm-muted">(고정)</span>`}
+              ${slotKey 
+                ? `<span style="font-weight:bold; color:#2563eb;">[${escapeHtml(slotKey)}]</span>` 
+                : `<span class="pm-small pm-muted">(고정)</span>`}
             </div>
+
             <div style="display:flex; gap:4px;">
                <button type="button" class="pm-btn small danger" onclick="window.deleteSection_(${i})">삭제</button>
                ${slotKey ? `<button type="button" class="pm-btn small ghost pm-dyn-clear" data-clear-slot="${escapeHtml(slotKey)}">비우기</button>` : ''}
             </div>
           </div>
         `;
+
         if (slotKey) {
-          html += `<textarea class="pm-textarea pm-dyn-textarea" data-slot="${escapeHtml(slotKey)}" placeholder="SLOT 입력: ${escapeHtml(slotKey)}"></textarea>`;
+          html += `
+            <textarea class="pm-textarea pm-dyn-textarea" data-slot="${escapeHtml(slotKey)}"
+              placeholder="SLOT 입력: ${escapeHtml(slotKey)}"></textarea>
+          `;
         } else {
           html += `<div class="pm-small pm-muted" style="padding:10px;">이 섹션은 입력 가능한 SLOT(본문)이 없습니다.</div>`;
         }
+
         wrap.innerHTML = html;
         slotBox.appendChild(wrap);
       });
 
+
+      // ---------------------------------------------------------
+      // [Part 2] 토큰(Token) 입력창 렌더링
+      // ---------------------------------------------------------
       const tokenNames = templateState.tokens || [];
       let __imgListCache = null; 
 
+      // (내부함수) 이미지 선택 UI 초기화 및 이벤트 연결
       async function initImgPickerUIForIndex_(n){
         const suffix = n ? String(n) : "base";
         const sel = document.getElementById(`imgDbSelect_${suffix}`);
         const btn = document.getElementById(`btnImgDbApply_${suffix}`);
         const pv  = document.getElementById(`imgDbPreview_${suffix}`);
-        const lnk = document.getElementById(`imgDbLink_${suffix}`);
+        const lnk = document.getElementById(`imgDbLink_${suffix}`); // 링크 버튼 추가
         
         if (!sel || !btn) return;
+
         sel.innerHTML = `<option value="">이미지 선택...</option>`;
+
         try{
           if (!__imgListCache) __imgListCache = await imgList_();
+
           for (const it of __imgListCache){
             const id = String(it.id || "");
             const name = String(it.base_name || it.drive_name || "");
@@ -1157,28 +1327,45 @@
             opt.textContent = name ? `${id} — ${name}` : id;
             sel.appendChild(opt);
           }
+
+          // 선택 변경 시 미리보기 & 링크 업데이트
           sel.addEventListener("change", () => {
             const id = sel.value;
             const hit = (__imgListCache || []).find(x => String(x.id) === String(id));
+            
             if (!hit) { 
-              if (pv) pv.innerHTML = `<span style="font-size:24px; opacity:0.2;">🖼️</span>`;
+              if (pv) pv.innerHTML = `<span style="font-size:24px; opacity:0.2;">🖼️</span>`; // 빈 아이콘
               if (lnk) lnk.style.display = "none";
               return; 
             }
+
             const thumb = imgThumbUrl_(hit.drive_file_id) || hit.img_src || "";
             const href  = hit.img_href || hit.drive_view_url || "";
-            if (pv) pv.innerHTML = thumb ? `<img src="${thumb}" style="width:100%; height:100%; object-fit:cover;" />` : `<span class="pm-small pm-muted">No Thumb</span>`;
-            if (lnk) { lnk.href = href; lnk.style.display = "inline"; }
+
+            if (pv) {
+               pv.innerHTML = thumb 
+                 ? `<img src="${thumb}" style="width:100%; height:100%; object-fit:cover;" />`
+                 : `<span class="pm-small pm-muted">No Thumb</span>`;
+            }
+            if (lnk) {
+               lnk.href = href;
+               lnk.style.display = "inline";
+            }
           });
+
+          // 적용 버튼 클릭
           btn.addEventListener("click", async () => {
             const id = sel.value;
             if (!id) { setStatus("이미지를 먼저 선택하세요.", false); return; }
+
             setStatus("이미지 상세 불러오는 중...", true);
             const item = await imgGet_(id);
             if (!item) { setStatus("이미지 상세를 가져오지 못했습니다.", false); return; }
+
             const toksArr = (templateState.tokens || []);
             const toks = new Set(toksArr);
             const patch = {};
+
             const put = (baseKey, val) => {
               if (n){
                 const k = `${baseKey}_${n}`;
@@ -1187,6 +1374,7 @@
                 if (toks.has(baseKey)) patch[baseKey] = val;
               }
             };
+
             put("IMG_ID", item.id || "");
             put("IMG_SRC", imgThumbUrl_(item.drive_file_id) || item.img_src || "");
             put("IMG_HREF", item.img_href || item.drive_view_url || "");
@@ -1196,229 +1384,415 @@
             put("IMG_OW", item.orig_w || "");
             put("IMG_OH", item.orig_h || "");
             put("THUMB_URL", imgThumbUrl_(item.drive_file_id) || item.img_src || "");
+
             patchTokenValues_(patch);
             scheduleAssemblePreview_();
             setStatus(`이미지 토큰 적용 완료 (${id})`, true);
           });
+
         }catch(e){
           setStatus("이미지 목록 로드 실패", false);
         }
       }
 
-      const needsImg = (tokenNames || []).some(t => /^IMG_/.test(String(t||""))) || (tokenNames || []).includes("THUMB_URL");
+      // 1) 이미지 토큰 확인
+      const needsImg =
+        (tokenNames || []).some(t => /^IMG_/.test(String(t||""))) ||
+        (tokenNames || []).includes("THUMB_URL");
+
+      // 2) 이미지 DB 선택 UI (디자인 개선됨: 좌측 썸네일 + 우측 컨트롤)
       if (needsImg) {
         const indices = getImgTokenIndices_(tokenNames || []);
         const groups = indices.length ? indices : [0];
+
         for (const n of groups){
           const suffix = n ? String(n) : "base";
           const label  = n ? `IMG_${n}` : "IMG";
           const title  = n ? `이미지 그룹 ${n}` : "메인 이미지";
+
           const wrap = document.createElement("div");
           wrap.className = "pm-dyn-item";
-          wrap.style.gridColumn = "1 / -1"; 
+          wrap.style.gridColumn = "1 / -1"; // 한 줄 꽉 차게
+          
+          // ✅ 핵심 디자인 변경: Flex 레이아웃 적용
           wrap.innerHTML = `
             <div style="display:flex; gap:16px; align-items:start;">
-                <div id="imgDbPreview_${suffix}" style="width:120px; height:100px; background:#f8fafc; border:1px dashed #cbd5e1; border-radius:8px; display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0;">
+                <div id="imgDbPreview_${suffix}" 
+                     style="width:120px; height:100px; background:#f8fafc; border:1px dashed #cbd5e1; border-radius:8px; 
+                            display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0;">
                     <span style="font-size:24px; opacity:0.2; user-select:none;">🖼️</span>
                 </div>
+
                 <div style="flex:1; min-width:0;">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                        <div class="pm-dyn-key" style="margin:0; font-size:14px;">${escapeHtml(title)} <span style="color:#94a3b8; font-weight:normal; font-size:12px; margin-left:4px;">[${label}]</span></div>
-                        <a id="imgDbLink_${suffix}" href="#" target="_blank" class="pm-link" style="font-size:12px; display:none;">원본 보기 ↗</a>
+                        <div class="pm-dyn-key" style="margin:0; font-size:14px;">
+                           ${escapeHtml(title)} 
+                           <span style="color:#94a3b8; font-weight:normal; font-size:12px; margin-left:4px;">[${label}]</span>
+                        </div>
+                        <a id="imgDbLink_${suffix}" href="#" target="_blank" class="pm-link" style="font-size:12px; display:none;">
+                           원본 보기 ↗
+                        </a>
                     </div>
+
                     <select id="imgDbSelect_${suffix}" class="pm-select" style="width:100%; margin-bottom:8px; height:38px;"></select>
+
                     <div style="display:flex; align-items:center; gap:8px;">
-                        <button id="btnImgDbApply_${suffix}" class="pm-btn small primary" style="white-space:nowrap;">선택값 적용</button>
-                        <span class="pm-muted pm-small" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">← 선택 시 <strong>${label}_*</strong> 필드 자동 입력</span>
+                        <button id="btnImgDbApply_${suffix}" class="pm-btn small primary" style="white-space:nowrap;">
+                           선택값 적용
+                        </button>
+                        <span class="pm-muted pm-small" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                           ← 선택 시 <strong>${label}_*</strong> 필드 자동 입력
+                        </span>
                     </div>
                 </div>
-            </div>`;
+            </div>
+          `;
           tokBox.appendChild(wrap);
           initImgPickerUIForIndex_(n); 
         }
       }
 
+      // 3) 나머지 일반 텍스트 토큰
       tokenNames.forEach(tok => {
         const wrap = document.createElement("div");
         wrap.className = "pm-dyn-item";
         const isYearNav = String(tok) === "YEAR_NAV_JSON";
+
         wrap.innerHTML = `
             <div class="pm-dyn-head">
               <div class="pm-dyn-key">${escapeHtml(tok)}</div>
               <button type="button" class="pm-btn small ghost pm-dyn-clear" data-clear-token="${escapeHtml(tok)}">비우기</button>
             </div>
-            ${isYearNav ? `<textarea class="pm-textarea pm-dyn-textarea" data-token="${escapeHtml(tok)}" placeholder="${escapeHtml(tokenPlaceholder_(tok))}"></textarea>` : `<input class="pm-input" data-token="${escapeHtml(tok)}" style="width:100%;" placeholder="${escapeHtml(tokenPlaceholder_(tok))}" />`}
+            ${
+              isYearNav
+                ? `<textarea class="pm-textarea pm-dyn-textarea" data-token="${escapeHtml(tok)}"
+                     placeholder="${escapeHtml(tokenPlaceholder_(tok))}"></textarea>`
+                : `<input class="pm-input" data-token="${escapeHtml(tok)}" style="width:100%;"
+                     placeholder="${escapeHtml(tokenPlaceholder_(tok))}" />`
+            }
         `;
         tokBox.appendChild(wrap);
       });
+
       attachDynamicPreviewListeners_();
     }
-
+    
+    /**
+     * 3. 우측 순서 리스트 렌더링 & 드래그 이벤트 연결
+     */
     function renderSortableList_() {
       const listEl = document.getElementById("sectionSortList");
       if (!listEl) return;
       listEl.innerHTML = "";
+    
       const sections = templateState.sections || [];
+      
       sections.forEach((sec, idx) => {
         const secName = (typeof sec === "string") ? sec : (sec.name || "Unknown");
         const slotName = (typeof sec === "object" && sec.vars && sec.vars.SLOT) ? sec.vars.SLOT : "";
+    
         const li = document.createElement("li");
         li.className = "pm-sort-item";
-        li.draggable = true; li.dataset.index = idx;
-        li.innerHTML = `<div class="pm-sort-idx">${idx + 1}</div><div class="pm-sort-name" title="${secName}">${secName}${slotName ? `<br><span style="color:#2563eb; font-size:11px;">[${slotName}]</span>` : ''}</div><div style="color:#cbd5e1; cursor:grab;">☰</div>`;
+        li.draggable = true; 
+        li.dataset.index = idx;
+    
+        li.innerHTML = `
+          <div class="pm-sort-idx">${idx + 1}</div>
+          <div class="pm-sort-name" title="${secName}">
+            ${secName}
+            ${slotName ? `<br><span style="color:#2563eb; font-size:11px;">[${slotName}]</span>` : ''}
+          </div>
+          <div style="color:#cbd5e1; cursor:grab;">☰</div>
+        `;
+        
         addDragEvents_(li);
         listEl.appendChild(li);
       });
     }
-
+    
+    /**
+     * 4. 드래그 앤 드롭 이벤트 핸들러
+     */
     let dragStartIndex = -1;
+    
     function addDragEvents_(li) {
-      li.addEventListener("dragstart", (e) => { dragStartIndex = +li.dataset.index; li.classList.add("dragging"); e.dataTransfer.effectAllowed = "move"; });
-      li.addEventListener("dragend", () => { li.classList.remove("dragging"); document.querySelectorAll(".pm-sort-item").forEach(el => el.classList.remove("drag-over")); });
-      li.addEventListener("dragover", (e) => { e.preventDefault(); });
-      li.addEventListener("drop", (e) => { e.preventDefault(); const dragEndIndex = +li.dataset.index; if (dragStartIndex !== -1 && dragStartIndex !== dragEndIndex) { moveSectionByIndex_(dragStartIndex, dragEndIndex); } });
+      li.addEventListener("dragstart", (e) => {
+        dragStartIndex = +li.dataset.index;
+        li.classList.add("dragging");
+        e.dataTransfer.effectAllowed = "move";
+      });
+    
+      li.addEventListener("dragend", () => {
+        li.classList.remove("dragging");
+        document.querySelectorAll(".pm-sort-item").forEach(el => el.classList.remove("drag-over"));
+      });
+    
+      li.addEventListener("dragover", (e) => {
+        e.preventDefault();
+      });
+    
+      li.addEventListener("drop", (e) => {
+        e.preventDefault();
+        const dragEndIndex = +li.dataset.index;
+        if (dragStartIndex !== -1 && dragStartIndex !== dragEndIndex) {
+          moveSectionByIndex_(dragStartIndex, dragEndIndex);
+        }
+      });
     }
+    
     function moveSectionByIndex_(from, to) {
       const arr = templateState.sections;
       const [moved] = arr.splice(from, 1);
       arr.splice(to, 0, moved);
       refreshSectionState_();
     }
+    
+    /**
+     * 5. 전역 조작 함수 (HTML onclick 연결용)
+     */
     window.moveSection_ = function(index, direction) {
       const newIndex = index + direction;
       const arr = templateState.sections;
       if (newIndex < 0 || newIndex >= arr.length) return;
+      
+      // Swap
       [arr[index], arr[newIndex]] = [arr[newIndex], arr[index]];
       refreshSectionState_();
     };
+    
     window.deleteSection_ = function(index) {
-      if (!confirm("이 섹션을 정말 삭제하시겠습니까?")) return;
+      if (!confirm("이 섹션을 정말 삭제하시겠습니까?\n(입력된 내용이 있다면 사라집니다)")) return;
       templateState.sections.splice(index, 1);
       refreshSectionState_();
     };
 
+    
     function tokenPlaceholder_(tok){
       switch(String(tok||"")){
         case "THUMB_URL": return "예: https://... (썸네일 이미지 URL)";
         case "CANONICAL_URL": return "예: https://www.cheesehistory.com/... (정식 URL)";
         case "YEAR": return "예: 2026";
         case "MONTH": return "예: 01";
-        case "YEAR_NAV_JSON": return "줄입력 예:\n2022,https://...\n2023,https://...";
-        case "ZOOM_LABEL": return "예: 이미지 크게보기";
+        case "YEAR_NAV_JSON": return "줄입력 예:\n2022,https://.../2022.html\n2023,https://.../2023.html\n2024,";
+        case "ZOOM_LABEL": return "예: 이미지 크게보기 (확대 링크 문구)";
         default: return "";
       }
     }
 
     function getSlotValues_(){
       const out = {};
-      document.querySelectorAll("[data-slot]").forEach(el=>{ const k = el.getAttribute("data-slot"); if(k) out[k] = (el.value || ""); });
+      document.querySelectorAll("[data-slot]").forEach(el=>{
+        const k = el.getAttribute("data-slot");
+        if (!k) return;
+        out[k] = (el.value || "");
+      });
       return out;
     }
+
     function setSlotValues_(map){
       const m = map || {};
-      document.querySelectorAll("[data-slot]").forEach(el=>{ const k = el.getAttribute("data-slot"); if(k) el.value = (m[k] !== undefined && m[k] !== null) ? String(m[k]) : ""; });
+      document.querySelectorAll("[data-slot]").forEach(el=>{
+        const k = el.getAttribute("data-slot");
+        if (!k) return;
+        el.value = (m[k] !== undefined && m[k] !== null) ? String(m[k]) : "";
+      });
     }
+
     function getTokenValues_(){
       const out = {};
-      document.querySelectorAll("[data-token]").forEach(el=>{ const k = el.getAttribute("data-token"); if(k) out[k] = (el.value || ""); });
+      document.querySelectorAll("[data-token]").forEach(el=>{
+        const k = el.getAttribute("data-token");
+        if (!k) return;
+        out[k] = (el.value || "");
+      });
       return out;
     }
+
     function setTokenValues_(map){
       const m = map || {};
-      document.querySelectorAll("[data-token]").forEach(el=>{ const k = el.getAttribute("data-token"); if(k) el.value = (m[k] !== undefined && m[k] !== null) ? String(m[k]) : ""; });
+      document.querySelectorAll("[data-token]").forEach(el=>{
+        const k = el.getAttribute("data-token");
+        if (!k) return;
+        el.value = (m[k] !== undefined && m[k] !== null) ? String(m[k]) : "";
+      });
     }
+
+    // ✅ 부분 업데이트(merge)용: map에 있는 토큰만 갱신하고, 나머지는 유지
+    // - IMG_1 입력 후 IMG_2를 자동입력해도 IMG_1이 지워지지 않게 함
     function patchTokenValues_(map){
       const m = map || {};
-      document.querySelectorAll("[data-token]").forEach(el=>{ const k = el.getAttribute("data-token"); if(k && m[k] !== undefined) el.value = String(m[k]); });
+      document.querySelectorAll("[data-token]").forEach(el=>{
+        const k = el.getAttribute("data-token");
+        if (!k) return;
+        if (m[k] === undefined || m[k] === null) return; // ✅ 없는 키는 건드리지 않음
+        el.value = String(m[k]);
+      });
     }
+
+
     function compactVars_(obj){
       const out = {};
-      for (const [k,v] of Object.entries(obj || {})){ const s = (v === undefined || v === null) ? "" : String(v); if (s.trim() !== "") out[k] = s; }
+      for (const [k,v] of Object.entries(obj || {})){
+        const s = (v === undefined || v === null) ? "" : String(v);
+        if (s.trim() === "") continue;
+        out[k] = s;
+      }
       return out;
     }
+
     function buildVarsForAssemble_(){
       const title = $("title").value.trim();
       const slotVals  = getSlotValues_();
       const tokenVals = getTokenValues_();
+
       const z = String((tokenVals.ZOOM_LABEL ?? tokenVals.zoom_label ?? "")).trim();
       tokenVals.ZOOM_LABEL = z || "이미지 크게보기";
       tokenVals.zoom_label = tokenVals.ZOOM_LABEL;
+
       if (tokenVals.YEAR_NAV_JSON && !String(tokenVals.YEAR_NAV_JSON).trim().startsWith("[")) {
         tokenVals.YEAR_NAV_JSON = lineToYearNavJson_(tokenVals.YEAR_NAV_JSON);
       }
-      return { TITLE: title, title: title, NAV: "", FOOTER: "", nav: "", footer: "", ...compactVars_(slotVals), ...compactVars_(tokenVals) };
-    }
-    function lineToYearNavJson_(txt){
-      return JSON.stringify(String(txt||"").trim().split(/\r?\n/).map(s=>s.trim()).filter(Boolean).map(line=>{
-        const idx = line.indexOf(","); if(idx<0) return null;
-        const y = line.slice(0,idx).trim(); const h = line.slice(idx+1).trim();
-        return y ? {year:y, href:h} : null;
-      }).filter(Boolean));
+
+      const vars = {
+        TITLE: title,
+        title: title,
+        NAV: "",
+        FOOTER: "",
+        nav: "",
+        footer: "",
+        ...compactVars_(slotVals),
+        ...compactVars_(tokenVals)
+      };
+
+      return vars;
     }
 
-    async function analyzeAndRenderTemplate_(tplId){
+    function lineToYearNavJson_(txt){
+      const items = String(txt || "")
+        .trim()
+        .split(/\r?\n/)
+        .map(s => s.trim())
+        .filter(Boolean)
+        .map(line => {
+          const idx = line.indexOf(",");
+          if (idx < 0) return null;
+          const year = line.slice(0, idx).trim();
+          const href = line.slice(idx + 1).trim();
+          if (!year) return null;
+          return { year: year, href: href };
+        })
+        .filter(Boolean);
+
+      return JSON.stringify(items);
+    }
+
+  async function analyzeAndRenderTemplate_(tplId){
       templateState.templateId = tplId || "";
       templateState.manifest = null;
+      // [중요] 섹션 배열 초기화
       templateState.sections = []; 
       templateState.slots = [];
       templateState.tokens = [];
-      if (!tplId){ renderDynamicFields_(); renderSortableList_(); return; }
+
+      if (!tplId){
+        renderDynamicFields_(); // 인자 없이 호출 (전역 state 사용)
+        renderSortableList_();  // 리스트도 초기화
+        return;
+      }
+
       try{
         const manifest = await getTemplateManifest_(tplId);
         templateState.manifest = manifest;
-        if (manifest.sections) templateState.sections = [...manifest.sections];
+        
+        // [중요] 매니페스트의 섹션 정보를 state에 복사 (이걸 해야 순서 변경 가능)
+        if (manifest.sections) {
+           templateState.sections = [...manifest.sections];
+        }
+
         const slotNames = collectSlotsFromManifest_(manifest);
         const tokenNames = await collectTokensFromTemplate_(manifest, slotNames);
+
         templateState.slots = slotNames;
         templateState.tokens = tokenNames;
+
         const prevSlots = getSlotValues_();
         const prevToks  = getTokenValues_();
+
+        // 중앙 입력창 렌더링
         renderDynamicFields_();
-        renderSortableList_();
+
+        // [중요] 우측 섹션 순서 리스트 렌더링 (이게 있어야 리스트가 보임)
+        renderSortableList_(); 
+
         setSlotValues_(prevSlots);
         setTokenValues_(prevToks);
+
       }catch(e){
         renderDynamicFields_();
         setStatus("템플릿 분석 실패: " + (e?.message || e), false);
         setDebug(String(e && e.stack ? e.stack : e));
       }
     }
-
     async function assembleHtmlFromManifest_(manifest, templateId, vars){
       const tid = String(manifest?.template_id || manifest?.id || templateId).trim();
       const tver = String(manifest?.template_ver || manifest?.ver || "").trim();
+
       const sections = Array.isArray(manifest?.sections) ? manifest.sections : [];
       if (!sections.length) throw new Error("TEMPLATE_SECTIONS_EMPTY");
+
       const parts = [];
+
       for (const sec of sections){
-        const secName = (typeof sec === "string") ? sec.trim() : (sec && typeof sec === "object") ? String(sec.name || "").trim() : "";
+        const secName =
+          (typeof sec === "string") ? sec.trim() :
+          (sec && typeof sec === "object") ? String(sec.name || "").trim() : "";
+
         if (!secName) continue;
+
         let secHtml = await getSectionHtml_(secName);
-        const secVarsRaw = (sec && typeof sec === "object" && sec.vars && typeof sec.vars === "object") ? sec.vars : {};
+
+        const secVarsRaw = (sec && typeof sec === "object" && sec.vars && typeof sec.vars === "object")
+          ? sec.vars
+          : {};
+
         const slotName = (secVarsRaw && secVarsRaw.SLOT) ? String(secVarsRaw.SLOT).trim() : "";
+
         if (slotName){
           const slotVal = (vars && (vars[slotName] ?? vars[String(slotName).toUpperCase()])) ?? "";
+
           if (String(slotVal).length > 0){
             secHtml = secHtml.replace(/{{\s*BODY\s*}}/g, String(slotVal));
           } else {
             secHtml = secHtml.replace(/{{\s*BODY\s*}}/g, `{{${slotName}}}`);
           }
+
           secHtml = secHtml
-            .replace(//gi, ``)
-            .replace(//gi, ``)
-            .replace(//gi, ``)
-            .replace(//gi, ``);
+            .replace(/<!--\s*BODY_START\s*-->/gi, `<!-- BODY_START:${slotName} -->`)
+            .replace(/<!--\s*BODY_END\s*-->/gi, `<!-- BODY_END:${slotName} -->`)
+            .replace(/<!--\s*BODY_START\s*:\s*BODY\s*-->/gi, `<!-- BODY_START:${slotName} -->`)
+            .replace(/<!--\s*BODY_END\s*:\s*BODY\s*-->/gi, `<!-- BODY_END:${slotName} -->`);
         }
+
+        // ✅ IMG_SLOT이 있으면, 섹션 내부의 {{IMG_SRC}} 같은 토큰을 {{IMG_SRC_n}} 형태로 먼저 넘버링
         const imgSlot = (secVarsRaw && secVarsRaw.IMG_SLOT) ? String(secVarsRaw.IMG_SLOT).trim() : "";
         if (imgSlot) secHtml = applyImgSlotNumbering_(secHtml, imgSlot);
+
         const secVars = { ...secVarsRaw };
         secHtml = replaceTokens_(secHtml, { ...vars, ...secVars });
+
         parts.push(secHtml);
       }
+
       let assembled = parts.join("\n");
-      const metaHeader = `\n` + (tver ? `\n` : "");
+
+      const metaHeader =
+        `<!-- template_id: ${tid} -->\n` +
+        (tver ? `<!-- template_ver: ${tver} -->\n` : "");
+
       const tokensMeta = buildTokensMetaComment_(vars);
-      return { html: metaHeader + tokensMeta + assembled, manifest };
+
+      assembled = metaHeader + tokensMeta + assembled;
+      return { html: assembled, manifest };
     }
 
     async function assembleHtmlFromTemplate_(templateId, vars){
@@ -1426,110 +1800,179 @@
       return assembleHtmlFromManifest_(manifest, templateId, vars);
     }
 
-    async function assembleHtmlUsingState_(templateId, vars){
+  async function assembleHtmlUsingState_(templateId, vars){
       if (!templateId) throw new Error("TEMPLATE_ID_REQUIRED");
+
       if (!templateState.manifest || templateState.templateId !== templateId){
         templateState.templateId = templateId;
         templateState.manifest = await getTemplateManifest_(templateId);
+        // 매니페스트가 새로 로드되면 섹션도 초기화
         templateState.sections = [...(templateState.manifest.sections || [])];
       }
-      const currentManifest = { ...templateState.manifest, sections: templateState.sections };
+      
+      // [중요] 현재 화면에 보이는(순서가 바뀐) 섹션 배열을 사용하여 조립
+      const currentManifest = {
+        ...templateState.manifest,
+        sections: templateState.sections // 변경된 순서 적용
+      };
+
       return assembleHtmlFromManifest_(currentManifest, templateId, vars);
     }
 
     async function initTemplateSelect_(){
       const sel = $("templateSelect");
       sel.innerHTML = "";
-      sel.appendChild(new Option("템플릿 선택...", ""));
+
+      const opt0 = document.createElement("option");
+      opt0.value = "";
+      opt0.textContent = "템플릿 선택...";
+      sel.appendChild(opt0);
+
       try{
         setStatus("템플릿 목록 불러오는 중(Drive)...", true);
         const items = await listTemplates_();
+
         for (const it of items){
-          const id = String(it.id || it.template_id || it.name || "").replace(/\.json$/i, "").trim();
+          const id = String(it.id || it.template_id || it.name || "")
+            .replace(/\.json$/i, "")
+            .trim();
           if (!id) continue;
-          sel.appendChild(new Option(id, id));
+
+          const opt = document.createElement("option");
+          opt.value = id;
+          opt.textContent = id;
+          sel.appendChild(opt);
         }
+
         setStatus(`템플릿 ${items.length}개 로드됨`, true);
       }catch(e){
-        setStatus("템플릿 목록 불러오기 실패: " + e.message, false);
+        setStatus("템플릿 목록 불러오기 실패: " + (e?.message || e), false);
+        showBanner(String(e && e.stack ? e.stack : e));
       }
     }
 
+    // ===== UI actions =====
     async function applyTemplateNew(){
       const tplId = $("templateSelect").value;
       if (!tplId) return setStatus("템플릿을 먼저 선택하세요.", false);
+
       try{
         setBusy_(true);
         hideBanner();
         setStatus("템플릿 적용(새로) 중...", true);
+
         await analyzeAndRenderTemplate_(tplId);
+
         setSlotValues_({});
+
+        // (수정) 현재 화면에 보이는 순서(State) 그대로 조립함
         const out = await assembleHtmlUsingState_(tplId, buildVarsForAssemble_());
         $("html").value = out.html;
         syncCharCount();
-        setStatus("템플릿 적용 완료(새로).", true);
-      }catch(e){
-        setStatus("템플릿 적용 오류: " + e.message, false);
-      }finally{ setBusy_(false); }
-    }
 
-    async function rewrapTemplateKeepBody(){
-      const tplId = $("templateSelect").value;
-      if (!tplId) return setStatus("템플릿을 먼저 선택하세요.", false);
-      try{
-        setBusy_(true);
-        hideBanner();
-        setStatus("래퍼 재적용(본문 유지) 중...", true);
-        const out = await assembleHtmlUsingState_(tplId, buildVarsForAssemble_());
-        $("html").value = out.html;
-        syncCharCount();
-        setStatus("래퍼 재적용 완료(본문 유지).", true);
-      }catch(e){
-        setStatus("래퍼 재적용 오류: " + e.message, false);
-      }finally{ setBusy_(false); }
-    }
+        setStatus("템플릿 적용 완료(새로). SLOT 입력칸을 채운 뒤 저장하세요.", true);
 
-    // [수정] 모달용 리스트 로직
-    async function refreshList(){
-      try{
-        setBusy_(true);
-        setStatus("목록 데이터 갱신 중...", true);
-        const res = await apiGet("listPosts");
-        if (!res || !res.ok) return setStatus("목록 실패: " + (res?.message||""), false);
-        _cachedPostList = res.items || [];
-        setStatus(`목록 갱신 완료 (${_cachedPostList.length}건)`, true);
-        // 모달 열려있으면 갱신
-        const listEl = $("postModalList");
-        if (listEl && listEl.offsetParent !== null) {
-           renderPostModalList_(_cachedPostList);
-        }
       }catch(e){
-        setStatus("목록 오류: " + e.message, false);
+        setStatus("템플릿 적용 오류: " + (e?.message || e), false);
+        setDebug(String(e && e.stack ? e.stack : e));
       }finally{
         setBusy_(false);
       }
     }
 
-    // [수정] DB 라벨 상단반영, 에러코드 제거
-    async function loadPost(){
-      if (!$("id")) return;
-      const id = $("id").value.trim();
-      if (!id) return setStatus("ID가 설정되지 않았습니다.", false);
+    async function rewrapTemplateKeepBody(){
+      const tplId = $("templateSelect").value;
+      if (!tplId) return setStatus("템플릿을 먼저 선택하세요.", false);
+
+      try{
+        setBusy_(true);
+        hideBanner();
+        setStatus("래퍼 재적용(본문 유지) 중...", true);
+
+        // (수정) 현재 화면에 보이는 순서(State) 그대로 조립함
+        const out = await assembleHtmlUsingState_(tplId, buildVarsForAssemble_());
+        $("html").value = out.html;
+        syncCharCount();
+
+        setStatus("래퍼 재적용 완료(본문 유지).", true);
+
+      }catch(e){
+        setStatus("래퍼 재적용 오류: " + (e?.message || e), false);
+        setDebug(String(e && e.stack ? e.stack : e));
+      }finally{
+        setBusy_(false);
+      }
+    }
+
+    // ===== Post list/load =====
+    function setFromSelect(){
+      const v = $("postSelect").value;
+      if (v) $("id").value = v;
+      setStickyId_();
+    }
+
+    function getTargetId(){
+      const fromSelect = $("postSelect").value;
+      const fromInput  = $("id").value.trim();
+      return fromSelect || fromInput || "";
+    }
+
+    async function refreshList(selectId){
+      try{
+        setBusy_(true);
+        hideBanner();
+        setStatus("목록 불러오는 중...", true);
+        const res = await apiGet("listPosts");
+        if (!res || !res.ok) return setStatus("목록 불러오기 실패: " + (res?.message||""), false);
+
+        const sel = $("postSelect");
+        sel.innerHTML = "";
+        const items = res.items || [];
+
+        const opt0 = document.createElement("option");
+        opt0.value = "";
+        opt0.textContent = "선택...";
+        sel.appendChild(opt0);
+
+        for (const it of items){
+          const opt = document.createElement("option");
+          opt.value = it.id;
+          opt.textContent = it.id + (it.title ? ` — ${it.title}` : "");
+          sel.appendChild(opt);
+        }
+
+        if (selectId){
+          sel.value = selectId;
+          $("id").value = selectId;
+        }
+
+        setStickyId_();
+        setStatus(`목록 ${items.length}건`, true);
+      }catch(e){
+        setStatus("목록 불러오기 오류: " + (e?.message || e), false);
+        showBanner(String(e && e.stack ? e.stack : e));
+      }finally{
+        setBusy_(false);
+      }
+    }
+
+async function loadPost(){
+      const id = getTargetId();
+      if (!id) return setStatus("id를 선택하거나 입력하세요.", false);
+
       try{
         setBusy_(true);
         hideBanner();
         setStatus(`불러오는 중: ${id}`, true);
+
         const res = await apiGet("getPost", { id });
-        if (!res || !res.ok) return setStatus("불러오기 실패", false);
+        if (!res || !res.ok) return setStatus("불러오기 실패: " + (res?.message||""), false);
+
         current = res.post;
+
         $("id").value = current.id;
         $("title").value = current.title || "";
         $("html").value = current.html || "";
-        
-        $("newPostConfig").style.display = "none";
-        $("currentPostInfo").textContent = `편집 중: ${current.title || current.id}`;
-        $("currentPostInfo").style.background = "#dbeafe";
-        $("currentPostInfo").style.color = "#1e40af";
 
         const meta = readTemplateMeta_(current.html || "");
         if (meta.template_id && $("templateSelect")) {
@@ -1538,57 +1981,95 @@
         } else {
           await analyzeAndRenderTemplate_($("templateSelect").value || "");
         }
-        setSlotValues_(extractBodies_(current.html || ""));
-        setTokenValues_(extractTokensMetaFromHtml_(current.html || ""));
+
+        const bodies = extractBodies_(current.html || "");
+        setSlotValues_(bodies);
+
+        const toks = extractTokensMetaFromHtml_(current.html || "");
+        setTokenValues_(toks);
+
         syncCharCount();
         setMeta(current);
         setBloggerMeta(null);
         setStickyId_();
-        
+
+        // ✅ [수정] DB 라벨을 상단 입력창에만 반영 (하단 텍스트 업데이트 코드 삭제)
         const dbLabels = current.blogger_labels || "";
         if($("bloggerLabelsTop")) $("bloggerLabelsTop").value = dbLabels; 
+
         setStatus("불러오기 완료", true);
       }catch(e){
-        setStatus("오류: " + e.message, false);
-      }finally{ setBusy_(false); }
+        setStatus("불러오기 오류: " + (e?.message || e), false);
+        setDebug(String(e && e.stack ? e.stack : e));
+      }finally{
+        setBusy_(false);
+      }
     }
 
+    // ===== Drive HTML upsert/read =====
+ // [수정] skipReload 파라미터 추가 (기본값 false)
     async function exportToDrive(skipReload = false){
       const id = getTargetId();
       if (!id) return setStatus("id가 필요합니다.", false);
+
       try{
         setBusy_(true);
         hideBanner();
+
         const tplId = $("templateSelect").value;
         if (tplId){
           setStatus("저장 전 최종 HTML 생성(템플릿 조립) 중...", true);
+          // 현재 상태(UsingState)로 HTML 생성
           const out = await assembleHtmlUsingState_(tplId, buildVarsForAssemble_());
           $("html").value = out.html;
           syncCharCount();
         }
-        const payload = { id, title: $("title").value.trim(), html: $("html").value };
+
+        const payload = {
+          id,
+          title: $("title").value.trim(),
+          html: $("html").value
+        };
+
         setStatus("Drive 저장/업데이트 중...", true);
         const res = await apiPost("driveUpsert", payload);
+        setDebug(res);
+
         if (!res || !res.ok) return setStatus("Drive 저장 실패: " + (res?.message||""), false);
+
         setStatus(`Drive 저장 완료: ${res.file?.name || ""}`, true);
-        if (!skipReload) { await refreshList(); await loadPost(); }
+
+        // [수정] skipReload가 true면 새로고침 건너뜀 (파이프라인용)
+        if (!skipReload) {
+          await refreshList(id);
+          await loadPost();
+        }
+
       }catch(e){
-        setStatus("Drive 저장 오류: " + e.message, false);
-      }finally{ setBusy_(false); }
+        setStatus("Drive 저장 오류: " + (e?.message || e), false);
+        setDebug(String(e && e.stack ? e.stack : e));
+      }finally{
+        setBusy_(false);
+      }
     }
 
     async function importFromDrive(){
       const id = getTargetId();
       if (!id) return setStatus("id가 필요합니다.", false);
+
       try{
         setBusy_(true);
         hideBanner();
         setStatus("Drive에서 불러오는 중...", true);
+
         const res = await apiGet("driveReadById", { id });
         if (!res || !res.ok) return setStatus("Drive 불러오기 실패: " + (res?.message||""), false);
-        $("html").value = res.html || "";
-        syncCharCount();
-        const html = $("html").value || "";
+
+        const html = res.html || "";
+        const rawHtml = html || "";
+if ($("injectAlertModal")) $("injectAlertModal").checked = hasAlertModal_(rawHtml);
+$("html").value = stripAlertModal_(rawHtml);
+
         const meta = readTemplateMeta_(html);
         if (meta.template_id) {
           $("templateSelect").value = meta.template_id;
@@ -1596,20 +2077,31 @@
         } else {
           await analyzeAndRenderTemplate_($("templateSelect").value || "");
         }
+
         setSlotValues_(extractBodies_(html));
         setTokenValues_(extractTokensMetaFromHtml_(html));
+
+        syncCharCount();
         setStickyId_();
         setStatus("Drive 불러오기 완료", true);
+
       }catch(e){
-        setStatus("Drive 불러오기 오류: " + e.message, false);
-      }finally{ setBusy_(false); }
+        setStatus("Drive 불러오기 오류: " + (e?.message || e), false);
+        setDebug(String(e && e.stack ? e.stack : e));
+      }finally{
+        setBusy_(false);
+      }
     }
 
+    // ===== Blogger =====
+// [수정] publishState 인자 추가 (기본값: null = keep/기존상태 유지)
     async function exportToBlogger(publishState = null){
       const id = getTargetId();
       if (!id) return setStatus("id가 필요합니다.", false);
+
       try{
         setBusy_(true);
+
         const tplId = $("templateSelect").value;
         if (tplId){
           setStatus("업로드 전 최종 HTML 생성(템플릿 조립) 중...", true);
@@ -1617,39 +2109,59 @@
           $("html").value = out.html;
           syncCharCount();
         }
+
+        // 라벨: 상단 입력창(bloggerLabelsTop)만 사용
         const labelsCsv = $("bloggerLabelsTop").value.trim();
         const actionUi = $("bloggerLabelsActionTop").value || "replace";
+
         const payload = {
           id,
           title: $("title").value.trim(),
           html: $("html").value,
+          // publishState가 명시되면 그 값("true"/"false") 사용, 아니면 "keep" 등 API 스펙 따름
           publish: (publishState !== null) ? String(publishState) : "keep", 
           labels: labelsCsv,
           labels_action: labelsCsv ? actionUi : "keep"
         };
+
         hideBanner();
         setStatus("Blogger 업로드/수정 중...", true);
+
         const res = await apiPost("bloggerUpsert", payload);
+        setDebug(res);
+
         if (!res || !res.ok) return setStatus("Blogger 업로드 실패: " + (res?.message||""), false);
+
         setBloggerMeta({ url: res.url, post_id: res.post_id, status: res.status });
         setStatus(`Blogger ${res.status === 'published' ? '발행' : '초안'} 완료`, true);
       }catch(e){
-        setStatus("Blogger 업로드 오류: " + e.message, false);
-      }finally{ setBusy_(false); }
+        setStatus("Blogger 업로드 오류: " + (e?.message || e), false);
+        setDebug(String(e && e.stack ? e.stack : e));
+      }finally{
+        setBusy_(false);
+      }
     }
 
-    async function importFromBlogger(){
+ async function importFromBlogger(){
       const id = getTargetId();
       if (!id) return setStatus("id가 필요합니다.", false);
+
       try{
         setBusy_(true);
         hideBanner();
         setStatus("Blogger에서 불러오는 중...", true);
+
         const res = await apiGet("bloggerRead", { id });
+        setDebug(res);
+
         if (!res || !res.ok) return setStatus("Blogger 불러오기 실패: " + (res?.message||""), false);
+
         $("title").value = res.title || $("title").value;
-        $("html").value = res.html || "";
+        const rawHtml = res.html || "";
+        // (모달 관련 로직은 이미 제거됨)
+        $("html").value = rawHtml;
         syncCharCount();
+
         const html = $("html").value || "";
         const meta = readTemplateMeta_(html);
         if (meta.template_id) {
@@ -1658,34 +2170,78 @@
         } else {
           await analyzeAndRenderTemplate_($("templateSelect").value || "");
         }
+
         setSlotValues_(extractBodies_(html));
         setTokenValues_(extractTokensMetaFromHtml_(html));
+
         const labelsArr = Array.isArray(res.labels) ? res.labels : [];
+        
+        // ✅ [수정] 상단 라벨 입력칸에 반영 (하단 텍스트 업데이트 삭제)
         if($("bloggerLabelsTop")) $("bloggerLabelsTop").value = labelsArr.join(", ");
+
         setBloggerMeta({ url: res.url, post_id: res.post_id, status: "loaded" });
         setStickyId_();
         setStatus("Blogger 불러오기 완료", true);
       }catch(e){
-        setStatus("Blogger 불러오기 오류: " + e.message, false);
-      }finally{ setBusy_(false); }
+        setStatus("Blogger 불러오기 오류: " + (e?.message || e), false);
+        setDebug(String(e && e.stack ? e.stack : e));
+      }finally{
+        setBusy_(false);
+      }
     }
 
-    async function patchBloggerLabels(){
+ async function patchBloggerLabels(){
       const id = getTargetId();
       if (!id) return setStatus("id가 필요합니다.", false);
+
+      // 상단 라벨창 참조
       const labels = $("bloggerLabelsTop").value.trim(); 
       const action = $("bloggerLabelsActionTop").value || "replace";
+      
       try{
         setBusy_(true);
         hideBanner();
         setStatus("라벨 적용 중...", true);
+
         const res = await apiPost("bloggerPatchLabels", { id, labels, action });
+        setDebug(res);
+
         if (!res || !res.ok) return setStatus("라벨 적용 실패: " + (res?.message||""), false);
+
         setStatus(`라벨 적용 완료 (${(res.labels||[]).length}개)`, true);
         if (res.url) setBloggerMeta({ url: res.url, post_id: res.post_id, status: "labels_updated" });
+
+        // ✅ [수정] 하단 텍스트 업데이트 코드 삭제함 (입력창에 이미 값이 있으므로 불필요)
       }catch(e){
-        setStatus("라벨 적용 오류: " + e.message, false);
-      }finally{ setBusy_(false); }
+        setStatus("라벨 적용 오류: " + (e?.message || e), false);
+        setDebug(String(e && e.stack ? e.stack : e));
+      }finally{
+        setBusy_(false);
+      }
+    }
+
+    async function revertBloggerToDraft(){
+      const id = getTargetId();
+      if (!id) return setStatus("id가 필요합니다.", false);
+
+      try{
+        setBusy_(true);
+        hideBanner();
+        setStatus("초안으로 되돌리는 중...", true);
+
+        const res = await apiPost("bloggerRevert", { id });
+        setDebug(res);
+
+        if (!res || !res.ok) return setStatus("초안 되돌리기 실패: " + (res?.message||""), false);
+
+        setBloggerMeta({ url: res.url, post_id: res.post_id, status: "draft" });
+        setStatus("초안으로 되돌리기 완료", true);
+      }catch(e){
+        setStatus("초안 되돌리기 오류: " + (e?.message || e), false);
+        setDebug(String(e && e.stack ? e.stack : e));
+      }finally{
+        setBusy_(false);
+      }
     }
 
     function clearEditor(){
@@ -1693,74 +2249,125 @@
       $("html").value = "";
       setSlotValues_({});
       setTokenValues_({});
+      // (체크박스 초기화 코드 삭제됨)
       syncCharCount();
       setStatus("편집창을 비웠습니다.", true);
       setStickyId_();
     }
 
+    /* =========================
+       ✅ 원클릭 파이프라인 (NEW)
+       - Drive 저장 → Blogger 업로드
+    ========================= */
     async function pipelinePublish_(publish){
       const id = getTargetId();
       if (!id) return setStatus("id가 필요합니다.", false);
+
       try{
         setBusy_(true);
         setStatus(publish ? "원클릭 발행 시작..." : "원클릭 초안 저장 시작...", true);
+
+        // 1) Drive 저장 (리로드 방지)
         await exportToDrive(true);
+
+        // 2) Blogger 업로드 (인자로 발행여부 전달)
         await exportToBlogger(publish);
+
         setStatus(publish ? "원클릭 발행 완료" : "원클릭 초안 저장 완료", true);
       }catch(e){
-        setStatus("원클릭 작업 오류: " + e.message, false);
-      }finally{ setBusy_(false); }
+        setStatus("원클릭 작업 오류: " + (e?.message || e), false);
+        setDebug(String(e && e.stack ? e.stack : e));
+      }finally{
+        setBusy_(false);
+      }
     }
 
-    // ID 생성 로직
+    /* =========================
+       ✅ ID 자동생성(분류 기반)
+    ========================= */
     function mapCategoryToPrefix(cat){
-      const m = { monthly_news:"NM", timeline_kr_cn_jp:"TL", genealogy_series:"GN", etc:"ETC" };
+      const m = {
+        monthly_news: "NM",
+        timeline_kr_cn_jp: "TL",
+        genealogy_series: "GN",
+        etc: "ETC",
+      };
       return m[cat] || "POST";
     }
+
     function yyyymmddNow(){
       const d = new Date();
-      const z = n=>n<10?"0"+n:n;
-      return `${d.getFullYear()}${z(d.getMonth()+1)}${z(d.getDate())}`;
+      const y = d.getFullYear();
+      const m = String(d.getMonth()+1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}${m}${day}`;
     }
+
     async function regenId(){
       const cat = $("category").value;
-      if (!cat) return setStatus("분류를 먼저 선택하세요.", false);
+
+      if (!cat) {
+        setStatus("분류를 먼저 선택하세요.", false);
+        return;
+      }
+
       if (cat === "manual"){
         setStatus("수동입력 분류입니다. ID를 직접 입력하세요.", true);
-        $("id").disabled = false; $("id").focus(); setStickyId_(); return;
+        $("id").disabled = false;
+        $("id").focus();
+        setStickyId_();
+        return;
       }
+
       const prefix = mapCategoryToPrefix(cat);
-      const base = `${prefix}_${yyyymmddNow()}_`;
+      const dateToken = yyyymmddNow();
+      const base = `${prefix}_${dateToken}_`;
+
       try{
         setBusy_(true);
         setStatus("ID 생성 중...", true);
+
         const res = await apiGet("listPosts");
         if (!res || !res.ok) throw new Error(res?.message || "LIST_FAILED");
+
         let maxSeq = 0;
         for (const it of (res.items || [])){
           const id = String(it.id || "");
           if (!id.startsWith(base)) continue;
-          const n = parseInt(id.slice(base.length), 10);
+          const tail = id.slice(base.length);
+          const n = parseInt(tail, 10);
           if (!isNaN(n)) maxSeq = Math.max(maxSeq, n);
         }
+
         const nextSeq = String(maxSeq + 1).padStart(2, "0");
         $("id").value = `${base}${nextSeq}`;
         $("id").disabled = true;
+
         setStickyId_();
         setStatus(`ID 생성 완료: ${$("id").value}`, true);
       }catch(e){
-        setStatus("ID 생성 오류: " + e.message, false);
-      }finally{ setBusy_(false); }
+        setStatus("ID 생성 오류: " + (e?.message || e), false);
+        setDebug(String(e && e.stack ? e.stack : e));
+      }finally{
+        setBusy_(false);
+      }
     }
+
     function onCategoryChange(){
       const cat = $("category").value;
+
       if (cat === "manual"){
-        $("id").disabled = false; setStatus("수동입력: ID를 직접 입력하세요.", true); setStickyId_(); return;
+        $("id").disabled = false;
+        setStatus("수동입력: ID를 직접 입력하세요.", true);
+        setStickyId_();
+        return;
       }
+
       $("id").disabled = true;
       if (cat) regenId();
     }
 
+    // templateSelect 변경 시: SLOT/토큰 입력칸 재구성
     $("templateSelect").addEventListener("change", async ()=>{
       const tplId = $("templateSelect").value || "";
       await analyzeAndRenderTemplate_(tplId);
@@ -1768,150 +2375,157 @@
       scheduleAssemblePreview_();
     });
 
-    // 버튼 연결
+    /* =========================
+       버튼 연결
+    ========================= */
     $("btnRefresh").addEventListener("click", ()=>refreshList());
+    $("btnLoad").addEventListener("click", loadPost);
+    $("btnSetFromSelect").addEventListener("click", setFromSelect);
+
     $("btnApplyTemplate").addEventListener("click", applyTemplateNew);
     $("btnRewrapTemplate").addEventListener("click", rewrapTemplateKeepBody);
+
     $("btnRegenId").addEventListener("click", regenId);
     $("category").addEventListener("change", onCategoryChange);
 
+    // ✅ Sticky Action Bar buttons (NEW)
     $("btnQuickPublish").addEventListener("click", ()=>pipelinePublish_(true));
     $("btnQuickDraft").addEventListener("click", ()=>pipelinePublish_(false));
-    $("btnQuickDriveSave").addEventListener("click", ()=>exportToDrive(false));
-    $("btnQuickBloggerUpsert").addEventListener("click", ()=>exportToBlogger(null));
+    $("btnQuickDriveSave").addEventListener("click", exportToDrive);
+    $("btnQuickBloggerUpsert").addEventListener("click", exportToBlogger);
     $("btnQuickBloggerRead").addEventListener("click", importFromBlogger);
     $("btnQuickLabels").addEventListener("click", patchBloggerLabels);
+    
+    // ✅ 비우기 버튼 연결 (위치는 상단으로 옮겼으므로 ID는 같음)
     if($("btnClear")) $("btnClear").addEventListener("click", clearEditor);
+    
+    // postSelect 바뀌면 sticky id 갱신
+    $("postSelect").addEventListener("change", ()=>{
+      const v = $("postSelect").value || "";
+      if (v) $("id").value = v;   // ✅ 선택값을 ID칸에 자동 반영
+      setStickyId_();
+    });
 
-    $("btnOpenPostModal").addEventListener("click", window.openPostModal_);
-    $("btnStartNewPost").addEventListener("click", window.startNewPost_);
-    $("btnRefreshPostList").addEventListener("click", refreshList);
-
-    // 모달 및 모드 로직
-    window.startNewPost_ = function() {
-      clearEditor();
-      $("id").value = "";
-      $("category").value = "";
-      $("newPostConfig").style.display = "block";
-      $("currentPostInfo").textContent = "상태: 새 글 작성 중";
-      $("currentPostInfo").style.background = "#f1f5f9";
-      $("currentPostInfo").style.color = "#64748b";
-      setStatus("새 글 작성 모드입니다.", true);
-    };
-
-    window.openPostModal_ = function() {
-      const modal = document.getElementById("postSelectModal");
-      const search = document.getElementById("postModalSearch");
-      if(!modal) return;
-      modal.style.display = "flex";
-      search.value = ""; search.focus();
-      if(_cachedPostList.length === 0) refreshList(); 
-      else renderPostModalList_(_cachedPostList);
-      
-      search.oninput = () => {
-        const kw = search.value.toLowerCase();
-        const filtered = _cachedPostList.filter(it => 
-          (it.title||"").toLowerCase().includes(kw) || (it.id||"").toLowerCase().includes(kw)
-        );
-        renderPostModalList_(filtered);
-      };
-    };
-    window.closePostModal_ = function() {
-      const modal = document.getElementById("postSelectModal");
-      if(modal) modal.style.display = "none";
-    };
-    function renderPostModalList_(items) {
-      const listEl = document.getElementById("postModalList");
-      if(!listEl) return;
-      listEl.innerHTML = "";
-      if(!items || items.length === 0){
-        listEl.innerHTML = `<li class="pm-muted" style="padding:20px; text-align:center;">데이터가 없습니다.</li>`;
-        return;
-      }
-      items.forEach(it => {
-        const li = document.createElement("li");
-        li.className = "pm-lib-item"; li.style.display = "block";
-        li.innerHTML = `<div style="font-weight:bold; color:#334155; margin-bottom:4px;">${escapeHtml(it.title || "(제목 없음)")}</div><div style="font-size:12px; color:#94a3b8; font-family:monospace;">${escapeHtml(it.id)}</div>`;
-        li.onclick = () => {
-          $("id").value = it.id;
-          loadPost(); 
-          closePostModal_();
-        };
-        listEl.appendChild(li);
-      });
-    }
-
-    // 섹션 모달
+    /* ===========================================================
+       ✅ [NEW] 섹션 라이브러리 모달 & 추가 로직
+       =========================================================== */
+    
+    // 모달 열기
     window.openSectionModal_ = async function() {
       const modal = document.getElementById("sectionModal");
       const listEl = document.getElementById("secModalList");
       const searchEl = document.getElementById("secModalSearch");
+      
       if(!modal) return;
       modal.style.display = "flex";
-      searchEl.value = ""; searchEl.focus();
+      searchEl.value = ""; // 검색어 초기화
+      searchEl.focus();
+
+      // 리스트 로딩
       listEl.innerHTML = `<li class="pm-muted" style="text-align:center; padding:20px;">섹션 목록 불러오는 중...</li>`;
+      
       try {
+        // ★ API 호출: 섹션 목록을 가져옵니다.
+        // (만약 API 이름이 다르면 여기를 수정하세요. 예: listTemplates 등)
         const res = await apiGet("listSections"); 
         const items = res.items || [];
-        window._cachedSectionList = items; 
+        
+        // 렌더링
+        window._cachedSectionList = items; // 필터링을 위해 캐시
         renderSectionModalList_(items);
+        
+        // 검색 필터 이벤트 연결
         searchEl.oninput = () => {
           const kw = searchEl.value.toLowerCase();
-          const filtered = window._cachedSectionList.filter(it => (it.name || it.id || "").toLowerCase().includes(kw));
+          const filtered = window._cachedSectionList.filter(it => 
+            (it.name || it.id || "").toLowerCase().includes(kw)
+          );
           renderSectionModalList_(filtered);
         };
+
       } catch(e) {
         listEl.innerHTML = `<li class="pm-status err" style="text-align:center;">목록 로드 실패: ${e.message}</li>`;
       }
     };
+
+    // 모달 닫기
     window.closeSectionModal_ = function() {
       const modal = document.getElementById("sectionModal");
       if(modal) modal.style.display = "none";
     };
+
+    // 리스트 렌더링 함수
     function renderSectionModalList_(items) {
       const listEl = document.getElementById("secModalList");
       if(!listEl) return;
-      if(items.length === 0) { listEl.innerHTML = `<li class="pm-muted" style="text-align:center; padding:20px;">검색 결과가 없습니다.</li>`; return; }
+      
+      if(items.length === 0) {
+        listEl.innerHTML = `<li class="pm-muted" style="text-align:center; padding:20px;">검색 결과가 없습니다.</li>`;
+        return;
+      }
+
       listEl.innerHTML = "";
       items.forEach(it => {
         const name = it.name || it.id || "Unknown";
+        
         const li = document.createElement("li");
         li.className = "pm-lib-item";
-        li.innerHTML = `<div class="pm-lib-name">${escapeHtml(name)}</div><div class="pm-lib-add">+ 추가</div>`;
-        li.onclick = () => { window.addSection_(name); li.style.background = "#dbeafe"; setTimeout(() => window.closeSectionModal_(), 100); };
+        li.innerHTML = `
+          <div class="pm-lib-name">${escapeHtml(name)}</div>
+          <div class="pm-lib-add">+ 추가</div>
+        `;
+        
+        // 클릭 시 섹션 추가
+        li.onclick = () => {
+          // 1. 섹션 추가 실행
+          window.addSection_(name);
+          // 2. 피드백 (선택 느낌)
+          li.style.background = "#dbeafe";
+          setTimeout(() => window.closeSectionModal_(), 100);
+        };
+        
         listEl.appendChild(li);
       });
     }
+
+    // [중요] 섹션 추가 로직 (Add Section)
     window.addSection_ = function(sectionName) {
       if (!sectionName) return;
+
+      // 1. 새 섹션 객체 생성
+      //    (SLOT 이름 자동 생성: BODY_N)
       let nextNum = 1;
       const currentSlots = new Set();
-      (templateState.sections || []).forEach(s => { if(s.vars && s.vars.SLOT) currentSlots.add(s.vars.SLOT); });
-      while(true) { if(!currentSlots.has(`BODY_${nextNum}`)) break; nextNum++; }
+      (templateState.sections || []).forEach(s => {
+         if(s.vars && s.vars.SLOT) currentSlots.add(s.vars.SLOT);
+      });
+
+      // 빈 번호 찾기 (BODY_1, BODY_2...)
+      while(true) {
+        if(!currentSlots.has(`BODY_${nextNum}`)) break;
+        nextNum++;
+      }
       const newSlotName = `BODY_${nextNum}`;
-      const newSec = { name: sectionName, vars: { SLOT: newSlotName } };
+
+      const newSec = {
+        name: sectionName,
+        vars: { SLOT: newSlotName }
+      };
+
+      // 2. 상태 업데이트
       if (!templateState.sections) templateState.sections = [];
       templateState.sections.push(newSec);
+
+      // 3. 전체 갱신 (토큰 재분석 -> UI 갱신)
       refreshSectionState_();
+      
       setStatus(`섹션 추가됨: ${sectionName} (${newSlotName})`, true);
     };
-
-    // 초기 실행
+    
+    // init
     (async function init(){
-      // 버전 표시
-      (function showVersion(){
-         const el = document.getElementById("sysVersion");
-         if(!el) return;
-         try {
-           const d = new Date(document.lastModified);
-           if(isNaN(d.getTime())) { el.textContent = "V. Unknown"; return; }
-           const z = n => n<10?"0"+n:n;
-           el.textContent = "V. " + d.getFullYear() + z(d.getMonth()+1) + z(d.getDate()) + "_" + z(d.getHours()) + z(d.getMinutes());
-         } catch(e) { el.textContent = "V. Error"; }
-      })();
-
       setDebug("");
-      renderDynamicFields_([], []);
+      renderDynamicFields_(["BODY"], []);
       setStickyId_();
       await refreshList();
       await initTemplateSelect_();
@@ -1924,4 +2538,59 @@
       "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
     }[m]));
   }
-</script>
+
+
+// [NEW] 문서 수정일시 표시 (안전한 버전)
+      (function showVersion(){
+        // 1. $ 대신 document.getElementById 직접 사용 (오류 방지)
+        const el = document.getElementById("sysVersion");
+        if (!el) return;
+        
+        // 2. 브라우저가 인식한 마지막 수정 시간
+        const d = new Date(document.lastModified);
+        
+        // 3. 날짜 유효성 체크
+        if (isNaN(d.getTime())) {
+           el.textContent = "V. Unknown";
+           return;
+        }
+
+        // 4. 포맷팅 (YYYYMMDD_HHmm)
+        const z = (n) => (n < 10 ? "0" + n : n);
+        const verStr = 
+          d.getFullYear() +
+          z(d.getMonth() + 1) +
+          z(d.getDate()) + "_" +
+          z(d.getHours()) +
+          z(d.getMinutes());
+
+        el.textContent = "V. " + verStr;
+        el.title = "Last Modified: " + document.lastModified;
+      })();
+  </script>
+
+  <div id="sectionModal" class="pm-modal-overlay" style="display:none;">
+    <div class="pm-modal-content">
+      <div class="pm-modal-header">
+        <h3 style="margin:0;">섹션 라이브러리</h3>
+        <button class="pm-btn small ghost" onclick="closeSectionModal_()">✕</button>
+      </div>
+      
+      <div class="pm-modal-body">
+        <div class="pm-row" style="margin-bottom:12px;">
+          <input id="secModalSearch" class="pm-input" type="text" placeholder="섹션 이름 검색..." style="width:100%;" />
+        </div>
+  
+        <ul id="secModalList" class="pm-lib-list">
+          <li class="pm-muted" style="text-align:center; padding:20px;">로딩 중...</li>
+        </ul>
+      </div>
+      
+      <div class="pm-modal-footer">
+        <span class="pm-small pm-muted">클릭하여 추가하세요.</span>
+        <button class="pm-btn" onclick="closeSectionModal_()">닫기</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
