@@ -548,17 +548,21 @@ function escapeText_(s, allowTags){
 // 빈 줄 기준 문단 분리 → <p>..</p>, 문단 내부 줄바꿈은 <br>
 // allowTags=true면 "허용 태그"는 유지하면서 나머지만 이스케이프
 function textToParagraphHtml(text, allowTags) {
-  const raw = String(text ?? "").replace(/\r\n/g, "\n");
-  
-  // 1. 유니코드 공백문자(ZWS 등) 제거 및 앞뒤 정리
+  // 1. 유니코드 공백문자(ZWS) 및 불필요한 공백 사전 정리
+  const raw = String(text ?? "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\u200B/g, ''); // 보이지 않는 공백 제거
+
+  // 2. 2번 이상의 엔터를 기준으로 문단(p) 분리
   const blocks = raw
     .split(/\n{2,}/g)
     .map(p => p.trim())
-    .filter(p => p && p.replace(/\u200B/g, '').trim() !== ""); // 보이지 않는 공백만 있는 문단 제거
+    .filter(p => p.length > 0);
 
   if (blocks.length === 0) return "";
 
   return blocks.map(p => {
+    // 표(table) 태그인 경우 예외 처리
     if (allowTags) {
       const t = p.trim();
       if (/^<table\b/i.test(t) && /<\/table>\s*$/i.test(t)) {
@@ -566,22 +570,27 @@ function textToParagraphHtml(text, allowTags) {
       }
     }
 
+    // 3. 문단 내부의 줄바꿈 처리
     const lines = p.split("\n").map(l => l.trimEnd());
     
-    // 2. 이미 <br>이 끝에 있다면 중복해서 붙이지 않도록 수정
-    const joined = lines.map(line => {
-      const escaped = escapeText_(line, allowTags);
-      // 만약 줄 끝에 이미 <br> 또는 <br/>이 있다면 \n만 붙임
-      if (/<br\s*\/?>$/i.test(escaped.trim())) {
-        return escaped;
-      }
-      return escaped;
-    }).join("<br>\n"); // 기본적으로 줄바꿈마다 <br> 삽입
+    let processedHtml = "";
+    for (let i = 0; i < lines.length; i++) {
+      const escaped = escapeText_(lines[i], allowTags);
+      processedHtml += escaped;
 
-    return `<p>${joined}</p>`;
+      // 마지막 줄이 아니고, 현재 줄 끝에 <br>이 없을 때만 <br> 추가
+      if (i < lines.length - 1) {
+        if (/<br\s*\/?>$/i.test(escaped.trim())) {
+          processedHtml += "\n"; // 이미 있으면 엔터만 추가
+        } else {
+          processedHtml += "<br>\n"; // 없으면 <br>과 엔터 추가
+        }
+      }
+    }
+
+    return `<p>${processedHtml}</p>`;
   }).join("\n");
 }
-
 // ✅ textarea 선택영역 감싸기(드래그 → 버튼)
 function wrapSelection(textarea, left, right){
   if (!textarea) return;
