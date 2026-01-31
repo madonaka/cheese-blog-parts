@@ -1568,43 +1568,76 @@ function extractTokensMetaFromHtml_(html){
         li.draggable = true; 
         li.dataset.index = idx;
     
-        function renderPostModalList_(items) {
-          const listEl = $("postModalList");
-          listEl.innerHTML = "";
-        
-          items.forEach(it => {
-            const li = document.createElement("li");
-            li.className = "pm-lib-item";
-        
-            // 1. 상태 텍스트와 클래스 결정 (published/draft/etc) [cite: 185]
-            const { text, cls } = statusBadgeInfo_(it.blogger_status); 
-        
-            li.innerHTML = `
-              <div style="flex:1;">
-                <div class="pm-lib-name">
-                  ${it.id}
-                  <span class="pm-pub-badge ${cls}">${text}</span>
-                </div>
-                <div class="pm-small pm-muted">${it.title || '(제목 없음)'}</div>
+      /**
+       * 3. 우측 순서 리스트 렌더링 & 드래그 이벤트 연결
+       */
+      function renderSortableList_() {
+        const listEl = document.getElementById("sectionSortList");
+        if (!listEl) return;
+        listEl.innerHTML = "";
+      
+        const sections = templateState.sections || [];
+      
+        sections.forEach((sec, idx) => {
+          const secName = (typeof sec === "string") ? sec : (sec.name || "Unknown");
+          const slotName = (typeof sec === "object" && sec.vars && sec.vars.SLOT) ? sec.vars.SLOT : "";
+      
+          const li = document.createElement("li");
+          li.className = "pm-sort-item";
+          li.draggable = true;
+          li.dataset.index = idx;
+      
+          // ✅ 누락된 li 내부 UI 추가
+          li.innerHTML = `
+            <div class="pm-sort-idx">${idx + 1}</div>
+            <div class="pm-sort-name">${secName} ${slotName ? `<br><span style="color:#2563eb; font-size:11px;">[${slotName}]</span>` : ''}</div>
+            <div style="color:#cbd5e1; cursor:grab;">☰</div>
+          `;
+      
+          // ✅ 드래그 이벤트 연결 (기존에 정의된 addDragEvents_ 활용)
+          if (typeof addDragEvents_ === "function") addDragEvents_(li);
+      
+          listEl.appendChild(li);
+        });
+      } // ✅ renderSortableList_ 함수 닫기
+      
+      /**
+       * 기존 포스트 불러오기 모달 리스트 렌더링
+       */
+      function renderPostModalList_(items) {
+        const listEl = $("postModalList");
+        if (!listEl) return;
+        listEl.innerHTML = "";
+      
+        items.forEach(it => {
+          const li = document.createElement("li");
+          li.className = "pm-lib-item";
+      
+          // ✅ 시트에서 넘어온 상태값(published, draft 등)을 기반으로 텍스트와 클래스 추출 
+          const { text, cls } = statusBadgeInfo_(it.blogger_status);
+      
+          li.innerHTML = `
+            <div style="flex:1;">
+              <div class="pm-lib-name">
+                ${it.id}
+                <span class="pm-pub-badge ${cls}">${text}</span>
               </div>
-              <div class="pm-lib-add">열기 →</div>
-            `;
-        
-            li.onclick = () => {
-              $("id").value = it.id;
-              // 3. 불러오기 클릭 시 상태 배지 즉시 갱신을 위해 캐시 활용 [cite: 186]
-              setStickyId_(); 
-              loadPost();
-              closeModal_('editPostModal');
-            };
-            listEl.appendChild(li);
-          });
-        }
-        
-        addDragEvents_(li);
-        listEl.appendChild(li);
-      });
-    }
+              <div class="pm-small pm-muted">${it.title || '(제목 없음)'}</div>
+            </div>
+            <div class="pm-lib-add">열기 →</div>
+          `;
+      
+          li.onclick = () => {
+            $("id").value = it.id;
+            // ✅ 클릭 즉시 상단 스티키 바 배지 갱신을 위해 호출 
+            setStickyId_();
+            loadPost();
+            closeModal_('editPostModal');
+          };
+      
+          listEl.appendChild(li);
+        });
+      }
     
     /**
      * 4. 드래그 앤 드롭 이벤트 핸들러
