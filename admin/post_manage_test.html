@@ -614,7 +614,8 @@
       const s = String(status || "").toLowerCase();
       if (s === "published") return { text:"발행", cls:"published" };
       if (s === "draft")     return { text:"초안", cls:"draft" };
-      if (!s)                return { text:"-", cls:"none" };
+      // ✅ 시트 데이터가 비어있을 때 '준비' 혹은 '-' 로 표시
+      if (!s || s === "-")   return { text:"-", cls:"none" }; 
       return { text:s, cls:"unknown" };
     }
     
@@ -2525,28 +2526,34 @@ $("html").value = stripAlertModal_(rawHtml);
       refreshPostList_();
     };
 
-    async function refreshPostList_() {
-      const listEl = $("postModalList");
-      listEl.innerHTML = `<li class="pm-muted" style="text-align:center; padding:20px;">불러오는 중...</li>`;
-      try {
-        const res = await apiGet("listPosts");
-        const items = res.items || [];
-        window._cachedPostList = items;
-        renderPostModalList_(items);
-      } catch(e) {
-        listEl.innerHTML = `<li class="pm-status err">로드 실패: ${e.message}</li>`;
-      }
+  async function refreshPostList_() {
+    const listEl = $("postModalList");
+    listEl.innerHTML = `<li class="pm-muted" style="text-align:center; padding:20px;">불러오는 중...</li>`;
+    try {
+      const res = await apiGet("listPosts");
+      const items = res.items || [];
+      
+      // ✅ 전역 캐시에 저장 (다른 UI 배지 갱신 시 활용됨)
+      window._cachedPostList = items; 
+      
+      renderPostModalList_(items);
+    } catch(e) {
+      listEl.innerHTML = `<li class="pm-status err">로드 실패: ${e.message}</li>`;
     }
-
+  }
+        
   function renderPostModalList_(items) {
     const listEl = $("postModalList");
+    if (!listEl) return;
     listEl.innerHTML = "";
   
     items.forEach(it => {
       const li = document.createElement("li");
       li.className = "pm-lib-item";
   
-      const { text, cls } = statusBadgeInfo_(it.blogger_status); // ✅ draft/published
+      // ✅ 서버 데이터(it.blogger_status)를 기반으로 상태 배지 정보 추출
+      // (statusBadgeInfo_ 함수는 이미 코드 상단에 정의되어 있습니다)
+      const { text, cls } = statusBadgeInfo_(it.blogger_status); 
   
       li.innerHTML = `
         <div style="flex:1;">
@@ -2561,7 +2568,8 @@ $("html").value = stripAlertModal_(rawHtml);
   
       li.onclick = () => {
         $("id").value = it.id;
-        setStickyId_(); // ✅ 선택 즉시 스티키/현재ID 뱃지도 반영
+        // ✅ 선택 즉시 배지 갱신
+        setStickyId_(); 
         loadPost();
         closeModal_('editPostModal');
       };
