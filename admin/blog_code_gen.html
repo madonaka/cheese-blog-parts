@@ -431,60 +431,141 @@
   </div>
 
   
-  <!-- ✅ Table Builder Modal -->
-  <div class="bcg-modal-backdrop" id="tableModal" hidden style="display:none" aria-hidden="true">
-    <div class="bcg-modal" role="dialog" aria-modal="true" aria-labelledby="tableModalTitle">
-      <div class="bcg-modal-head">
-        <h3 class="bcg-modal-title" id="tableModalTitle">표 만들기</h3>
-        <span class="bcg-muted">셀을 채우고 “삽입”을 누르면 본문에 표 HTML이 들어가.</span>
-        <span class="bcg-right"></span>
-        <button class="bcg-btn bcg-mini" type="button" id="tableModalCloseBtn">닫기</button>
-      </div>
+/* ==========================
+   Table Builder Modal (최종 수정본)
+========================== */
+const tableModal = document.getElementById("tableModal");
+const tableModalCloseBtn = document.getElementById("tableModalCloseBtn");
+const tblRowsEl = document.getElementById("tblRows");
+const tblColsEl = document.getElementById("tblCols");
+const tblHeaderEl = document.getElementById("tblHeader");
+const tblCaptionEl = document.getElementById("tblCaption");
+const tblRebuildBtn = document.getElementById("tblRebuildBtn");
+const tblCellsEl = document.getElementById("tblCells");
+const tblInsertBtn = document.getElementById("tblInsertBtn");
 
-      <div class="bcg-modal-body">
-        <div class="bcg-modal-grid">
-          <div class="bcg-table-controls">
-            <div class="bcg-field">
-              <span class="bcg-label">행</span>
-              <input class="bcg-input bcg-num" id="tblRows" type="number" min="1" max="30" value="3">
-            </div>
-            <div class="bcg-field">
-              <span class="bcg-label">열</span>
-              <input class="bcg-input bcg-num" id="tblCols" type="number" min="1" max="12" value="3">
-            </div>
-            <div class="bcg-field">
-              <span class="bcg-label">옵션</span>
-              <label class="bcg-check" style="margin-top:4px;">
-                <input type="checkbox" id="tblHeader" checked>
-                첫 줄을 헤더(th)로
-              </label>
-            </div>
-            <div class="bcg-field" style="min-width:240px; flex:1;">
-              <span class="bcg-label">캡션(선택)</span>
-              <input class="bcg-input" id="tblCaption" placeholder="예) 시대별 왕위 계승 정리">
-            </div>
+let tableCtx = null;
 
-            <button class="bcg-btn bcg-mini bcg-btn--primary" type="button" id="tblRebuildBtn">그리드 생성</button>
-          </div>
+// 모달 열기
+function openTableModal_(ctx){
+  tableCtx = ctx || null;
+  if (!tableModal) return;
+  tableModal.hidden = false;
+  tableModal.style.display = 'flex';
+  tableModal.setAttribute('aria-hidden','false');
 
-          <div class="bcg-table-editor">
-            <div class="bcg-muted" style="padding:10px 10px 0;">
-              팁) 엑셀/시트에서 복사한 텍스트(탭 구분)를 셀에 붙여넣어도 돼.
-            </div>
-            <div class="bcg-table-cells" id="tblCells"></div>
-          </div>
+  const r = clampInt_(tblRowsEl?.value, 1, 30, 3);
+  const c = clampInt_(tblColsEl?.value, 1, 12, 3);
+  buildTableGrid_(r, c);
+}
 
-          <div class="bcg-muted">
-            생성되는 표는 <code>&lt;table class="cheese-table"&gt;</code> 형태야. 블로그 공통 CSS에서 <code>.cheese-table</code> 스타일을 잡아두면 글마다 통일돼.
-          </div>
-        </div>
-      </div>
+// 모달 닫기 (실제 닫기 수행)
+function closeTableModal_(){
+  if (!tableModal) return;
+  tableModal.hidden = true;
+  tableModal.style.display = 'none';
+  tableModal.setAttribute('aria-hidden','true');
+  tableCtx = null;
+}
 
-      <div class="bcg-modal-foot">
-        <button class="bcg-btn bcg-mini" type="button" id="tblInsertBtn">삽입</button>
-      </div>
-    </div>
-  </div>
+// ⚠️ 안전하게 닫기 (내용 확인 로직)
+function handleSafeClose() {
+  const cells = tblCellsEl?.querySelectorAll(".bcg-cell");
+  const hasContent = Array.from(cells || []).some(cell => cell.value.trim().length > 0);
+
+  if (hasContent) {
+    if (confirm("작성 중인 표 내용이 있습니다. 정말 닫으시겠어요?")) {
+      closeTableModal_();
+    }
+  } else {
+    closeTableModal_();
+  }
+}
+
+// 그리드 생성 (textarea 사용)
+function buildTableGrid_(rows, cols){
+  if (!tblCellsEl) return;
+  tblCellsEl.innerHTML = "";
+  tblCellsEl.style.gridTemplateColumns = `repeat(${cols}, minmax(140px, 1fr))`;
+
+  for (let r=0; r<rows; r++){
+    for (let c=0; c<cols; c++){
+      const inp = document.createElement("textarea");
+      inp.className = "bcg-cell";
+      inp.style.height = "60px";
+      inp.placeholder = (r === 0 && (tblHeaderEl?.checked)) ? `헤더 ${c+1}` : `R${r+1}C${c+1}`;
+      inp.setAttribute("data-r", String(r));
+      inp.setAttribute("data-c", String(c));
+
+      // Ctrl + Enter 시 다음 행 이동
+      inp.addEventListener("keydown", (e)=>{
+        if (e.key === "Enter" && e.ctrlKey) {
+          e.preventDefault();
+          const target = tblCellsEl.querySelector(`.bcg-cell[data-r="${r+1}"][data-c="${c}"]`);
+          if (target) target.focus();
+        }
+      });
+      tblCellsEl.appendChild(inp);
+    }
+  }
+}
+
+// 셀 읽기 (줄바꿈 -> <br> 변환)
+function readTableCells_(rows, cols){
+  const out = [];
+  for (let r=0; r<rows; r++){
+    const row = [];
+    for (let c=0; c<cols; c++){
+      const el = tblCellsEl?.querySelector(`.bcg-cell[data-r="${r}"][data-c="${c}"]`);
+      let val = el ? String(el.value ?? "") : "";
+      // 입력된 실제 줄바꿈을 <br> 태그로 변환
+      row.push(val.replace(/\n/g, "<br>"));
+    }
+    out.push(row);
+  }
+  return out;
+}
+
+/* --- 이벤트 바인딩 --- */
+
+// 1. [닫기] 버튼: 안전 닫기 적용
+if (tableModalCloseBtn) {
+  tableModalCloseBtn.onclick = (e) => {
+    e.preventDefault();
+    handleSafeClose();
+  };
+}
+
+// 2. 모달 배경 클릭 방지
+if (tableModal) {
+  // 기존의 모든 클릭 이벤트를 무시하고, 모달 내부 콘텐츠를 제외한 배경 클릭 시에도 아무 일 없게 함
+  tableModal.onclick = (e) => {
+    // 배경(backdrop) 클릭 시 닫히지 않도록 이벤트를 차단함
+    if (e.target === tableModal) {
+      e.stopPropagation();
+    }
+  };
+}
+
+// 3. ESC 키: 안전 닫기 적용
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && tableModal && tableModal.style.display !== 'none') {
+    handleSafeClose();
+  }
+});
+
+// 4. [그리드 생성] 버튼: 데이터 초기화 경고
+if (tblRebuildBtn) {
+  tblRebuildBtn.onclick = () => {
+    const cells = tblCellsEl?.querySelectorAll(".bcg-cell");
+    const hasContent = Array.from(cells || []).some(cell => cell.value.trim().length > 0);
+    if (hasContent && !confirm("현재 입력된 표 내용이 모두 사라집니다. 다시 만드시겠습니까?")) return;
+
+    const r = clampInt_(tblRowsEl?.value, 1, 30, 3);
+    const c = clampInt_(tblColsEl?.value, 1, 12, 3);
+    buildTableGrid_(r, c);
+  };
+}
 
 
   <div class="bcg-toast" id="toast"></div>
