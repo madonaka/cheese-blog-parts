@@ -1271,6 +1271,13 @@ function extractTokensMetaFromHtml_(html){
 
         if (slotKey) {
           html += `
+            <div style="display:flex; justify-content:flex-end; margin-bottom:6px;">
+               <button type="button" class="pm-btn small" 
+                       style="background:#f0f9ff; color:#0284c7; border-color:#bae6fd; font-weight:600;"
+                       onclick="window.openCodeGen('${escapeHtml(slotKey)}')">
+                 ⚡ 생성기로 작성
+               </button>
+            </div>
             <textarea class="pm-textarea pm-dyn-textarea" data-slot="${escapeHtml(slotKey)}"
               placeholder="SLOT 입력: ${escapeHtml(slotKey)}"></textarea>
           `;
@@ -2548,6 +2555,63 @@ function clearEditor(){
       
       setStatus(`섹션 추가됨: ${sectionName} (${newSlotName})`, true);
     };
+
+    /* ===========================================================
+       ✅ [NEW] 코드 생성기 팝업 연동 (타겟 모드 지원)
+       =========================================================== */
+    
+    // 1. 팝업 열기 함수 (창 이름 고정으로 재사용)
+    window.openCodeGen = function(targetSlot) {
+      // 타겟이 있으면 URL에 포함, 없으면 빈 값
+      const url = `./blog_code_gen.html?target=${encodeURIComponent(targetSlot || "")}`;
+      // 'blog_code_gen_popup' 이름이 같으면 새 창이 아닌 기존 창 내용을 갱신함
+      window.open(url, 'blog_code_gen_popup', 'width=1200,height=900,scrollbars=yes,resizable=yes');
+    };
+
+    // 2. 메시지 수신 (팝업 -> 부모)
+    window.addEventListener("message", (e) => {
+      // 보안 확인 및 타입 체크
+      if (e.data && e.data.type === 'CH_BLOG_CODE') {
+        const { content, target } = e.data; // 내용과 타겟명(BODY_1 등) 받기
+
+        // 넣을 위치 찾기 1순위: 지정된 타겟 슬롯
+        let el = target ? document.querySelector(`[data-slot="${CSS.escape(target)}"]`) : null;
+        
+        // 넣을 위치 찾기 2순위: 현재 포커스된 슬롯 (타겟 지정 없이 열었을 때)
+        if (!el) {
+           const active = document.activeElement;
+           el = (active && active.hasAttribute && active.hasAttribute("data-slot")) ? active : null;
+        }
+        
+        // 넣을 위치 찾기 3순위: 다 없으면 첫 번째 비어있는 슬롯
+        if (!el) {
+           const slots = Array.from(document.querySelectorAll("[data-slot]"));
+           el = slots.find(s => !s.value.trim()) || slots[0];
+        }
+
+        if (el) {
+          // 기존 내용이 있으면 줄바꿈 후 이어붙이기
+          el.value = el.value.trim() ? (el.value + "\n\n" + content) : content;
+          
+          // 프리뷰 갱신 트리거
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          
+          // 스크롤 이동 및 포커스
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+          el.focus();
+          
+          // 시각적 알림 (배경 깜빡임)
+          const originBg = el.style.backgroundColor;
+          el.style.transition = "background 0.3s";
+          el.style.backgroundColor = "#dbeafe"; // 연한 파랑
+          setTimeout(() => el.style.backgroundColor = originBg, 600);
+          
+          setStatus(`✅ 코드 수신 완료! (${target || '자동'})`, true);
+        } else {
+          alert("데이터를 넣을 슬롯을 찾지 못했습니다. 섹션을 먼저 추가해주세요.");
+        }
+      }
+    });
     
     // init
     (async function init(){
