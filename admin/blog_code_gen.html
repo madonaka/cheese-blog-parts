@@ -548,12 +548,12 @@ function escapeText_(s, allowTags){
 // 빈 줄 기준 문단 분리 → <p>..</p>, 문단 내부 줄바꿈은 <br>
 // allowTags=true면 "허용 태그"는 유지하면서 나머지만 이스케이프
 function textToParagraphHtml(text, allowTags) {
-  // 1. 유니코드 공백문자(ZWS) 및 불필요한 공백 사전 정리
+  // 1. 기본 정리: 유니코드 공백 제거 및 줄바꿈 통일
   const raw = String(text ?? "")
     .replace(/\r\n/g, "\n")
-    .replace(/\u200B/g, ''); // 보이지 않는 공백 제거
+    .replace(/\u200B/g, ''); 
 
-  // 2. 2번 이상의 엔터를 기준으로 문단(p) 분리
+  // 2. 2번 이상의 엔터(\n\n)를 기준으로 문단 분리
   const blocks = raw
     .split(/\n{2,}/g)
     .map(p => p.trim())
@@ -562,7 +562,7 @@ function textToParagraphHtml(text, allowTags) {
   if (blocks.length === 0) return "";
 
   return blocks.map(p => {
-    // 표(table) 태그인 경우 예외 처리
+    // 테이블 태그인 경우 예외 처리
     if (allowTags) {
       const t = p.trim();
       if (/^<table\b/i.test(t) && /<\/table>\s*$/i.test(t)) {
@@ -570,26 +570,34 @@ function textToParagraphHtml(text, allowTags) {
       }
     }
 
-    // 3. 문단 내부의 줄바꿈 처리
+    // 3. 문단 내부 줄바꿈 처리
     const lines = p.split("\n").map(l => l.trimEnd());
-    
-    let processedHtml = "";
-    for (let i = 0; i < lines.length; i++) {
-      const escaped = escapeText_(lines[i], allowTags);
-      processedHtml += escaped;
+    let processedLines = [];
 
-      // 마지막 줄이 아니고, 현재 줄 끝에 <br>이 없을 때만 <br> 추가
+    for (let i = 0; i < lines.length; i++) {
+      let escaped = escapeText_(lines[i], allowTags);
+      
+      // 현재 줄이 비어있지 않거나, 이전 줄이 이미 <br>을 포함하지 않을 때만 처리
       if (i < lines.length - 1) {
+        // 이미 줄 끝에 <br>이 있다면 중복 추가 방지
         if (/<br\s*\/?>$/i.test(escaped.trim())) {
-          processedHtml += "\n"; // 이미 있으면 엔터만 추가
+          processedLines.push(escaped);
         } else {
-          processedHtml += "<br>\n"; // 없으면 <br>과 엔터 추가
+          processedLines.push(escaped + "<br>");
         }
+      } else {
+        // 문단의 마지막 줄은 <br>을 붙이지 않음 (p태그가 감싸기 때문)
+        // 만약 마지막 줄에 사용자가 넣은 <br>이 있다면 제거하여 불필요한 여백 방지
+        const cleanedLastLine = escaped.replace(/<br\s*\/?>$/i, "");
+        processedLines.push(cleanedLastLine);
       }
     }
 
-    return `<p>${processedHtml}</p>`;
-  }).join("\n");
+    // 빈 줄(내용 없는 <br>)만 남은 요소 제거 및 병합
+    const finalContent = processedLines.filter(line => line.length > 0).join("\n");
+    
+    return finalContent ? `<p>${finalContent}</p>` : "";
+  }).filter(p => p !== "").join("\n");
 }
 // ✅ textarea 선택영역 감싸기(드래그 → 버튼)
 function wrapSelection(textarea, left, right){
