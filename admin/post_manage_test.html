@@ -1312,27 +1312,29 @@ function extractTokensMetaFromHtml_(html){
       }
     }
     
-    /**
-     * 2. 중앙 입력창 렌더링 (삭제 버튼 포함)
-     * - 기존 renderDynamicFields_를 완전히 대체합니다.
+ /**
+     * 2. 중앙 입력창 렌더링 (섹션 순서변경 + 이미지 DB 선택 기능 복구)
      */
     function renderDynamicFields_() {
       const slotBox = $("slotFields");
-      const tokBox = $("tokenFields"); // 토큰 박스는 그대로 둠
-      slotBox.innerHTML = "";
+      const tokBox = $("tokenFields");
       
-      // (1) 슬롯 입력창 생성 (섹션 배열 기준)
+      slotBox.innerHTML = "";
+      tokBox.innerHTML = "";
+
+      // ---------------------------------------------------------
+      // [Part 1] 슬롯(SLOT) 입력창 렌더링 (순서 변경/삭제 기능 포함)
+      // ---------------------------------------------------------
       const sections = templateState.sections || [];
       
       sections.forEach((sec, i) => {
-        // 섹션 이름 및 슬롯 키 확인
         const secName = (typeof sec === "string") ? sec : (sec.name || "Unknown");
         const slotKey = (typeof sec === "object" && sec.vars && sec.vars.SLOT) 
                         ? sec.vars.SLOT : null;
-    
+
         const wrap = document.createElement("div");
         wrap.className = "pm-dyn-item";
-    
+
         // 헤더: 이동 버튼(↑↓), 이름, 삭제 버튼
         let html = `
           <div class="pm-dyn-head">
@@ -1345,14 +1347,14 @@ function extractTokensMetaFromHtml_(html){
                 ? `<span style="font-weight:bold; color:#2563eb;">[${escapeHtml(slotKey)}]</span>` 
                 : `<span class="pm-small pm-muted">(고정)</span>`}
             </div>
-    
+
             <div style="display:flex; gap:4px;">
                <button type="button" class="pm-btn small danger" onclick="window.deleteSection_(${i})">삭제</button>
                ${slotKey ? `<button type="button" class="pm-btn small ghost pm-dyn-clear" data-clear-slot="${escapeHtml(slotKey)}">비우기</button>` : ''}
             </div>
           </div>
         `;
-    
+
         // 본문: SLOT이 있는 경우에만 Textarea 생성
         if (slotKey) {
           html += `
@@ -1362,38 +1364,153 @@ function extractTokensMetaFromHtml_(html){
         } else {
           html += `<div class="pm-small pm-muted" style="padding:10px;">이 섹션은 입력 가능한 SLOT(본문)이 없습니다.</div>`;
         }
-    
+
         wrap.innerHTML = html;
         slotBox.appendChild(wrap);
       });
-    
-      // (2) 토큰 필드는 기존 함수나 로직이 있다면 그대로 둡니다.
-      //     (여기서는 기존 코드의 토큰 렌더링 부분을 호출한다고 가정. 
-      //      만약 토큰 렌더링 코드가 renderDynamicFields_ 안에 있었다면 그 부분을 복사해와야 합니다.)
-      //     **중요**: 기존 코드의 `renderDynamicFields_` 안에 있던 "토큰 렌더링 루프"를 여기에 붙여넣거나,
-      //     별도 함수로 분리해서 호출해야 합니다. 
-      //     (아래에 토큰 렌더링 기본 로직을 포함해 드립니다)
-      
-      tokBox.innerHTML = "";
+
+
+      // ---------------------------------------------------------
+      // [Part 2] 토큰(Token) 입력창 렌더링 (이미지 DB 연동 복구)
+      // ---------------------------------------------------------
       const tokenNames = templateState.tokens || [];
-      
-      // -- (기존 이미지/토큰 렌더링 로직 복원) --
-      // ... (이미지 DB 선택기 로직은 너무 기니까 생략하거나 기존 함수 활용 권장) ...
-      // 간단히 텍스트 입력만 복원:
+      let __imgListCache = null; // 이미지 목록 캐싱용
+
+      // (내부함수) 이미지 선택 UI 초기화 로직
+      async function initImgPickerUIForIndex_(n){
+        const suffix = n ? String(n) : "base";
+        const sel = document.getElementById(`imgDbSelect_${suffix}`);
+        const btn = document.getElementById(`btnImgDbApply_${suffix}`);
+        const pv  = document.getElementById(`imgDbPreview_${suffix}`);
+        if (!sel || !btn) return;
+
+        sel.innerHTML = `<option value="">이미지 선택...</option>`;
+
+        try{
+          if (!__imgListCache) __imgListCache = await imgList_();
+
+          for (const it of __imgListCache){
+            const id = String(it.id || "");
+            const name = String(it.base_name || it.drive_name || "");
+            const opt = document.createElement("option");
+            opt.value = id;
+            opt.textContent = name ? `${id} — ${name}` : id;
+            sel.appendChild(opt);
+          }
+
+          // 선택 변경 시 미리보기 업데이트
+          sel.addEventListener("change", () => {
+            const id = sel.value;
+            const hit = (__imgListCache || []).find(x => String(x.id) === String(id));
+            if (!hit) { if (pv) pv.textContent = ""; return; }
+
+            const thumb = imgThumbUrl_(hit.drive_file_id) || hit.img_src || "";
+            const href  = hit.img_href || hit.drive_view_url || "";
+
+            if (!pv) return;
+            pv.innerHTML = thumb
+              ? `미리보기: <a class="pm-link" href="${href}" target="_blank">Drive 열기</a><br><img src="${thumb}" style="max-width:260px;border-radius:10px;border:1px solid rgba(15,23,42,0.14);margin-top:6px;" />`
+              : `미리보기 없음`;
+          });
+
+          // 적용 버튼 클릭 시 토큰 값 자동 채우기
+          btn.addEventListener("click", async () => {
+            const id = sel.value;
+            if (!id) { setStatus("이미지를 먼저 선택하세요.", false); return; }
+
+            setStatus("이미지 상세 불러오는 중...", true);
+            const item = await imgGet_(id);
+            if (!item) { setStatus("이미지 상세를 가져오지 못했습니다.", false); return; }
+
+            const toksArr = (templateState.tokens || []);
+            const toks = new Set(toksArr);
+            const patch = {};
+
+            const put = (baseKey, val) => {
+              if (n){
+                const k = `${baseKey}_${n}`;
+                if (toks.has(k)) patch[k] = val;
+              } else {
+                if (toks.has(baseKey)) patch[baseKey] = val;
+              }
+            };
+
+            put("IMG_ID", item.id || "");
+            put("IMG_SRC", imgThumbUrl_(item.drive_file_id) || item.img_src || "");
+            put("IMG_HREF", item.img_href || item.drive_view_url || "");
+            put("IMG_ALT", item.img_alt || "");
+            put("IMG_TITLE", item.img_title || "");
+            put("IMG_SNIPPET", item.snippet || "");
+            put("IMG_OW", item.orig_w || "");
+            put("IMG_OH", item.orig_h || "");
+            put("THUMB_URL", imgThumbUrl_(item.drive_file_id) || item.img_src || "");
+
+            patchTokenValues_(patch);
+            scheduleAssemblePreview_();
+            setStatus(`이미지 토큰 자동입력 완료: ${id} → ${n ? "IMG_"+n : "IMG"}`, true);
+          });
+
+        }catch(e){
+          setStatus("이미지 DB 목록 로드 실패: " + (e?.message || e), false);
+          if (pv) pv.textContent = String(e?.message || e);
+        }
+      }
+
+      // 1) 이미지 토큰이 있는지 확인
+      const needsImg =
+        (tokenNames || []).some(t => /^IMG_/.test(String(t||""))) ||
+        (tokenNames || []).includes("THUMB_URL");
+
+      // 2) 이미지 DB 선택 UI 생성 (그룹별)
+      if (needsImg) {
+        const indices = getImgTokenIndices_(tokenNames || []);
+        const groups = indices.length ? indices : [0];
+
+        for (const n of groups){
+          const suffix = n ? String(n) : "base";
+          const label  = n ? `IMG_${n}` : "IMG";
+
+          const wrap = document.createElement("div");
+          wrap.className = "pm-dyn-item";
+          wrap.style.gridColumn = "1 / -1"; // 가로 꽉 차게
+          wrap.innerHTML = `
+            <div class="pm-dyn-key">이미지(DB) 선택 · ${label}</div>
+            <div class="pm-row" style="margin:8px 0 0;">
+              <select id="imgDbSelect_${suffix}" class="pm-select" style="min-width:320px;"></select>
+              <button id="btnImgDbApply_${suffix}" class="pm-btn">선택 이미지 토큰 자동입력</button>
+              <span class="pm-muted pm-small">※ ${label} 토큰 묶음에만 반영</span>
+            </div>
+            <div id="imgDbPreview_${suffix}" class="pm-muted pm-small" style="margin-top:8px;"></div>
+          `;
+          tokBox.appendChild(wrap);
+          initImgPickerUIForIndex_(n); // 비동기 초기화
+        }
+      }
+
+      // 3) 나머지 일반 텍스트 토큰 입력창 생성
       tokenNames.forEach(tok => {
-        // IMG_* 등은 별도 처리 로직이 필요할 수 있음 (기존 코드 참조)
         const wrap = document.createElement("div");
         wrap.className = "pm-dyn-item";
+
+        // YEAR_NAV_JSON 등은 textarea로, 나머지는 input으로
+        const isYearNav = String(tok) === "YEAR_NAV_JSON";
+
         wrap.innerHTML = `
             <div class="pm-dyn-head">
               <div class="pm-dyn-key">${escapeHtml(tok)}</div>
               <button type="button" class="pm-btn small ghost pm-dyn-clear" data-clear-token="${escapeHtml(tok)}">비우기</button>
             </div>
-            <input class="pm-input" data-token="${escapeHtml(tok)}" style="width:100%;" placeholder="${escapeHtml(tokenPlaceholder_(tok))}" />
+            ${
+              isYearNav
+                ? `<textarea class="pm-textarea pm-dyn-textarea" data-token="${escapeHtml(tok)}"
+                     placeholder="${escapeHtml(tokenPlaceholder_(tok))}"></textarea>`
+                : `<input class="pm-input" data-token="${escapeHtml(tok)}" style="width:100%;"
+                     placeholder="${escapeHtml(tokenPlaceholder_(tok))}" />`
+            }
         `;
         tokBox.appendChild(wrap);
       });
-    
+
       attachDynamicPreviewListeners_();
     }
     
