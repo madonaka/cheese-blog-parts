@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>포스트 관리</title>
 
+  <!-- ✅ 메인 관리자 CSS 재사용 -->
   <link rel="stylesheet" href="./admin.css" />
 
   <style>
@@ -241,6 +242,11 @@
 
           <div id="banner" class="pm-banner"></div>
 
+          <!-- ==============================
+               ✅ Sticky Action Bar (NEW)
+               - 항상 상단에 고정
+               - 핵심 액션 + 진행상태 표시
+          ============================== -->
           <div class="pm-stickybar" id="stickyBar">
             <div class="bar-row">
               <div class="bar-left">
@@ -254,11 +260,13 @@
 
               <div class="bar-right">
                 <div class="pm-sticky-actions">
+                  <!-- 원클릭 파이프라인 -->
                   <button id="btnQuickPublish" class="pm-btn primary">원클릭 발행</button>
                   <button id="btnQuickDraft" class="pm-btn ghost">원클릭 초안 저장</button>
 
                   <div class="pm-divider"></div>
 
+                  <!-- 자주 쓰는 단일 액션 -->
                   <button id="btnQuickDriveSave" class="pm-btn">Drive 저장</button>
                   <button id="btnQuickBloggerUpsert" class="pm-btn">Blogger 업로드</button>
 
@@ -369,13 +377,16 @@
                 ※ 템플릿에서 SLOT(예: BODY_1/2/3) 또는 토큰(예: {{THUMB_URL}})을 감지해 입력칸이 자동 생성됩니다.
               </p>
 
+              <!-- SLOT(TEXTAREA) -->
               <div id="slotFields" class="pm-dyn-grid"></div>
 
               <div class="pm-hr"></div>
 
+              <!-- Token(INPUT) -->
               <div id="tokenFields" class="pm-dyn-grid"></div>
             </div>
 
+            <!-- 기존 하단 버튼(유지) -->
             <div class="pm-row" style="margin-top:12px;">
               <button id="btnDriveUpsert" class="pm-btn">Drive로 저장/업데이트</button>
               <button id="btnDriveRead" class="pm-btn">Drive에서 불러오기</button>
@@ -430,6 +441,7 @@
     </div>
   </div>
 
+  <!-- ✅ 반드시 포함해야 하는 공통 스크립트 유지 -->
   <script src="./admin-common.js"></script>
 
   <script>
@@ -457,45 +469,14 @@
       "https://script.google.com/macros/s/AKfycbzj5LUEUKMyQqJfVsVlftO1f4CTYb3NhAQMT2QL6VADBlnjleAXLtBVVhuVHOfwkhQYqQ/exec";
 
     // 섹션 HTML 캐시(같은 섹션을 여러 번 조립할 때 API 호출 최소화)
-    const sectionCache = new Map();
+    const sectionCache = new Map(); // key: sectionName, value: html
 
-    // ✅ 전역 상태 관리 (window.moveSection_에서 접근 가능하도록)
+    // 현재 템플릿 분석 결과
     const templateState = {
       templateId: "",
       manifest: null,
-      sections: [], // 현재 순서가 적용된 섹션 리스트
-      slots: [],
-      tokens: []
-    };
-
-    /* =========================
-       ✅ 순서 변경 함수 (전역 window 객체에 등록)
-       - 중요: onclick="window.moveSection_(...)" 에서 호출 가능해야 함
-    ========================= */
-    window.moveSection_ = function(index, direction) {
-      const arr = templateState.sections;
-      const newIndex = index + direction;
-      
-      // 범위 체크
-      if (newIndex < 0 || newIndex >= arr.length) return;
-
-      // 1. 배열 내 위치 교체 (Swap)
-      [arr[index], arr[newIndex]] = [arr[newIndex], arr[index]];
-      
-      // 2. 현재 입력된 데이터(텍스트) 백업
-      const currentSlots = getSlotValues_();
-      const currentToks = getTokenValues_();
-      
-      // 3. 변경된 순서로 슬롯 이름 다시 추출
-      templateState.slots = collectSlotsFromManifest_({ sections: arr });
-      
-      // 4. UI 재렌더링
-      renderDynamicFields_(templateState.slots, templateState.tokens);
-      
-      // 5. 백업된 데이터 복구 및 프리뷰 갱신
-      setSlotValues_(currentSlots);
-      setTokenValues_(currentToks);
-      scheduleAssemblePreview_();
+      slots: [],   // ["BODY_1", "BODY_2", ...]
+      tokens: []   // ["THUMB_URL", "CANONICAL_URL", ...]
     };
 
     /* =========================
@@ -741,7 +722,7 @@
     // ===== meta/body parsing (기존 글 수정용) =====
     function readTemplateMeta_(html){
       const get = (key) => {
-        const re = new RegExp(``, "i");
+        const re = new RegExp(`<!--\\s*${key}\\s*:\\s*([^>]+?)\\s*-->`, "i");
         const m = String(html||"").match(re);
         return m ? m[1].trim() : "";
       };
@@ -756,15 +737,15 @@
       const t = String(html || "");
       const out = {};
 
-      const reStart = //ig;
+      const reStart = /<!--\s*BODY_START(?::([A-Z0-9_]+))?\s*-->/ig;
       let m;
       while ((m = reStart.exec(t)) !== null){
         const name = (m[1] || "BODY").trim();
         const startIdx = reStart.lastIndex;
 
         const endMark = name === "BODY"
-          ? //ig
-          : new RegExp(``, "ig");
+          ? /<!--\s*BODY_END\s*-->/ig
+          : new RegExp(`<!--\\s*BODY_END\\s*:\\s*${escapeRegExp(name)}\\s*-->`, "ig");
 
         endMark.lastIndex = startIdx;
         const em = endMark.exec(t);
@@ -925,8 +906,8 @@
 // - Drive 저장에는 절대 포함하지 않음
 // - Blogger 업로드 직전에만 HTML에 주입(또는 제거)
 // =========================
-const ALERT_MODAL_START = "";
-const ALERT_MODAL_END   = "";
+const ALERT_MODAL_START = "<!-- CHEESE_ALERT_MODAL_START -->";
+const ALERT_MODAL_END   = "<!-- CHEESE_ALERT_MODAL_END -->";
 
 const ALERT_MODAL_HTML = `${ALERT_MODAL_START}
 <div id="imageAlertModal" style="display: flex; position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); align-items: center; justify-content: center;">
@@ -1031,12 +1012,12 @@ function buildTokensMetaComment_(vars){
       }
 
       if (!Object.keys(obj).length) return "";
-      return `\n`;
+      return `<!-- tokens: ${JSON.stringify(obj)} -->\n`;
     }
 
 function extractTokensMetaFromHtml_(html){
       const t = String(html || "");
-      const m = t.match(//i);
+      const m = t.match(/<!--\s*tokens\s*:\s*({[\s\S]*?})\s*-->/i);
       if (!m) return {};
       try{
         const obj = JSON.parse(m[1]);
@@ -1296,24 +1277,17 @@ function extractTokensMetaFromHtml_(html){
       }
 
 
-      // ✅ 수정된 for문: index(i)를 이용해 moveSection_ 호출 버튼 생성
-      // ✅ 중요: window.moveSection_ 으로 호출해야 함
-      const slotsArr = (slotNames || []);
-      for (let i = 0; i < slotsArr.length; i++) {
-        const slot = slotsArr[i];
+      for (const slot of (slotNames || [])){
         const wrap = document.createElement("div");
         wrap.className = "pm-dyn-item";
         wrap.innerHTML = `
           <div class="pm-dyn-head">
-            <div class="pm-dyn-key">
-              <button type="button" class="pm-btn small ghost" onclick="window.moveSection_(${i}, -1)" ${i === 0 ? 'disabled' : ''}>↑</button>
-              <button type="button" class="pm-btn small ghost" onclick="window.moveSection_(${i}, 1)" ${i === slotsArr.length - 1 ? 'disabled' : ''}>↓</button>
-              <span style="margin-left:8px;">${escapeHtml(slot)}</span>
-            </div>
+            <div class="pm-dyn-key">${escapeHtml(slot)}</div>
             <button type="button"
               class="pm-btn small ghost pm-dyn-clear"
               data-clear-slot="${escapeHtml(slot)}">비우기</button>
           </div>
+        
           <textarea class="pm-textarea pm-dyn-textarea" data-slot="${escapeHtml(slot)}"
             placeholder="템플릿 SLOT: ${escapeHtml(slot)}"></textarea>
         `;
@@ -1513,7 +1487,6 @@ function extractTokensMetaFromHtml_(html){
     async function analyzeAndRenderTemplate_(tplId){
       templateState.templateId = tplId || "";
       templateState.manifest = null;
-      templateState.sections = []; // ✅ 초기화
       templateState.slots = [];
       templateState.tokens = [];
 
@@ -1525,8 +1498,6 @@ function extractTokensMetaFromHtml_(html){
       try{
         const manifest = await getTemplateManifest_(tplId);
         templateState.manifest = manifest;
-        // ✅ 섹션 순서 배열 초기화
-        templateState.sections = [...(manifest.sections || [])];
 
         const slotNames = collectSlotsFromManifest_(manifest);
         const tokenNames = await collectTokensFromTemplate_(manifest, slotNames);
@@ -1583,10 +1554,10 @@ function extractTokensMetaFromHtml_(html){
           }
 
           secHtml = secHtml
-            .replace(//gi, ``)
-            .replace(//gi, ``)
-            .replace(//gi, ``)
-            .replace(//gi, ``);
+            .replace(/<!--\s*BODY_START\s*-->/gi, `<!-- BODY_START:${slotName} -->`)
+            .replace(/<!--\s*BODY_END\s*-->/gi, `<!-- BODY_END:${slotName} -->`)
+            .replace(/<!--\s*BODY_START\s*:\s*BODY\s*-->/gi, `<!-- BODY_START:${slotName} -->`)
+            .replace(/<!--\s*BODY_END\s*:\s*BODY\s*-->/gi, `<!-- BODY_END:${slotName} -->`);
         }
 
         // ✅ IMG_SLOT이 있으면, 섹션 내부의 {{IMG_SRC}} 같은 토큰을 {{IMG_SRC_n}} 형태로 먼저 넘버링
@@ -1602,8 +1573,8 @@ function extractTokensMetaFromHtml_(html){
       let assembled = parts.join("\n");
 
       const metaHeader =
-        `\n` +
-        (tver ? `\n` : "");
+        `<!-- template_id: ${tid} -->\n` +
+        (tver ? `<!-- template_ver: ${tver} -->\n` : "");
 
       const tokensMeta = buildTokensMetaComment_(vars);
 
@@ -1619,20 +1590,11 @@ function extractTokensMetaFromHtml_(html){
     async function assembleHtmlUsingState_(templateId, vars){
       if (!templateId) throw new Error("TEMPLATE_ID_REQUIRED");
 
-      // ✅ 수정: templateState.sections가 존재하면 그것을 사용해 조립
-      const manifestToUse = { 
-        ...templateState.manifest, 
-        sections: templateState.sections || templateState.manifest?.sections 
-      };
-
       if (!templateState.manifest || templateState.templateId !== templateId){
         templateState.templateId = templateId;
         templateState.manifest = await getTemplateManifest_(templateId);
-        // manifest가 새로 로드되면 sections도 초기화
-        templateState.sections = [...templateState.manifest.sections];
-        manifestToUse.sections = templateState.sections;
       }
-      return assembleHtmlFromManifest_(manifestToUse, templateId, vars);
+      return assembleHtmlFromManifest_(templateState.manifest, templateId, vars);
     }
 
     async function initTemplateSelect_(){
@@ -1681,8 +1643,7 @@ function extractTokensMetaFromHtml_(html){
 
         setSlotValues_({});
 
-        // assembleHtmlFromTemplate_ 대신 state 기반 조립을 호출해야 변경된 순서 반영 가능
-        const out = await assembleHtmlUsingState_(tplId, buildVarsForAssemble_());
+        const out = await assembleHtmlFromTemplate_(tplId, buildVarsForAssemble_());
         $("html").value = out.html;
         syncCharCount();
 
@@ -1705,7 +1666,7 @@ function extractTokensMetaFromHtml_(html){
         hideBanner();
         setStatus("래퍼 재적용(본문 유지) 중...", true);
 
-        const out = await assembleHtmlUsingState_(tplId, buildVarsForAssemble_());
+        const out = await assembleHtmlFromTemplate_(tplId, buildVarsForAssemble_());
         $("html").value = out.html;
         syncCharCount();
 
@@ -1835,8 +1796,7 @@ $("html").value = stripAlertModal_(rawHtml);
         const tplId = $("templateSelect").value;
         if (tplId){
           setStatus("저장 전 최종 HTML 생성(템플릿 조립) 중...", true);
-          // state 기반으로 조립해야 순서 반영됨
-          const out = await assembleHtmlUsingState_(tplId, buildVarsForAssemble_());
+          const out = await assembleHtmlFromTemplate_(tplId, buildVarsForAssemble_());
           $("html").value = out.html;
           syncCharCount();
         }
@@ -1916,7 +1876,7 @@ $("html").value = stripAlertModal_(rawHtml);
         const tplId = $("templateSelect").value;
         if (tplId){
           setStatus("업로드 전 최종 HTML 생성(템플릿 조립) 중...", true);
-          const out = await assembleHtmlUsingState_(tplId, buildVarsForAssemble_());
+          const out = await assembleHtmlFromTemplate_(tplId, buildVarsForAssemble_());
           $("html").value = out.html;
           syncCharCount();
         }
