@@ -685,6 +685,7 @@ tableCtx = null;
    Table Builder Modal - 수정된 그리드 생성 로직
 ========================== */
 
+/* 1. 그리드 생성 함수 (수정) */
 function buildTableGrid_(rows, cols){
   if (!tblCellsEl) return;
   tblCellsEl.innerHTML = "";
@@ -692,40 +693,28 @@ function buildTableGrid_(rows, cols){
 
   for (let r=0; r<rows; r++){
     for (let c=0; c<cols; c++){
-      // input 대신 textarea를 사용하여 여러 줄 입력 가능하게 변경
-      const inp = document.createElement("textarea");
+      const inp = document.createElement("textarea"); // textarea로 교체
       inp.className = "bcg-cell";
-      inp.style.height = "60px"; // 기본 높이 설정
-      inp.style.resize = "none";  // 그리드 깨짐 방지
+      inp.style.height = "60px";
+      inp.style.resize = "none";
       inp.placeholder = (r === 0 && (tblHeaderEl?.checked)) ? `헤더 ${c+1}` : `R${r+1}C${c+1}`;
       inp.setAttribute("data-r", String(r));
       inp.setAttribute("data-c", String(c));
 
       inp.addEventListener("keydown", (e)=>{
-        // 1. 엔터 키: <br> 삽입
+        // 엔터 시 <br> 삽입
         if (e.key === "Enter" && !e.ctrlKey) {
           e.preventDefault();
           const start = inp.selectionStart;
-          const end = inp.selectionEnd;
           const val = inp.value;
-          
-          // 커서 위치에 <br> 삽입
-          inp.value = val.substring(0, start) + "<br>" + val.substring(end);
-          
-          // 커서 위치 조정 (<br> 뒤로)
+          inp.value = val.substring(0, start) + "<br>" + val.substring(inp.selectionEnd);
           inp.selectionStart = inp.selectionEnd = start + 4;
         }
-        
-        // 2. Ctrl + 엔터 키: 다음 줄(행)로 이동
+        // Ctrl+엔터 시 다음 행 이동
         if (e.key === "Enter" && e.ctrlKey) {
           e.preventDefault();
-          const nr = r + 1;
-          const target = tblCellsEl.querySelector(`.bcg-cell[data-r="${nr}"][data-c="${c}"]`);
-          if (target) {
-            target.focus();
-          } else {
-            showToast("마지막 행입니다.");
-          }
+          const target = tblCellsEl.querySelector(`.bcg-cell[data-r="${r+1}"][data-c="${c}"]`);
+          if (target) target.focus();
         }
       });
       tblCellsEl.appendChild(inp);
@@ -733,6 +722,40 @@ function buildTableGrid_(rows, cols){
   }
 }
 
+/* 2. 안전한 닫기를 위한 함수 (추가) */
+function handleModalClose() {
+  const cells = tblCellsEl?.querySelectorAll(".bcg-cell");
+  let hasContent = Array.from(cells || []).some(cell => cell.value.trim().length > 0);
+
+  if (hasContent) {
+    if (confirm("작성 중인 표 내용이 사라집니다. 정말 닫으시겠어요?")) {
+      closeTableModal_();
+    }
+  } else {
+    closeTableModal_();
+  }
+}
+
+/* 3. 이벤트 연결 (수정) */
+if (tableModalCloseBtn) tableModalCloseBtn.onclick = handleModalClose;
+
+if (tableModal){
+  // 배경 클릭으로 닫히는 기능 삭제됨 (안전을 위해)
+  document.addEventListener("keydown", (e)=>{
+    if (e.key === "Escape" && !tableModal.hidden) handleModalClose();
+  });
+}
+
+if (tblRebuildBtn) tblRebuildBtn.addEventListener("click", ()=>{
+  // 생성 버튼 누를 때도 내용 있으면 확인
+  const cells = tblCellsEl?.querySelectorAll(".bcg-cell");
+  let hasContent = Array.from(cells || []).some(cell => cell.value.trim().length > 0);
+  if (hasContent && !confirm("현재 입력된 표 데이터가 초기화됩니다. 계속할까요?")) return;
+  
+  const r = clampInt_(tblRowsEl?.value, 1, 30, 3);
+  const c = clampInt_(tblColsEl?.value, 1, 12, 3);
+  buildTableGrid_(r, c);
+});
 function readTableCells_(rows, cols){
   const out = [];
   for (let r=0; r<rows; r++){
