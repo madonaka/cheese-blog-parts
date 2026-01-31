@@ -395,6 +395,8 @@
 
                   <button id="btnQuickBloggerRead" class="pm-btn small">Blogger 불러오기</button>
                   <button id="btnQuickLabels" class="pm-btn small">라벨 적용</button>
+                  
+                  <button id="btnClear" class="pm-btn small danger" title="편집창 비우기">🗑️</button>
 
                   <a id="stickyOpenBlogger" class="pm-link" href="#" target="_blank" style="display:none;">글 열기</a>
                 </div>
@@ -530,51 +532,6 @@
               <div id="tokenFields" class="pm-dyn-grid"></div>
             </div>
 
-            <!-- 기존 하단 버튼(유지) -->
-            <div class="pm-row" style="margin-top:12px;">
-              <button id="btnDriveUpsert" class="pm-btn">Drive로 저장/업데이트</button>
-              <button id="btnDriveRead" class="pm-btn">Drive에서 불러오기</button>
-              <button id="btnClear" class="pm-btn danger">편집창 비우기</button>
-            </div>
-
-            <div class="pm-row" style="margin-top:12px;">
-              <div class="pm-label">Blogger</div>
-              <label class="pm-muted" style="display:flex; gap:6px; align-items:center;">
-                <input id="bloggerPublish" type="checkbox" />
-                발행(publish)
-              </label>
-              <span class="pm-muted pm-small">※ Drive 저장에는 포함되지 않음</span>
-              <button id="btnBloggerUpsert" class="pm-btn">블로그 업로드/수정</button>
-              <button id="btnBloggerRead" class="pm-btn">블로그에서 불러오기</button>
-              <a id="openBloggerLink" class="pm-link" href="#" target="_blank" style="display:none;">Blogger 글 열기</a>
-              <span id="bloggerMeta" class="pm-muted pm-small"></span>
-            </div>
-
-            <div class="pm-row" style="margin-top:10px;">
-              <div class="pm-label">라벨</div>
-
-              <input
-                id="bloggerLabels"
-                class="pm-input"
-                type="text"
-                placeholder="예: 주요 사건,2026,정치 (콤마로 구분)"
-              />
-
-              <select id="bloggerLabelsAction" class="pm-select" style="min-width:180px;">
-                <option value="replace">덮어쓰기</option>
-                <option value="add">추가</option>
-                <option value="remove">제거</option>
-              </select>
-
-              <button id="btnBloggerLabels" class="pm-btn">라벨 적용</button>
-
-              <button id="btnBloggerRevert" class="pm-btn danger">초안으로 되돌리기</button>
-
-              <span class="pm-muted pm-small">※ “초안으로 되돌리기”는 발행/예약 글을 draft로 되돌립니다.</span>
-              <div class="pm-muted pm-small" id="currentLabelsView" style="margin-left:140px;">
-                현재 라벨: -
-              </div>
-            </div>
           </section>
         </div>
       </main>
@@ -631,41 +588,7 @@
       $("stickyId").textContent = "ID: " + id;
     }
 
-    function syncTopLabelControls_(){
-      // 상단 ↔ 하단 라벨 입력을 한쪽만 써도 되게 “동기화”
-      const topL = $("bloggerLabelsTop");
-      const botL = $("bloggerLabels");
-      const topA = $("bloggerLabelsActionTop");
-      const botA = $("bloggerLabelsAction");
 
-      if (topL && botL && topL.value.trim() && !botL.value.trim()) botL.value = topL.value;
-      if (topL && botL && botL.value.trim() && !topL.value.trim()) topL.value = botL.value;
-
-      if (topA && botA){
-        if (topA.value && !botA.value) botA.value = topA.value;
-        if (botA.value && !topA.value) topA.value = botA.value;
-      }
-    }
-
-    // 상단/하단 라벨 입력은 서로 실시간 동기화
-    ["bloggerLabelsTop","bloggerLabels"].forEach(id=>{
-      const el = $(id);
-      if (el) el.addEventListener("input", ()=>{
-        const a = $("bloggerLabelsTop"), b = $("bloggerLabels");
-        if (!a || !b) return;
-        if (id === "bloggerLabelsTop") b.value = a.value;
-        else a.value = b.value;
-      });
-    });
-    ["bloggerLabelsActionTop","bloggerLabelsAction"].forEach(id=>{
-      const el = $(id);
-      if (el) el.addEventListener("change", ()=>{
-        const a = $("bloggerLabelsActionTop"), b = $("bloggerLabelsAction");
-        if (!a || !b) return;
-        if (id === "bloggerLabelsActionTop") b.value = a.value;
-        else a.value = b.value;
-      });
-    });
 
     /* =========================
        ✅ 실시간 프리뷰(동적 슬롯/토큰 입력 → 최종 HTML 자동 조립)
@@ -2039,7 +1962,6 @@ function extractTokensMetaFromHtml_(html){
 
         // ✅ [추가됨] DB(시트)에 저장된 라벨이 있으면 입력칸에 반영
         const dbLabels = current.blogger_labels || "";
-        $("bloggerLabels").value = dbLabels;
         $("bloggerLabelsTop").value = dbLabels; // 상단 라벨칸 동기화
         
         const labelDisp = dbLabels ? dbLabels : "-";
@@ -2142,7 +2064,8 @@ $("html").value = stripAlertModal_(rawHtml);
     }
 
     // ===== Blogger =====
-    async function exportToBlogger(){
+// [수정] publishState 인자 추가 (기본값: null = keep/기존상태 유지)
+    async function exportToBlogger(publishState = null){
       const id = getTargetId();
       if (!id) return setStatus("id가 필요합니다.", false);
 
@@ -2152,33 +2075,23 @@ $("html").value = stripAlertModal_(rawHtml);
         const tplId = $("templateSelect").value;
         if (tplId){
           setStatus("업로드 전 최종 HTML 생성(템플릿 조립) 중...", true);
-          
-          // ✅ [수정됨] 현재 화면 상태(순서 변경 반영)로 HTML 생성
           const out = await assembleHtmlUsingState_(tplId, buildVarsForAssemble_());
-          
           $("html").value = out.html;
           syncCharCount();
         }
 
-        syncTopLabelControls_();
-        const labelsCsv = $("bloggerLabels").value.trim();
-        const actionUi = $("bloggerLabelsAction").value || "replace";
-        
-        // ✅ Blogger 업로드용 HTML만 선택적으로 "경고 모달"을 주입/제거
-        // - 편집창(html textarea)은 건드리지 않음
-        let finalHtml = String($("html").value || "");
-        finalHtml = stripAlertModal_(finalHtml);
-        if ($("injectAlertModal") && $("injectAlertModal").checked){
-          finalHtml = injectAlertModal_(finalHtml);
-        }
+        // 라벨: 상단 입력창(bloggerLabelsTop)만 사용
+        const labelsCsv = $("bloggerLabelsTop").value.trim();
+        const actionUi = $("bloggerLabelsActionTop").value || "replace";
 
         const payload = {
           id,
           title: $("title").value.trim(),
-          html: finalHtml,
-          publish: $("bloggerPublish").checked ? "true" : "false",
+          html: $("html").value,
+          // publishState가 명시되면 그 값("true"/"false") 사용, 아니면 "keep" 등 API 스펙 따름
+          publish: (publishState !== null) ? String(publishState) : "keep", 
           labels: labelsCsv,
-          labels_action: labelsCsv ? actionUi : "keep" // ✅ 비어있으면 기존 라벨 유지
+          labels_action: labelsCsv ? actionUi : "keep"
         };
 
         hideBanner();
@@ -2215,8 +2128,8 @@ $("html").value = stripAlertModal_(rawHtml);
 
         $("title").value = res.title || $("title").value;
         const rawHtml = res.html || "";
-if ($("injectAlertModal")) $("injectAlertModal").checked = hasAlertModal_(rawHtml);
-$("html").value = stripAlertModal_(rawHtml);
+        if ($("injectAlertModal")) $("injectAlertModal").checked = hasAlertModal_(rawHtml);
+        $("html").value = stripAlertModal_(rawHtml);
         syncCharCount();
 
         const html = $("html").value || "";
@@ -2234,9 +2147,8 @@ $("html").value = stripAlertModal_(rawHtml);
         const labelsArr = Array.isArray(res.labels) ? res.labels : [];
         $("currentLabelsView").textContent = "현재 라벨: " + (labelsArr.length ? labelsArr.join(", ") : "-");
 
-        // 상단/하단 라벨 입력칸에도 반영(비어있을 때만)
+        // 상단 라벨 입력칸에도 반영(비어있을 때만)
         if (!$("bloggerLabels").value.trim()){
-          $("bloggerLabels").value = labelsArr.join(", ");
           $("bloggerLabelsTop").value = labelsArr.join(", ");
         }
 
@@ -2256,9 +2168,10 @@ $("html").value = stripAlertModal_(rawHtml);
       if (!id) return setStatus("id가 필요합니다.", false);
 
       syncTopLabelControls_();
-      const labels = $("bloggerLabels").value.trim();
-      const action = $("bloggerLabelsAction").value || "replace";
-
+      // [수정] 상단 라벨창 참조
+      const labels = $("bloggerLabelsTop").value.trim(); 
+      const action = $("bloggerLabelsActionTop").value || "replace";
+      
       try{
         setBusy_(true);
         hideBanner();
@@ -2321,31 +2234,25 @@ $("html").value = stripAlertModal_(rawHtml);
        ✅ 원클릭 파이프라인 (NEW)
        - Drive 저장 → Blogger 업로드
     ========================= */
-async function pipelinePublish_(publish){
+    async function pipelinePublish_(publish){
       const id = getTargetId();
       if (!id) return setStatus("id가 필요합니다.", false);
-
-      const prev = $("bloggerPublish").checked;
-      $("bloggerPublish").checked = !!publish;
 
       try{
         setBusy_(true);
         setStatus(publish ? "원클릭 발행 시작..." : "원클릭 초안 저장 시작...", true);
 
-        // [수정] 1) Drive 저장 (true를 넘겨서 리로드 방지!)
-        // -> 이렇게 해야 화면의 '변경된 순서'가 그대로 유지된 채로 다음 단계로 넘어갑니다.
+        // 1) Drive 저장 (리로드 방지)
         await exportToDrive(true);
 
-        // 2) Blogger 업로드
-        // -> 유지된 '변경된 순서' 데이터를 가지고 업로드 수행
-        await exportToBlogger();
+        // 2) Blogger 업로드 (인자로 발행여부 전달)
+        await exportToBlogger(publish);
 
         setStatus(publish ? "원클릭 발행 완료" : "원클릭 초안 저장 완료", true);
       }catch(e){
         setStatus("원클릭 작업 오류: " + (e?.message || e), false);
         setDebug(String(e && e.stack ? e.stack : e));
       }finally{
-        $("bloggerPublish").checked = prev;
         setBusy_(false);
       }
     }
@@ -2453,16 +2360,6 @@ async function pipelinePublish_(publish){
     $("btnApplyTemplate").addEventListener("click", applyTemplateNew);
     $("btnRewrapTemplate").addEventListener("click", rewrapTemplateKeepBody);
 
-    $("btnDriveUpsert").addEventListener("click", exportToDrive);
-    $("btnDriveRead").addEventListener("click", importFromDrive);
-    $("btnClear").addEventListener("click", clearEditor);
-
-    $("btnBloggerUpsert").addEventListener("click", exportToBlogger);
-    $("btnBloggerRead").addEventListener("click", importFromBlogger);
-
-    $("btnBloggerLabels").addEventListener("click", patchBloggerLabels);
-    $("btnBloggerRevert").addEventListener("click", revertBloggerToDraft);
-
     $("btnRegenId").addEventListener("click", regenId);
     $("category").addEventListener("change", onCategoryChange);
 
@@ -2473,7 +2370,10 @@ async function pipelinePublish_(publish){
     $("btnQuickBloggerUpsert").addEventListener("click", exportToBlogger);
     $("btnQuickBloggerRead").addEventListener("click", importFromBlogger);
     $("btnQuickLabels").addEventListener("click", patchBloggerLabels);
-
+    
+    // ✅ 비우기 버튼 연결 (위치는 상단으로 옮겼으므로 ID는 같음)
+    if($("btnClear")) $("btnClear").addEventListener("click", clearEditor);
+    
     // postSelect 바뀌면 sticky id 갱신
     $("postSelect").addEventListener("change", ()=>{
       const v = $("postSelect").value || "";
