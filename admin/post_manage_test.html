@@ -2055,7 +2055,7 @@ $("html").value = stripAlertModal_(rawHtml);
     }
 
     // ===== Blogger =====
-// [수정] publishState 인자 추가 (기본값: null = keep/기존상태 유지)
+    // [수정] 결과(res)를 반환하도록 변경된 버전
     async function exportToBlogger(publishState = null){
       const id = getTargetId();
       if (!id) return setStatus("id가 필요합니다.", false);
@@ -2071,7 +2071,6 @@ $("html").value = stripAlertModal_(rawHtml);
           syncCharCount();
         }
 
-        // 라벨: 상단 입력창(bloggerLabelsTop)만 사용
         const labelsCsv = $("bloggerLabelsTop").value.trim();
         const actionUi = $("bloggerLabelsActionTop").value || "replace";
 
@@ -2079,7 +2078,6 @@ $("html").value = stripAlertModal_(rawHtml);
           id,
           title: $("title").value.trim(),
           html: $("html").value,
-          // publishState가 명시되면 그 값("true"/"false") 사용, 아니면 "keep" 등 API 스펙 따름
           publish: (publishState !== null) ? String(publishState) : "keep", 
           labels: labelsCsv,
           labels_action: labelsCsv ? actionUi : "keep"
@@ -2096,11 +2094,14 @@ $("html").value = stripAlertModal_(rawHtml);
         setBloggerMeta({ url: res.url, post_id: res.post_id, status: res.status });
         setStatus(`Blogger ${res.status === 'published' ? '발행' : '초안'} 완료`, true);
 
-        return res; // ✅ [중요] 이 한 줄을 꼭 추가해야 합니다! (결과 반환)
-        
+        // ✅ [중요] 성공 결과(res)를 반환해야 합니다!
+        return res; 
+
       }catch(e){
         setStatus("Blogger 업로드 오류: " + (e?.message || e), false);
         setDebug(String(e && e.stack ? e.stack : e));
+        // 실패 시 에러를 던져서 pipelinePublish_가 멈추게 함
+        throw e; 
       }finally{
         setBusy_(false);
       }
@@ -2244,30 +2245,34 @@ function clearEditor(){
        ✅ 원클릭 파이프라인 (NEW)
        - Drive 저장 → Blogger 업로드
     ========================= */
+// [수정] res 변수 선언이 포함된 버전
     async function pipelinePublish_(publish){
       const id = getTargetId();
       if (!id) return setStatus("id가 필요합니다.", false);
-    
+
       try{
         setBusy_(true);
         setStatus(publish ? "원클릭 발행 시작..." : "원클릭 초안 저장 시작...", true);
-    
-        // 1) Drive 저장 (리로드 방지)
-        await exportToDrive(true);
-    
-        // 2) Blogger 업로드 (인자로 발행여부 전달)
-        await exportToBlogger(publish);
 
-        // ✅ URL 추출 (없을 수도 있으므로 안전하게 처리)
+        // 1) Drive 저장
+        await exportToDrive(true);
+
+        // 2) Blogger 업로드
+        // ✅ [중요] 반드시 'const res =' 를 붙여서 변수에 담아야 합니다.
+        const res = await exportToBlogger(publish); 
+
+        // 결과에서 URL 추출 (혹시 없으면 null)
         const postUrl = res ? res.url : null;
         
         const msg = publish ? "원클릭 발행 완료" : "원클릭 초안 저장 완료";
-    
-        setStatus(msg, true);
-        // ✅ 알림창에 URL 전달
-        showAlert_(msg + "\n편집창을 초기화합니다.", "작업 완료", "🚀", postUrl);        
-        clearEditor();
         
+        setStatus(msg, true);
+        
+        // 이제 res에서 뽑은 postUrl을 전달할 수 있습니다.
+        showAlert_(msg + "\n편집창을 초기화합니다.", "작업 완료", "🚀", postUrl);
+        
+        clearEditor();
+
       }catch(e){
         setStatus("원클릭 작업 오류: " + (e?.message || e), false);
         setDebug(String(e && e.stack ? e.stack : e));
