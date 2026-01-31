@@ -236,6 +236,43 @@
         0%, 100% { opacity: 1; }
         50% { opacity: 0.6; }
     }
+
+   /* ===== 발행 상태 뱃지 ===== */
+  .pm-pub-badge{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    padding:3px 8px;
+    border-radius:999px;
+    border:1px solid rgba(15,23,42,0.15);
+    font-size:12px;
+    font-weight:900;
+    margin-left:8px;
+    background:#fff;
+  }
+  
+  /* 상태별 */
+  .pm-pub-badge.published{
+    color:#047857;
+    border-color: rgba(4,120,87,0.25);
+    background: rgba(4,120,87,0.06);
+  }
+  .pm-pub-badge.draft{
+    color:#b45309;
+    border-color: rgba(180,83,9,0.25);
+    background: rgba(180,83,9,0.07);
+  }
+  .pm-pub-badge.none{
+    color:#64748b;
+    border-color: rgba(100,116,139,0.20);
+    background: rgba(100,116,139,0.06);
+  }
+  .pm-pub-badge.unknown{
+    color:#334155;
+    border-color: rgba(51,65,85,0.20);
+    background: rgba(51,65,85,0.05);
+  }
+
 </style>
   
 </head>
@@ -268,7 +305,10 @@
             
             <div class="bar-row" style="justify-content: space-between; margin-bottom: 8px;">
               <div class="bar-left">
-                <div class="pm-sticky-id" id="stickyId">ID: -</div>
+                <div class="pm-sticky-id" id="stickyId">
+                  <span id="stickyIdText">ID: -</span>
+                  <span id="stickyPubBadge" class="pm-pub-badge none">-</span>
+                </div>
                 <div class="pm-sticky-status" id="stickyStatus">
                   <span class="pm-spinner" id="stickySpinner"></span>
                   <span id="stickyStatusText">준비됨</span>
@@ -332,7 +372,9 @@
 
                 <div class="pm-row">
                   <div class="pm-label">현재 작업 ID</div>
-                  <input id="id" class="pm-input" type="text" placeholder="작성할 ID가 여기에 표시됩니다." disabled style="flex:1; background:#f8fafc; font-weight:800; color:#2563eb;" />
+                  <input id="id" class="pm-input" type="text" placeholder="작성할 ID가 여기에 표시됩니다." disabled
+                         style="flex:1; background:#f8fafc; font-weight:800; color:#2563eb;" />
+                  <span id="currentPubBadge" class="pm-pub-badge none">-</span>
                 </div>
             
             
@@ -568,11 +610,48 @@
       }
     }
 
+    function statusBadgeInfo_(status){
+      const s = String(status || "").toLowerCase();
+      if (s === "published") return { text:"발행", cls:"published" };
+      if (s === "draft")     return { text:"초안", cls:"draft" };
+      if (!s)                return { text:"-", cls:"none" };
+      return { text:s, cls:"unknown" };
+    }
+    
+    function applyStatusBadge_(el, status){
+      if (!el) return;
+      const { text, cls } = statusBadgeInfo_(status);
+      el.textContent = text;
+      el.classList.remove("published","draft","none","unknown");
+      el.classList.add(cls);
+    }
+    
+    function getStatusForId_(id){
+      const targetId = String(id || "").trim();
+      if (!targetId) return "";
+    
+      // 1) 현재 로드된 글이 있으면 그걸 우선
+      if (current && String(current.id) === targetId && current.blogger_status){
+        return current.blogger_status;
+      }
+    
+      // 2) 모달에서 받아온 캐시 목록(window._cachedPostList)에서 찾기
+      const hit = (window._cachedPostList || []).find(x => String(x.id) === targetId);
+      return hit ? (hit.blogger_status || "") : "";
+    }
+    
     function setStickyId_(){
       const id = getTargetId() || "-";
-      $("stickyId").textContent = "ID: " + id;
-    }
+    
+      const idTextEl = document.getElementById("stickyIdText");
+      if (idTextEl) idTextEl.textContent = "ID: " + id;
+    
+      const badgeEl = document.getElementById("stickyPubBadge");
+      applyStatusBadge_(badgeEl, getStatusForId_(id));
 
+      const currentBadge = document.getElementById("currentPubBadge");
+      applyStatusBadge_(currentBadge, getStatusForId_(id));
+    }
 
 
     /* =========================
@@ -2401,27 +2480,38 @@ $("html").value = stripAlertModal_(rawHtml);
       }
     }
 
-    function renderPostModalList_(items) {
-      const listEl = $("postModalList");
-      listEl.innerHTML = "";
-      items.forEach(it => {
-        const li = document.createElement("li");
-        li.className = "pm-lib-item";
-        li.innerHTML = `
-          <div style="flex:1;">
-            <div class="pm-lib-name">${it.id}</div>
-            <div class="pm-small pm-muted">${it.title || '(제목 없음)'}</div>
+  function renderPostModalList_(items) {
+    const listEl = $("postModalList");
+    listEl.innerHTML = "";
+  
+    items.forEach(it => {
+      const li = document.createElement("li");
+      li.className = "pm-lib-item";
+  
+      const { text, cls } = statusBadgeInfo_(it.blogger_status); // ✅ draft/published
+  
+      li.innerHTML = `
+        <div style="flex:1;">
+          <div class="pm-lib-name">
+            ${it.id}
+            <span class="pm-pub-badge ${cls}">${text}</span>
           </div>
-          <div class="pm-lib-add">열기 →</div>
-        `;
-        li.onclick = () => {
-          $("id").value = it.id;
-          loadPost(); // 기존 불러오기 함수 호출
-          closeModal_('editPostModal');
-        };
-        listEl.appendChild(li);
-      });
-    }
+          <div class="pm-small pm-muted">${it.title || '(제목 없음)'}</div>
+        </div>
+        <div class="pm-lib-add">열기 →</div>
+      `;
+  
+      li.onclick = () => {
+        $("id").value = it.id;
+        setStickyId_(); // ✅ 선택 즉시 스티키/현재ID 뱃지도 반영
+        loadPost();
+        closeModal_('editPostModal');
+      };
+  
+      listEl.appendChild(li);
+    });
+  }
+
 
     // 검색 필터
     $("postSearchInput").oninput = (e) => {
