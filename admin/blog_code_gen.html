@@ -693,24 +693,16 @@ function buildTableGrid_(rows, cols){
 
   for (let r=0; r<rows; r++){
     for (let c=0; c<cols; c++){
-      const inp = document.createElement("textarea"); // textarea로 교체
+      const inp = document.createElement("textarea");
       inp.className = "bcg-cell";
       inp.style.height = "60px";
-      inp.style.resize = "none";
+      // inp.style.resize = "none"; // 필요하면 켜두세요
       inp.placeholder = (r === 0 && (tblHeaderEl?.checked)) ? `헤더 ${c+1}` : `R${r+1}C${c+1}`;
       inp.setAttribute("data-r", String(r));
       inp.setAttribute("data-c", String(c));
 
+      // 엔터 시 <br> 삽입 대신, Ctrl+Enter로 셀 이동 기능만 남깁니다.
       inp.addEventListener("keydown", (e)=>{
-        // 엔터 시 <br> 삽입
-        if (e.key === "Enter" && !e.ctrlKey) {
-          e.preventDefault();
-          const start = inp.selectionStart;
-          const val = inp.value;
-          inp.value = val.substring(0, start) + "<br>" + val.substring(inp.selectionEnd);
-          inp.selectionStart = inp.selectionEnd = start + 4;
-        }
-        // Ctrl+엔터 시 다음 행 이동
         if (e.key === "Enter" && e.ctrlKey) {
           e.preventDefault();
           const target = tblCellsEl.querySelector(`.bcg-cell[data-r="${r+1}"][data-c="${c}"]`);
@@ -762,13 +754,40 @@ function readTableCells_(rows, cols){
     const row = [];
     for (let c=0; c<cols; c++){
       const el = tblCellsEl?.querySelector(`.bcg-cell[data-r="${r}"][data-c="${c}"]`);
-      row.push(el ? String(el.value ?? "") : "");
+      let val = el ? String(el.value ?? "") : "";
+      
+      // ✅ 실제 줄바꿈(\n)을 <br> 태그로 변환하여 저장
+      val = val.replace(/\n/g, "<br>");
+      
+      row.push(val);
     }
     out.push(row);
   }
   return out;
 }
 
+//3. 모달 닫기 방지 로직 (수정: 배경 클릭 차단 유지)
+function handleModalClose() {
+  const cells = tblCellsEl?.querySelectorAll(".bcg-cell");
+  let hasContent = Array.from(cells || []).some(cell => cell.value.trim().length > 0);
+
+  if (hasContent) {
+    if (confirm("작성 중인 표 내용이 사라집니다. 정말 닫으시겠어요?")) {
+      closeTableModal_();
+    }
+  } else {
+    closeTableModal_();
+  }
+}
+
+// 이벤트 연결 부분
+if (tableModalCloseBtn) tableModalCloseBtn.onclick = handleModalClose;
+if (tableModal) {
+  // 배경 클릭 이벤트(e.target === tableModal)를 완전히 삭제하여 차단합니다.
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !tableModal.hidden) handleModalClose();
+  });
+}
 function makeTableHtml_(rows, cols, useHeader, caption, cells){
   const cap = String(caption ?? "").trim();
   const lines = [];
