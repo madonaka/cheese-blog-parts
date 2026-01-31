@@ -548,57 +548,53 @@ function escapeText_(s, allowTags){
 // 빈 줄 기준 문단 분리 → <p>..</p>, 문단 내부 줄바꿈은 <br>
 // allowTags=true면 "허용 태그"는 유지하면서 나머지만 이스케이프
 function textToParagraphHtml(text, allowTags) {
-  // 1. 기본 정리: 유니코드 공백 제거 및 줄바꿈 통일
-  const raw = String(text ?? "")
-    .replace(/\r\n/g, "\n")
-    .replace(/\u200B/g, ''); 
+  const raw = String(text ?? "").replace(/\r\n/g, "\n").replace(/\u200B/g, '');
 
-  // 2. 2번 이상의 엔터(\n\n)를 기준으로 문단 분리
-  const blocks = raw
-    .split(/\n{2,}/g)
-    .map(p => p.trim())
-    .filter(p => p.length > 0);
+  // 1. 문단 분리 기준을 유지하되, 연속된 빈 줄을 보존하기 위해 split 로직 변경
+  const chunks = raw.split(/\n{2,}/g); 
 
-  if (blocks.length === 0) return "";
+  if (chunks.length === 0) return "";
 
-  return blocks.map(p => {
-    // 테이블 태그인 경우 예외 처리
-    if (allowTags) {
-      const t = p.trim();
-      if (/^<table\b/i.test(t) && /<\/table>\s*$/i.test(t)) {
-        return escapeText_(t, allowTags);
-      }
+  return chunks.map(chunk => {
+    const trimmedChunk = chunk.trim();
+    
+    // 테이블 태그 예외 처리
+    if (allowTags && /^<table\b/i.test(trimmedChunk) && /<\/table>\s*$/i.test(trimmedChunk)) {
+      return escapeText_(trimmedChunk, allowTags);
+    }
+
+    // 2. 만약 청크 자체가 <br> 태그만 있거나 완전히 비어있다면 독립된 <br>로 반환
+    if (trimmedChunk === "<br>" || trimmedChunk === "<br/>") {
+      return "<br>";
     }
 
     // 3. 문단 내부 줄바꿈 처리
-    const lines = p.split("\n").map(l => l.trimEnd());
+    const lines = chunk.split("\n").map(l => l.trimEnd());
     let processedLines = [];
 
     for (let i = 0; i < lines.length; i++) {
       let escaped = escapeText_(lines[i], allowTags);
       
-      // 현재 줄이 비어있지 않거나, 이전 줄이 이미 <br>을 포함하지 않을 때만 처리
       if (i < lines.length - 1) {
-        // 이미 줄 끝에 <br>이 있다면 중복 추가 방지
+        // 이미 <br>이 있으면 중복 방지, 없으면 추가
         if (/<br\s*\/?>$/i.test(escaped.trim())) {
           processedLines.push(escaped);
         } else {
           processedLines.push(escaped + "<br>");
         }
       } else {
-        // 문단의 마지막 줄은 <br>을 붙이지 않음 (p태그가 감싸기 때문)
-        // 만약 마지막 줄에 사용자가 넣은 <br>이 있다면 제거하여 불필요한 여백 방지
-        const cleanedLastLine = escaped.replace(/<br\s*\/?>$/i, "");
-        processedLines.push(cleanedLastLine);
+        // 문단 마지막 줄의 불필요한 <br> 제거
+        processedLines.push(escaped.replace(/<br\s*\/?>$/i, ""));
       }
     }
 
-    // 빈 줄(내용 없는 <br>)만 남은 요소 제거 및 병합
-    const finalContent = processedLines.filter(line => line.length > 0).join("\n");
+    const content = processedLines.filter(line => line.length > 0).join("\n");
     
-    return finalContent ? `<p>${finalContent}</p>` : "";
-  }).filter(p => p !== "").join("\n");
+    // 내용이 있으면 p태그로 감싸고, 없으면(엔터만 친 경우) br로 처리
+    return content ? `<p>${content}</p>` : "<br>";
+  }).join("\n");
 }
+      
 // ✅ textarea 선택영역 감싸기(드래그 → 버튼)
 function wrapSelection(textarea, left, right){
   if (!textarea) return;
