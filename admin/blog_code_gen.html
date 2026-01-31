@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>블로그 코드 생성</title>
 
-  <!-- ✅ 공통 CSS -->
   <link rel="stylesheet" href="./admin.css" />
 
   <style>
@@ -385,14 +384,11 @@
 
 <body>
   <div class="admin-shell">
-    <!-- 헤더 슬롯 -->
     <div id="admin-header-slot"></div>
 
     <div class="admin-main">
-      <!-- 메뉴 슬롯 -->
       <aside id="admin-menu-slot" class="admin-sidebar"></aside>
 
-      <!-- 본문 -->
       <main class="admin-content">
         <div class="bcg-wrap">
 
@@ -431,157 +427,92 @@
   </div>
 
   
-/* ==========================
-   Table Builder Modal (최종 수정본)
-========================== */
-const tableModal = document.getElementById("tableModal");
-const tableModalCloseBtn = document.getElementById("tableModalCloseBtn");
-const tblRowsEl = document.getElementById("tblRows");
-const tblColsEl = document.getElementById("tblCols");
-const tblHeaderEl = document.getElementById("tblHeader");
-const tblCaptionEl = document.getElementById("tblCaption");
-const tblRebuildBtn = document.getElementById("tblRebuildBtn");
-const tblCellsEl = document.getElementById("tblCells");
-const tblInsertBtn = document.getElementById("tblInsertBtn");
+  <div class="bcg-modal-backdrop" id="tableModal" hidden style="display:none" aria-hidden="true">
+    <div class="bcg-modal" role="dialog" aria-modal="true" aria-labelledby="tableModalTitle">
+      <div class="bcg-modal-head">
+        <h3 class="bcg-modal-title" id="tableModalTitle">표 만들기</h3>
+        <span class="bcg-muted">셀을 채우고 “삽입”을 누르면 본문에 표 HTML이 들어가.</span>
+        <span class="bcg-right"></span>
+        <button class="bcg-btn bcg-mini" type="button" id="tableModalCloseBtn">닫기</button>
+      </div>
 
-let tableCtx = null;
+      <div class="bcg-modal-body">
+        <div class="bcg-modal-grid">
+          <div class="bcg-table-controls">
+            <div class="bcg-field">
+              <span class="bcg-label">행</span>
+              <input class="bcg-input bcg-num" id="tblRows" type="number" min="1" max="30" value="3">
+            </div>
+            <div class="bcg-field">
+              <span class="bcg-label">열</span>
+              <input class="bcg-input bcg-num" id="tblCols" type="number" min="1" max="12" value="3">
+            </div>
+            <div class="bcg-field">
+              <span class="bcg-label">옵션</span>
+              <label class="bcg-check" style="margin-top:4px;">
+                <input type="checkbox" id="tblHeader" checked>
+                첫 줄을 헤더(th)로
+              </label>
+            </div>
+            <div class="bcg-field" style="min-width:240px; flex:1;">
+              <span class="bcg-label">캡션(선택)</span>
+              <input class="bcg-input" id="tblCaption" placeholder="예) 시대별 왕위 계승 정리">
+            </div>
 
-// 모달 열기
-function openTableModal_(ctx){
-  tableCtx = ctx || null;
-  if (!tableModal) return;
-  tableModal.hidden = false;
-  tableModal.style.display = 'flex';
-  tableModal.setAttribute('aria-hidden','false');
+            <button class="bcg-btn bcg-mini bcg-btn--primary" type="button" id="tblRebuildBtn">그리드 생성</button>
+          </div>
 
-  const r = clampInt_(tblRowsEl?.value, 1, 30, 3);
-  const c = clampInt_(tblColsEl?.value, 1, 12, 3);
-  buildTableGrid_(r, c);
-}
+          <div class="bcg-table-editor">
+            <div class="bcg-muted" style="padding:10px 10px 0;">
+              팁) 엑셀/시트에서 복사한 텍스트(탭 구분)를 셀에 붙여넣어도 돼. 엔터는 줄바꿈, Ctrl+엔터는 다음 셀 이동.
+            </div>
+            <div class="bcg-table-cells" id="tblCells"></div>
+          </div>
 
-// 모달 닫기 (실제 닫기 수행)
-function closeTableModal_(){
-  if (!tableModal) return;
-  tableModal.hidden = true;
-  tableModal.style.display = 'none';
-  tableModal.setAttribute('aria-hidden','true');
-  tableCtx = null;
-}
+          <div class="bcg-muted">
+            생성되는 표는 <code>&lt;table class="cheese-table"&gt;</code> 형태야. 블로그 공통 CSS에서 <code>.cheese-table</code> 스타일을 잡아두면 글마다 통일돼.
+          </div>
+        </div>
+      </div>
 
-// ⚠️ 안전하게 닫기 (내용 확인 로직)
-function handleSafeClose() {
-  const cells = tblCellsEl?.querySelectorAll(".bcg-cell");
-  const hasContent = Array.from(cells || []).some(cell => cell.value.trim().length > 0);
-
-  if (hasContent) {
-    if (confirm("작성 중인 표 내용이 있습니다. 정말 닫으시겠어요?")) {
-      closeTableModal_();
-    }
-  } else {
-    closeTableModal_();
-  }
-}
-
-// 그리드 생성 (textarea 사용)
-function buildTableGrid_(rows, cols){
-  if (!tblCellsEl) return;
-  tblCellsEl.innerHTML = "";
-  tblCellsEl.style.gridTemplateColumns = `repeat(${cols}, minmax(140px, 1fr))`;
-
-  for (let r=0; r<rows; r++){
-    for (let c=0; c<cols; c++){
-      const inp = document.createElement("textarea");
-      inp.className = "bcg-cell";
-      inp.style.height = "60px";
-      inp.placeholder = (r === 0 && (tblHeaderEl?.checked)) ? `헤더 ${c+1}` : `R${r+1}C${c+1}`;
-      inp.setAttribute("data-r", String(r));
-      inp.setAttribute("data-c", String(c));
-
-      // Ctrl + Enter 시 다음 행 이동
-      inp.addEventListener("keydown", (e)=>{
-        if (e.key === "Enter" && e.ctrlKey) {
-          e.preventDefault();
-          const target = tblCellsEl.querySelector(`.bcg-cell[data-r="${r+1}"][data-c="${c}"]`);
-          if (target) target.focus();
-        }
-      });
-      tblCellsEl.appendChild(inp);
-    }
-  }
-}
-
-// 셀 읽기 (줄바꿈 -> <br> 변환)
-function readTableCells_(rows, cols){
-  const out = [];
-  for (let r=0; r<rows; r++){
-    const row = [];
-    for (let c=0; c<cols; c++){
-      const el = tblCellsEl?.querySelector(`.bcg-cell[data-r="${r}"][data-c="${c}"]`);
-      let val = el ? String(el.value ?? "") : "";
-      // 입력된 실제 줄바꿈을 <br> 태그로 변환
-      row.push(val.replace(/\n/g, "<br>"));
-    }
-    out.push(row);
-  }
-  return out;
-}
-
-/* --- 이벤트 바인딩 --- */
-
-// 1. [닫기] 버튼: 안전 닫기 적용
-if (tableModalCloseBtn) {
-  tableModalCloseBtn.onclick = (e) => {
-    e.preventDefault();
-    handleSafeClose();
-  };
-}
-
-// 2. 모달 배경 클릭 방지
-if (tableModal) {
-  // 기존의 모든 클릭 이벤트를 무시하고, 모달 내부 콘텐츠를 제외한 배경 클릭 시에도 아무 일 없게 함
-  tableModal.onclick = (e) => {
-    // 배경(backdrop) 클릭 시 닫히지 않도록 이벤트를 차단함
-    if (e.target === tableModal) {
-      e.stopPropagation();
-    }
-  };
-}
-
-// 3. ESC 키: 안전 닫기 적용
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && tableModal && tableModal.style.display !== 'none') {
-    handleSafeClose();
-  }
-});
-
-// 4. [그리드 생성] 버튼: 데이터 초기화 경고
-if (tblRebuildBtn) {
-  tblRebuildBtn.onclick = () => {
-    const cells = tblCellsEl?.querySelectorAll(".bcg-cell");
-    const hasContent = Array.from(cells || []).some(cell => cell.value.trim().length > 0);
-    if (hasContent && !confirm("현재 입력된 표 내용이 모두 사라집니다. 다시 만드시겠습니까?")) return;
-
-    const r = clampInt_(tblRowsEl?.value, 1, 30, 3);
-    const c = clampInt_(tblColsEl?.value, 1, 12, 3);
-    buildTableGrid_(r, c);
-  };
-}
+      <div class="bcg-modal-foot">
+        <button class="bcg-btn bcg-mini" type="button" id="tblInsertBtn">삽입</button>
+      </div>
+    </div>
+  </div>
 
 
   <div class="bcg-toast" id="toast"></div>
 
-  <!-- ✅ 공통 JS (헤더/메뉴 슬롯 채움) -->
   <script src="./admin-common.js"></script>
 
   <script>
     (function(){
+      /* ==========================
+         변수 선언
+      ========================== */
       const elBlocks = document.getElementById("blocks");
       const addBtn = document.getElementById("addBlockBtn");
       const pill = document.getElementById("blockCountPill");
       const toast = document.getElementById("toast");
 
-      let seq = 0;
+      // Table Builder Elements
+      const tableModal = document.getElementById("tableModal");
+      const tableModalCloseBtn = document.getElementById("tableModalCloseBtn");
+      const tblRowsEl = document.getElementById("tblRows");
+      const tblColsEl = document.getElementById("tblCols");
+      const tblHeaderEl = document.getElementById("tblHeader");
+      const tblCaptionEl = document.getElementById("tblCaption");
+      const tblRebuildBtn = document.getElementById("tblRebuildBtn");
+      const tblCellsEl = document.getElementById("tblCells");
+      const tblInsertBtn = document.getElementById("tblInsertBtn");
 
+      let seq = 0;
+      let tableCtx = null; // 표 삽입 대상 컨텍스트
+
+      /* ==========================
+         유틸리티 함수
+      ========================== */
       function showToast(msg){
         toast.textContent = msg;
         toast.classList.add("show");
@@ -589,385 +520,311 @@ if (tblRebuildBtn) {
         showToast._t = setTimeout(()=>toast.classList.remove("show"), 1600);
       }
 
-      // ✅ 안전 이스케이프(기본): &, <, > 만 변환 (따옴표는 그대로 보여주기)
-function escapeHtmlLite(s){
-  return String(s ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-// ✅ 서식 버튼이 넣는 "일부 태그"만 허용 (나머지는 전부 이스케이프)
-// 허용: <strong>, <span style="color:#xxxxxx">, <mark style="background:#xxxxxx">, <br>, <table class="cheese-table">...</table> (thead/tbody/tr/th/td/caption)
-function protectAllowedTags_(s){
-  const src = String(s ?? "");
-  const map = [];
-  const re = /<\/?(?:strong|em|u|s)\s*>|<br\s*\/?>|<mark\s+style="background:\s*#[0-9a-fA-F]{3,8}\s*"\s*>|<\/mark>|<span\s+style="color:\s*#[0-9a-fA-F]{3,8}\s*"\s*>|<\/span>|<table\s+class="cheese-table"\s*>|<\/table>|<thead\s*>|<\/thead>|<tbody\s*>|<\/tbody>|<tr\s*>|<\/tr>|<th\s*>|<\/th>|<td\s*>|<\/td>|<caption\s*>|<\/caption>/gi;
-  const out = src.replace(re, (m)=>{
-    const key = `@@ALLOWED_TAG_${map.length}@@`;
-    map.push(m);
-    return key;
-  });
-  return { out, map };
-}
-
-function restoreAllowedTags_(s, map){
-  let out = String(s ?? "");
-  (map || []).forEach((tag, i)=>{
-    out = out.split(`@@ALLOWED_TAG_${i}@@`).join(tag);
-  });
-  return out;
-}
-
-function escapeText_(s, allowTags){
-  if (!allowTags) return escapeHtmlLite(s);
-  const { out, map } = protectAllowedTags_(s);
-  const escaped = escapeHtmlLite(out);
-  return restoreAllowedTags_(escaped, map);
-}
-
-// 빈 줄 기준 문단 분리 → <p>..</p>, 문단 내부 줄바꿈은 <br>
-// allowTags=true면 "허용 태그"는 유지하면서 나머지만 이스케이프
-function textToParagraphHtml(text, allowTags) {
-  // 1. 기본 정리: 줄바꿈 통일 및 보이지 않는 특수문자 제거
-  const raw = String(text ?? "").replace(/\r\n/g, "\n").replace(/\u200B/g, '');
-
-  // 2. 2번 이상의 엔터를 기준으로 크게 분리
-  const chunks = raw.split(/\n{2,}/g); 
-
-  if (chunks.length === 0) return "";
-
-  return chunks.map(chunk => {
-    const trimmedChunk = chunk.trim();
-    
-    // [예외 1] 테이블 태그인 경우 p태그 없이 그대로 반환
-    if (allowTags && /^<table\b/i.test(trimmedChunk) && /<\/table>\s*$/i.test(trimmedChunk)) {
-      return escapeText_(trimmedChunk, allowTags);
-    }
-
-    // [예외 2] 청크 자체가 하나 이상의 <br> 태그로만 구성된 경우 (p 없이 독립 태그로 반환)
-    // 예: "<br>", "<br><br>", "<br/>" 등
-    const brOnlyRegex = /^(<br\s*\/?>)+$/i;
-    if (brOnlyRegex.test(trimmedChunk.replace(/\s/g, ''))) {
-      return trimmedChunk; 
-    }
-
-    // 3. 일반적인 문단 내부 줄바꿈 처리
-    const lines = chunk.split("\n").map(l => l.trimEnd());
-    let processedLines = [];
-
-    for (let i = 0; i < lines.length; i++) {
-      let escaped = escapeText_(lines[i], allowTags);
-      
-      if (i < lines.length - 1) {
-        // 이미 줄 끝에 <br>이 있다면 중복 방지, 없으면 추가
-        if (/<br\s*\/?>$/i.test(escaped.trim())) {
-          processedLines.push(escaped);
-        } else {
-          processedLines.push(escaped + "<br>");
-        }
-      } else {
-        // 문단 마지막 줄은 <br>을 붙이지 않음 (p태그가 닫히기 때문)
-        processedLines.push(escaped.replace(/<br\s*\/?>$/i, ""));
+      function clampInt_(v, min, max, fallback){
+        const n = parseInt(v, 10);
+        if (!Number.isFinite(n)) return fallback;
+        return Math.max(min, Math.min(max, n));
       }
-    }
 
-    const content = processedLines.filter(line => line.length > 0).join("\n");
-    
-    // 내용이 있으면 p태그로 감싸고, 내용이 없으면(엔터만 남은 경우) 독립 br로 처리
-    return content ? `<p>${content}</p>` : "<br>";
-  }).join("\n");
-}
+      function escapeHtmlLite(s){
+        return String(s ?? "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+      }
+
+      function protectAllowedTags_(s){
+        const src = String(s ?? "");
+        const map = [];
+        const re = /<\/?(?:strong|em|u|s)\s*>|<br\s*\/?>|<mark\s+style="background:\s*#[0-9a-fA-F]{3,8}\s*"\s*>|<\/mark>|<span\s+style="color:\s*#[0-9a-fA-F]{3,8}\s*"\s*>|<\/span>|<table\s+class="cheese-table"\s*>|<\/table>|<thead\s*>|<\/thead>|<tbody\s*>|<\/tbody>|<tr\s*>|<\/tr>|<th\s*>|<\/th>|<td\s*>|<\/td>|<caption\s*>|<\/caption>/gi;
+        const out = src.replace(re, (m)=>{
+          const key = `@@ALLOWED_TAG_${map.length}@@`;
+          map.push(m);
+          return key;
+        });
+        return { out, map };
+      }
+
+      function restoreAllowedTags_(s, map){
+        let out = String(s ?? "");
+        (map || []).forEach((tag, i)=>{
+          out = out.split(`@@ALLOWED_TAG_${i}@@`).join(tag);
+        });
+        return out;
+      }
+
+      function escapeText_(s, allowTags){
+        if (!allowTags) return escapeHtmlLite(s);
+        const { out, map } = protectAllowedTags_(s);
+        const escaped = escapeHtmlLite(out);
+        return restoreAllowedTags_(escaped, map);
+      }
+
+      function textToParagraphHtml(text, allowTags) {
+        const raw = String(text ?? "").replace(/\r\n/g, "\n").replace(/\u200B/g, '');
+        const chunks = raw.split(/\n{2,}/g); 
+        if (chunks.length === 0) return "";
+        return chunks.map(chunk => {
+          const trimmedChunk = chunk.trim();
+          if (allowTags && /^<table\b/i.test(trimmedChunk) && /<\/table>\s*$/i.test(trimmedChunk)) {
+            return escapeText_(trimmedChunk, allowTags);
+          }
+          const brOnlyRegex = /^(<br\s*\/?>)+$/i;
+          if (brOnlyRegex.test(trimmedChunk.replace(/\s/g, ''))) {
+            return trimmedChunk; 
+          }
+          const lines = chunk.split("\n").map(l => l.trimEnd());
+          let processedLines = [];
+          for (let i = 0; i < lines.length; i++) {
+            let escaped = escapeText_(lines[i], allowTags);
+            if (i < lines.length - 1) {
+              if (/<br\s*\/?>$/i.test(escaped.trim())) {
+                processedLines.push(escaped);
+              } else {
+                processedLines.push(escaped + "<br>");
+              }
+            } else {
+              processedLines.push(escaped.replace(/<br\s*\/?>$/i, ""));
+            }
+          }
+          const content = processedLines.filter(line => line.length > 0).join("\n");
+          return content ? `<p>${content}</p>` : "<br>";
+        }).join("\n");
+      }
       
-// ✅ textarea 선택영역 감싸기(드래그 → 버튼)
-function wrapSelection(textarea, left, right){
-  if (!textarea) return;
-  const s = textarea.selectionStart ?? 0;
-  const e = textarea.selectionEnd ?? 0;
-  const v = textarea.value ?? "";
-
-  if (s === e){
-    const next = v.slice(0, s) + left + right + v.slice(e);
-    textarea.value = next;
-    const pos = s + left.length;
-    textarea.setSelectionRange(pos, pos);
-    textarea.focus();
-    return;
-  }
-
-  const mid = v.slice(s, e);
-  const next = v.slice(0, s) + left + mid + right + v.slice(e);
-  textarea.value = next;
-  textarea.setSelectionRange(s + left.length, e + left.length);
-  textarea.focus();
-}
-
-
-// ✅ 선택영역에 "텍스트 삽입"(선택이 있으면 대체)
-function insertAtSelection(textarea, insertText){
-  if (!textarea) return;
-  const s = textarea.selectionStart ?? 0;
-  const e = textarea.selectionEnd ?? 0;
-  const v = textarea.value ?? "";
-  const next = v.slice(0, s) + insertText + v.slice(e);
-  textarea.value = next;
-  const pos = s + String(insertText).length;
-  textarea.setSelectionRange(pos, pos);
-  textarea.focus();
-}
-
-/* ==========================
-   Table Builder Modal
-========================== */
-const tableModal = document.getElementById("tableModal");
-const tableModalCloseBtn = document.getElementById("tableModalCloseBtn");
-const tblRowsEl = document.getElementById("tblRows");
-const tblColsEl = document.getElementById("tblCols");
-const tblHeaderEl = document.getElementById("tblHeader");
-const tblCaptionEl = document.getElementById("tblCaption");
-const tblRebuildBtn = document.getElementById("tblRebuildBtn");
-const tblCellsEl = document.getElementById("tblCells");
-const tblInsertBtn = document.getElementById("tblInsertBtn");
-
-let tableCtx = null;
-
-function clampInt_(v, min, max, fallback){
-  const n = parseInt(v, 10);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.max(min, Math.min(max, n));
-}
-
-function openTableModal_(ctx){
-  tableCtx = ctx || null;
-  if (!tableModal) return;
-  tableModal.hidden = false;
-
-    tableModal.style.display = 'flex';
-  tableModal.setAttribute('aria-hidden','false');
-// 초기 그리드 생성
-  const r = clampInt_(tblRowsEl?.value, 1, 30, 3);
-  const c = clampInt_(tblColsEl?.value, 1, 12, 3);
-  buildTableGrid_(r, c);
-
-  // 첫 셀 포커스
-  const first = tblCellsEl?.querySelector(".bcg-cell");
-  if (first) setTimeout(()=>first.focus(), 0);
-}
-
-function closeTableModal_(){
-  if (!tableModal) return;
-  tableModal.hidden = true;
-    tableModal.style.display = 'none';
-  tableModal.setAttribute('aria-hidden','true');
-tableCtx = null;
-}
-
-/* ==========================
-   Table Builder Modal - 수정된 그리드 생성 로직
-========================== */
-
-/* 1. 그리드 생성 함수 (수정) */
-function buildTableGrid_(rows, cols){
-  if (!tblCellsEl) return;
-  tblCellsEl.innerHTML = "";
-  tblCellsEl.style.gridTemplateColumns = `repeat(${cols}, minmax(140px, 1fr))`;
-
-  for (let r=0; r<rows; r++){
-    for (let c=0; c<cols; c++){
-      const inp = document.createElement("textarea");
-      inp.className = "bcg-cell";
-      inp.style.height = "60px";
-      // inp.style.resize = "none"; // 필요하면 켜두세요
-      inp.placeholder = (r === 0 && (tblHeaderEl?.checked)) ? `헤더 ${c+1}` : `R${r+1}C${c+1}`;
-      inp.setAttribute("data-r", String(r));
-      inp.setAttribute("data-c", String(c));
-
-      // 엔터 시 <br> 삽입 대신, Ctrl+Enter로 셀 이동 기능만 남깁니다.
-      inp.addEventListener("keydown", (e)=>{
-        if (e.key === "Enter" && e.ctrlKey) {
-          e.preventDefault();
-          const target = tblCellsEl.querySelector(`.bcg-cell[data-r="${r+1}"][data-c="${c}"]`);
-          if (target) target.focus();
+      function wrapSelection(textarea, left, right){
+        if (!textarea) return;
+        const s = textarea.selectionStart ?? 0;
+        const e = textarea.selectionEnd ?? 0;
+        const v = textarea.value ?? "";
+        if (s === e){
+          const next = v.slice(0, s) + left + right + v.slice(e);
+          textarea.value = next;
+          const pos = s + left.length;
+          textarea.setSelectionRange(pos, pos);
+          textarea.focus();
+          return;
         }
-      });
-      tblCellsEl.appendChild(inp);
-    }
-  }
-}
+        const mid = v.slice(s, e);
+        const next = v.slice(0, s) + left + mid + right + v.slice(e);
+        textarea.value = next;
+        textarea.setSelectionRange(s + left.length, e + left.length);
+        textarea.focus();
+      }
 
-// 안전하게 닫기 확인 함수
-function handleSafeClose_() {
-  const cells = tblCellsEl?.querySelectorAll(".bcg-cell");
-  const hasContent = Array.from(cells || []).some(cell => cell.value.trim().length > 0);
-  if (hasContent) {
-    if (confirm("작성 중인 표 데이터가 사라집니다. 정말 닫으시겠어요?")) closeTableModal_();
-  } else {
-    closeTableModal_();
-  }
-}
+      function insertAtSelection(textarea, insertText){
+        if (!textarea) return;
+        const s = textarea.selectionStart ?? 0;
+        const e = textarea.selectionEnd ?? 0;
+        const v = textarea.value ?? "";
+        const next = v.slice(0, s) + insertText + v.slice(e);
+        textarea.value = next;
+        const pos = s + String(insertText).length;
+        textarea.setSelectionRange(pos, pos);
+        textarea.focus();
+      }
 
-// 1. [닫기] 버튼 클릭
-if (tableModalCloseBtn) {
-  tableModalCloseBtn.onclick = (e) => { e.preventDefault(); handleSafeClose_(); };
-}
-
-// 2. 모달 배경 클릭 차단
-if (tableModal) {
-  tableModal.onclick = (e) => {
-    // 배경(tableModal)을 직접 클릭했을 때만 닫기 로직을 타지 않게 방어
-    if (e.target === tableModal) e.stopPropagation();
-  };
-}
-
-// 3. ESC 키 입력
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !tableModal.hidden) handleSafeClose_();
-});
-
-// 4. [그리드 생성] 버튼 경고
-if (tblRebuildBtn) {
-  tblRebuildBtn.onclick = () => {
-    const cells = tblCellsEl?.querySelectorAll(".bcg-cell");
-    const hasContent = Array.from(cells || []).some(cell => cell.value.trim().length > 0);
-    if (hasContent && !confirm("입력된 내용이 초기화됩니다. 계속할까요?")) return;
-    
-    const r = clampInt_(tblRowsEl?.value, 1, 30, 3);
-    const c = clampInt_(tblColsEl?.value, 1, 12, 3);
-    buildTableGrid_(r, c);
-  };
-}
-
-// 이벤트 연결 부분
-if (tableModalCloseBtn) tableModalCloseBtn.onclick = handleModalClose;
-if (tableModal) {
-  // 배경 클릭 이벤트(e.target === tableModal)를 완전히 삭제하여 차단합니다.
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && !tableModal.hidden) handleModalClose();
-  });
-}
-function makeTableHtml_(rows, cols, useHeader, caption, cells){
-  const cap = String(caption ?? "").trim();
-  const lines = [];
-  lines.push('<table class="cheese-table">');
-  if (cap) lines.push(`  <caption>${cap}</caption>`);
-
-  if (useHeader && rows >= 1){
-    lines.push("  <thead>");
-    lines.push("    <tr>");
-    for (let c=0; c<cols; c++){
-      const v = (cells?.[0]?.[c] ?? "");
-      lines.push(`      <th>${v}</th>`);
-    }
-    lines.push("    </tr>");
-    lines.push("  </thead>");
-  }
-
-  lines.push("  <tbody>");
-  const start = (useHeader ? 1 : 0);
-  for (let r=start; r<rows; r++){
-    lines.push("    <tr>");
-    for (let c=0; c<cols; c++){
-      const v = (cells?.[r]?.[c] ?? "");
-      lines.push(`      <td>${v}</td>`);
-    }
-    lines.push("    </tr>");
-  }
-  lines.push("  </tbody>");
-  lines.push("</table>");
-  return lines.join("\n");
-}
-
-// Wire modal events
-if (tableModalCloseBtn) tableModalCloseBtn.addEventListener("click", closeTableModal_);
-if (tblRebuildBtn) tblRebuildBtn.addEventListener("click", ()=>{
-  const r = clampInt_(tblRowsEl?.value, 1, 30, 3);
-  const c = clampInt_(tblColsEl?.value, 1, 12, 3);
-  buildTableGrid_(r, c);
-});
-
-if (tableModal){
-  // backdrop click close
-  tableModal.addEventListener("click", (e)=>{
-    if (e.target === tableModal) closeTableModal_();
-  });
-  // esc close
-  document.addEventListener("keydown", (e)=>{
-    if (e.key === "Escape" && !tableModal.hidden) closeTableModal_();
-  });
-}
-
-if (tblInsertBtn) tblInsertBtn.addEventListener("click", ()=>{
-  if (!tableCtx || !tableCtx.bodyEl) return closeTableModal_();
-
-  // 태그 허용 모드 ON (표는 태그가 필요)
-  if (typeof tableCtx.ensureAllowTagsOn_ === "function") tableCtx.ensureAllowTagsOn_();
-
-  const rows = clampInt_(tblRowsEl?.value, 1, 30, 3);
-  const cols = clampInt_(tblColsEl?.value, 1, 12, 3);
-  const useHeader = !!(tblHeaderEl && tblHeaderEl.checked);
-  const caption = tblCaptionEl ? tblCaptionEl.value : "";
-  const cells = readTableCells_(rows, cols);
-
-  const tableHtml = makeTableHtml_(rows, cols, useHeader, caption, cells);
-
-  // 표는 "독립 블록"으로 들어가야 <p>로 감싸지지 않음
-  const insertText = `\n\n${tableHtml}\n\n`;
-  insertAtSelection(tableCtx.bodyEl, insertText);
-
-  if (typeof tableCtx.schedule === "function") tableCtx.schedule();
-  if (typeof tableCtx.showToast === "function") tableCtx.showToast("표를 삽입했어.");
-  closeTableModal_();
-});
-
-
-      async function copyToClipboard(text){
-        try{
-          await navigator.clipboard.writeText(text);
-          return true;
-        }catch(e){
-          // fallback
+      function copyToClipboard(text){
+        return navigator.clipboard.writeText(text).then(()=>true).catch(()=>{
           try{
             const ta = document.createElement("textarea");
             ta.value = text;
-            ta.style.position = "fixed";
-            ta.style.left = "-9999px";
-            ta.style.top = "0";
+            ta.style.position="fixed"; ta.style.left="-9999px";
             document.body.appendChild(ta);
-            ta.focus();
-            ta.select();
+            ta.focus(); ta.select();
             const ok = document.execCommand("copy");
             document.body.removeChild(ta);
             return ok;
-          }catch(e2){
-            return false;
+          }catch(e){ return false; }
+        });
+      }
+
+      /* ==========================
+         Table Builder Logic
+      ========================== */
+      function openTableModal_(ctx){
+        tableCtx = ctx || null;
+        if (!tableModal) return;
+        tableModal.hidden = false;
+        tableModal.style.display = 'flex';
+        tableModal.setAttribute('aria-hidden','false');
+        // 초기값 기반 그리드 생성
+        const r = clampInt_(tblRowsEl?.value, 1, 30, 3);
+        const c = clampInt_(tblColsEl?.value, 1, 12, 3);
+        buildTableGrid_(r, c);
+        // 첫 셀 포커스
+        const first = tblCellsEl?.querySelector(".bcg-cell");
+        if (first) setTimeout(()=>first.focus(), 0);
+      }
+
+      function closeTableModal_(){
+        if (!tableModal) return;
+        tableModal.hidden = true;
+        tableModal.style.display = 'none';
+        tableModal.setAttribute('aria-hidden','true');
+        tableCtx = null;
+      }
+
+      // ⚠️ 안전하게 닫기 (내용 확인)
+      function handleSafeClose_() {
+        const cells = tblCellsEl?.querySelectorAll(".bcg-cell");
+        const hasContent = Array.from(cells || []).some(cell => cell.value.trim().length > 0);
+        if (hasContent) {
+          if (confirm("작성 중인 표 데이터가 사라집니다. 정말 닫으시겠어요?")) closeTableModal_();
+        } else {
+          closeTableModal_();
+        }
+      }
+
+      function buildTableGrid_(rows, cols){
+        if (!tblCellsEl) return;
+        tblCellsEl.innerHTML = "";
+        tblCellsEl.style.gridTemplateColumns = `repeat(${cols}, minmax(140px, 1fr))`;
+
+        for (let r=0; r<rows; r++){
+          for (let c=0; c<cols; c++){
+            // ✅ textarea로 생성하여 엔터 줄바꿈 허용
+            const inp = document.createElement("textarea");
+            inp.className = "bcg-cell";
+            inp.style.height = "60px";
+            inp.placeholder = (r === 0 && (tblHeaderEl?.checked)) ? `헤더 ${c+1}` : `R${r+1}C${c+1}`;
+            inp.setAttribute("data-r", String(r));
+            inp.setAttribute("data-c", String(c));
+            
+            // ✅ Ctrl+Enter로 다음 셀 이동
+            inp.addEventListener("keydown", (e)=>{
+              if (e.key === "Enter" && e.ctrlKey) {
+                e.preventDefault();
+                const target = tblCellsEl.querySelector(`.bcg-cell[data-r="${r+1}"][data-c="${c}"]`);
+                if (target) target.focus();
+              }
+            });
+            tblCellsEl.appendChild(inp);
           }
         }
       }
 
+      function readTableCells_(rows, cols){
+        const out = [];
+        for (let r=0; r<rows; r++){
+          const row = [];
+          for (let c=0; c<cols; c++){
+            const el = tblCellsEl?.querySelector(`.bcg-cell[data-r="${r}"][data-c="${c}"]`);
+            let val = el ? String(el.value ?? "") : "";
+            // ✅ 실제 줄바꿈(\n)을 <br> 태그로 변환
+            row.push(val.replace(/\n/g, "<br>"));
+          }
+          out.push(row);
+        }
+        return out;
+      }
+
+      function makeTableHtml_(rows, cols, useHeader, caption, cells){
+        const cap = String(caption ?? "").trim();
+        const lines = [];
+        lines.push('<table class="cheese-table">');
+        if (cap) lines.push(`  <caption>${cap}</caption>`);
+        if (useHeader && rows >= 1){
+          lines.push("  <thead>");
+          lines.push("    <tr>");
+          for (let c=0; c<cols; c++){
+            const v = (cells?.[0]?.[c] ?? "");
+            lines.push(`      <th>${v}</th>`);
+          }
+          lines.push("    </tr>");
+          lines.push("  </thead>");
+        }
+        lines.push("  <tbody>");
+        const start = (useHeader ? 1 : 0);
+        for (let r=start; r<rows; r++){
+          lines.push("    <tr>");
+          for (let c=0; c<cols; c++){
+            const v = (cells?.[r]?.[c] ?? "");
+            lines.push(`      <td>${v}</td>`);
+          }
+          lines.push("    </tr>");
+        }
+        lines.push("  </tbody>");
+        lines.push("</table>");
+        return lines.join("\n");
+      }
+
+      /* ==========================
+         Event Binding (Table Modal)
+      ========================== */
+      // 1. [닫기] 버튼 - 안전 닫기
+      if (tableModalCloseBtn) {
+        tableModalCloseBtn.onclick = (e) => { e.preventDefault(); handleSafeClose_(); };
+      }
+
+      // 2. 모달 배경 클릭 - 닫기 방지 (Stop Propagation)
+      if (tableModal) {
+        tableModal.onclick = (e) => {
+          if (e.target === tableModal) e.stopPropagation();
+        };
+      }
+
+      // 3. ESC 키 - 안전 닫기
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && !tableModal.hidden) handleSafeClose_();
+      });
+
+      // 4. [그리드 생성] 버튼 - 데이터 초기화 경고
+      if (tblRebuildBtn) {
+        tblRebuildBtn.onclick = () => {
+          const cells = tblCellsEl?.querySelectorAll(".bcg-cell");
+          const hasContent = Array.from(cells || []).some(cell => cell.value.trim().length > 0);
+          if (hasContent && !confirm("현재 입력된 표 데이터가 초기화됩니다. 계속할까요?")) return;
+          
+          const r = clampInt_(tblRowsEl?.value, 1, 30, 3);
+          const c = clampInt_(tblColsEl?.value, 1, 12, 3);
+          buildTableGrid_(r, c);
+        };
+      }
+
+      // 5. [삽입] 버튼
+      if (tblInsertBtn) {
+        tblInsertBtn.onclick = () => {
+          if (!tableCtx || !tableCtx.bodyEl) return closeTableModal_();
+          if (typeof tableCtx.ensureAllowTagsOn_ === "function") tableCtx.ensureAllowTagsOn_();
+
+          const rows = clampInt_(tblRowsEl?.value, 1, 30, 3);
+          const cols = clampInt_(tblColsEl?.value, 1, 12, 3);
+          const cells = readTableCells_(rows, cols); // 줄바꿈 처리는 여기서 수행됨
+          const caption = tblCaptionEl ? tblCaptionEl.value : "";
+          const useHeader = !!(tblHeaderEl && tblHeaderEl.checked);
+
+          const tableHtml = makeTableHtml_(rows, cols, useHeader, caption, cells);
+          const insertText = `\n\n${tableHtml}\n\n`;
+          insertAtSelection(tableCtx.bodyEl, insertText);
+
+          if (typeof tableCtx.schedule === "function") tableCtx.schedule();
+          if (typeof tableCtx.showToast === "function") tableCtx.showToast("표를 삽입했어.");
+          closeTableModal_();
+        };
+      }
+
+
+      /* ==========================
+         Block Logic
+      ========================== */
       function updatePill(){
         const n = elBlocks.querySelectorAll("[data-bcg-block]").length;
         pill.textContent = `블록 ${n}개`;
       }
 
       function buildHtml({level, heading, body, allowTags}){
-  const tag = (level === "h1" || level === "h2" || level === "h3") ? level : "h2";
-
-  // 제목은 항상 텍스트로 처리 (태그 금지)
-  const headText = escapeHtmlLite(String(heading ?? "").trim());
-
-  // 본문은 기본 이스케이프 + (옵션) 일부 태그 허용
-  const bodyHtml = textToParagraphHtml(body, !!allowTags);
-
-  // 소제목이 비었으면 본문만 반환 (유연하게)
-  const headPart = headText ? `<${tag}>${headText}</${tag}>` : "";
-  const parts = [headPart, bodyHtml].filter(Boolean);
-  return parts.join("\n");
-}
+        const tag = (level === "h1" || level === "h2" || level === "h3") ? level : "h2";
+        const headText = escapeHtmlLite(String(heading ?? "").trim());
+        const bodyHtml = textToParagraphHtml(body, !!allowTags);
+        const headPart = headText ? `<${tag}>${headText}</${tag}>` : "";
+        const parts = [headPart, bodyHtml].filter(Boolean);
+        return parts.join("\n");
+      }
 
       function createBlock(){
         seq += 1;
         const id = "bcg_" + seq;
-
         const wrap = document.createElement("div");
         wrap.className = "bcg-card";
         wrap.setAttribute("data-bcg-block", id);
@@ -975,7 +832,6 @@ if (tblInsertBtn) tblInsertBtn.addEventListener("click", ()=>{
         wrap.innerHTML = `
           <div class="bcg-row">
             <span class="bcg-badge">블록 #${seq}</span>
-
             <div class="bcg-right bcg-row" style="margin-top:0;">
               <label class="bcg-check" title="체크하면 서식 버튼이 넣는 태그(strong/span/mark/br/table)만 허용해요. 그 외 태그는 자동 이스케이프돼요.">
                 <input type="checkbox" data-keep-raw />
@@ -986,7 +842,6 @@ if (tblInsertBtn) tblInsertBtn.addEventListener("click", ()=>{
               <button class="bcg-btn bcg-mini bcg-btn--danger" type="button" data-remove>삭제</button>
             </div>
           </div>
-
           <div class="bcg-split" style="margin-top:10px;">
             <div>
               <div class="bcg-row">
@@ -999,63 +854,46 @@ if (tblInsertBtn) tblInsertBtn.addEventListener("click", ()=>{
                       <option value="h3">H3</option>
                     </select>
                   </div>
-
                   <div style="display:flex; flex-direction:column; gap:6px; flex:1; min-width:260px;">
                     <span class="bcg-label">소제목 텍스트</span>
                     <input class="bcg-input" data-heading placeholder="예) 숙종의 환국정치, 가계도 흐름 정리" />
                   </div>
                 </div>
               </div>
-
               <div class="bcg-row">
                 <div style="display:flex; flex-direction:column; gap:6px; width:100%;">
                   <span class="bcg-label">본문(원문 붙여넣기)</span>
-
-<!-- ✅ 서식 툴바: 드래그(선택) 후 버튼을 누르면 선택영역만 감싸져요 -->
-<div class="bcg-toolbar">
-  <button class="bcg-btn bcg-mini" type="button" data-fmt="bold">굵게</button>
-  <button class="bcg-btn bcg-mini" type="button" data-fmt="br">줄바꿈</button>
-  <button class="bcg-btn bcg-mini" type="button" data-fmt="table">표</button>
-
-  <span class="bcg-pill">
-    글자색 <input type="color" data-color value="#111827" />
-
-  </span>
-  <span class="bcg-swatches" data-color-swatches>
-    <button class="bcg-swatch" type="button" data-color-preset="#111827" title="기본(검정)" style="background:#111827;"></button>
-    <button class="bcg-swatch" type="button" data-color-preset="#475569" title="회색" style="background:#475569;"></button>
-    <button class="bcg-swatch" type="button" data-color-preset="#2563eb" title="파랑" style="background:#2563eb;"></button>
-    <button class="bcg-swatch" type="button" data-color-preset="#16a34a" title="초록" style="background:#16a34a;"></button>
-    <button class="bcg-swatch" type="button" data-color-preset="#d97706" title="주황" style="background:#d97706;"></button>
-    <button class="bcg-swatch" type="button" data-color-preset="#e11d48" title="빨강" style="background:#e11d48;"></button>
-  </span>
-
-  <button class="bcg-btn bcg-mini" type="button" data-fmt="color">적용</button>
-
-  <span class="bcg-pill">
-    배경 <input type="color" data-bg value="#fde68a" />
-
-  </span>
-  <span class="bcg-swatches" data-bg-swatches>
-    <button class="bcg-swatch" type="button" data-bg-preset="#fde68a" title="노랑" style="background:#fde68a;"></button>
-    <button class="bcg-swatch" type="button" data-bg-preset="#fecdd3" title="핑크" style="background:#fecdd3;"></button>
-    <button class="bcg-swatch" type="button" data-bg-preset="#bfdbfe" title="하늘" style="background:#bfdbfe;"></button>
-    <button class="bcg-swatch" type="button" data-bg-preset="#bbf7d0" title="연두" style="background:#bbf7d0;"></button>
-    <button class="bcg-swatch" type="button" data-bg-preset="#e2e8f0" title="연회색" style="background:#e2e8f0;"></button>
-    <button class="bcg-swatch" type="button" data-bg-preset="#ddd6fe" title="연보라" style="background:#ddd6fe;"></button>
-  </span>
-
-  <button class="bcg-btn bcg-mini" type="button" data-fmt="bg">적용</button>
-
-  <span class="bcg-muted">※ 서식 버튼(굵게/색/배경/표)을 쓰면 “서식/태그 허용”이 자동으로 켜져.</span>
-</div>
-
-<textarea class="bcg-textarea" data-body placeholder="여기에 블로그 원문을 붙여넣어.&#10;빈 줄은 문단으로 처리돼."></textarea>
+                  <div class="bcg-toolbar">
+                    <button class="bcg-btn bcg-mini" type="button" data-fmt="bold">굵게</button>
+                    <button class="bcg-btn bcg-mini" type="button" data-fmt="br">줄바꿈</button>
+                    <button class="bcg-btn bcg-mini" type="button" data-fmt="table">표</button>
+                    <span class="bcg-pill">글자색 <input type="color" data-color value="#111827" /></span>
+                    <span class="bcg-swatches" data-color-swatches>
+                      <button class="bcg-swatch" type="button" data-color-preset="#111827" title="기본(검정)" style="background:#111827;"></button>
+                      <button class="bcg-swatch" type="button" data-color-preset="#475569" title="회색" style="background:#475569;"></button>
+                      <button class="bcg-swatch" type="button" data-color-preset="#2563eb" title="파랑" style="background:#2563eb;"></button>
+                      <button class="bcg-swatch" type="button" data-color-preset="#16a34a" title="초록" style="background:#16a34a;"></button>
+                      <button class="bcg-swatch" type="button" data-color-preset="#d97706" title="주황" style="background:#d97706;"></button>
+                      <button class="bcg-swatch" type="button" data-color-preset="#e11d48" title="빨강" style="background:#e11d48;"></button>
+                    </span>
+                    <button class="bcg-btn bcg-mini" type="button" data-fmt="color">적용</button>
+                    <span class="bcg-pill">배경 <input type="color" data-bg value="#fde68a" /></span>
+                    <span class="bcg-swatches" data-bg-swatches>
+                      <button class="bcg-swatch" type="button" data-bg-preset="#fde68a" title="노랑" style="background:#fde68a;"></button>
+                      <button class="bcg-swatch" type="button" data-bg-preset="#fecdd3" title="핑크" style="background:#fecdd3;"></button>
+                      <button class="bcg-swatch" type="button" data-bg-preset="#bfdbfe" title="하늘" style="background:#bfdbfe;"></button>
+                      <button class="bcg-swatch" type="button" data-bg-preset="#bbf7d0" title="연두" style="background:#bbf7d0;"></button>
+                      <button class="bcg-swatch" type="button" data-bg-preset="#e2e8f0" title="연회색" style="background:#e2e8f0;"></button>
+                      <button class="bcg-swatch" type="button" data-bg-preset="#ddd6fe" title="연보라" style="background:#ddd6fe;"></button>
+                    </span>
+                    <button class="bcg-btn bcg-mini" type="button" data-fmt="bg">적용</button>
+                    <span class="bcg-muted">※ 서식 버튼(굵게/색/배경/표)을 쓰면 “서식/태그 허용”이 자동으로 켜져.</span>
+                  </div>
+                  <textarea class="bcg-textarea" data-body placeholder="여기에 블로그 원문을 붙여넣어.&#10;빈 줄은 문단으로 처리돼."></textarea>
                   <div class="bcg-muted">팁) 포스트 관리에서 BODY_1/2/3로 나눌 거면, 여기서 블록을 그 개수만큼 만들어서 각각 생성/복사하면 돼.</div>
                 </div>
               </div>
             </div>
-
             <div>
               <div class="bcg-row">
                 <div style="display:flex; flex-direction:column; gap:6px; width:100%;">
@@ -1073,7 +911,6 @@ if (tblInsertBtn) tblInsertBtn.addEventListener("click", ()=>{
           </div>
         `;
 
-        // wire events
         const levelEl = wrap.querySelector("[data-level]");
         const headingEl = wrap.querySelector("[data-heading]");
         const bodyEl = wrap.querySelector("[data-body]");
@@ -1099,141 +936,105 @@ if (tblInsertBtn) tblInsertBtn.addEventListener("click", ()=>{
           }
         }
 
-        btnGen.addEventListener("click", () => {
-          regenerate();
-          showToast("코드를 생성했어.");
-        });
-
+        btnGen.addEventListener("click", () => { regenerate(); showToast("코드를 생성했어."); });
         btnCopy.addEventListener("click", async () => {
-          // 자동 생성 안 했을 수도 있으니 복사 전에 생성
           if (!outEl.value.trim()) regenerate();
           const ok = await copyToClipboard(outEl.value);
-          showToast(ok ? "복사 완료!" : "복사 실패(브라우저 권한을 확인해줘).");
+          showToast(ok ? "복사 완료!" : "복사 실패");
         });
+        btnRemove.addEventListener("click", () => { wrap.remove(); updatePill(); showToast("블록을 삭제했어."); });
 
-        btnRemove.addEventListener("click", () => {
-          wrap.remove();
-          updatePill();
-          showToast("블록을 삭제했어.");
-        });
-
-        // 입력 시 자동 갱신(너무 무겁지 않게 간단 디바운스)
         let t = null;
-        function schedule(){
-          clearTimeout(t);
-          t = setTimeout(regenerate, 180);
-        }
+        function schedule(){ clearTimeout(t); t = setTimeout(regenerate, 180); }
         levelEl.addEventListener("change", schedule);
         headingEl.addEventListener("input", schedule);
         bodyEl.addEventListener("input", schedule);
-keepRawEl.addEventListener("change", schedule);
+        keepRawEl.addEventListener("change", schedule);
 
-// ✅ 서식 툴바(드래그 → 버튼)
-const colorEl = wrap.querySelector("[data-color]");
-const bgEl = wrap.querySelector("[data-bg]");
+        const colorEl = wrap.querySelector("[data-color]");
+        const bgEl = wrap.querySelector("[data-bg]");
 
-let lastSel = { s:0, e:0 };
-function saveSel_(){
-  try{
-    lastSel.s = bodyEl.selectionStart ?? 0;
-    lastSel.e = bodyEl.selectionEnd ?? 0;
-  }catch(e){}
-}
-function restoreSel_(){
-  try{
-    bodyEl.focus();
-    bodyEl.setSelectionRange(lastSel.s, lastSel.e);
-  }catch(e){}
-}
-bodyEl.addEventListener("mouseup", saveSel_);
-bodyEl.addEventListener("keyup", saveSel_);
-bodyEl.addEventListener("select", saveSel_);
-bodyEl.addEventListener("focus", saveSel_);
+        let lastSel = { s:0, e:0 };
+        function saveSel_(){ try{ lastSel.s = bodyEl.selectionStart ?? 0; lastSel.e = bodyEl.selectionEnd ?? 0; }catch(e){} }
+        function restoreSel_(){ try{ bodyEl.focus(); bodyEl.setSelectionRange(lastSel.s, lastSel.e); }catch(e){} }
+        bodyEl.addEventListener("mouseup", saveSel_);
+        bodyEl.addEventListener("keyup", saveSel_);
+        bodyEl.addEventListener("select", saveSel_);
+        bodyEl.addEventListener("focus", saveSel_);
 
-function hasSelection_(){
-  const s = lastSel.s ?? 0, e = lastSel.e ?? 0;
-  return s !== e;
-}
+        function hasSelection_(){ const s = lastSel.s ?? 0, e = lastSel.e ?? 0; return s !== e; }
 
-// quick presets: click swatch to set value; if selection exists, apply immediately
-wrap.querySelectorAll("[data-color-preset]").forEach(btn=>{
-  btn.addEventListener("click", ()=>{
-    const v = btn.getAttribute("data-color-preset");
-    if (!v) return;
-    colorEl.value = v;
-    if (hasSelection_()){
-      restoreSel_();
-      wrapSelection(bodyEl, `<span style="color:${colorEl.value}">`, "</span>");
-      schedule();
-      showToast("글자색 적용!");
-    }else{
-      showToast("글자색 선택됨");
-      bodyEl.focus();
-    }
-  });
-});
+        wrap.querySelectorAll("[data-color-preset]").forEach(btn=>{
+          btn.addEventListener("click", ()=>{
+            const v = btn.getAttribute("data-color-preset");
+            if (!v) return;
+            colorEl.value = v;
+            if (hasSelection_()){
+              restoreSel_();
+              wrapSelection(bodyEl, `<span style="color:${colorEl.value}">`, "</span>");
+              schedule();
+              showToast("글자색 적용!");
+            }else{
+              showToast("글자색 선택됨");
+              bodyEl.focus();
+            }
+          });
+        });
 
-wrap.querySelectorAll("[data-bg-preset]").forEach(btn=>{
-  btn.addEventListener("click", ()=>{
-    const v = btn.getAttribute("data-bg-preset");
-    if (!v) return;
-    bgEl.value = v;
-    if (hasSelection_()){
-      restoreSel_();
-      wrapSelection(bodyEl, `<mark style="background:${bgEl.value}">`, "</mark>");
-      schedule();
-      showToast("배경색 적용!");
-    }else{
-      showToast("배경색 선택됨");
-      bodyEl.focus();
-    }
-  });
-});
+        wrap.querySelectorAll("[data-bg-preset]").forEach(btn=>{
+          btn.addEventListener("click", ()=>{
+            const v = btn.getAttribute("data-bg-preset");
+            if (!v) return;
+            bgEl.value = v;
+            if (hasSelection_()){
+              restoreSel_();
+              wrapSelection(bodyEl, `<mark style="background:${bgEl.value}">`, "</mark>");
+              schedule();
+              showToast("배경색 적용!");
+            }else{
+              showToast("배경색 선택됨");
+              bodyEl.focus();
+            }
+          });
+        });
 
+        function ensureAllowTagsOn_(){
+          if (!keepRawEl.checked){
+            keepRawEl.checked = true;
+            showToast("서식/태그 허용을 켰어.");
+          }
+        }
 
-function ensureAllowTagsOn_(){
-  if (!keepRawEl.checked){
-    keepRawEl.checked = true;
-    showToast("서식/태그 허용을 켰어.");
-  }
-}
+        wrap.querySelectorAll("[data-fmt]").forEach(btn=>{
+          btn.addEventListener("click", ()=>{
+            const fmt = btn.getAttribute("data-fmt");
+            if (!fmt) return;
+            ensureAllowTagsOn_();
 
-wrap.querySelectorAll("[data-fmt]").forEach(btn=>{
-  btn.addEventListener("click", ()=>{
-    const fmt = btn.getAttribute("data-fmt");
-    if (!fmt) return;
+            if (fmt === "table"){
+              openTableModal_({ bodyEl, ensureAllowTagsOn_: ensureAllowTagsOn_, schedule, showToast });
+              return;
+            }
+            if (fmt === "bold"){
+              restoreSel_();
+              wrapSelection(bodyEl, "<strong>", "</strong>");
+            }else if (fmt === "br"){
+              restoreSel_();
+              wrapSelection(bodyEl, "<br>", "");
+            }else if (fmt === "color"){
+              const c = (colorEl && colorEl.value) ? colorEl.value : "#111827";
+              restoreSel_();
+              wrapSelection(bodyEl, `<span style="color:${c}">`, "</span>");
+            }else if (fmt === "bg"){
+              const b = (bgEl && bgEl.value) ? bgEl.value : "#fde68a";
+              restoreSel_();
+              wrapSelection(bodyEl, `<mark style="background:${b}">`, "</mark>");
+            }
+            schedule();
+          });
+        });
 
-    // 서식 버튼 사용 시: 허용 태그 모드 자동 ON
-    ensureAllowTagsOn_();
-
-    if (fmt === "table"){
-      openTableModal_({ bodyEl, ensureAllowTagsOn_: ensureAllowTagsOn_, schedule, showToast });
-      return;
-    }
-
-    if (fmt === "bold"){
-      restoreSel_();
-      wrapSelection(bodyEl, "<strong>", "</strong>");
-    }else if (fmt === "br"){
-      restoreSel_();
-      wrapSelection(bodyEl, "<br>", "");
-    }else if (fmt === "color"){
-      const c = (colorEl && colorEl.value) ? colorEl.value : "#111827";
-      restoreSel_();
-      wrapSelection(bodyEl, `<span style="color:${c}">`, "</span>");
-    }else if (fmt === "bg"){
-      const b = (bgEl && bgEl.value) ? bgEl.value : "#fde68a";
-      restoreSel_();
-      wrapSelection(bodyEl, `<mark style="background:${b}">`, "</mark>");
-    }
-
-    schedule();
-  });
-});
-
-// 초기 1회 생성
-regenerate();
-
+        regenerate();
         return wrap;
       }
 
@@ -1243,7 +1044,7 @@ regenerate();
         showToast("새 블록을 추가했어.");
       });
 
-      // 첫 블록 1개 기본 생성
+      // 초기 블록 생성
       elBlocks.appendChild(createBlock());
       updatePill();
     })();
