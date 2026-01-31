@@ -628,15 +628,16 @@
     
     function getStatusForId_(id){
       const targetId = String(id || "").trim();
-      if (!targetId) return "";
+      if (!targetId || targetId === "-") return "";
     
-      // 1) 현재 로드된 글이 있으면 그걸 우선
-      if (current && String(current.id) === targetId && current.blogger_status){
-        return current.blogger_status;
+      // 1. 현재 편집 중인 메모리(current)에 해당 ID의 상태가 있다면 우선 반환 [cite: 79]
+      if (current && String(current.id) === targetId) {
+        return current.blogger_status || "";
       }
     
-      // 2) 모달에서 받아온 캐시 목록(window._cachedPostList)에서 찾기
-      const hit = (window._cachedPostList || []).find(x => String(x.id) === targetId);
+      // 2. 캐시된 목록(window._cachedPostList)에서 해당 ID의 상태 검색 
+      const list = window._cachedPostList || [];
+      const hit = list.find(item => String(item.id) === targetId);
       return hit ? (hit.blogger_status || "") : "";
     }
     
@@ -1567,14 +1568,38 @@ function extractTokensMetaFromHtml_(html){
         li.draggable = true; 
         li.dataset.index = idx;
     
-        li.innerHTML = `
-          <div class="pm-sort-idx">${idx + 1}</div>
-          <div class="pm-sort-name" title="${secName}">
-            ${secName}
-            ${slotName ? `<br><span style="color:#2563eb; font-size:11px;">[${slotName}]</span>` : ''}
-          </div>
-          <div style="color:#cbd5e1; cursor:grab;">☰</div>
-        `;
+        function renderPostModalList_(items) {
+          const listEl = $("postModalList");
+          listEl.innerHTML = "";
+        
+          items.forEach(it => {
+            const li = document.createElement("li");
+            li.className = "pm-lib-item";
+        
+            // 1. 상태 텍스트와 클래스 결정 (published/draft/etc) [cite: 185]
+            const { text, cls } = statusBadgeInfo_(it.blogger_status); 
+        
+            li.innerHTML = `
+              <div style="flex:1;">
+                <div class="pm-lib-name">
+                  ${it.id}
+                  <span class="pm-pub-badge ${cls}">${text}</span>
+                </div>
+                <div class="pm-small pm-muted">${it.title || '(제목 없음)'}</div>
+              </div>
+              <div class="pm-lib-add">열기 →</div>
+            `;
+        
+            li.onclick = () => {
+              $("id").value = it.id;
+              // 3. 불러오기 클릭 시 상태 배지 즉시 갱신을 위해 캐시 활용 [cite: 186]
+              setStickyId_(); 
+              loadPost();
+              closeModal_('editPostModal');
+            };
+            listEl.appendChild(li);
+          });
+        }
         
         addDragEvents_(li);
         listEl.appendChild(li);
