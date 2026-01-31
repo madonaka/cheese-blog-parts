@@ -2061,59 +2061,80 @@ $("html").value = stripAlertModal_(rawHtml);
       }
     }
 
-    // ===== Blogger =====
-    // [수정] 결과(res)를 반환하도록 변경된 버전
-   async function exportToBlogger(publishState = null){
+  /**==========================
+   * [수정됨] Blogger 업로드 함수
+   * - publish 값을 서버가 이해하기 쉬운 문자열("true"/"false")로 변환
+   * - 404 등 서버 에러 발생 시 확실하게 에러를 던져(throw) 파이프라인을 멈춤
+   ===========================*/
+  async function exportToBlogger(publishState = null){
     const id = getTargetId();
-    if (!id) return setStatus("id가 필요합니다.", false);
+    if (!id) throw new Error("ID가 없습니다.");
   
     try {
       setBusy_(true);
       const tplId = $("templateSelect").value;
       
-      // 1. 최종 HTML 조립 확인
+      // 1. 템플릿 사용 시 HTML 조립
       if (tplId) {
-        setStatus("업로드 전 최종 HTML 조립 중...", true);
+        setStatus("최종 HTML 조립 중...", true);
         const out = await assembleHtmlUsingState_(tplId, buildVarsForAssemble_());
         $("html").value = out.html;
         syncCharCount();
       }
   
+      // 2. publish 값 명확화 (서버 전송용)
+      // publishState가 true일 때만 "true", 그 외(false/null)는 "false"
+      const publishStr = (publishState === true) ? "true" : "false";
+  
+      // 라벨 DOM 안전 처리 (화면에 없을 경우 대비)
+      const labelEl = $("bloggerLabelsTop");
+      const labelActionEl = $("bloggerLabelsActionTop");
+      
       const payload = {
-        id,
+        id: id,
         title: $("title").value.trim(),
         html: $("html").value,
-        publish: (publishState !== null) ? String(publishState) : "keep", 
-        labels: $("bloggerLabelsTop").value.trim(),
-        labels_action: $("bloggerLabelsActionTop").value || "replace"
+        publish: publishStr, // "true" or "false" 문자열 전송
+        labels: labelEl ? labelEl.value.trim() : "",
+        labels_action: labelActionEl ? (labelActionEl.value || "keep") : "keep"
       };
   
       if (!payload.html.trim()) {
-        throw new Error("전송할 HTML 내용이 비어 있습니다.");
+        throw new Error("전송할 본문 내용이 없습니다.");
       }
   
-      setStatus("Blogger 서버로 전송 중...", true);
-      const res = await apiPost("bloggerUpsert", payload); // Apps Script 호출
-      
-      setDebug(res); // 디버그 창에 응답 기록
+      setStatus(`Blogger 전송 시작 (${publishStr === "true" ? "발행" : "초안"})...`, true);
   
+      // 3. API 호출
+      const res = await apiPost("bloggerUpsert", payload);
+      setDebug(res); // 디버그 패널에 결과 출력
+  
+      // 4. 결과 검증 (중요!)
+      // res.ok가 false면 에러로 간주하고 throw
       if (!res || !res.ok) {
-        throw new Error(res?.message || "Blogger 서버 응답 오류");
+        const errMsg = res ? (res.message || JSON.stringify(res)) : "서버 응답 없음";
+        throw new Error(errMsg); 
       }
   
-      // 성공 시 메타 정보 업데이트
-      setBloggerMeta({ url: res.url, post_id: res.post_id, status: res.status });
-      setStatus(`Blogger ${res.status === 'published' ? '발행' : '초안'} 완료`, true);
+      // 5. 성공 후처리
+      setBloggerMeta({ 
+        url: res.url, 
+        post_id: res.post_id, 
+        status: res.status 
+      });
       
-      return res; // 중요: 성공한 결과를 반환함
+      setStatus(`Blogger ${res.status === 'published' ? '발행' : '초안'} 완료`, true);
+      return res;
   
     } catch (e) {
-      setStatus("Blogger 저장 실패: " + e.message, false);
-      throw e; // 중요: 에러를 상위(pipeline)로 던짐
+      // 여기서 에러를 잡아서 UI에 표시하고, 다시 상위(pipeline)로 던짐
+      setStatus("Blogger 업로드 실패: " + e.message, false);
+      throw e; 
     } finally {
       setBusy_(false);
     }
   }
+      
  async function importFromBlogger(){
       const id = getTargetId();
       if (!id) return setStatus("id가 필요합니다.", false);
@@ -2248,45 +2269,52 @@ $("html").value = stripAlertModal_(rawHtml);
       setStatus("모든 작업이 초기화되었습니다.", true);
     }
 
-    /* =========================
-       ✅ 원클릭 파이프라인 (NEW)
-       - Drive 저장 → Blogger 업로드
+    /*=========================
+     * ✅ [수정됨] 원클릭 파이프라인: Drive 저장 -> Blogger 업로드
+     * - 순차 실행을 보장합니다 (Drive 저장이 끝나야 Blogger 저장이 시작됨).
+     * - 중간에 에러가 발생하면 즉시 중단하고 알림을 띄웁니다.
     ========================= */
-    // [수정] res 변수 선언이 포함된 버전
-     async function pipelinePublish_(publish){
+    async function pipelinePublish_(publishBool){
       const id = getTargetId();
       if (!id) return setStatus("id가 필요합니다.", false);
     
+      // 진행 상태 표시
+      const modeName = publishBool ? "발행(공개)" : "초안 저장";
+      
       try {
         setBusy_(true);
-        setStatus(publish ? "원클릭 발행 시작..." : "원클릭 초안 저장 시작...", true);
+        setStatus(`[1/2] Drive에 백업 저장 중...`, true);
     
-        // [Step 1] Drive 저장 (기다림)
-        setStatus("1단계: Drive 저장 중...", true);
-        await exportToDrive(true); // skipReload=true
+        // 1단계: Drive 저장 (여기서 실패하면 catch로 넘어감)
+        await exportToDrive(true); 
     
-        // [Step 2] Blogger 업로드 (기다림)
-        setStatus("2단계: Blogger 업로드 중...", true);
-        const res = await exportToBlogger(publish); 
+        setStatus(`[2/2] Blogger에 ${modeName} 요청 중...`, true);
     
-        // [Step 3] 최종 성공 확인
+        // 2단계: Blogger 업로드
+        // 여기서 publishBool을 명확하게 전달
+        const res = await exportToBlogger(publishBool);
+    
+        // 3단계: 성공 처리
+        // exportToBlogger 내부에서 에러 체크를 하므로, 여기까지 왔으면 성공임
         const postUrl = res ? res.url : null;
-        const msg = publish ? "블로그 발행이 완료되었습니다." : "블로그에 초안 저장이 완료되었습니다.";
+        const msg = publishBool 
+          ? "🎉 블로그 발행이 완료되었습니다!" 
+          : "💾 블로그에 초안 저장이 완료되었습니다.";
+    
+        showAlert_(msg + "\n(편집창을 초기화합니다)", "작업 성공", "🚀", postUrl);
         
-        // 모든 과정이 끝난 후에만 성공 알림
-        showAlert_(msg + "\n편집창을 초기화합니다.", "작업 성공", "🚀", postUrl);
+        // 성공했을 때만 에디터 초기화
         clearEditor();
     
       } catch(e) {
-        // 과정 중 어디서든 에러가 나면 여기로 옵니다.
-        console.error("Pipeline Error:", e);
-        setStatus("원클릭 작업 실패: " + e.message, false);
-        showAlert_("작업 중 오류가 발생하여 중단되었습니다:\n" + e.message, "오류 발생", "❌");
+        console.error("Pipeline Failed:", e);
+        // 에러 발생 시 명확한 메시지 출력
+        setStatus("작업 실패: " + e.message, false);
+        showAlert_("작업 중 오류가 발생하여 중단되었습니다.\n\n" + e.message, "오류 발생", "❌");
       } finally {
         setBusy_(false);
       }
     }
-
     /* =========================
        ✅ ID 자동생성(분류 기반)
     ========================= */
