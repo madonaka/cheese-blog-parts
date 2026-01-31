@@ -2046,7 +2046,8 @@ $("html").value = stripAlertModal_(rawHtml);
     }
 
     // ===== Drive HTML upsert/read =====
-    async function exportToDrive(){
+ // [수정] skipReload 파라미터 추가 (기본값 false)
+    async function exportToDrive(skipReload = false){
       const id = getTargetId();
       if (!id) return setStatus("id가 필요합니다.", false);
 
@@ -2057,7 +2058,8 @@ $("html").value = stripAlertModal_(rawHtml);
         const tplId = $("templateSelect").value;
         if (tplId){
           setStatus("저장 전 최종 HTML 생성(템플릿 조립) 중...", true);
-          const out = await assembleHtmlFromTemplate_(tplId, buildVarsForAssemble_());
+          // 현재 상태(UsingState)로 HTML 생성
+          const out = await assembleHtmlUsingState_(tplId, buildVarsForAssemble_());
           $("html").value = out.html;
           syncCharCount();
         }
@@ -2075,8 +2077,12 @@ $("html").value = stripAlertModal_(rawHtml);
         if (!res || !res.ok) return setStatus("Drive 저장 실패: " + (res?.message||""), false);
 
         setStatus(`Drive 저장 완료: ${res.file?.name || ""}`, true);
-        await refreshList(id);
-        await loadPost();
+
+        // [수정] skipReload가 true면 새로고침 건너뜀 (파이프라인용)
+        if (!skipReload) {
+          await refreshList(id);
+          await loadPost();
+        }
 
       }catch(e){
         setStatus("Drive 저장 오류: " + (e?.message || e), false);
@@ -2303,11 +2309,10 @@ $("html").value = stripAlertModal_(rawHtml);
        ✅ 원클릭 파이프라인 (NEW)
        - Drive 저장 → Blogger 업로드
     ========================= */
-    async function pipelinePublish_(publish){
+async function pipelinePublish_(publish){
       const id = getTargetId();
       if (!id) return setStatus("id가 필요합니다.", false);
 
-      // publish 강제
       const prev = $("bloggerPublish").checked;
       $("bloggerPublish").checked = !!publish;
 
@@ -2315,10 +2320,12 @@ $("html").value = stripAlertModal_(rawHtml);
         setBusy_(true);
         setStatus(publish ? "원클릭 발행 시작..." : "원클릭 초안 저장 시작...", true);
 
-        // 1) Drive 저장
-        await exportToDrive();
+        // [수정] 1) Drive 저장 (true를 넘겨서 리로드 방지!)
+        // -> 이렇게 해야 화면의 '변경된 순서'가 그대로 유지된 채로 다음 단계로 넘어갑니다.
+        await exportToDrive(true);
 
         // 2) Blogger 업로드
+        // -> 유지된 '변경된 순서' 데이터를 가지고 업로드 수행
         await exportToBlogger();
 
         setStatus(publish ? "원클릭 발행 완료" : "원클릭 초안 저장 완료", true);
