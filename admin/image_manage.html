@@ -287,9 +287,19 @@
         <div id="panel-3" class="im-panel">
           <div class="im-card">
             <h1 class="im-title">3. 최종 확인 및 업로드</h1>
-            <p class="im-help">가공된 이미지를 확인하고 서버(Google Drive/DB)로 전송합니다.</p>
+
+            <div id="onlyOrigConfirmArea" style="display:none; background:#fff9fa; border:1px solid #fecdd3; border-radius:20px; padding:24px; margin-bottom:20px;">
+              <div style="font-size:18px; font-weight:700; color:#f43f5e; margin-bottom:8px;">⚠️ 원본 전용 백업 모드</div>
+              <p class="im-help" style="color:#e11d48; font-weight:600;">
+                리사이징과 워터마크가 적용되지 않은 순수 원본 파일 그대로 Google Drive에 저장합니다.
+              </p>
+              <div style="margin-top:16px; padding:12px; background:#fff; border-radius:12px; border:1px solid #fda4af;">
+                <span id="origFileNameDisplay" style="font-family:monospace; font-weight:700; color:#191f28;"></span>
+              </div>
+            </div>
         
             <div class="im-row" style="margin-top:20px; gap:12px;">
+              <p class="im-help">가공된 이미지를 확인하고 서버(Google Drive/DB)로 전송합니다.</p>
               <button id="btnMakePreviews" class="im-btn primary" type="button" style="flex:1;">
                 40% / 50% / 60% 미리보기 생성
               </button>
@@ -1172,32 +1182,78 @@ Drive: ${data.drive_view_url}`);
     document.body.style.overflow = ""; // 스크롤 복구
   };
   
-  // ✅ 2. 개선된 탭 전환 함수 (모달 연결)
+// ✅ 2. 개선된 탭 전환 함수 (원본만 저장 시 분기 로직 추가)
   window.moveTab = function(tabNum) {
-    // 1단계 -> 2단계 이동 시 파일 체크
+    const fileInput = document.getElementById("imgFile");
+    const onlyOrigCheckbox = document.getElementById("onlyOrigOn");
+    const isOnlyOrig = onlyOrigCheckbox ? onlyOrigCheckbox.checked : false;
+
+    // [Step 1 -> 다음] 버튼을 눌렀을 때 (tabNum이 2인 상황)
     if (tabNum == 2) {
-      const fileInput = document.getElementById("imgFile");
+      // 1. 파일 선택 여부 체크
       if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
-        // ⚠️ 여기서 커스텀 모달을 호출합니다!
         window.showAlert_("가공할 이미지를\n먼저 선택해 주세요."); 
         return;
       }
+      
+      // 2. ✅ 원본만 저장 체크 시 2단계를 건너뛰고 바로 3단계로!
+      if (isOnlyOrig) {
+        tabNum = 3; 
+      }
     }
-  
-    // 탭 및 패널 초기화 및 활성화
+
+    // [Step 3 패널 진입 시 UI 제어]
+    if (tabNum == 3) {
+      const onlyOrigArea = document.getElementById("onlyOrigConfirmArea");
+      const btnMakePreviews = document.getElementById("btnMakePreviews");
+      const uploadBtn = document.getElementById("btnUploadSelected");
+      const backBtn = document.querySelector("#panel-3 .im-btn-secondary"); // 다시 편집 버튼
+
+      if (isOnlyOrig) {
+        // 원본 모드 UI 설정
+        if (onlyOrigArea) onlyOrigArea.style.display = "block";
+        if (btnMakePreviews) btnMakePreviews.style.display = "none";
+        
+        // 업로드 버튼 즉시 활성화
+        if (uploadBtn) {
+          uploadBtn.disabled = false;
+          uploadBtn.style.opacity = "1";
+        }
+        
+        // 파일명 표시
+        const fileNameDisplay = document.getElementById("origFileNameDisplay");
+        if (fileNameDisplay) fileNameDisplay.textContent = "파일명: " + fileInput.files[0].name;
+
+        // '다시 편집' 버튼의 동작을 1단계로 이동하게 변경
+        if (backBtn) {
+          backBtn.textContent = "← 파일 다시 선택";
+          backBtn.setAttribute("onclick", "moveTab(1)");
+        }
+      } else {
+        // 일반 모드 UI 복구
+        if (onlyOrigArea) onlyOrigArea.style.display = "none";
+        if (btnMakePreviews) btnMakePreviews.style.display = "inline-flex";
+        
+        // '다시 편집' 버튼 원복
+        if (backBtn) {
+          backBtn.textContent = "다시 편집";
+          backBtn.setAttribute("onclick", "moveTab(2)");
+        }
+      }
+    }
+
+    // --- 탭 및 패널 활성화 (기존 로직) ---
     document.querySelectorAll('.im-tab').forEach(btn => btn.classList.remove('on'));
     document.querySelectorAll('.im-panel').forEach(panel => panel.classList.remove('on'));
-  
+
     const targetTab = document.querySelector(`.im-tab[data-tab="${tabNum}"]`);
-    const targetPanel = document.getElementById(`panel-${tabNum}`);
+    const targetPanel = document.getElementById(`panel-` + tabNum);
     
     if (targetTab) targetTab.classList.add('on');
     if (targetPanel) targetPanel.classList.add('on');
-  
-    // 화면 상단으로 부드럽게 이동
+
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  
-    // 4번 탭(보관함) 이동 시 리스트 새로고침
+
     if (tabNum == 4) {
       const reloadBtn = document.getElementById("btnReloadList");
       if (reloadBtn) reloadBtn.click();
