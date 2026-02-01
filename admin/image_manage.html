@@ -1416,43 +1416,45 @@
     document.getElementById("btnCopySnippet").disabled = true;
   
     moveTab(1);
-    
-  }; // 👈 여기가 중요합니다! 함수가 여기서 끝나야 합니다.
+  };
 
   // ============================================
-  // ✅ [수정] 삭제 로직을 resetAllSettings_ 밖으로 꺼냈습니다.
+  // ✅ [수정] 삭제 로직 (이제 setBusy_를 볼 수 있는 안전한 곳입니다)
   // ============================================
   
   let targetDeleteId = null;
 
-  // 1. 삭제 모달 열기 (이제 renderList에서 이 함수를 찾을 수 있습니다)
+  // 1. 삭제 모달 열기
   window.openConfirmDelete = function(id) {
     targetDeleteId = id;
     const overlay = document.getElementById("confirmOverlay");
     if(overlay) overlay.style.display = "flex";
-  }
+  };
 
   // 2. 삭제 모달 닫기
   window.closeConfirm_ = function() {
     targetDeleteId = null;
     const overlay = document.getElementById("confirmOverlay");
     if(overlay) overlay.style.display = "none";
-  }
+  };
 
   // 3. '네, 삭제합니다' 버튼 클릭 이벤트
+  // (중복 이벤트 방지를 위해 기존 리스너가 있다면 무시되도록 로직 구성)
   const btnRealDelete = document.getElementById("btnRealDelete");
   if (btnRealDelete) {
-    btnRealDelete.addEventListener("click", async () => {
+    // 기존 리스너 제거가 어려우므로, onclick 속성으로 덮어쓰거나 
+    // 여기서는 간단히 새 리스너를 추가하되 로직 내부에서 안전장치를 둡니다.
+    btnRealDelete.onclick = async () => {
       if (!targetDeleteId) return;
       
       const id = targetDeleteId;
-      closeConfirm_(); // 모달 먼저 닫기
+      window.closeConfirm_(); // 모달 먼저 닫기
 
       try {
-        setBusy_(true, "이미지 삭제 중..."); // 로딩 켜기
+        // 🔴 이제 여기서 setBusy_를 찾을 수 있습니다!
+        setBusy_(true, "이미지 삭제 중..."); 
         
-        // API 호출 (mode: "delete")
-        // apiPost 함수는 위쪽에 정의되어 있어야 합니다.
+        // API 호출
         const res = await apiPost({
           mode: "delete",
           id: id
@@ -1472,8 +1474,23 @@
       } finally {
         setBusy_(false); // 로딩 끄기
       }
-    });
+    };
   }
+
+  // ============================================
+  // ✅ [추가] 버전 정보 표시 (수정일시)
+  // ============================================
+  (function showVersion(){
+    const el = document.getElementById("sysVersion");
+    if (!el) return;
+    const d = new Date(document.lastModified);
+    if (isNaN(d.getTime())) { el.textContent = "V. UNKNOWN"; return; }
+    const z = (n) => (n < 10 ? "0" + n : n);
+    const vStr = d.getFullYear() + z(d.getMonth() + 1) + z(d.getDate()) + "_" + z(d.getHours()) + z(d.getMinutes());
+    el.textContent = "V." + vStr;
+  })();
+
+})(); // 👈 이 괄호가 전체 코드를 감싸주는 핵심입니다!
 </script>
   
   <div id="globalMask" class="im-global-mask">
