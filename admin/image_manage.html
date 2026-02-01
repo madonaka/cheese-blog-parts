@@ -287,16 +287,17 @@
         <div id="panel-3" class="im-panel">
           <div class="im-card">
             <h1 class="im-title">3. 최종 확인 및 업로드</h1>
-
+            
             <div id="onlyOrigConfirmArea" style="display:none; background:#fff9fa; border:1px solid #fecdd3; border-radius:20px; padding:24px; margin-bottom:20px;">
               <div style="font-size:18px; font-weight:700; color:#f43f5e; margin-bottom:8px;">⚠️ 원본 전용 백업 모드</div>
-              <p class="im-help" style="color:#e11d48; font-weight:600;">
+              <p class="im-help" style="color:#e11d48; font-weight:600; margin-bottom:12px;">
                 리사이징과 워터마크가 적용되지 않은 순수 원본 파일 그대로 Google Drive에 저장합니다.
               </p>
-              <div style="margin-top:16px; padding:12px; background:#fff; border-radius:12px; border:1px solid #fda4af;">
-                <span id="origFileNameDisplay" style="font-family:monospace; font-weight:700; color:#191f28;"></span>
+              <div style="padding:14px; background:#fff; border-radius:12px; border:1px solid #fda4af;">
+                <span id="origFileNameDisplay" style="font-family:monospace; font-weight:700; color:#191f28; word-break:break-all;"></span>
               </div>
             </div>
+            
         
             <div class="im-row" style="margin-top:20px; gap:12px;">
               <p class="im-help">가공된 이미지를 확인하고 서버(Google Drive/DB)로 전송합니다.</p>
@@ -1048,27 +1049,58 @@ Drive: ${data.drive_view_url}`);
       }
     });
 
-    // ====== 업로드 (Drive + DB) ======
+   // ====== 업로드 (Drive + DB) ======
     $btnUpload.addEventListener("click", async () => {
       const baseName = safeTrim($baseName.value);
       if (!baseName) {
-        // 커스텀 모달이 있다면 window.showAlert_("파일명(기본)을 입력해줘."); 사용 권장
+        // 커스텀 모달이 있다면 window.showAlert_ 사용 권장
         alert("파일명(기본)을 입력해줘. (예: 숙종_환국정치_도표)");
         $btnUpload.disabled = false;
         return;
       }
-
-      if (selectedScale == null) return;
-      const v = previews.get(selectedScale);
-      if (!v) return;
-
+    
+      // ✅ [수정] 원본만 저장 체크 여부 확인
+      const $onlyOrigOn = document.getElementById("onlyOrigOn");
+      const isOnlyOrig = $onlyOrigOn ? $onlyOrigOn.checked : false;
+    
+      let finalBlob = null;
+      let outW = 0, outH = 0, outBytes = 0, pct = 0;
+    
+      if (isOnlyOrig) {
+        // 1️⃣ 원본만 저장 모드: 선택된 파일을 그대로 사용
+        const origFile = $file.files?.[0];
+        if (!origFile) {
+          alert("파일이 선택되지 않았습니다.");
+          return;
+        }
+        finalBlob = origFile;
+        outW = sourceImg?.naturalWidth || 0;
+        outH = sourceImg?.naturalHeight || 0;
+        outBytes = origFile.size;
+        pct = 100; // 원본은 100%로 표기
+      } else {
+        // 2️⃣ 가공 모드: 기존 로직 (미리보기 선택 확인)
+        if (selectedScale == null) {
+          alert("업로드할 품질 버전(40/50/60%)을 선택해주세요.");
+          return;
+        }
+        const v = previews.get(selectedScale);
+        if (!v) return;
+        finalBlob = v.blob;
+        outW = v.w;
+        outH = v.h;
+        outBytes = v.bytes;
+        pct = Math.round(selectedScale * 100);
+      }
+    
       try {
         $btnUpload.disabled = true;
-
-        // 1. 가공된 이미지(리사이징+워터마크)를 Base64로 변환
-        const b64 = await blobToBase64(v.blob);
-
-        // 2. 원본 저장 체크박스 상태 확인 및 데이터 준비
+        toast_("업로드 데이터 준비 중...", "sub");
+    
+        // 최종 결정된 Blob을 Base64로 변환
+        const b64 = await blobToBase64(finalBlob);
+    
+        // 원본 저장 옵션 및 데이터 준비
         const $saveOrigOn = document.getElementById("saveOrigOn");
         const shouldSaveOrig = $saveOrigOn ? $saveOrigOn.checked : false;
         const origFile = $file.files?.[0] || null;
@@ -1076,68 +1108,64 @@ Drive: ${data.drive_view_url}`);
         let orig_base64 = "";
         let orig_mime = "";
         let orig_filename = "";
-
-        // 체크박스가 켜져 있고 파일이 있을 때만 원본을 Base64로 읽음
-        if (shouldSaveOrig && origFile) {
-          toast_("원본 파일 읽는 중...", "sub");
-          orig_base64 = await blobToBase64(origFile);
+    
+        // '원본만 저장'이거나 '원본 별도 저장'이 체크된 경우 원본 데이터 포함
+        if ((shouldSaveOrig || isOnlyOrig) && origFile) {
+          // 원본 모드라면 위에서 만든 b64를 재사용하여 속도 향상
+          orig_base64 = isOnlyOrig ? b64 : await blobToBase64(origFile);
           orig_mime = origFile.type;
           orig_filename = origFile.name || "original_image";
         }
         
-        // 3. 메타데이터 구성
+        // 메타데이터 구성
         const origW = sourceImg?.naturalWidth || 0;
         const origH = sourceImg?.naturalHeight || 0;
         const label = (safeTrim($noteText.value).split("\n")[0] || "").trim() || "© Cheesehistory.com";
         const version = versionToday();
-        const pct = Math.round(selectedScale * 100);
         const blur = Number($blurPx.value) || 0;
-        const onlyOrig = document.getElementById("onlyOrigOn").checked;
         
         currentUploadNonce = makeNonce_();
-
-        // 4. 최종 페이로드 구성 (서버로 전송될 객체)
+    
+        // 최종 페이로드 구성
         const payload = {
           mode: "upload",
           filename: `img_${version}_${pct}.jpg`,
-          mime: "image/jpeg",
-          base64: b64, // 가공본
+          mime: isOnlyOrig ? orig_mime : "image/jpeg",
+          base64: b64, 
           
-          // ✅ 원본 데이터 섹션 추가
           orig_base64: orig_base64,
           orig_mime: orig_mime,
           orig_filename: orig_filename,
-          save_orig: shouldSaveOrig,
-          only_orig: onlyOrig, // ✅ 서버에 원본만 저장할 것임을 알림
+          save_orig: shouldSaveOrig || isOnlyOrig, // 원본 모드면 무조건 저장
+          only_orig: isOnlyOrig, 
             
           meta: {
             base_name: baseName,
             label,
             version,
-            scale: selectedScale,
+            scale: isOnlyOrig ? 1.0 : selectedScale,
             scale_pct: pct,
-            blur_px: blur,
-            wm_alpha: Number($wmAlpha.value) || 0,
+            blur_px: isOnlyOrig ? 0 : blur,
+            wm_alpha: isOnlyOrig ? 0 : (Number($wmAlpha.value) || 0),
             orig_w: origW,
             orig_h: origH,
-            out_w: v.w,
-            out_h: v.h,
-            bytes: v.bytes,
+            out_w: outW,
+            out_h: outH,
+            bytes: outBytes,
             nonce: currentUploadNonce,
-            save_orig: shouldSaveOrig // ✅ 서버에서 원본 저장 로직을 실행할지 판단하는 플래그
+            save_orig: shouldSaveOrig || isOnlyOrig
           }
         };
-
-        // 5. 서버 전송 실행
+    
+        // 서버 전송 실행
         $form.action = WEBAPP_URL;
         $formPayload.value = JSON.stringify(payload);
         
-        toast_("업로드 요청 전송 중… (원본 포함)", "sub");
+        toast_("업로드 요청 전송 중...", "sub");
         $form.submit();
         
-        // 응답 대기 타이머 시작
         startUploadWatchdog_();
-
+    
       } catch (e) {
         console.error("Upload Error:", e);
         stopUploadWatchdog_();
@@ -1182,75 +1210,57 @@ Drive: ${data.drive_view_url}`);
     document.body.style.overflow = ""; // 스크롤 복구
   };
   
-// ✅ 2. 개선된 탭 전환 함수 (원본만 저장 시 분기 로직 추가)
+// ✅ 2. 개선된 탭 전환 함수 (원본 전용 로직 포함)
   window.moveTab = function(tabNum) {
     const fileInput = document.getElementById("imgFile");
-    const onlyOrigCheckbox = document.getElementById("onlyOrigOn");
-    const isOnlyOrig = onlyOrigCheckbox ? onlyOrigCheckbox.checked : false;
+    const isOnlyOrig = document.getElementById("onlyOrigOn")?.checked || false;
 
-    // [Step 1 -> 다음] 버튼을 눌렀을 때 (tabNum이 2인 상황)
+    // 1단계 -> 다음 단계 이동 시 체크
     if (tabNum == 2) {
-      // 1. 파일 선택 여부 체크
       if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
         window.showAlert_("가공할 이미지를\n먼저 선택해 주세요."); 
         return;
       }
-      
-      // 2. ✅ 원본만 저장 체크 시 2단계를 건너뛰고 바로 3단계로!
-      if (isOnlyOrig) {
-        tabNum = 3; 
-      }
+      // [원본만 저장] 체크 시 바로 3단계로 점프
+      if (isOnlyOrig) tabNum = 3;
     }
 
-    // [Step 3 패널 진입 시 UI 제어]
-    if (tabNum == 3) {
-      const onlyOrigArea = document.getElementById("onlyOrigConfirmArea");
-      const btnMakePreviews = document.getElementById("btnMakePreviews");
-      const uploadBtn = document.getElementById("btnUploadSelected");
-      const backBtn = document.querySelector("#panel-3 .im-btn-secondary"); // 다시 편집 버튼
-
-      if (isOnlyOrig) {
-        // 원본 모드 UI 설정
-        if (onlyOrigArea) onlyOrigArea.style.display = "block";
-        if (btnMakePreviews) btnMakePreviews.style.display = "none";
-        
-        // 업로드 버튼 즉시 활성화
-        if (uploadBtn) {
-          uploadBtn.disabled = false;
-          uploadBtn.style.opacity = "1";
-        }
-        
-        // 파일명 표시
-        const fileNameDisplay = document.getElementById("origFileNameDisplay");
-        if (fileNameDisplay) fileNameDisplay.textContent = "파일명: " + fileInput.files[0].name;
-
-        // '다시 편집' 버튼의 동작을 1단계로 이동하게 변경
-        if (backBtn) {
-          backBtn.textContent = "← 파일 다시 선택";
-          backBtn.setAttribute("onclick", "moveTab(1)");
-        }
-      } else {
-        // 일반 모드 UI 복구
-        if (onlyOrigArea) onlyOrigArea.style.display = "none";
-        if (btnMakePreviews) btnMakePreviews.style.display = "inline-flex";
-        
-        // '다시 편집' 버튼 원복
-        if (backBtn) {
-          backBtn.textContent = "다시 편집";
-          backBtn.setAttribute("onclick", "moveTab(2)");
-        }
-      }
-    }
-
-    // --- 탭 및 패널 활성화 (기존 로직) ---
+    // 탭 및 패널 활성화
     document.querySelectorAll('.im-tab').forEach(btn => btn.classList.remove('on'));
     document.querySelectorAll('.im-panel').forEach(panel => panel.classList.remove('on'));
 
     const targetTab = document.querySelector(`.im-tab[data-tab="${tabNum}"]`);
-    const targetPanel = document.getElementById(`panel-` + tabNum);
+    const targetPanel = document.getElementById(`panel-${tabNum}`);
     
     if (targetTab) targetTab.classList.add('on');
     if (targetPanel) targetPanel.classList.add('on');
+
+    // ✅ 3단계 진입 시 '원본 모드' UI 제어
+    if (tabNum == 3) {
+      const onlyArea = document.getElementById("onlyOrigConfirmArea");
+      const processRow = document.getElementById("btnMakePreviews")?.closest('.im-row');
+      const chipRow = document.getElementById("scalePick")?.closest('.im-row');
+      const uploadBtn = document.getElementById("btnUploadSelected");
+
+      if (isOnlyOrig) {
+        if (onlyArea) onlyArea.style.display = "block";
+        if (processRow) processRow.style.display = "none";
+        if (chipRow) chipRow.style.display = "none";
+        
+        document.getElementById("origFileNameDisplay").textContent = "파일명: " + (fileInput.files[0]?.name || "");
+        
+        // ⚠️ 원본 모드일 땐 품질 선택 없이도 버튼을 즉시 활성화
+        if (uploadBtn) {
+            uploadBtn.disabled = false;
+            uploadBtn.style.opacity = "1";
+        }
+        window.selectedScale = 1.0; // 업로드 로직 통과를 위한 임시값
+      } else {
+        if (onlyArea) onlyArea.style.display = "none";
+        if (processRow) processRow.style.display = "flex";
+        if (chipRow) chipRow.style.display = "flex";
+      }
+    }
 
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
