@@ -105,7 +105,10 @@
       padding-top: 20px;
       border-top: 1px solid #f2f4f6;
     }
-    
+    @keyframes imSlideUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
   </style>
 </head>
 
@@ -319,7 +322,16 @@
       </main>
     </div>
   </div>
-
+  
+  <!-- ✅ 경고 모달 -->
+  <div id="modalOverlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.4); z-index:9999; align-items:center; justify-content:center;">
+    <div style="background:#fff; border-radius:20px; padding:30px; width:90%; max-width:400px; box-shadow:0 10px 30px rgba(0,0,0,0.1); text-align:center; animation: slideUp 0.3s ease-out;">
+      <div id="modalIcon" style="font-size:40px; margin-bottom:16px;">⚠️</div>
+      <div id="modalMsg" style="font-size:16px; font-weight:700; color:#191f28; line-height:1.5; margin-bottom:24px; white-space:pre-wrap;">이미지를 선택해 주세요.</div>
+      <button type="button" onclick="closeModal_()" class="im-btn primary" style="width:100%; padding:14px;">확인</button>
+    </div>
+  </div>
+  
   <!-- ✅ 반드시 포함해야 하는 공통 스크립트 유지 -->
   <script src="./admin-common.js"></script>
 
@@ -1051,7 +1063,7 @@ Drive: ${data.drive_view_url}`);
     });
 
     window.addEventListener("beforeunload", revokeAllPreviewUrls);
-// ✅ 1. 문서 수정일시 표시 (상단)
+  // ✅ 1. 문서 수정일시 표시 (상단)
     (function showVersion(){
       const el = document.getElementById("sysVersion");
       if (!el) return;
@@ -1064,33 +1076,47 @@ Drive: ${data.drive_view_url}`);
 
   })(); // 👈 여기서 기존 메인 IIFE가 끝납니다.
 
-  // ✅ 2. 탭 전환 함수 (전역으로 꺼내야 HTML onclick이 인식함)
+   // ✅ 1. 커스텀 모달 제어 함수 (post_manage_test 스타일)
+  window.showAlert_ = function(msg, icon = "⚠️") {
+    const overlay = document.getElementById("modalOverlay");
+    document.getElementById("modalMsg").textContent = msg;
+    document.getElementById("modalIcon").textContent = icon;
+    overlay.style.display = "flex";
+    document.body.style.overflow = "hidden"; // 배경 스크롤 방지
+  };
+  
+  window.closeModal_ = function() {
+    const overlay = document.getElementById("modalOverlay");
+    overlay.style.display = "none";
+    document.body.style.overflow = ""; // 스크롤 복구
+  };
+  
+  // ✅ 2. 개선된 탭 전환 함수 (모달 연결)
   window.moveTab = function(tabNum) {
     // 1단계 -> 2단계 이동 시 파일 체크
     if (tabNum == 2) {
       const fileInput = document.getElementById("imgFile");
       if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
-        // 브라우저 기본 alert 대신 커스텀 모달이 필요하면 아래 alert를 모달 실행 코드로 바꾸세요.
-        alert("⚠️ 가공할 이미지를 먼저 선택해 주세요."); 
+        // ⚠️ 여기서 커스텀 모달을 호출합니다!
+        window.showAlert_("가공할 이미지를\n먼저 선택해 주세요."); 
         return;
       }
     }
   
-    // 모든 버튼과 패널 초기화
+    // 탭 및 패널 초기화 및 활성화
     document.querySelectorAll('.im-tab').forEach(btn => btn.classList.remove('on'));
     document.querySelectorAll('.im-panel').forEach(panel => panel.classList.remove('on'));
   
-    // 선택된 탭 및 패널 활성화
     const targetTab = document.querySelector(`.im-tab[data-tab="${tabNum}"]`);
     const targetPanel = document.getElementById(`panel-${tabNum}`);
     
     if (targetTab) targetTab.classList.add('on');
     if (targetPanel) targetPanel.classList.add('on');
   
-    // 화면 상단으로 스크롤 이동 (부드럽게)
+    // 화면 상단으로 부드럽게 이동
     window.scrollTo({ top: 0, behavior: 'smooth' });
   
-    // 4번 탭(보관함) 클릭 시 새로고침
+    // 4번 탭(보관함) 이동 시 리스트 새로고침
     if (tabNum == 4) {
       const reloadBtn = document.getElementById("btnReloadList");
       if (reloadBtn) reloadBtn.click();
