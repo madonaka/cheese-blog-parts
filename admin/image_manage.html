@@ -160,6 +160,29 @@
     }
     @keyframes imGlobalSpin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     @keyframes imPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+    /* [9. 보관함 서브 탭 & 개선된 리스트] */
+    .im-subtabs { display: flex; gap: 4px; background: #f2f4f6; padding: 4px; border-radius: 12px; width: fit-content; margin-bottom: 20px; }
+    .im-subtab { padding: 8px 16px; border-radius: 10px; border: none; background: transparent; color: #4e5968; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s; }
+    .im-subtab.on { background: #fff; color: #3182f6; box-shadow: 0 2px 6px rgba(0,0,0,0.06); }
+    
+    /* 개선된 리스트 아이템 (가로형 배치) */
+    .im-clean-item { display: flex; align-items: center; background: #fff; border: 1px solid #edf1f5; border-radius: 16px; padding: 12px; margin-bottom: 12px; transition: all 0.2s; gap: 16px; }
+    .im-clean-item:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.06); border-color: #dbeafe; }
+    
+    .im-clean-thumb { width: 80px; height: 80px; border-radius: 10px; object-fit: cover; background: #f9fafb; border: 1px solid #edf1f5; flex-shrink: 0; }
+    
+    .im-clean-info { flex: 1; min-width: 0; }
+    .im-clean-title { font-weight: 700; font-size: 15px; color: #191f28; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .im-clean-meta { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #8b95a1; }
+    
+    .im-badge { padding: 2px 6px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+    .im-badge.orig { background: #fff1f2; color: #e11d48; }
+    .im-badge.resized { background: #eff6ff; color: #2563eb; }
+    
+    .im-clean-actions { display: flex; gap: 8px; flex-shrink: 0; }
+    .im-btn-icon { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 10px; border: 1px solid #edf1f5; background: #fff; cursor: pointer; color: #4e5968; transition: all 0.2s; }
+    .im-btn-icon:hover { background: #f9fafb; border-color: #cbd5e1; }
   </style>
 </head>
 
@@ -367,30 +390,28 @@
           <div class="im-card">
             <h1 class="im-title">4. 이미지 보관함</h1>
             
-            <div class="im-row" style="justify-content:space-between; align-items: flex-end;">
-              <div>
-                <p class="im-help">최근 업로드된 50개의 이미지 목록을 확인합니다.</p>
+            <div class="im-row" style="justify-content:space-between; align-items: center; margin-bottom: 16px;">
+              <div class="im-subtabs">
+                <button type="button" class="im-subtab on" onclick="filterList('all')">전체</button>
+                <button type="button" class="im-subtab" onclick="filterList('resized')">가공본 (Resized)</button>
+                <button type="button" class="im-subtab" onclick="filterList('orig')">원본 (Original)</button>
               </div>
-              <button id="btnReloadList" class="im-btn primary" type="button" style="width: 140px;">
-                목록 새로고침
+        
+              <button id="btnReloadList" class="im-smallbtn" type="button" style="height: 36px;">
+                🔄 새로고침
               </button>
             </div>
         
-            <div class="im-row" style="margin-top: 20px;">
-              <div class="im-label">검색(ID/파일명)</div>
-              <input id="listFilter" class="im-input" type="text" placeholder="예: IMG000123 또는 숙종_환국정치" style="flex:1;" />
-              <span id="listCount" class="im-status ok">0</span>
+            <div class="im-row">
+              <input id="listFilter" class="im-input" type="text" placeholder="파일명 또는 ID 검색..." style="flex:1;" />
+              <span id="listCount" class="im-status ok">0개</span>
             </div>
         
-            <div id="listArea" class="im-list" style="margin-top: 16px; min-height: 300px;">
+            <div id="listArea" style="margin-top: 16px; min-height: 300px;">
               </div>
         
-            <p class="im-help" style="margin-top:16px;">
-              ※ 목록은 Apps Script를 통해 실시간으로 불러오며, 클릭 시 상세 정보와 스니펫을 확인할 수 있습니다.
-            </p>
-        
             <div style="text-align: left; margin-top: 24px;">
-              <button type="button" class="im-btn" onclick="moveTab(3)" style="width: 150px;">
+              <button type="button" class="im-btn im-btn-secondary" onclick="moveTab(3)" style="width: auto;">
                 ← 이전 (업로드)
               </button>
             </div>
@@ -791,65 +812,104 @@
     }
 
     // ====== 목록 렌더링 관련 ======
+// ====== ✅ [추가] 리스트 필터링 상태 ======
+    let currentFilterType = 'all'; // all, resized, orig
+
+    window.filterList = function(type) {
+      currentFilterType = type;
+      
+      // 탭 디자인 갱신
+      document.querySelectorAll('.im-subtab').forEach(btn => {
+        btn.classList.toggle('on', btn.textContent.includes(type === 'all' ? '전체' : (type === 'orig' ? '원본' : '가공')));
+      });
+      
+      // 리스트 다시 그리기
+      renderList(lastListItems);
+    };
+
+    // ====== ✅ [수정] 목록 렌더링 함수 (디자인 개선됨) ======
     function renderList(items){
       const q = String($listFilter.value || "").trim().toLowerCase();
-      const filtered = !q ? items : items.filter(it => {
-        const a = String(it.id || "").toLowerCase();
-        const b = String(it.base_name || "").toLowerCase();
-        const c = String(it.drive_name || "").toLowerCase();
-        return a.includes(q) || b.includes(q) || c.includes(q);
+      
+      // 1. 검색어 & 탭 필터링 동시 적용
+      const filtered = (items || []).filter(it => {
+        // 검색어 체크
+        const searchMatch = !q || 
+          String(it.id || "").toLowerCase().includes(q) || 
+          String(it.base_name || "").toLowerCase().includes(q) || 
+          String(it.drive_name || "").toLowerCase().includes(q);
+        
+        if (!searchMatch) return false;
+
+        // 탭(유형) 체크
+        const isOrig = (it.scale_pct === "ORIG"); // API에서 ORIG로 내려옴
+        if (currentFilterType === 'orig') return isOrig;
+        if (currentFilterType === 'resized') return !isOrig;
+        return true; // all
       });
 
-      $listCount.textContent = String(filtered.length);
+      $listCount.textContent = `${filtered.length}개`;
       $listArea.innerHTML = "";
 
-      for (const it of filtered) {
-        const card = document.createElement("div");
-        card.className = "im-item";
+      if (filtered.length === 0) {
+        $listArea.innerHTML = `<div style="text-align:center; padding:40px; color:#adb5bd;">조건에 맞는 이미지가 없습니다.</div>`;
+        return;
+      }
 
-        const created = it.created_at ? String(it.created_at).replace("T"," ").slice(0,19) : "";
-        const title = it.base_name || it.drive_name || it.id || "";
-        const driveLink = it.drive_view_url || it.img_href || "#";
-        const thumbSrc = it.img_src || "";
+      // 2. 카드 생성
+      for (const it of filtered) {
+        const isOrig = (it.scale_pct === "ORIG");
+        const created = it.created_at ? String(it.created_at).slice(0,10) : "";
+        const title = it.base_name || it.drive_name || it.id || "제목 없음";
+        const driveLink = it.drive_view_url || "#";
+        const thumbSrc = it.img_src || ""; // 리사이징된 이미지는 img_src가 썸네일 역할
+        
+        // 원본은 썸네일이 없을 수 있으므로 아이콘으로 대체하거나 원본 링크 사용
+        const displayThumb = (isOrig && !thumbSrc) ? "https://ssl.gstatic.com/images/branding/product/1x/drive_2020q4_48dp.png" : thumbSrc;
+
+        const card = document.createElement("div");
+        card.className = "im-clean-item";
 
         card.innerHTML = `
-          <div class="im-item-head">
-            <div style="min-width:0;">
-              <div class="im-item-fname" title="${escapeHtml(title)}">${escapeHtml(title)}</div>
-              <div class="im-item-id">${escapeHtml(it.id || "")}</div>
-              <div class="im-muted">${escapeHtml(created)}</div>
+          <img class="im-clean-thumb" src="${displayThumb}" alt="" onerror="this.src='https://ssl.gstatic.com/images/branding/product/1x/drive_2020q4_48dp.png'">
+          
+          <div class="im-clean-info">
+            <div class="im-clean-title" title="${escapeHtml(title)}">${escapeHtml(title)}</div>
+            <div class="im-clean-meta">
+              ${isOrig 
+                ? `<span class="im-badge orig">ORIGINAL</span>` 
+                : `<span class="im-badge resized">${it.scale_pct}%</span>`}
+              <span>${it.id}</span>
+              <span>· ${created}</span>
             </div>
-            <a class="im-smallbtn" href="${driveLink}" target="_blank" rel="noopener">Drive</a>
           </div>
-          <a href="${driveLink}" target="_blank" rel="noopener">
-            <img class="im-thumb" src="${thumbSrc}" alt="">
-          </a>
-          <div class="im-actions">
-            <button type="button" class="im-smallbtn btnCopy">스니펫 복사</button>
-            <button type="button" class="im-smallbtn btnGet">상세 보기</button>
+
+          <div class="im-clean-actions">
+            <a href="${driveLink}" target="_blank" class="im-btn-icon" title="Drive에서 열기">📂</a>
+            <button type="button" class="im-btn-icon btnCopy" title="HTML 복사">📋</button>
+            <button type="button" class="im-btn-icon btnGet" title="상세 정보">ℹ️</button>
           </div>
         `;
 
+        // 이벤트 연결 (기존 로직 유지)
         card.querySelector(".btnCopy").addEventListener("click", async () => {
           const got = await loadOne(it.id);
           const snip = got?.snippet || "";
-          if (!snip) {
-            alert("스니펫을 가져오지 못했어.");
-            return;
-          }
-          const ok = await copyToClipboard(snip);
-          alert(ok ? "스니펫 복사 완료!" : "복사 실패");
+          if (!snip) { alert("스니펫을 가져오지 못했습니다."); return; }
+          await copyToClipboard(snip);
+          alert("📋 스니펫 복사 완료!");
         });
 
         card.querySelector(".btnGet").addEventListener("click", async () => {
           const got = await loadOne(it.id);
           if (!got) return;
           alert(
+            `[상세 정보]\n` +
             `ID: ${got.id}\n` +
-            `Drive: ${got.drive_view_url}\n` +
-            `IMG_SRC: ${got.img_src}\n` +
-            `IMG_HREF: ${got.img_href}\n\n` +
-            `스니펫은 '스니펫 복사' 버튼으로 복사 가능`
+            `파일명: ${got.drive_name}\n` +
+            `타입: ${isOrig ? "원본 파일" : "리사이징 가공본"}\n` +
+            `크기: ${got.out_w} x ${got.out_h}\n` +
+            `Drive: ${got.drive_view_url}`
           );
         });
 
