@@ -191,7 +191,10 @@
                 <button id="btnQuickBloggerRead" class="pm-btn small">Blogger 불러오기</button>
                 <button id="btnQuickLabels" class="pm-btn small">라벨 적용</button>
                 
-                <button id="btnClear" class="pm-btn small danger" title="편집창 비우기">🗑️</button>
+                <button id="btnClear" class="pm-btn small danger" title="편집창 비우기">🗑️ 편집창 비우기</button>
+                <button id="btnDeletePost" class="pm-btn small danger" style="background:#fee2e2; color:#b91c1c; border-color:#fca5a5; margin-left:4px;">
+                  ⛔ 포스팅 영구 삭제
+                </button>
                 <a id="stickyOpenBlogger" class="pm-link" href="#" target="_blank" style="display:none;">글 열기</a>
               </div>
 
@@ -404,6 +407,32 @@
     </div>
   </div>
 
+  <div id="deleteConfirmModal" class="pm-modal-overlay" style="display:none;">
+    <div class="pm-modal-content" style="max-width: 450px;">
+      <div class="pm-modal-header" style="background:#fef2f2; border-bottom:1px solid #fecaca;">
+        <h3 style="margin:0; color:#b91c1c;">⛔ 게시글 영구 삭제</h3>
+        <button class="pm-btn small ghost" onclick="closeModal_('deleteConfirmModal')">✕</button>
+      </div>
+      <div class="pm-modal-body" style="padding: 24px 20px;">
+        <p style="margin:0 0 10px; font-weight:600; font-size:16px;">
+          정말 이 포스트를 삭제하시겠습니까?
+        </p>
+        <div style="background:#f8fafc; padding:12px; border-radius:8px; border:1px solid #e2e8f0; margin-bottom:16px;">
+          <span style="color:#64748b; font-size:13px;">삭제 대상 ID:</span><br>
+          <strong id="deleteTargetId" style="color:#2563eb; font-size:18px;">-</strong>
+        </div>
+        <p class="pm-small pm-status err" style="margin:0;">
+          ※ Google Sheet(DB)에서 데이터가 영구적으로 제거됩니다.<br>
+          ※ Drive 파일이나 Blogger 글은 삭제되지 않고 유지됩니다.
+        </p>
+      </div>
+      <div class="pm-modal-footer" style="background:#fef2f2; border-top:1px solid #fecaca;">
+        <button class="pm-btn ghost" onclick="closeModal_('deleteConfirmModal')" style="width:100px;">취소</button>
+        <button id="btnRealDelete" class="pm-btn danger" style="flex:1;">네, 삭제합니다</button>
+      </div>
+    </div>
+  </div>
+  
   <div id="globalMask" class="pm-global-mask">
     <div class="pm-global-spinner"></div>
     <div class="pm-global-text">처리 중입니다...</div>
@@ -1814,6 +1843,59 @@ function extractTokensMetaFromHtml_(html){
       }
     }
 
+  /* =========================
+       ✅ [NEW] 삭제 기능 로직
+    ========================= */
+    
+    // 1. 삭제 버튼 클릭 시 모달 열기
+    if($("btnDeletePost")) {
+      $("btnDeletePost").onclick = () => {
+        const id = getTargetId();
+        if(!id || id === "-") {
+          return showAlert_("삭제할 포스트 ID가 없습니다.\n먼저 글을 불러오거나 ID를 생성하세요.", "경고", "⚠️");
+        }
+        
+        // 모달에 ID 표시 후 열기
+        $("deleteTargetId").textContent = id;
+        $("deleteConfirmModal").style.display = "flex";
+      };
+    }
+
+    // 2. 모달 내 '네, 삭제합니다' 버튼 클릭 시 실제 API 호출
+    if($("btnRealDelete")) {
+      $("btnRealDelete").onclick = async () => {
+        const id = $("deleteTargetId").textContent;
+        if(!id || id === "-") return;
+
+        try {
+          setBusy_(true);
+          closeModal_('deleteConfirmModal'); // 모달 닫기
+          
+          // API 호출
+          const res = await apiPost("deletePost", { id: id });
+          
+          if (!res || !res.ok) {
+            throw new Error(res?.message || "삭제 실패");
+          }
+
+          // 성공 시
+          showAlert_(`[${id}] 포스트가 DB에서 삭제되었습니다.`, "삭제 완료", "🗑️");
+          
+          // 편집창 초기화
+          clearEditor();
+          
+          // (선택) 목록 캐시가 있다면 초기화해주면 좋음
+          window._cachedPostList = null; 
+
+        } catch(e) {
+          showAlert_("삭제 중 오류 발생:\n" + e.message, "오류", "❌");
+          setDebug(e);
+        } finally {
+          setBusy_(false);
+        }
+      };
+    }
+    
     // ===== UI actions =====
     async function applyTemplateNew(){
       const tplId = $("templateSelect").value;
