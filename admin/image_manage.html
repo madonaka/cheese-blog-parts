@@ -756,583 +756,150 @@
     }
     let toastTimer = null;
     let watchdogTimer = null;
-    
-    // ✅ 로딩 화면 제어 함수
-    function setBusy_(isBusy, msg = "처리 중입니다...") {
-      const mask = document.getElementById("globalMask");
-      const txt = document.getElementById("globalMaskText");
-      
-      if (!mask) return;
-      
-      if (isBusy) {
-        if (txt) txt.textContent = msg;
-        mask.style.display = "flex"; // 화면 가림
-      } else {
-        mask.style.display = "none"; // 가림 해제
+
+    // ✅ 1. fetch 통신 함수 (서버와 주고받는 도우미)
+      async function apiPost(bodyObj) {
+        // 캐시 방지를 위해 timestamp 추가
+        const url = `${WEBAPP_URL}?_ts=${Date.now()}`;
+        
+        const res = await fetch(url, {
+          method: "POST",
+          // Apps Script는 text/plain으로 보내야 CORS 문제 없이 잘 받습니다.
+          body: JSON.stringify(bodyObj) 
+        });
+  
+        const text = await res.text();
+        let data = null;
+        try { data = JSON.parse(text); } catch (e) {}
+  
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 100)}`);
+        if (!data) throw new Error(`서버 응답이 올바르지 않습니다: ${text.slice(0, 100)}`);
+        if (!data.ok) throw new Error(data.error || "서버에서 작업을 실패했습니다.");
+        
+        return data;
       }
-    }
-    
-    function toast_(msg, type = "sub") {
-      if (!$toast) return;
-
-      $toast.textContent = String(msg || "");
-      $toast.classList.remove("ok","bad","sub","show");
-      $toast.classList.add(type);
-
-      void $toast.offsetWidth;
-      $toast.classList.add("show");
-
-      clearTimeout(toastTimer);
-      toastTimer = setTimeout(() => {
-        $toast.classList.remove("show");
-      }, 2600);
-    }
-
-    function startUploadWatchdog_() {
-      clearTimeout(watchdogTimer);
-      watchdogTimer = setTimeout(() => {
-        if (currentUploadNonce) {
-          toast_("응답을 아직 받지 못했어요. 저장은 되었을 수 있으니 결과 영역/Drive를 확인해줘.", "bad");
+  
+      // ✅ 2. 업로드 버튼 클릭 이벤트 (fetch 방식 적용)
+      $btnUpload.addEventListener("click", async () => {
+        const baseName = safeTrim($baseName.value);
+        if (!baseName) {
+          window.showAlert_("파일명(기본)을\n입력해 주세요.", "📂");
           $btnUpload.disabled = false;
+          return;
         }
-      }, 15000);
-    }
-
-    function stopUploadWatchdog_() {
-      clearTimeout(watchdogTimer);
-      watchdogTimer = null;
-    }
-
-    function showUploadResult_(json) {
-      lastSnippetText = json.snippet || "";
-      $btnCopy.disabled = !lastSnippetText;
-
-      $result.style.display = "block";
-      $result.textContent =
-        `업로드 완료!\n` +
-        `DB ID: ${json.id}\n` +
-        `Drive: ${json.drive_view_url}\n` +
-        `Orig Drive: ${json.orig_drive_view_url || "(없음)"}\n` +   // ✅ 추가
-        `IMG_SRC: ${json.img_src}\n` +
-        `IMG_HREF: ${json.img_href}\n\n` +
-        `HTML 스니펫(복사해서 바로 사용):\n` +
-        `${lastSnippetText}`;
-    }
-
-    // ====== 목록 렌더링 ======
-    function renderList(items){
-      const q = String($listFilter.value || "").trim().toLowerCase();
-      const filtered = !q ? items : items.filter(it => {
-        const a = String(it.id || "").toLowerCase();
-        const b = String(it.base_name || "").toLowerCase();
-        const c = String(it.drive_name || "").toLowerCase();
-        return a.includes(q) || b.includes(q) || c.includes(q);
-      });
-
-      $listCount.textContent = String(filtered.length);
-      $listArea.innerHTML = "";
-
-      for (const it of filtered) {
-        const card = document.createElement("div");
-        card.className = "im-item";
-
-        const created = it.created_at ? String(it.created_at).replace("T"," ").slice(0,19) : "";
-        const title = it.base_name || it.drive_name || it.id || "";
-
-        const driveLink = it.drive_view_url || it.img_href || "#";
-        const thumbSrc = it.img_src || "";
-
-        card.innerHTML = `
-          <div class="im-item-head">
-            <div style="min-width:0;">
-              <div class="im-item-fname" title="${escapeHtml(title)}">${escapeHtml(title)}</div>
-              <div class="im-item-id">${escapeHtml(it.id || "")}</div>
-              <div class="im-muted">${escapeHtml(created)}</div>
-            </div>
-            <a class="im-smallbtn" href="${driveLink}" target="_blank" rel="noopener">Drive</a>
-          </div>
-
-          <a href="${driveLink}" target="_blank" rel="noopener">
-            <img class="im-thumb" src="${thumbSrc}" alt="">
-          </a>
-
-          <div class="im-actions">
-            <button type="button" class="im-smallbtn btnCopy">스니펫 복사</button>
-            <button type="button" class="im-smallbtn btnGet">상세 보기</button>
-          </div>
-        `;
-
-        card.querySelector(".btnCopy").addEventListener("click", async () => {
-          const got = await loadOne(it.id);
-          const snip = got?.snippet || "";
-          if (!snip) {
-            alert("스니펫을 가져오지 못했어. (get 실패)");
+  
+        // 원본만 저장 체크 여부
+        const $onlyOrigOn = document.getElementById("onlyOrigOn");
+        const isOnlyOrig = $onlyOrigOn ? $onlyOrigOn.checked : false;
+  
+        let finalBlob = null;
+        let outW = 0, outH = 0, outBytes = 0, pct = 0;
+  
+        // Blob 준비 로직
+        if (isOnlyOrig) {
+          const origFile = $file.files?.[0];
+          if (!origFile) {
+            window.showAlert_("파일이 선택되지 않았습니다.", "⚠️");
             return;
           }
-          const ok = await copyToClipboard(snip);
-          alert(ok ? "스니펫 복사 완료!" : "복사 실패(브라우저 권한 확인)");
-        });
-
-        card.querySelector(".btnGet").addEventListener("click", async () => {
-          const got = await loadOne(it.id);
-          if (!got) return;
-          alert(
-            `ID: ${got.id}\n` +
-            `Drive: ${got.drive_view_url}\n` +
-            `IMG_SRC: ${got.img_src}\n` +
-            `IMG_HREF: ${got.img_href}\n\n` +
-            `스니펫은 '스니펫 복사' 버튼으로 복사 가능`
-          );
-        });
-
-        $listArea.appendChild(card);
-      }
-    }
-
-    $listFilter.addEventListener("input", () => renderList(lastListItems));
-    $btnReloadList.addEventListener("click", () => loadList());
-
-    // ====== JSONP 호출 (목록/상세) ======
-    // Apps Script JSON 응답은 CORS 헤더가 없어서 fetch가 막히는 경우가 많음.
-    // 그래서 <script src="..."> 방식(JSONP)으로 호출한다. (iframe 불필요)
-    function jsonpCall_(url, cbName, timeoutMs = 12000){
-      return new Promise((resolve) => {
-        let done = false;
-        const timer = setTimeout(() => {
-          if (done) return;
-          done = true;
-          cleanup();
-          resolve({ ok:false, error:"timeout" });
-        }, timeoutMs);
-
-        function cleanup(){
-          clearTimeout(timer);
-          try { delete window[cbName]; } catch(e){}
-          if (script && script.parentNode) script.parentNode.removeChild(script);
-        }
-
-        window[cbName] = (data) => {
-          if (done) return;
-          done = true;
-          cleanup();
-          resolve(data);
-        };
-
-        const script = document.createElement("script");
-        script.src = url + (url.includes("?") ? "&" : "?") + `_=${Date.now()}`; // cache-bust
-        script.onerror = () => {
-          if (done) return;
-          done = true;
-          cleanup();
-          resolve({ ok:false, error:"script_load_failed" });
-        };
-        document.head.appendChild(script);
-      });
-    }
-
-    async function loadList(){
-      currentListNonce = makeNonce_();
-      const cb = `__im_list_cb_${currentListNonce.replace(/[^a-zA-Z0-9_]/g,"_")}`;
-      const url = `${WEBAPP_URL}?mode=list&callback=${encodeURIComponent(cb)}&nonce=${encodeURIComponent(currentListNonce)}`;
-
-      toast_("목록 요청 전송…", "sub");
-      const data = await jsonpCall_(url, cb, 12000);
-
-      if (data && data.ok) {
-        lastListItems = Array.isArray(data.items) ? data.items : [];
-        renderList(lastListItems);
-        toast_(`목록 로드 완료 (${lastListItems.length}개)`, "ok");
-      } else {
-        toast_("목록 응답 없음.", "bad");
-        alert("목록 응답 없음.\n\n가능성이 큰 원인:\n- Apps Script 배포가 최신이 아님\n- Apps Script에 JSONP(mode=list&callback=...) 라우트가 없음\n- 네 도메인/브라우저에서 script 로드가 차단(CSP)\n\n조치:\n- Apps Script에 JSONP 라우트를 추가하고 재배포\n- 브라우저 콘솔(Network)에서 script 요청이 200인지 확인");
-      }
-    }
-
-    function loadOne(id){
-      const nonce = makeNonce_();
-      const cb = `__im_get_cb_${nonce.replace(/[^a-zA-Z0-9_]/g,"_")}`;
-      const url = `${WEBAPP_URL}?mode=get&id=${encodeURIComponent(id)}&callback=${encodeURIComponent(cb)}&nonce=${encodeURIComponent(nonce)}`;
-      toast_("상세 요청…", "sub");
-
-      return new Promise(async (resolve) => {
-        const data = await jsonpCall_(url, cb, 12000);
-        if (data && data.ok && data.item) resolve(data.item);
-        else {
-          resolve(null);
-          toast_("상세 응답 없음(서버 라우트/배포 확인)", "bad");
-          alert("상세 불러오기 실패: " + (data?.error || "unknown"));
-        }
-      });
-    }
-
-    // ✅ Apps Script (iframe form 업로드) 응답 수신부 최종 수정
-    window.addEventListener("message", (ev) => {
-      let data = ev.data;
-      try {
-        if (typeof data === "string") data = JSON.parse(data);
-      } catch (e) { return; }
-    
-      // 🔴 디버깅용 로그 추가 (F12 콘솔에서 확인)
-      console.log("📩 서버 응답 도착:", data);
-      console.log("🔑 내 Nonce:", currentUploadNonce);
-      console.log("🔑 서버 Nonce:", data.nonce);
-    
-      // 1. nonce가 없거나 내가 보낸 것과 다르면 아예 무시
-      if (!data.nonce || data.nonce !== currentUploadNonce) {
-        console.warn("⚠️ Nonce 불일치! 메시지를 무시합니다.");
-        return;
-      }
-      // 2. 일치한다면 가장 먼저 타이머부터 정지 (중요!)
-      stopUploadWatchdog_(); 
-    
-      // 3. 이후 결과에 따라 모달 출력
-      if (data.ok) {
-        window.showAlert_("업로드 완료!", "✅");
-      } else {
-        window.showAlert_("실패: " + data.error, "❌");
-      }
-      
-      $btnUpload.disabled = false;
-      currentUploadNonce = "";
-    });
-    
-    // ====== 이벤트 ======
-    $file.addEventListener("change", async () => {
-      // 기존 초기화 로직 유지
-      revokeAllPreviewUrls();
-      $grid.innerHTML = "";
-      selectedScale = null;
-      $btnUpload.disabled = true;
-      $scalePick.innerHTML = "";
-      resetUploadResult();
-    
-      const f = $file.files?.[0];
-      const $previewContainer = document.getElementById("filePreviewContainer");
-      const $previewImg = document.getElementById("filePreviewImg");
-    
-      if (!f) {
-        if ($previewContainer) $previewContainer.style.display = "none";
-        return;
-      }
-    
-      try {
-        // 1. 이미지 로딩
-        sourceImg = await loadFileAsImage(f);
-    
-        // ✅ 2. 화면에 즉시 미리보기 표시 로직 추가
-        if ($previewContainer && $previewImg) {
-          $previewImg.src = URL.createObjectURL(f); // 선택한 파일의 임시 URL 생성
-          $previewContainer.style.display = "block"; // 숨겨진 영역 보이기
-          
-          // 메모리 누수 방지를 위해 이미지 로드 후 URL 해제 처리 (선택사항)
-          $previewImg.onload = () => URL.revokeObjectURL($previewImg.src);
-        }
-      } catch (e) {
-        sourceImg = null;
-        if ($previewContainer) $previewContainer.style.display = "none";
-        alert("원본 이미지 로딩 실패");
-      }
-    });
-
-    $wmFile.addEventListener("change", async () => {
-      const f = $wmFile.files?.[0];
-      try {
-        watermarkImg = f ? await loadFileAsImage(f) : null;
-      } catch (e) {
-        watermarkImg = null;
-        alert("워터마크 이미지 로딩 실패");
-      }
-    });
-
-    $btnMake.addEventListener("click", async () => {
-      if (!sourceImg) {
-        alert("원본 이미지를 먼저 선택해줘.");
-        return;
-      }
-
-      revokeAllPreviewUrls();
-      $grid.innerHTML = "";
-      selectedScale = null;
-      $btnUpload.disabled = true;
-      $scalePick.innerHTML = "";
-      resetUploadResult();
-
-      try {
-        for (const s of SCALES) {
-          const r = await renderPreviewBlob(s);
-          const url = URL.createObjectURL(r.blob);
-          previews.set(s, { ...r, url });
-        }
-
-        for (const s of SCALES) {
-          const v = previews.get(s);
-          $grid.appendChild(makePreviewCard({
-            scale: s, url: v.url, w: v.w, h: v.h, bytes: v.bytes
-          }));
-        }
-
-        selectedScale = 0.5;
-        renderScaleChips();
-        highlightSelected();
-        $btnUpload.disabled = false;
-
-      } catch (e) {
-        console.error(e);
-        alert("미리보기 생성 실패: " + (e?.message || e));
-      }
-    });
-
-// ====== ✅ [추가] 로딩 화면 제어 함수 ======
-    function setBusy_(isBusy, msg = "처리 중입니다...") {
-      const mask = document.getElementById("globalMask");
-      const txt = document.getElementById("globalMaskText");
-      
-      if (!mask) return;
-      
-      if (isBusy) {
-        if (txt) txt.textContent = msg;
-        mask.style.display = "flex";
-      } else {
-        mask.style.display = "none";
-      }
-    }
-
-    // ====== ✅ [수정] 업로드 와치독 & 응답 리스너 (로딩 해제 로직 포함) ======
-    // (기존 상단에 있던 리스너가 있다면 지우고 이 부분을 사용하세요)
-    
-    function stopUploadWatchdog_() {
-      if (watchdogTimer) {
-        clearTimeout(watchdogTimer);
-        watchdogTimer = null;
-      }
-    }
-
-    function startUploadWatchdog_() {
-      stopUploadWatchdog_();
-      watchdogTimer = setTimeout(() => {
-        if (currentUploadNonce) {
-          setBusy_(false); // 로딩 끄기
-          window.showAlert_("응답 시간이 초과되었습니다.\n저장은 되었을 수 있으니 Drive를 확인해 주세요.", "⏳");
-          $btnUpload.disabled = false;
-        }
-      }, 15000); // 15초 제한
-    }
-
-    window.addEventListener("message", (ev) => {
-      let data = ev.data;
-      try {
-        if (typeof data === "string") data = JSON.parse(data);
-      } catch (e) { return; }
-
-      // 1. nonce가 없거나 내가 보낸 것과 다르면 무시
-      if (!data.nonce || data.nonce !== currentUploadNonce) return;
-
-      // 2. 타이머 정지
-      stopUploadWatchdog_(); 
-
-      // 3. ✅ 로딩 화면 끄기
-      setBusy_(false);
-
-      // 4. 결과 알림
-      if (data.ok) {
-        window.showAlert_("업로드 완료!", "✅");
-      } else {
-        window.showAlert_("실패: " + data.error, "❌");
-      }
-      
-      $btnUpload.disabled = false;
-      currentUploadNonce = "";
-    });
-// ====== ✅ [추가] 로딩 화면 제어 함수 ======
-    function setBusy_(isBusy, msg = "처리 중입니다...") {
-      const mask = document.getElementById("globalMask");
-      const txt = document.getElementById("globalMaskText");
-      
-      if (!mask) return;
-      
-      if (isBusy) {
-        if (txt) txt.textContent = msg;
-        mask.style.display = "flex";
-      } else {
-        mask.style.display = "none";
-      }
-    }
-
-    // ====== ✅ [수정] 업로드 와치독 & 응답 리스너 (로딩 해제 로직 포함) ======
-    
-    function stopUploadWatchdog_() {
-      if (watchdogTimer) {
-        clearTimeout(watchdogTimer);
-        watchdogTimer = null;
-      }
-    }
-
-    function startUploadWatchdog_() {
-      stopUploadWatchdog_();
-      watchdogTimer = setTimeout(() => {
-        if (currentUploadNonce) {
-          setBusy_(false); // 로딩 끄기
-          window.showAlert_("응답 시간이 초과되었습니다.\n저장은 되었을 수 있으니 Drive를 확인해 주세요.", "⏳");
-          $btnUpload.disabled = false;
-        }
-      }, 15000); // 15초 제한
-    }
-
-    window.addEventListener("message", (ev) => {
-      let data = ev.data;
-      try {
-        if (typeof data === "string") data = JSON.parse(data);
-      } catch (e) { return; }
-
-      // 1. nonce가 없거나 내가 보낸 것과 다르면 무시
-      if (!data.nonce || data.nonce !== currentUploadNonce) return;
-
-      // 2. 타이머 정지
-      stopUploadWatchdog_(); 
-
-      // 3. ✅ 로딩 화면 끄기
-      setBusy_(false);
-
-      // 4. 결과 알림
-      if (data.ok) {
-        window.showAlert_("업로드 완료!", "✅");
-      } else {
-        window.showAlert_("실패: " + data.error, "❌");
-      }
-      
-      $btnUpload.disabled = false;
-      currentUploadNonce = "";
-    });
-
-    // ====== 업로드 (Drive + DB) ======
-    $btnUpload.addEventListener("click", async () => {
-      const baseName = safeTrim($baseName.value);
-      if (!baseName) {
-        // 1. 파일명 미입력 시 커스텀 모달 호출
-        window.showAlert_("파일명(기본)을\n입력해 주세요.", "📂");
-        $btnUpload.disabled = false;
-        return;
-      }
-    
-      // ✅ [수정] 원본만 저장 체크 여부 확인
-      const $onlyOrigOn = document.getElementById("onlyOrigOn");
-      const isOnlyOrig = $onlyOrigOn ? $onlyOrigOn.checked : false;
-    
-      let finalBlob = null;
-      let outW = 0, outH = 0, outBytes = 0, pct = 0;
-    
-      if (isOnlyOrig) {
-        // 1️⃣ 원본만 저장 모드: 선택된 파일을 그대로 사용
-        const origFile = $file.files?.[0];
-        if (!origFile) {
-          window.showAlert_("파일이 선택되지 않았습니다.", "⚠️");
-          return;
-        }
-        finalBlob = origFile;
-        outW = sourceImg?.naturalWidth || 0;
-        outH = sourceImg?.naturalHeight || 0;
-        outBytes = origFile.size;
-        pct = 100; // 원본은 100%로 표기
-      } else {
-        // 2️⃣ 가공 모드: 기존 로직 (미리보기 선택 확인)
-        if (selectedScale == null) {
-          window.showAlert_("업로드할 품질 버전을\n선택해 주세요.", "✨");
-          return;
-        }
-        const v = previews.get(selectedScale);
-        if (!v) return;
-        finalBlob = v.blob;
-        outW = v.w;
-        outH = v.h;
-        outBytes = v.bytes;
-        pct = Math.round(selectedScale * 100);
-      }
-    
-      try {
-        $btnUpload.disabled = true;
-        setBusy_(true, "업로드 데이터 준비 중..."); // ✅ [수정] 로딩 마스크 켜기
-    
-        // 최종 결정된 Blob을 Base64로 변환
-        const b64 = await blobToBase64(finalBlob);
-    
-        // 원본 저장 옵션 및 데이터 준비
-        const $saveOrigOn = document.getElementById("saveOrigOn");
-        const shouldSaveOrig = $saveOrigOn ? $saveOrigOn.checked : false;
-        const origFile = $file.files?.[0] || null;
-        
-        let orig_base64 = "";
-        let orig_mime = "";
-        let orig_filename = "";
-    
-        // '원본만 저장'이거나 '원본 별도 저장'이 체크된 경우 원본 데이터 포함
-        if ((shouldSaveOrig || isOnlyOrig) && origFile) {
-          // 원본 모드라면 위에서 만든 b64를 재사용하여 속도 향상
-          orig_base64 = isOnlyOrig ? b64 : await blobToBase64(origFile);
-          orig_mime = origFile.type;
-          orig_filename = origFile.name || "original_image";
-        }
-        
-        // 메타데이터 구성
-        const origW = sourceImg?.naturalWidth || 0;
-        const origH = sourceImg?.naturalHeight || 0;
-        const label = (safeTrim($noteText.value).split("\n")[0] || "").trim() || "© Cheesehistory.com";
-        const version = versionToday();
-        const blur = Number($blurPx.value) || 0;
-        
-        currentUploadNonce = makeNonce_();
-    
-        // 최종 페이로드 구성
-        const payload = {
-          mode: "upload",
-          filename: `img_${version}_${pct}.jpg`,
-          mime: isOnlyOrig ? orig_mime : "image/jpeg",
-          base64: b64, 
-          
-          orig_base64: orig_base64,
-          orig_mime: orig_mime,
-          orig_filename: orig_filename,
-          save_orig: shouldSaveOrig || isOnlyOrig, // 원본 모드면 무조건 저장
-          only_orig: isOnlyOrig, 
-            
-          meta: {
-            base_name: baseName,
-            label,
-            version,
-            scale: isOnlyOrig ? 1.0 : selectedScale,
-            scale_pct: pct,
-            blur_px: isOnlyOrig ? 0 : blur,
-            wm_alpha: isOnlyOrig ? 0 : (Number($wmAlpha.value) || 0),
-            orig_w: origW,
-            orig_h: origH,
-            out_w: outW,
-            out_h: outH,
-            bytes: outBytes,
-            nonce: currentUploadNonce,
-            save_orig: shouldSaveOrig || isOnlyOrig
+          finalBlob = origFile;
+          outW = sourceImg?.naturalWidth || 0;
+          outH = sourceImg?.naturalHeight || 0;
+          outBytes = origFile.size;
+          pct = 100;
+        } else {
+          if (selectedScale == null) {
+            window.showAlert_("업로드할 품질 버전을\n선택해 주세요.", "✨");
+            return;
           }
-        };
-    
-        // 서버 전송 실행
-        $form.action = WEBAPP_URL;
-        $formPayload.value = JSON.stringify(payload);
-        
-        setBusy_(true, "서버로 이미지 전송 및 저장 중..."); // ✅ [수정] 상태 메시지 변경
-        $form.submit();
-        
-        startUploadWatchdog_();
-    
-      } catch (e) {
-          console.error("Upload Error:", e);
-          stopUploadWatchdog_();
-          currentUploadNonce = "";
-          $btnUpload.disabled = false;
-      
-          setBusy_(false); // ✅ [추가] 에러 시 로딩 끄기
-          
-          // ✅ 클라이언트 측 오류 발생 시 모달 호출
-          window.showAlert_("업로드 준비 중 오류가 발생했습니다:\n" + (e?.message || e), "❌");
+          const v = previews.get(selectedScale);
+          if (!v) return;
+          finalBlob = v.blob;
+          outW = v.w;
+          outH = v.h;
+          outBytes = v.bytes;
+          pct = Math.round(selectedScale * 100);
         }
-    });
+  
+        try {
+          $btnUpload.disabled = true;
+          setBusy_(true, "이미지 데이터 변환 중...");
+  
+          // Base64 변환
+          const b64 = await blobToBase64(finalBlob);
+          
+          // 원본 데이터 준비
+          const $saveOrigOn = document.getElementById("saveOrigOn");
+          const shouldSaveOrig = $saveOrigOn ? $saveOrigOn.checked : false;
+          const origFile = $file.files?.[0] || null;
+          
+          let orig_base64 = "";
+          let orig_mime = "";
+          let orig_filename = "";
+  
+          if ((shouldSaveOrig || isOnlyOrig) && origFile) {
+            orig_base64 = isOnlyOrig ? b64 : await blobToBase64(origFile);
+            orig_mime = origFile.type;
+            orig_filename = origFile.name || "original_image";
+          }
+  
+          const origW = sourceImg?.naturalWidth || 0;
+          const origH = sourceImg?.naturalHeight || 0;
+          const label = (safeTrim($noteText.value).split("\n")[0] || "").trim() || "© Cheesehistory.com";
+          const version = versionToday();
+          const blur = Number($blurPx.value) || 0;
+  
+          // payload 구성
+          const payload = {
+            mode: "upload",
+            filename: `img_${version}_${pct}.jpg`,
+            mime: isOnlyOrig ? orig_mime : "image/jpeg",
+            base64: b64, 
+            
+            orig_base64: orig_base64,
+            orig_mime: orig_mime,
+            orig_filename: orig_filename,
+            save_orig: shouldSaveOrig || isOnlyOrig,
+            only_orig: isOnlyOrig, 
+              
+            meta: {
+              base_name: baseName,
+              label,
+              version,
+              scale: isOnlyOrig ? 1.0 : selectedScale,
+              scale_pct: pct,
+              blur_px: isOnlyOrig ? 0 : blur,
+              wm_alpha: isOnlyOrig ? 0 : (Number($wmAlpha.value) || 0),
+              orig_w: origW,
+              orig_h: origH,
+              out_w: outW,
+              out_h: outH,
+              bytes: outBytes,
+              save_orig: shouldSaveOrig || isOnlyOrig
+            }
+          };
+  
+          setBusy_(true, "서버로 전송 및 저장 중... (잠시만 기다려주세요)");
+  
+          // 🚀 핵심: fetch로 보내고 끝날 때까지 기다림 (타이머 필요 없음)
+          const res = await apiPost(payload);
+  
+          // 여기까지 에러 없이 왔다면 성공임
+          showUploadResult_(res);
+          window.showAlert_("업로드 완료!", "✅");
+          
+          // (선택사항) 성공 후 보관함 탭으로 자동 이동하려면 주석 해제
+          // moveTab(4); 
+          // if(typeof loadList === "function") loadList();
+  
+        } catch (e) {
+          console.error("Upload Error:", e);
+          window.showAlert_("업로드 실패:\n" + (e.message || e), "❌");
+        } finally {
+          setBusy_(false); // 성공하든 실패하든 로딩 끄기
+          $btnUpload.disabled = false;
+        }
+      });
 
     $btnCopy.addEventListener("click", async () => {
       if (!lastSnippetText) return;
