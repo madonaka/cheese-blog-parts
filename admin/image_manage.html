@@ -933,32 +933,37 @@
       });
     }
 
-    // ✅ Apps Script (iframe form 업로드) 응답 수신
+    // ✅ Apps Script (iframe form 업로드) 응답 수신 부분 수정
     window.addEventListener("message", (ev) => {
       let data = ev.data;
-
       if (typeof data === "string") {
         try { data = JSON.parse(data); } catch (e) { return; }
       }
       if (!data || typeof data !== "object") return;
       if (!("ok" in data)) return;
-
+    
       const nonce = data.nonce || "";
-
       if (nonce && currentUploadNonce && nonce === currentUploadNonce) {
         stopUploadWatchdog_();
-
+    
         if (data.ok) {
-          showUploadResult_(data);
-          toast_(`업로드 완료! DB ID: ${data.id}`, "ok");
-          alert(`업로드 완료!
-DB ID: ${data.id}
-Drive: ${data.drive_view_url}`);
+          // ✅ 업로드 성공 모달
+          showUploadResult_(data); // 결과 스니펫 표시 (기존 함수)
+          toast_(`업로드 완료!`, "ok");
+          
+          window.showAlert_(
+            `업로드가 완료되었습니다!\n\n파일명: ${data.filename || '확인불가'}\nDB ID: ${data.id || '-'}`, 
+            "✅"
+          );
         } else {
-          toast_("업로드 실패: " + (data.error || "unknown"), "bad");
-          alert("업로드 실패: " + (data.error || "unknown"));
+          // ✅ 서버측 에러 발생 시 모달
+          toast_("업로드 실패", "bad");
+          window.showAlert_(
+            "업로드 실패:\n" + (data.error || "알 수 없는 서버 오류"), 
+            "❌"
+          );
         }
-
+    
         $btnUpload.disabled = false;
         currentUploadNonce = "";
         return;
@@ -1055,8 +1060,8 @@ Drive: ${data.drive_view_url}`);
     $btnUpload.addEventListener("click", async () => {
       const baseName = safeTrim($baseName.value);
       if (!baseName) {
-        // 커스텀 모달이 있다면 window.showAlert_ 사용 권장
-        alert("파일명(기본)을 입력해줘. (예: 숙종_환국정치_도표)");
+        // 1. 파일명 미입력 시 커스텀 모달 호출
+        window.showAlert_("파일명(기본)을\n입력해 주세요.", "📂");
         $btnUpload.disabled = false;
         return;
       }
@@ -1072,7 +1077,7 @@ Drive: ${data.drive_view_url}`);
         // 1️⃣ 원본만 저장 모드: 선택된 파일을 그대로 사용
         const origFile = $file.files?.[0];
         if (!origFile) {
-          alert("파일이 선택되지 않았습니다.");
+          window.showAlert_("파일이 선택되지 않았습니다.", "⚠️");
           return;
         }
         finalBlob = origFile;
@@ -1083,7 +1088,7 @@ Drive: ${data.drive_view_url}`);
       } else {
         // 2️⃣ 가공 모드: 기존 로직 (미리보기 선택 확인)
         if (selectedScale == null) {
-          alert("업로드할 품질 버전(40/50/60%)을 선택해주세요.");
+          window.showAlert_("업로드할 품질 버전을\n선택해 주세요.", "✨");
           return;
         }
         const v = previews.get(selectedScale);
@@ -1169,12 +1174,14 @@ Drive: ${data.drive_view_url}`);
         startUploadWatchdog_();
     
       } catch (e) {
-        console.error("Upload Error:", e);
-        stopUploadWatchdog_();
-        currentUploadNonce = "";
-        $btnUpload.disabled = false;
-        alert("업로드 실패: " + (e?.message || e));
-      }
+          console.error("Upload Error:", e);
+          stopUploadWatchdog_();
+          currentUploadNonce = "";
+          $btnUpload.disabled = false;
+      
+          // ✅ 클라이언트 측 오류 발생 시 모달 호출
+          window.showAlert_("업로드 준비 중 오류가 발생했습니다:\n" + (e?.message || e), "❌");
+        }
     });
 
     $btnCopy.addEventListener("click", async () => {
@@ -1210,6 +1217,13 @@ Drive: ${data.drive_view_url}`);
     const overlay = document.getElementById("modalOverlay");
     overlay.style.display = "none";
     document.body.style.overflow = ""; // 스크롤 복구
+
+    const msg = document.getElementById("modalMsg").textContent;
+      if (msg.includes("완료되었습니다")) {
+        if (typeof resetAllSettings_ === "function") {
+           // resetAllSettings_(false); // confirm 창 없이 바로 초기화하도록 인자 조절 가능
+        }
+      }
   };
   
 // ✅ 2. 개선된 탭 전환 함수 (원본 전용 로직 포함)
