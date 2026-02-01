@@ -1097,7 +1097,7 @@ function extractTokensMetaFromHtml_(html){
     
     async function collectTokensFromTemplate_(manifest, slotNames){
       const supported = new Set([
-        "THUMB_URL","CANONICAL_URL","YEAR","MONTH","YEAR_NAV_JSON",
+        "THUMB_URL","CANONICAL_URL","YEAR","MONTH","YEAR_NAV_JSON",CURRENT_KEY", "GENEALOGY_DATA",
         "IMG_ID","IMG_SRC","IMG_HREF","IMG_OW","IMG_OH","IMG_ALT","IMG_TITLE","IMG_SNIPPET",
         "ZOOM_LABEL"
       ]);
@@ -1431,15 +1431,14 @@ function extractTokensMetaFromHtml_(html){
       tokenNames.forEach(tok => {
         const wrap = document.createElement("div");
         wrap.className = "pm-dyn-item";
-        const isYearNav = String(tok) === "YEAR_NAV_JSON";
-
+        const isLongText = ["YEAR_NAV_JSON", "GENEALOGY_DATA"].includes(String(tok));
         wrap.innerHTML = `
             <div class="pm-dyn-head">
               <div class="pm-dyn-key">${escapeHtml(tok)}</div>
               <button type="button" class="pm-btn small ghost pm-dyn-clear" data-clear-token="${escapeHtml(tok)}">비우기</button>
             </div>
-            ${
-              isYearNav
+          ${
+              isLongText // ✅ 변수명 변경 (isYearNav -> isLongText)
                 ? `<textarea class="pm-textarea pm-dyn-textarea" data-token="${escapeHtml(tok)}"
                      placeholder="${escapeHtml(tokenPlaceholder_(tok))}"></textarea>`
                 : `<input class="pm-input" data-token="${escapeHtml(tok)}" style="width:100%;"
@@ -1570,6 +1569,10 @@ function extractTokensMetaFromHtml_(html){
         case "YEAR": return "예: 2026";
         case "MONTH": return "예: 01";
         case "YEAR_NAV_JSON": return "줄입력 예:\n2022,https://.../2022.html\n2023,https://.../2023.html\n2024,";
+        // ✅ 가계도 관련 예시 추가
+        case "CURRENT_KEY": return "예: /joseon-3 (현재 페이지 식별자)";
+        case "GENEALOGY_DATA": return "줄입력 예(왕조,제목,링크):\n조선,1편:건국,/joseon-1\n조선,2편:태종,/joseon-2\n조선,3편:세종,";
+        
         case "ZOOM_LABEL": return "예: 이미지 크게보기 (확대 링크 문구)";
         default: return "";
       }
@@ -1649,6 +1652,11 @@ function extractTokensMetaFromHtml_(html){
         tokenVals.YEAR_NAV_JSON = lineToYearNavJson_(tokenVals.YEAR_NAV_JSON);
       }
 
+      // ✅ 가계도 데이터: JSON 형식이 아니면(대괄호로 시작 안하면) 줄단위 변환기 실행
+      if (tokenVals.GENEALOGY_DATA && !String(tokenVals.GENEALOGY_DATA).trim().startsWith("[")) {
+        tokenVals.GENEALOGY_DATA = lineToGenealogyJson_(tokenVals.GENEALOGY_DATA);
+      }
+      
       const vars = {
         TITLE: title,
         title: title,
@@ -1682,6 +1690,36 @@ function extractTokensMetaFromHtml_(html){
       return JSON.stringify(items);
     }
 
+    // ✅ 가계도 줄단위 입력 변환기
+    // 입력형식: 그룹(왕조), 라벨(제목), 링크 (쉼표 구분)
+    function lineToGenealogyJson_(txt){
+      const items = String(txt || "")
+        .trim()
+        .split(/\r?\n/)
+        .map(s => s.trim())
+        .filter(Boolean)
+        .map(line => {
+          // 쉼표(,)로 분리. 제목에 쉼표가 있을 수 있으니 주의해야 하지만, 일단 단순 split 사용
+          const parts = line.split(",");
+          
+          // 최소 2개(왕조, 제목)는 있어야 함
+          if (parts.length < 2) return null;
+          
+          const group = parts[0].trim();
+          const label = parts[1].trim();
+          // 링크는 없을 수도 있음 (선택 사항)
+          const href = parts.length > 2 ? parts.slice(2).join(",").trim() : ""; 
+          
+          if (!group || !label) return null;
+          
+          return { group: group, label: label, href: href };
+        })
+        .filter(Boolean);
+
+      return JSON.stringify(items);
+    }
+
+    
   async function analyzeAndRenderTemplate_(tplId){
       templateState.templateId = tplId || "";
       templateState.manifest = null;
