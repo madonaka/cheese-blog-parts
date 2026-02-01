@@ -53,9 +53,9 @@
     </div>
   </div>
 
-  <script src="./admin-common.js"></script>
+<script src="./admin-common.js"></script>
+
   <script>
-    // 이 코드는 아래 로직 에러와 상관없이 무조건 먼저 실행되어 메뉴를 표시합니다.
     (function(){
       try {
         if (window.AdminCommon && typeof window.AdminCommon.renderShell === "function"){
@@ -70,35 +70,34 @@
   </script>
 
   <script>
-/** * [2] 이미지 저장 기능 (알맹이만 딱 맞춰서 저장) */
+    /** * [이미지 저장 기능] 
+     * - 현재 화면에 보이는 배치(2단 배열) 그대로 깔끔하게 저장
+     */
     function saveAsImage() {
-      // 1. 겉 박스가 아닌 '내용물(Wrapper)'을 직접 타겟팅
       const target = document.querySelector("#viz-wrapper");
       if (!target) return alert("캡처 대상을 찾을 수 없습니다.");
       
       html2canvas(target, {
-        scale: 3, // 고화질 (2 -> 3으로 상향)
-        backgroundColor: "#ffffff", // 배경을 흰색으로 지정
+        scale: 3, // 고화질
+        backgroundColor: "#ffffff",
         useCORS: true,
-        
-        // 2. 캡처 시 스타일을 조작하여 '딱 맞는 크기'로 변형
+        // 캡처 시 스타일 다듬기
         onclone: (clonedDoc) => {
             const el = clonedDoc.querySelector("#viz-wrapper");
             if (el) {
-                // 원래 설정된 '최소 너비 100%'를 해제하여 내용물 크기만큼 줄어들게 함
+                // 화면과 동일하게 100% 폭 유지 (줄바꿈 유지)
+                el.style.width = "100%";
                 el.style.minWidth = "auto";
-                el.style.width = "fit-content"; // 내용물에 딱 맞춤
                 el.style.height = "auto";
-                
-                // 답답하지 않게 사방에 여백(Padding)을 조금 추가
-                el.style.padding = "50px";
                 el.style.margin = "0";
-                
-                // (선택사항) 이미지 모서리를 둥글게 처리하고 싶다면 주석 해제
-                // el.style.borderRadius = "30px"; 
-                
-                // 배경색을 확실하게 흰색으로 채움
+                el.style.padding = "50px"; // 이미지 여백
                 el.style.backgroundColor = "#ffffff";
+                
+                // 캡처 시 레이아웃 깨짐 방지
+                el.style.display = "flex";
+                el.style.flexWrap = "wrap";
+                el.style.justifyContent = "center";
+                el.style.alignItems = "flex-start"; // 상단 정렬
             }
         }
       }).then(canvas => {
@@ -116,7 +115,7 @@
       });
     }
 
-    // -- 정국 구도 로직 (특수문자 제거 및 정리됨) --
+    /** [정국 구도 로직] */
     let factionIdCounter = 0;
     let factions = []; 
     let alliances = []; 
@@ -151,14 +150,28 @@
       renderAll();
     }
 
+    // ✅ [핵심 수정] 렌더링 로직 개선 (가로 스크롤 제거 & 2단 배열)
     function renderAll() {
       const controls = document.getElementById('controls-wrapper');
       const viz = document.getElementById('viz-wrapper');
-      controls.innerHTML = ''; viz.innerHTML = '';
+      if(!controls || !viz) return;
 
+      controls.innerHTML = ''; 
+      viz.innerHTML = '';
+
+      // 시각화 컨테이너 스타일 강제 설정 (가로 스크롤 방지)
+      viz.style.width = '100%';
+      viz.style.display = 'flex';
+      viz.style.flexWrap = 'wrap';       // 줄바꿈 허용
+      viz.style.justifyContent = 'center'; 
+      viz.style.gap = '20px';            // 아이템 간 간격
+
+      // 1. 컨트롤 패널 그리기 (기존 동일)
       factions.forEach(f => {
         const card = document.createElement('div');
-        card.style.cssText = 'padding: 15px; border: 2.5px solid ' + (f.selected ? f.color : '#f2f4f6') + '; border-radius: 20px; background: #fbfcfe; cursor: pointer; position:relative; transition: all 0.2s;';
+        const borderColor = f.selected ? f.color : '#f2f4f6';
+        
+        card.style.cssText = 'padding: 15px; border: 2.5px solid ' + borderColor + '; border-radius: 20px; background: #fbfcfe; cursor: pointer; position:relative; transition: all 0.2s;';
         card.onclick = function() { f.selected = !f.selected; renderAll(); };
         
         card.innerHTML = `
@@ -182,31 +195,56 @@
         controls.appendChild(card);
       });
 
+      // 2. 시각화 그리기
       let renderedIds = new Set();
       factions.forEach(f => {
         if (renderedIds.has(f.id)) return;
+        
         let alliance = alliances.find(a => a.factionIds.includes(f.id));
         let element = alliance ? createAllianceDOM(alliance) : createFactionDOM(f, false);
+        
         if (alliance) alliance.factionIds.forEach(id => renderedIds.add(id));
         else renderedIds.add(f.id);
+        
         viz.appendChild(element);
 
+        // VS 관계 (대립) 표시
         const vsRel = vsRelations.find(rel => rel[0] === f.id || (alliance && alliance.factionIds.includes(rel[0])));
-        if (vsRel && !viz.querySelector('[data-vs="' + vsRel[0] + '-' + vsRel[1] + '"]')) {
-          const vsContainer = document.createElement('div');
-          vsContainer.setAttribute('data-vs', vsRel[0] + '-' + vsRel[1]);
-          vsContainer.style.cssText = 'display:flex; align-items:center; justify-content:center; margin: 0 15px; z-index:5; flex-shrink: 0;';
-          vsContainer.innerHTML = '<div style="font-family:\'Arial Black\'; font-size:45px; font-style:italic; color:#f04452; font-weight:900; text-shadow: 2px 2px 10px rgba(240,68,82,0.2);">VS</div>';
-          viz.appendChild(vsContainer);
+        if (vsRel) {
+             const key = vsRel[0] + '-' + vsRel[1];
+             if(!viz.querySelector('[data-vs="' + key + '"]')){
+                 const vsContainer = document.createElement('div');
+                 vsContainer.setAttribute('data-vs', key);
+                 // VS 문구 스타일
+                 vsContainer.style.cssText = 'display:flex; align-items:center; justify-content:center; margin: 0 5px; z-index:5; flex-shrink: 0;';
+                 vsContainer.innerHTML = '<div style="font-family:\'Arial Black\', sans-serif; font-size:40px; font-style:italic; color:#f04452; font-weight:900; text-shadow: 2px 2px 10px rgba(240,68,82,0.2);">VS</div>';
+                 viz.appendChild(vsContainer);
+             }
         }
       });
     }
 
     function createFactionDOM(f, inAlliance) {
       const div = document.createElement('div');
-      const headWidth = parseInt(f.size) + (f.coreMembers.length * (parseInt(f.coreSize) + 20)) + 40;
-      const finalWidth = Math.max(f.size * 2.5, headWidth, 220);
-      div.style.cssText = 'width:' + finalWidth + 'px; text-align:center; flex-shrink: 0; align-self: center; transition: all 0.3s ease;';
+      
+      // ✅ [수정] 너비 계산 로직 변경
+      // 연합 내부가 아닐 경우(메인 화면) -> 화면의 약 45% 차지 (2개 배치)
+      // 연합 내부일 경우 -> 자동 크기 (기존 유지)
+      if (!inAlliance) {
+          div.style.flex = "1 1 45%"; // 기본 45%, 유연하게 늘어남
+          div.style.maxWidth = "48%"; // 최대 48% (2개 배치 보장)
+          div.style.minWidth = "300px"; // 너무 작아지지 않게
+          div.style.marginBottom = "20px";
+      } else {
+          // 연합 내부에서는 기존처럼 계산된 픽셀 너비 사용하되 flex item으로
+          const headWidth = parseInt(f.size) + (f.coreMembers.length * (parseInt(f.coreSize) + 20)) + 40;
+          const finalWidth = Math.max(f.size * 2.5, headWidth, 220);
+          div.style.width = finalWidth + "px";
+          div.style.flexShrink = "0";
+      }
+
+      div.style.textAlign = 'center';
+      div.style.transition = 'all 0.3s ease';
       
       let coreHtml = f.coreMembers.map(m => `<div onclick="removeRoleMember('${f.id}','core','${m}')" style="width:${f.coreSize}px; height:${f.coreSize}px; background:#fff; border:4px solid ${f.color}; border-radius:50%; display:flex; align-items:center; justify-content:center; color:${f.color}; font-weight:800; font-size:${f.coreSize/75}em; cursor:pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">${m}</div>`).join('');
       let memHtml = f.members.map(m => `<div onclick="removeRoleMember('${f.id}','normal','${m}')" style="width:70px; height:70px; background:#fff; border:2.5px solid ${f.color}80; border-radius:50%; display:flex; align-items:center; justify-content:center; color:${f.color}; font-weight:800; font-size:15px; cursor:pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">${m}</div>`).join('');
@@ -226,12 +264,27 @@
 
     function createAllianceDOM(alliance) {
       const wrapper = document.createElement('div');
-      wrapper.style.cssText = 'display:flex; gap:25px; padding:65px 35px 35px; background:rgba(0,0,0,0.02); border:2.5px solid #e5e8eb; border-radius:65px; position:relative; align-items: center; align-self: center; flex-shrink: 0;';
+      // ✅ [수정] 연합 박스도 화면의 약 45% 차지하도록 설정
+      wrapper.style.flex = "1 1 45%";
+      wrapper.style.maxWidth = "98%"; // 연합은 좀 더 넓게 쓸 수도 있음 (선택 사항)
+      wrapper.style.minWidth = "320px";
+      wrapper.style.display = 'flex';
+      wrapper.style.gap = '25px'; 
+      wrapper.style.padding = '65px 35px 35px'; 
+      wrapper.style.background = 'rgba(0,0,0,0.02)'; 
+      wrapper.style.border = '2.5px solid #e5e8eb'; 
+      wrapper.style.borderRadius = '65px'; 
+      wrapper.style.position = 'relative'; 
+      wrapper.style.alignItems = 'center'; 
+      wrapper.style.justifyContent = 'center';
+      wrapper.style.flexWrap = 'wrap'; // 내부 세력들도 줄바꿈 가능하게
+      
       const label = document.createElement('div');
       label.innerText = alliance.name;
       label.style.cssText = 'position:absolute; top:-20px; left:50%; transform:translateX(-50%); background:#1a1f27; color:#fff; padding:10px 30px; border-radius:40px; font-size:15px; font-weight:800; white-space:nowrap; box-shadow: 0 4px 12px rgba(0,0,0,0.15); cursor:pointer;';
       label.onclick = function() { alliance.name = prompt("연합 명칭:", alliance.name) || alliance.name; renderAll(); };
       wrapper.appendChild(label);
+      
       alliance.factionIds.forEach(id => {
         const f = factions.find(x => x.id === id);
         if(f) wrapper.appendChild(createFactionDOM(f, true));
@@ -274,17 +327,17 @@
       renderAll();
     }
 
-    // 초기 실행 (안전하게 로드 후 실행)
+    /** [3] 초기화 & 버전 표시 */
     window.addEventListener('DOMContentLoaded', () => {
        createNewFaction(); 
        createNewFaction(); 
        
-       // 버전 표시 로직
        (function(){
           const el = document.getElementById("sysVersion");
           if (!el) return;
           const d = new Date(document.lastModified);
           if (isNaN(d.getTime())) { el.textContent = "V. Unknown"; return; }
+          
           const z = n => (n < 10 ? "0"+n : String(n));
           el.textContent = "V. " + d.getFullYear() + z(d.getMonth()+1) + z(d.getDate()) + "_" + z(d.getHours()) + z(d.getMinutes());
           el.title = document.lastModified;
