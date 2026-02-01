@@ -1170,100 +1170,111 @@
     
       const $onlyOrigOn = document.getElementById("onlyOrigOn");
       const isOnlyOrig = $onlyOrigOn ? $onlyOrigOn.checked : false;
-    
-      let finalBlob = null;
-      let outW = 0, outH = 0, outBytes = 0, pct = 0;
-    
-      // 전송할 이미지 결정
-      if (isOnlyOrig) {
-        const origFile = $file.files?.[0];
-        if (!origFile) {
-          window.showAlert_("파일이 선택되지 않았습니다.", "⚠️");
-          return;
-        }
-        finalBlob = origFile;
-        outW = sourceImg?.naturalWidth || 0;
-        outH = sourceImg?.naturalHeight || 0;
-        outBytes = origFile.size;
-        pct = 100;
-      } else {
-        if (selectedScale == null) {
-          window.showAlert_("업로드할 품질 버전을\n선택해 주세요.", "✨");
-          return;
-        }
-        const v = previews.get(selectedScale);
-        if (!v) return;
-        finalBlob = v.blob;
-        outW = v.w;
-        outH = v.h;
-        outBytes = v.bytes;
-        pct = Math.round(selectedScale * 100);
-      }
-    
+
       try {
         $btnUpload.disabled = true;
-        setBusy_(true, "이미지 데이터 변환 중...");
-    
-        // 1. Base64 변환
-        const b64 = await blobToBase64(finalBlob);
-    
-        // 2. 원본 데이터 준비
-        const $saveOrigOn = document.getElementById("saveOrigOn");
-        const shouldSaveOrig = $saveOrigOn ? $saveOrigOn.checked : false;
-        const origFile = $file.files?.[0] || null;
-        
-        let orig_base64 = "";
-        let orig_mime = "";
-        let orig_filename = "";
-    
-        if ((shouldSaveOrig || isOnlyOrig) && origFile) {
-          orig_base64 = isOnlyOrig ? b64 : await blobToBase64(origFile);
-          orig_mime = origFile.type;
-          orig_filename = origFile.name || "original_image";
-        }
-        
-        const origW = sourceImg?.naturalWidth || 0;
-        const origH = sourceImg?.naturalHeight || 0;
+        window.setBusy_(true, "데이터 준비 중...");
+
+        // 1. 공통 데이터 준비
+        const origFile = $file.files?.[0];
         const label = (safeTrim($noteText.value).split("\n")[0] || "").trim() || "© Cheesehistory.com";
         const version = versionToday();
-        const blur = Number($blurPx.value) || 0;
-        
-        // 3. Payload 구성
-        const payload = {
-          mode: "upload",
-          filename: `img_${version}_${pct}.jpg`,
-          mime: isOnlyOrig ? orig_mime : "image/jpeg",
-          base64: b64, 
+        const origW = sourceImg?.naturalWidth || 0;
+        const origH = sourceImg?.naturalHeight || 0;
+
+        let payload = null;
+
+        // 2. 모드별 Payload 생성 (엄격 분리)
+        if (isOnlyOrig) {
+          // ✅ [A] 원본 전용 모드
+          if (!origFile) throw new Error("원본 파일이 없습니다.");
           
-          orig_base64: orig_base64,
-          orig_mime: orig_mime,
-          orig_filename: orig_filename,
-          save_orig: shouldSaveOrig || isOnlyOrig,
-          only_orig: isOnlyOrig, 
+          const b64 = await blobToBase64(origFile);
+          
+          payload = {
+            mode: "upload",
+            filename: `img_${version}_ORIG.jpg`,
+            mime: origFile.type,
+            base64: b64,
             
-          meta: {
-            base_name: baseName,
-            label,
-            version,
-            scale: isOnlyOrig ? 1.0 : selectedScale,
-            scale_pct: pct,
-            blur_px: isOnlyOrig ? 0 : blur,
-            wm_alpha: isOnlyOrig ? 0 : (Number($wmAlpha.value) || 0),
-            orig_w: origW,
-            orig_h: origH,
-            out_w: outW,
-            out_h: outH,
-            bytes: outBytes,
-            save_orig: shouldSaveOrig || isOnlyOrig
+            // 원본 모드는 백업 관련 필드 비움
+            orig_base64: "", 
+            orig_mime: "", 
+            orig_filename: "",
+            save_orig: true,
+            only_orig: true,
+
+            meta: {
+              base_name: baseName,
+              label: label,
+              version: version,
+              scale: 1.0,
+              scale_pct: 100,
+              // 가공 옵션 강제 0 처리
+              blur_px: 0,
+              wm_alpha: 0,
+              orig_w: origW, orig_h: origH,
+              out_w: origW, out_h: origH,
+              bytes: origFile.size,
+              save_orig: true
+            }
+          };
+
+        } else {
+          // ✅ [B] 리사이징 모드 (+ 원본 백업 옵션)
+          if (selectedScale == null) throw new Error("업로드할 버전을 선택해주세요.");
+          const v = previews.get(selectedScale);
+          if (!v) throw new Error("선택된 미리보기 데이터가 없습니다.");
+
+          const b64 = await blobToBase64(v.blob);
+          const pct = Math.round(selectedScale * 100);
+
+          // 원본 백업 여부 확인
+          const $saveOrigOn = document.getElementById("saveOrigOn");
+          const shouldSaveOrig = $saveOrigOn ? $saveOrigOn.checked : false;
+          
+          let orig_b64 = "";
+          let orig_name = "";
+          let orig_type = "";
+
+          if (shouldSaveOrig && origFile) {
+            orig_b64 = await blobToBase64(origFile);
+            orig_name = origFile.name;
+            orig_type = origFile.type;
           }
-        };
-    
-        setBusy_(true, "서버로 전송 및 저장 중... (잠시만 기다려주세요)");
-        
-        // 4. 전송 (await로 대기, 타임아웃 없음)
-        const res = await apiPost(payload);
-        
-        // 5. 성공 처리
+
+          payload = {
+            mode: "upload",
+            filename: `img_${version}_${pct}.jpg`,
+            mime: "image/jpeg",
+            base64: b64,
+
+            orig_base64: orig_b64,
+            orig_mime: orig_type,
+            orig_filename: orig_name,
+            save_orig: shouldSaveOrig,
+            only_orig: false,
+
+            meta: {
+              base_name: baseName,
+              label: label,
+              version: version,
+              scale: selectedScale,
+              scale_pct: pct,
+              blur_px: Number($blurPx.value) || 0,
+              wm_alpha: Number($wmAlpha.value) || 0,
+              orig_w: origW, orig_h: origH,
+              out_w: v.w, out_h: v.h,
+              bytes: v.bytes,
+              save_orig: shouldSaveOrig
+            }
+          };
+        }
+
+        // 3. 서버 전송
+        window.setBusy_(true, "서버로 전송 및 저장 중...");
+        const res = await window.apiPost(payload);
+
         showUploadResult_(res);
         window.showAlert_("업로드 완료!", "✅");
 
@@ -1271,7 +1282,7 @@
         console.error("Upload Error:", e);
         window.showAlert_("업로드 실패:\n" + (e.message || e), "❌");
       } finally {
-        setBusy_(false);
+        window.setBusy_(false);
         $btnUpload.disabled = false;
       }
     });
@@ -1342,6 +1353,15 @@
 
       if (isOnlyOrig) {
         if (onlyArea) onlyArea.style.display = "block";
+
+        // ✅ 추가: 원본 전용 모드라면 기존에 생성된 리사이징 미리보기 데이터를 메모리에서 삭제
+        if (typeof revokeAllPreviewUrls === "function") {
+          revokeAllPreviewUrls(); // URL 해제
+          const grid = document.getElementById("previewGrid");
+          if (grid) grid.innerHTML = ""; // 화면 비우기
+          // previews Map 객체도 비워야 함 (선언된 위치에 따라 적절히 처리)
+        }
+        
         if (btnMake) btnMake.style.display = "none";
         if (chipRow) chipRow.style.display = "none";
         if (helpText) helpText.style.display = "none";
