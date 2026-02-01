@@ -1,9 +1,61 @@
-<script src="./admin-common.js"></script>
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>정국 구도 시각화 도구</title>
+  
+  <link rel="stylesheet" href="./admin.css" />
+  
+  <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
 
+  <style>
+    .admin-content { background-color: #f1f5f9; }
+    /* 캡처 시 배경 스타일 확보용 */
+    #viz-container-box { background-color: #ffffff; }
+    /* 버전 뱃지 스타일 */
+    .pm-pill { display: inline-block; padding: 3px 8px; border-radius: 999px; border: 1px solid rgba(15,23,42,0.15); font-size: 12px; margin-left: 8px; }
+  </style>
+</head>
+<body>
+
+  <div class="admin-shell">
+    <div id="admin-header-slot"></div>
+    <div class="admin-main">
+      <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+      <main class="admin-content">
+        
+        <div id="dynamic-power-app" style="max-width: 1100px; margin: 0 auto; padding: 30px; border-radius: 32px; font-family: 'Pretendard', sans-serif; box-shadow: 0 20px 50px rgba(0,0,0,0.05); border: 1px solid #ffffff; background: #f9fbff;">
+          
+          <div style="background: #fff; padding: 25px; border-radius: 24px; margin-bottom: 30px; border: 1px solid #f2f4f6;">
+            <div style="display:flex; align-items:center; justify-content:center; margin-bottom: 20px; flex-wrap:wrap; position:relative;">
+              <div style="font-weight: 800; color: #1a1f27; font-size: 1.1em;">⚙️ 정국 구도 관리 (색상·이름·삭제)</div>
+              <span id="sysVersion" class="pm-pill" style="background:#f1f5f9; color:#64748b; font-family:monospace; margin-left:auto; position:absolute; right:0;">Checking...</span>
+            </div>
+            
+            <div id="controls-wrapper" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 15px;"></div>
+            
+            <div style="margin-top: 25px; padding-top: 20px; border-top: 1px solid #f2f4f6; text-align: center; display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;">
+              <button onclick="createNewFaction()" style="padding: 12px 20px; background: #1a1f27; color: #fff; border: none; border-radius: 14px; cursor: pointer; font-weight: 700;">+ 세력 추가</button>
+              <button onclick="createAlliance()" style="padding: 12px 20px; background: #3182f6; color: #fff; border: none; border-radius: 14px; cursor: pointer; font-weight: 700;">🤝 동맹 결성</button>
+              <button onclick="createVs()" style="padding: 12px 20px; background: #f04452; color: #fff; border: none; border-radius: 14px; cursor: pointer; font-weight: 700;">⚔️ 대립 설정 (VS)</button>
+              <button onclick="resetAll()" style="padding: 12px 20px; background: #fff; color: #666; border: 1px solid #dbdee2; border-radius: 14px; cursor: pointer; font-weight: 700;">🔄 전체 초기화</button>
+              <button onclick="saveAsImage()" style="padding: 12px 20px; background: #00c471; color: #fff; border: none; border-radius: 14px; cursor: pointer; font-weight: 700; margin-left: 10px; display: flex; align-items: center; gap: 5px;"><span>📸</span> 결과만 이미지 저장</button>
+            </div>
+          </div>
+        
+          <div id="viz-container-box" style="position: relative; min-height: 500px; width: 100%; background: #ffffff; border-radius: 28px; border: 1px solid #f2f4f6; padding: 80px 20px; overflow-x: auto;">
+            <div id="viz-wrapper" style="display: flex; flex-wrap: wrap; justify-content: center; gap: 30px; align-items: center; width: max-content; min-width: 100%; margin: auto;"></div>
+          </div>
+        </div>
+
+      </main>
+    </div>
+  </div>
+
+  <script src="./admin-common.js"></script>
   <script>
-    /** * [1] 안전장치: 관리자 쉘(메뉴/헤더) 독립 실행 
-     * - 아래쪽 로직에 오류가 있어도 메뉴는 무조건 뜨게 함
-     */
+    // 이 코드는 아래 로직 에러와 상관없이 무조건 먼저 실행되어 메뉴를 표시합니다.
     (function(){
       try {
         if (window.AdminCommon && typeof window.AdminCommon.renderShell === "function"){
@@ -15,9 +67,10 @@
         }
       } catch(e) { console.error("Admin Shell Error:", e); }
     })();
+  </script>
 
-    /** * [2] 이미지 저장 기능 (html2canvas) 
-     */
+  <script>
+    // -- 이미지 저장 함수 --
     function saveAsImage() {
       const target = document.querySelector("#viz-container-box");
       if (!target) return alert("캡처 대상을 찾을 수 없습니다.");
@@ -26,32 +79,24 @@
       const totalHeight = target.scrollHeight;
 
       html2canvas(target, {
-        scale: 2, 
-        backgroundColor: "#ffffff", 
-        useCORS: true,
-        width: totalWidth, 
-        height: totalHeight,
-        windowWidth: totalWidth, 
-        windowHeight: totalHeight,
-        x: 0, 
-        y: 0
+        scale: 2, backgroundColor: "#ffffff", useCORS: true,
+        width: totalWidth, height: totalHeight,
+        windowWidth: totalWidth, windowHeight: totalHeight,
+        x: 0, y: 0
       }).then(canvas => {
         const link = document.createElement("a");
         const d = new Date();
-        const z = n => (n < 10 ? "0"+n : String(n));
-        const ts = d.getFullYear() + z(d.getMonth()+1) + z(d.getDate()) + "_" + z(d.getHours()) + z(d.getMinutes());
-        
-        link.download = "정국구도_" + ts + ".png";
+        const z = n => (n < 10 ? "0"+n : n);
+        const ts = `${d.getFullYear()}${z(d.getMonth()+1)}${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}`;
+        link.download = `정국구도_${ts}.png`;
         link.href = canvas.toDataURL("image/png");
         link.click();
       }).catch(err => {
-        console.error(err); 
-        alert("이미지 저장 실패: 콘솔을 확인하세요.");
+        console.error(err); alert("이미지 저장 실패");
       });
     }
 
-    /** * [3] 정국 구도 핵심 로직 
-     */
+    // -- 정국 구도 로직 (특수문자 제거 및 정리됨) --
     let factionIdCounter = 0;
     let factions = []; 
     let alliances = []; 
@@ -60,7 +105,6 @@
     function createNewFaction() {
       factionIdCounter++;
       const id = 'fac-' + factionIdCounter;
-      // 색상 팔레트
       const defaultColors = ['#3182f6', '#f04452', '#00c471', '#ffb800', '#9333ea', '#ff6b00', '#00b8d9', '#6554c0'];
       const color = defaultColors[(factionIdCounter - 1) % defaultColors.length];
       
@@ -90,17 +134,11 @@
     function renderAll() {
       const controls = document.getElementById('controls-wrapper');
       const viz = document.getElementById('viz-wrapper');
-      if(!controls || !viz) return;
+      controls.innerHTML = ''; viz.innerHTML = '';
 
-      controls.innerHTML = ''; 
-      viz.innerHTML = '';
-
-      // 1. 컨트롤 패널 그리기
       factions.forEach(f => {
         const card = document.createElement('div');
-        const borderColor = f.selected ? f.color : '#f2f4f6';
-        
-        card.style.cssText = 'padding: 15px; border: 2.5px solid ' + borderColor + '; border-radius: 20px; background: #fbfcfe; cursor: pointer; position:relative; transition: all 0.2s;';
+        card.style.cssText = 'padding: 15px; border: 2.5px solid ' + (f.selected ? f.color : '#f2f4f6') + '; border-radius: 20px; background: #fbfcfe; cursor: pointer; position:relative; transition: all 0.2s;';
         card.onclick = function() { f.selected = !f.selected; renderAll(); };
         
         card.innerHTML = `
@@ -124,30 +162,22 @@
         controls.appendChild(card);
       });
 
-      // 2. 시각화 그리기
       let renderedIds = new Set();
       factions.forEach(f => {
         if (renderedIds.has(f.id)) return;
-        
         let alliance = alliances.find(a => a.factionIds.includes(f.id));
         let element = alliance ? createAllianceDOM(alliance) : createFactionDOM(f, false);
-        
         if (alliance) alliance.factionIds.forEach(id => renderedIds.add(id));
         else renderedIds.add(f.id);
-        
         viz.appendChild(element);
 
-        // VS 관계 표시
         const vsRel = vsRelations.find(rel => rel[0] === f.id || (alliance && alliance.factionIds.includes(rel[0])));
-        if (vsRel) {
-             const key = vsRel[0] + '-' + vsRel[1];
-             if(!viz.querySelector('[data-vs="' + key + '"]')){
-                 const vsContainer = document.createElement('div');
-                 vsContainer.setAttribute('data-vs', key);
-                 vsContainer.style.cssText = 'display:flex; align-items:center; justify-content:center; margin: 0 15px; z-index:5; flex-shrink: 0;';
-                 vsContainer.innerHTML = '<div style="font-family:\'Arial Black\', sans-serif; font-size:45px; font-style:italic; color:#f04452; font-weight:900; text-shadow: 2px 2px 10px rgba(240,68,82,0.2);">VS</div>';
-                 viz.appendChild(vsContainer);
-             }
+        if (vsRel && !viz.querySelector('[data-vs="' + vsRel[0] + '-' + vsRel[1] + '"]')) {
+          const vsContainer = document.createElement('div');
+          vsContainer.setAttribute('data-vs', vsRel[0] + '-' + vsRel[1]);
+          vsContainer.style.cssText = 'display:flex; align-items:center; justify-content:center; margin: 0 15px; z-index:5; flex-shrink: 0;';
+          vsContainer.innerHTML = '<div style="font-family:\'Arial Black\'; font-size:45px; font-style:italic; color:#f04452; font-weight:900; text-shadow: 2px 2px 10px rgba(240,68,82,0.2);">VS</div>';
+          viz.appendChild(vsContainer);
         }
       });
     }
@@ -156,7 +186,6 @@
       const div = document.createElement('div');
       const headWidth = parseInt(f.size) + (f.coreMembers.length * (parseInt(f.coreSize) + 20)) + 40;
       const finalWidth = Math.max(f.size * 2.5, headWidth, 220);
-      
       div.style.cssText = 'width:' + finalWidth + 'px; text-align:center; flex-shrink: 0; align-self: center; transition: all 0.3s ease;';
       
       let coreHtml = f.coreMembers.map(m => `<div onclick="removeRoleMember('${f.id}','core','${m}')" style="width:${f.coreSize}px; height:${f.coreSize}px; background:#fff; border:4px solid ${f.color}; border-radius:50%; display:flex; align-items:center; justify-content:center; color:${f.color}; font-weight:800; font-size:${f.coreSize/75}em; cursor:pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">${m}</div>`).join('');
@@ -183,7 +212,6 @@
       label.style.cssText = 'position:absolute; top:-20px; left:50%; transform:translateX(-50%); background:#1a1f27; color:#fff; padding:10px 30px; border-radius:40px; font-size:15px; font-weight:800; white-space:nowrap; box-shadow: 0 4px 12px rgba(0,0,0,0.15); cursor:pointer;';
       label.onclick = function() { alliance.name = prompt("연합 명칭:", alliance.name) || alliance.name; renderAll(); };
       wrapper.appendChild(label);
-      
       alliance.factionIds.forEach(id => {
         const f = factions.find(x => x.id === id);
         if(f) wrapper.appendChild(createFactionDOM(f, true));
@@ -226,23 +254,22 @@
       renderAll();
     }
 
-    /** * [4] 초기화 & 버전 표시 
-     */
+    // 초기 실행 (안전하게 로드 후 실행)
     window.addEventListener('DOMContentLoaded', () => {
-       // 초기 세력 2개 생성
        createNewFaction(); 
        createNewFaction(); 
        
-       // 버전 표시
+       // 버전 표시 로직
        (function(){
           const el = document.getElementById("sysVersion");
           if (!el) return;
           const d = new Date(document.lastModified);
           if (isNaN(d.getTime())) { el.textContent = "V. Unknown"; return; }
-          
           const z = n => (n < 10 ? "0"+n : String(n));
           el.textContent = "V. " + d.getFullYear() + z(d.getMonth()+1) + z(d.getDate()) + "_" + z(d.getHours()) + z(d.getMinutes());
           el.title = document.lastModified;
        })();
     });
   </script>
+</body>
+</html>
