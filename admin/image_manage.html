@@ -188,10 +188,15 @@
                 <img id="filePreviewImg" src="" style="max-width:100%; max-height:300px; border-radius:12px; box-shadow:0 4px 12px rgba(0,0,0,0.1);" />
               </div>
               
-              <label style="display: flex; align-items: center; gap: 10px; padding: 8px 4px; cursor: pointer;">
-                <input id="saveOrigOn" type="checkbox" checked style="width: 20px; height: 20px; accent-color: #3182f6;" />
-                <span style="font-size: 15px; color: #4e5968; font-weight: 800;">Google Drive에 원본 별도 저장</span>
-              </label>
+              <div class="im-card" style="background: #f9fafb; border: 1px solid #e5e8eb;">
+                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer; padding: 4px;">
+                  <input id="saveOrigOn" type="checkbox" checked style="width: 22px; height: 22px; accent-color: #3182f6;" />
+                  <div>
+                    <div style="font-size: 16px; font-weight: 700; color: #191f28;">Google Drive에 원본 별도 저장</div>
+                    <div style="font-size: 13px; color: #8b95a1; margin-top: 2px;">가공되지 않은 원본 파일을 별도 폴더에 백업합니다.</div>
+                  </div>
+                </label>
+              </div>
             </div>
         
             <div class="im-action-row">
@@ -1032,6 +1037,7 @@ Drive: ${data.drive_view_url}`);
     $btnUpload.addEventListener("click", async () => {
       const baseName = safeTrim($baseName.value);
       if (!baseName) {
+        // 커스텀 모달이 있다면 window.showAlert_("파일명(기본)을 입력해줘."); 사용 권장
         alert("파일명(기본)을 입력해줘. (예: 숙종_환국정치_도표)");
         $btnUpload.disabled = false;
         return;
@@ -1044,44 +1050,50 @@ Drive: ${data.drive_view_url}`);
       try {
         $btnUpload.disabled = true;
 
+        // 1. 가공된 이미지(리사이징+워터마크)를 Base64로 변환
         const b64 = await blobToBase64(v.blob);
 
-        // 1. 원본 저장 체크박스 상태 확인 (UI에서 추가한 체크박스 ID)
-        const shouldSaveOrig = document.getElementById("saveOrigOn").checked;
+        // 2. 원본 저장 체크박스 상태 확인 및 데이터 준비
+        const $saveOrigOn = document.getElementById("saveOrigOn");
+        const shouldSaveOrig = $saveOrigOn ? $saveOrigOn.checked : false;
         const origFile = $file.files?.[0] || null;
         
-        // 2. 체크박스가 켜져 있고 파일이 있을 때만 원본 데이터 준비
-        const orig_base64 = (shouldSaveOrig && origFile) ? await blobToBase64(origFile) : "";
-        const orig_mime = (shouldSaveOrig && origFile) ? origFile.type : "";
-        const orig_filename = (shouldSaveOrig && origFile) ? (origFile.name || "") : "";
+        let orig_base64 = "";
+        let orig_mime = "";
+        let orig_filename = "";
+
+        // 체크박스가 켜져 있고 파일이 있을 때만 원본을 Base64로 읽음
+        if (shouldSaveOrig && origFile) {
+          toast_("원본 파일 읽는 중...", "sub");
+          orig_base64 = await blobToBase64(origFile);
+          orig_mime = origFile.type;
+          orig_filename = origFile.name || "original_image";
+        }
         
+        // 3. 메타데이터 구성
         const origW = sourceImg?.naturalWidth || 0;
         const origH = sourceImg?.naturalHeight || 0;
-
         const label = (safeTrim($noteText.value).split("\n")[0] || "").trim() || "© Cheesehistory.com";
         const version = versionToday();
-
         const pct = Math.round(selectedScale * 100);
         const blur = Number($blurPx.value) || 0;
 
-        const alt = `${label} · 원본 대비 품질 ${pct}%${blur > 0 ? ` · 미세블러 ${blur.toFixed(1)}px` : ""}`;
-        const title = alt;
-
-        const baseName2 = safeTrim($baseName.value);
-
         currentUploadNonce = makeNonce_();
 
+        // 4. 최종 페이로드 구성 (서버로 전송될 객체)
         const payload = {
           mode: "upload",
           filename: `img_${version}_${pct}.jpg`,
           mime: "image/jpeg",
-          base64: b64,
-          orig_base64,
-          orig_mime,
-          orig_filename,
+          base64: b64, // 가공본
+          
+          // ✅ 원본 데이터 섹션 추가
+          orig_base64: orig_base64,
+          orig_mime: orig_mime,
+          orig_filename: orig_filename,
           
           meta: {
-            base_name: baseName2,
+            base_name: baseName,
             label,
             version,
             scale: selectedScale,
@@ -1094,18 +1106,22 @@ Drive: ${data.drive_view_url}`);
             out_h: v.h,
             bytes: v.bytes,
             nonce: currentUploadNonce,
-            save_orig: shouldSaveOrig // ✅ 서버에서 원본 저장 여부를 판단할 플래그 추가
+            save_orig: shouldSaveOrig // ✅ 서버에서 원본 저장 로직을 실행할지 판단하는 플래그
           }
         };
 
+        // 5. 서버 전송 실행
         $form.action = WEBAPP_URL;
         $formPayload.value = JSON.stringify(payload);
-        toast_("업로드 요청 전송… (완료 신호 대기 중)", "sub");
+        
+        toast_("업로드 요청 전송 중… (원본 포함)", "sub");
         $form.submit();
+        
+        // 응답 대기 타이머 시작
         startUploadWatchdog_();
 
       } catch (e) {
-        console.error(e);
+        console.error("Upload Error:", e);
         stopUploadWatchdog_();
         currentUploadNonce = "";
         $btnUpload.disabled = false;
