@@ -456,28 +456,30 @@
 
 <script>
   (() => {
-    // ============================================
-    // 1. 기본 설정 및 변수 선언
-    // ============================================
+    // ✅ Apps Script 배포 URL (본인의 최신 배포 주소인지 확인하세요)
     const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyIsoT-0JY2nxCPFx2JH-G3Ja8tztjlJ6fiVAyxLgd-8Mzxjob8YDGgRO-biOCXe5WU/exec";
 
-    // DOM 요소 가져오기
+    // ====== DOM Elements ======
     const $baseName = document.getElementById("baseName");    
     const $file   = document.getElementById("imgFile");
     const $wmFile = document.getElementById("wmFile");
     const $wmOn   = document.getElementById("wmOn");
+
     const $jpegQ = document.getElementById("jpegQ");
     const $jpegQVal = document.getElementById("jpegQVal");
     const $blurPx = document.getElementById("blurPx");
     const $blurPxVal = document.getElementById("blurPxVal");
+
     const $wmAlpha = document.getElementById("wmAlpha");
     const $wmAlphaVal = document.getElementById("wmAlphaVal");
+
     const $noteText = document.getElementById("noteText");
     const $noteOn = document.getElementById("noteOn");
     const $notePos = document.getElementById("notePos");
     const $noteFont = document.getElementById("noteFont");
-    const $noteFontVal = document.getElementById("noteFontVal");
     const $notePreview = document.getElementById("notePreview");
+    
+    const $noteFontVal = document.getElementById("noteFontVal");
 
     const $btnMake = document.getElementById("btnMakePreviews");
     const $btnUpload = document.getElementById("btnUploadSelected");
@@ -488,296 +490,53 @@
     const $btnCopy = document.getElementById("btnCopySnippet");
     const $toast  = document.getElementById("toast");
 
+    // list UI
     const $btnReloadList = document.getElementById("btnReloadList");
     const $listFilter = document.getElementById("listFilter");
     const $listArea = document.getElementById("listArea");
     const $listCount = document.getElementById("listCount");
 
-    // 상태 변수
+    // ====== UI 초기 설정 및 이벤트 연결 ======
+    $jpegQ.addEventListener("input", () => $jpegQVal.textContent = Number($jpegQ.value).toFixed(2));
+    $blurPx.addEventListener("input", () => $blurPxVal.textContent = Number($blurPx.value).toFixed(1));
+    $wmAlpha.addEventListener("input", () => $wmAlphaVal.textContent = Number($wmAlpha.value).toFixed(2));
+    $wmAlphaVal.textContent = Number($wmAlpha.value).toFixed(2);
+
+    $noteFont.addEventListener("input", () => $noteFontVal.textContent = `${Number($noteFont.value)}px`);
+
+    function refreshNotePreview_(){
+      if (!$notePreview) return;
+      const t = ($noteText.value || "").replace(/\r\n/g, "\n");
+      $notePreview.textContent = t;
+    }
+    $noteText.addEventListener("input", refreshNotePreview_);
+    refreshNotePreview_();
+    $noteFontVal.textContent = `${Number($noteFont.value)}px`;
+
+    // ====== 상태 변수 ======
     const SCALES = [0.4, 0.5, 0.6];
     let sourceImg = null;
     let watermarkImg = null;
+
+    const previews = new Map();
     let selectedScale = null;
+
     let lastSnippetText = "";
     
     let currentListNonce = "";
     let lastListItems = [];
-    let currentFilterType = 'all'; // all, resized, orig
-    let targetDeleteId = null;     // 삭제 대상 ID
 
-    // ============================================
-    // 2. 유틸리티 및 화면 제어 함수
-    // ============================================
-    
-    // 로딩 화면 제어
-    function setBusy_(isBusy, msg = "처리 중입니다...") {
-      const mask = document.getElementById("globalMask");
-      const txt = document.getElementById("globalMaskText");
-      if (!mask) return;
-      
-      if (isBusy) {
-        if (txt) txt.textContent = msg;
-        mask.style.display = "flex";
-      } else {
-        mask.style.display = "none";
-      }
-    }
-
-    // 모달 제어 (window에 등록)
-    window.showAlert_ = function(msg, icon = "⚠️") {
-      const overlay = document.getElementById("modalOverlay");
-      document.getElementById("modalMsg").textContent = msg;
-      document.getElementById("modalIcon").textContent = icon;
-      overlay.style.display = "flex";
-      document.body.style.overflow = "hidden";
-    };
-    
-    window.closeModal_ = function() {
-      const overlay = document.getElementById("modalOverlay");
-      overlay.style.display = "none";
-      document.body.style.overflow = "";
-    };
-
-    // 토스트 메시지
-    let toastTimer = null;
-    function toast_(msg, type = "sub") {
-      if (!$toast) return;
-      $toast.textContent = String(msg || "");
-      $toast.classList.remove("ok","bad","sub","show");
-      $toast.classList.add(type);
-      void $toast.offsetWidth;
-      $toast.classList.add("show");
-      clearTimeout(toastTimer);
-      toastTimer = setTimeout(() => { $toast.classList.remove("show"); }, 2600);
-    }
-
-    // 문자열 처리 헬퍼
-    function escapeHtml(s){ return String(s || "").replace(/[&<>"']/g, m => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" })[m]); }
-    function safeTrim(s){ return (s == null ? "" : String(s)).trim(); }
-    function makeNonce_() { return `${Date.now()}_${Math.random().toString(16).slice(2)}`; }
-    function pad2(n){ return String(n).padStart(2, "0"); }
-    function versionToday() { const d = new Date(); return `V${d.getFullYear()}${pad2(d.getMonth()+1)}${pad2(d.getDate())}`; }
-
-    // ============================================
-    // 3. API 통신 함수 (Fetch & JSONP)
-    // ============================================
-    async function apiPost(bodyObj) {
-      const url = `${WEBAPP_URL}?_ts=${Date.now()}`;
-      const res = await fetch(url, {
-        method: "POST",
-        body: JSON.stringify(bodyObj)
-      });
-
-      const text = await res.text();
-      let data = null;
-      try { data = JSON.parse(text); } catch (e) {}
-
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 100)}`);
-      if (!data) throw new Error(`서버 응답 오류: ${text.slice(0, 100)}`);
-      if (!data.ok) throw new Error(data.error || "작업 실패");
-      
-      return data;
-    }
-
-    function jsonpCall_(url, cbName, timeoutMs = 12000){
-      return new Promise((resolve) => {
-        let done = false;
-        const timer = setTimeout(() => {
-          if (done) return; done = true; cleanup();
-          resolve({ ok:false, error:"timeout" });
-        }, timeoutMs);
-
-        function cleanup(){
-          clearTimeout(timer);
-          try { delete window[cbName]; } catch(e){}
-          if (script && script.parentNode) script.parentNode.removeChild(script);
-        }
-
-        window[cbName] = (data) => {
-          if (done) return; done = true; cleanup();
-          resolve(data);
-        };
-
-        const script = document.createElement("script");
-        script.src = url + (url.includes("?") ? "&" : "?") + `_=${Date.now()}`;
-        script.onerror = () => {
-          if (done) return; done = true; cleanup();
-          resolve({ ok:false, error:"script_load_failed" });
-        };
-        document.head.appendChild(script);
-      });
-    }
-
-    // ============================================
-    // 4. 목록 조회 및 렌더링
-    // ============================================
-    window.loadList = async function(){
-      currentListNonce = makeNonce_();
-      const cb = `__im_list_cb_${currentListNonce.replace(/[^a-zA-Z0-9_]/g,"_")}`;
-      const url = `${WEBAPP_URL}?mode=list&callback=${encodeURIComponent(cb)}&nonce=${encodeURIComponent(currentListNonce)}`;
-
-      toast_("목록 갱신 중…", "sub");
-      const data = await jsonpCall_(url, cb, 12000);
-
-      if (data && data.ok) {
-        lastListItems = Array.isArray(data.items) ? data.items : [];
-        renderList(lastListItems);
-        toast_(`목록 로드 완료 (${lastListItems.length}개)`, "ok");
-      } else {
-        toast_("목록 응답 없음.", "bad");
-      }
-    };
-
-    window.loadOne = function(id){
-      const nonce = makeNonce_();
-      const cb = `__im_get_cb_${nonce.replace(/[^a-zA-Z0-9_]/g,"_")}`;
-      const url = `${WEBAPP_URL}?mode=get&id=${encodeURIComponent(id)}&callback=${encodeURIComponent(cb)}&nonce=${encodeURIComponent(nonce)}`;
-      toast_("상세 요청…", "sub");
-
-      return new Promise(async (resolve) => {
-        const data = await jsonpCall_(url, cb, 12000);
-        if (data && data.ok && data.item) resolve(data.item);
-        else {
-          resolve(null);
-          toast_("상세 실패", "bad");
-        }
-      });
-    };
-
-    window.filterList = function(type) {
-      currentFilterType = type;
-      document.querySelectorAll('.im-subtab').forEach(btn => {
-        const text = btn.textContent;
-        const isMatch = (type === 'all' && text.includes('전체')) ||
-                        (type === 'resized' && text.includes('가공')) ||
-                        (type === 'orig' && text.includes('원본'));
-        btn.classList.toggle('on', isMatch);
-      });
-      renderList(lastListItems);
-    };
-
-    function renderList(items){
-      const q = String($listFilter.value || "").trim().toLowerCase();
-      
-      const filtered = (items || []).filter(it => {
-        const searchMatch = !q || 
-          String(it.id || "").toLowerCase().includes(q) || 
-          String(it.base_name || "").toLowerCase().includes(q) || 
-          String(it.drive_name || "").toLowerCase().includes(q);
-        
-        if (!searchMatch) return false;
-
-        const isPureOrig = (it.scale_pct === "ORIG"); 
-        const hasBackup = !!it.orig_drive_view_url;   
-        
-        if (currentFilterType === 'orig') return isPureOrig || hasBackup;
-        if (currentFilterType === 'resized') return !isPureOrig;
-        return true; 
-      });
-
-      $listCount.textContent = `${filtered.length}개`;
-      $listArea.innerHTML = "";
-
-      if (filtered.length === 0) {
-        $listArea.innerHTML = `<div style="text-align:center; padding:60px 0; color:#adb5bd; font-size:14px;">조건에 맞는 이미지가 없습니다.</div>`;
-        return;
-      }
-
-      for (const it of filtered) {
-        const isPureOrig = (it.scale_pct === "ORIG");
-        const showAsOrig = (currentFilterType === 'orig') || isPureOrig;
-
-        const created = it.created_at ? String(it.created_at).slice(0,10) : "";
-        const title = (showAsOrig && it.orig_drive_name) ? it.orig_drive_name : (it.base_name || it.drive_name || it.id || "제목 없음");
-        const driveLink = showAsOrig ? (it.orig_drive_view_url || it.drive_view_url || "#") : (it.drive_view_url || "#");
-        
-        const thumbSrc = it.img_src || ""; 
-        const displayThumb = thumbSrc ? thumbSrc : "https://ssl.gstatic.com/images/branding/product/1x/drive_2020q4_48dp.png";
-
-        const card = document.createElement("div");
-        card.className = "im-clean-item";
-
-        let badgeHtml = "";
-        if (showAsOrig) {
-           if (isPureOrig) badgeHtml = `<span class="im-badge orig">ORIGINAL (Main)</span>`;
-           else badgeHtml = `<span class="im-badge orig" style="background:#fff7ed; color:#c2410c; border-color:#ffedd5;">ORIGINAL (Backup)</span>`;
-        } else {
-           badgeHtml = `<span class="im-badge resized">${it.scale_pct}%</span>`;
-        }
-
-        card.innerHTML = `
-          <img class="im-clean-thumb" src="${displayThumb}" alt="" onerror="this.src='https://ssl.gstatic.com/images/branding/product/1x/drive_2020q4_48dp.png'">
-          <div class="im-clean-info">
-            <div class="im-clean-title" title="${escapeHtml(title)}">${escapeHtml(title)}</div>
-            <div class="im-clean-meta">
-              ${badgeHtml}
-              <span>${escapeHtml(it.id)}</span>
-              <span>· ${created}</span>
-            </div>
-          </div>
-          <div class="im-clean-actions">
-            <a href="${driveLink}" target="_blank" class="im-btn-icon" title="Drive에서 열기">📂</a>
-            <button type="button" class="im-btn-icon btnCopy" title="HTML 복사">📋</button>
-            <button type="button" class="im-btn-icon btnGet" title="상세 정보">ℹ️</button>
-            <button type="button" class="im-btn-icon btnDel" title="삭제" style="color:#e11d48; border-color:#fecdd3; background:#fff1f2;">🗑️</button>
-          </div>
-        `;
-
-        card.querySelector(".btnCopy").addEventListener("click", async () => {
-          const got = await loadOne(it.id);
-          const snip = got?.snippet || "";
-          if (!snip) { alert("스니펫 없음"); return; }
-          await copyToClipboard(snip);
-          alert("📋 복사 완료!");
-        });
-
-        card.querySelector(".btnGet").addEventListener("click", async () => {
-          const got = await loadOne(it.id);
-          if (!got) return;
-          const typeInfo = isPureOrig ? "순수 원본" : (showAsOrig ? "원본 (백업본)" : "리사이징 가공본");
-          alert(`[정보]\nID: ${got.id}\n타입: ${typeInfo}\n파일: ${title}\n주소: ${driveLink}`);
-        });
-
-        // 삭제 버튼 이벤트
-        card.querySelector(".btnDel").addEventListener("click", () => {
-          window.openConfirmDelete(it.id);
-        });
-
-        $listArea.appendChild(card);
-      }
-    }
-
-    $listFilter.addEventListener("input", () => renderList(lastListItems));
-    $btnReloadList.addEventListener("click", () => window.loadList());
-
-    // ============================================
-    // 5. 캔버스 그리기 및 파일 처리 (복원됨!)
-    // ============================================
-    
-    // 파일 로딩 헬퍼
-    function loadFileAsImage(file) {
-      return new Promise((resolve, reject) => {
-        if (!file) return reject(new Error("no file"));
-        const url = URL.createObjectURL(file);
-        const img = new Image();
-        img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
-        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("err")); };
-        img.src = url;
-      });
-    }
-
-    // Base64 변환
-    async function blobToBase64(blob){
-      return new Promise((resolve, reject) => {
-        const fr = new FileReader();
-        fr.onload = () => resolve(String(fr.result).split(",")[1]);
-        fr.onerror = reject;
-        fr.readAsDataURL(blob);
-      });
+    // ====== 유틸리티 함수 ======
+    function escapeHtml(s){
+      return String(s || "").replace(/[&<>"']/g, (m) => ({
+        "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"
+      })[m]);
     }
 
     function revokeAllPreviewUrls() {
-      for (const v of previews.values()) { if (v.url) URL.revokeObjectURL(v.url); }
+      for (const v of previews.values()) {
+        if (v.url) URL.revokeObjectURL(v.url);
+      }
       previews.clear();
     }
 
@@ -788,25 +547,47 @@
       $result.textContent = "";
     }
 
-    // ✅ 캔버스 텍스트 줄이기
+    function loadFileAsImage(file) {
+      return new Promise((resolve, reject) => {
+        if (!file) return reject(new Error("no file"));
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("image load fail")); };
+        img.src = url;
+      });
+    }
+
+    function pad2(n){ return String(n).padStart(2, "0"); }
+    function yyyymmdd() {
+      const d = new Date();
+      return `${d.getFullYear()}${pad2(d.getMonth()+1)}${pad2(d.getDate())}`;
+    }
+    function versionToday() { return `V${yyyymmdd()}`; }
+
+    // ====== 캔버스 그리기 관련 ======
     function ellipsisToFit(ctx, text, maxW) {
       if (ctx.measureText(text).width <= maxW) return text;
-      const E = "…"; let lo=0, hi=text.length;
+      const E = "…";
+      let lo = 0, hi = text.length;
       while (lo < hi) {
-        const mid = Math.floor((lo+hi)/2);
-        if (ctx.measureText(text.slice(0,mid)+E).width <= maxW) lo=mid+1; else hi=mid;
+        const mid = Math.floor((lo + hi) / 2);
+        const t = text.slice(0, mid) + E;
+        if (ctx.measureText(t).width <= maxW) lo = mid + 1;
+        else hi = mid;
       }
-      return text.slice(0, Math.max(0,lo-1)) + E;
+      return text.slice(0, Math.max(0, lo - 1)) + E;
     }
     
-    // ✅ 캔버스 텍스트 그리기
     function drawCornerTextNoBg(ctx, tw, th, lines, fontSizePx, pos) {
       const pad = Math.max(10, Math.round(tw * 0.015));
       const lineGap = Math.max(3, Math.round(fontSizePx * 0.25));
     
       ctx.save();
-      ctx.font = `900 ${fontSizePx}px system-ui`;
-      ctx.textBaseline = "top"; ctx.fillStyle = "#000";
+      ctx.font = `900 ${fontSizePx}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
+      ctx.textBaseline = "top";
+      ctx.fillStyle = "#000";
+      ctx.globalAlpha = 1;
     
       const maxW = tw - pad * 2;
       const fitted = lines.map(t => ellipsisToFit(ctx, t, maxW));
@@ -814,8 +595,9 @@
       const lineH = Math.ceil(fontSizePx * 1.15);
       const totalH = fitted.length * lineH + (fitted.length - 1) * lineGap;
     
-      const isTop = (pos||"tr").includes("t");
-      const isLeft = (pos||"tr").includes("l");
+      const p = (pos || "tr");
+      const isTop = p.includes("t");
+      const isLeft = p.includes("l");
     
       let y = isTop ? pad : Math.max(pad, th - pad - totalH);
     
@@ -828,94 +610,476 @@
       ctx.restore();
     }
 
-    // ✅ 미리보기 생성 (핵심 로직)
     async function renderPreviewBlob(scale) {
-      if (!sourceImg) throw new Error("no img");
+      if (!sourceImg) throw new Error("source image not loaded");
+
       const blur = Number($blurPx.value) || 0;
       const q = Number($jpegQ.value) || 0.72;
 
-      const tw = Math.max(1, Math.round(sourceImg.naturalWidth * scale));
-      const th = Math.max(1, Math.round(sourceImg.naturalHeight * scale));
+      const sw = sourceImg.naturalWidth;
+      const sh = sourceImg.naturalHeight;
+
+      const tw = Math.max(1, Math.round(sw * scale));
+      const th = Math.max(1, Math.round(sh * scale));
 
       const canvas = document.createElement("canvas");
-      canvas.width = tw; canvas.height = th;
+      canvas.width = tw;
+      canvas.height = th;
 
       const ctx = canvas.getContext("2d", { alpha: false });
-      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
 
-      // 블러 및 이미지 그리기
       ctx.filter = blur > 0 ? `blur(${blur}px)` : "none";
       ctx.drawImage(sourceImg, 0, 0, tw, th);
       ctx.filter = "none";
 
-      // 워터마크
       if ($wmOn.checked && watermarkImg) {
-        const alpha = Number($wmAlpha.value) || 0.25;
-        ctx.globalAlpha = alpha;
-        const s = Math.max(tw / watermarkImg.naturalWidth, th / watermarkImg.naturalHeight);
-        const dw = watermarkImg.naturalWidth * s;
-        const dh = watermarkImg.naturalHeight * s;
-        ctx.drawImage(watermarkImg, (tw-dw)/2, (th-dh)/2, dw, dh);
+        const WM_ALPHA = Number($wmAlpha.value);
+        ctx.globalAlpha = Number.isFinite(WM_ALPHA) ? WM_ALPHA : 0.25;
+
+        const iw = watermarkImg.naturalWidth;
+        const ih = watermarkImg.naturalHeight;
+
+        const s = Math.max(tw / iw, th / ih);
+        const dw = iw * s;
+        const dh = ih * s;
+
+        const dx = (tw - dw) / 2;
+        const dy = (th - dh) / 2;
+
+        ctx.drawImage(watermarkImg, dx, dy, dw, dh);
         ctx.globalAlpha = 1;
       }
 
-      // 텍스트(노트)
       if ($noteOn.checked) {
-        let raw = ($noteText.value || "").trim();
+        const pct = Math.round(scale * 100);
+        const ver = versionToday();
+        const blurToken = blur > 0 ? ` · 미세블러 ${blur.toFixed(1)}px` : "";
+        
+        let raw = ($noteText.value || "").replace(/\r\n/g, "\n").trim();
         if (!raw) raw = "© Cheesehistory.com";
-        if (!/\{PCT\}|\b원본\b/.test(raw)) raw += `\n{VER} · {PCT}%{BLUR}`;
+
+        if (!/\{PCT\}|\b원본 대비 품질\b/.test(raw)) raw += `\n{VER} · 원본 대비 품질 {PCT}%{BLUR}`;
         
-        raw = raw.replace(/\{VER\}/g, versionToday())
-                 .replace(/\{PCT\}/g, Math.round(scale*100))
-                 .replace(/\{BLUR\}/g, blur>0 ? ` B${blur}` : "");
+        raw = raw
+          .replace(/\{VER\}/g, ver)
+          .replace(/\{PCT\}/g, String(pct))
+          .replace(/\{BLUR\}/g, blurToken);
         
-        drawCornerTextNoBg(ctx, tw, th, raw.split("\n"), Number($noteFont.value)||18, $notePos.value);
+        const lines = raw.split("\n").map(s => s.trim()).filter(s => s.length > 0);
+        
+        const fontSizePx = Math.max(10, Math.min(80, Number($noteFont.value) || 18));
+        drawCornerTextNoBg(ctx, tw, th, lines, fontSizePx, ($notePos && $notePos.value) ? $notePos.value : "tr");
       }
 
-      const blob = await new Promise(r => canvas.toBlob(r, "image/jpeg", q));
+      const blob = await new Promise((resolve) => {
+        canvas.toBlob((b) => resolve(b), "image/jpeg", q);
+      });
+      if (!blob) throw new Error("toBlob failed");
       return { blob, w: tw, h: th, bytes: blob.size };
     }
 
     function makePreviewCard({ scale, url, w, h, bytes }) {
+      const pct = Math.round(scale * 100);
+      const sizeKB = Math.round(bytes / 1024);
+
       const wrap = document.createElement("div");
       wrap.innerHTML = `
-        <div style="font-weight:900; margin-bottom:6px;">${Math.round(scale*100)}% · ${w}×${h} · ${Math.round(bytes/1024)}KB</div>
-        <div class="cheese-img-wrapper" data-scale="${scale}">
-          <div class="cheese-img-inner"><img src="${url}"></div>
+        <div style="font-weight:900; margin-bottom:6px;">
+          ${pct}% · ${w}×${h} · ${sizeKB}KB
+          <span class="im-clickhint">(이미지 클릭 → 새 창)</span>
         </div>
-        <button type="button" class="im-btn pick-btn" style="margin-top:8px; width:100%;">선택</button>
+        <div class="cheese-img-wrapper" data-scale="${scale}">
+          <div class="cheese-img-inner">
+            <a class="im-preview-link" href="${url}" target="_blank" rel="noopener">
+              <img src="${url}" alt="">
+            </a>
+          </div>
+          <div class="im-help" style="margin-top:6px;">
+            업로드 대상: 아래 칩 선택 또는 버튼 사용
+          </div>
+        </div>
+        <button type="button" class="im-btn pick-btn" style="margin-top:8px; width:100%;">
+          이 버전 선택(업로드 대상)
+        </button>
       `;
+
       wrap.querySelector(".pick-btn").addEventListener("click", () => {
-        selectedScale = scale; highlightSelected(); $btnUpload.disabled = false;
+        selectedScale = scale;
+        highlightSelected();
+        $btnUpload.disabled = false;
       });
       return wrap;
     }
 
     function renderScaleChips() {
-      $scalePick.innerHTML = SCALES.map(s => `<span class="im-chip ${selectedScale===s?"on":""}" data-scale="${s}">${Math.round(s*100)}%</span>`).join("");
-      $scalePick.querySelectorAll(".im-chip").forEach(c => c.addEventListener("click", () => {
-        selectedScale = Number(c.dataset.scale); highlightSelected(); $btnUpload.disabled = false;
-      }));
+      $scalePick.innerHTML = SCALES.map(s => {
+        const pct = Math.round(s * 100);
+        const on = selectedScale === s;
+        return `<span class="im-chip ${on ? "on" : ""}" data-scale="${s}">${pct}%</span>`;
+      }).join("");
+
+      $scalePick.querySelectorAll(".im-chip").forEach(chip => {
+        chip.addEventListener("click", () => {
+          const sc = Number(chip.getAttribute("data-scale"));
+          if (!previews.has(sc)) return;
+          selectedScale = sc;
+          highlightSelected();
+          $btnUpload.disabled = false;
+        });
+      });
     }
 
     function highlightSelected() {
-      $grid.querySelectorAll(".cheese-img-wrapper").forEach(el => {
-        el.classList.toggle("im-selected", Number(el.dataset.scale) === selectedScale);
+      const wrappers = $grid.querySelectorAll(".cheese-img-wrapper");
+      wrappers.forEach(el => {
+        const sc = Number(el.getAttribute("data-scale"));
+        el.classList.toggle("im-selected", selectedScale === sc);
       });
       renderScaleChips();
     }
 
-    async function copyToClipboard(text) {
-      try { await navigator.clipboard.writeText(text); return true; } 
-      catch (e) { return false; }
+    async function blobToBase64(blob){
+      return new Promise((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onload = () => {
+          const dataUrl = fr.result;
+          const b64 = String(dataUrl).split(",")[1] || "";
+          resolve(b64);
+        };
+        fr.onerror = reject;
+        fr.readAsDataURL(blob);
+      });
     }
 
+    function safeTrim(s){ return (s == null ? "" : String(s)).trim(); }
+
+    async function copyToClipboard(text) {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch (e) {
+        try {
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          ta.style.position = "fixed";
+          ta.style.left = "-9999px";
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
+          const ok = document.execCommand("copy");
+          document.body.removeChild(ta);
+          return ok;
+        } catch (e2) {
+          return false;
+        }
+      }
+    }
+
+    function makeNonce_() {
+      return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    }
+
+    // ====== 로딩 화면 & 토스트(목록용) ======
+    let toastTimer = null;
+
+    // ✅ 로딩 화면 제어 함수 (전체 화면 마스크)
+    function setBusy_(isBusy, msg = "처리 중입니다...") {
+      const mask = document.getElementById("globalMask");
+      const txt = document.getElementById("globalMaskText");
+      if (!mask) return;
+      
+      if (isBusy) {
+        if (txt) txt.textContent = msg;
+        mask.style.display = "flex";
+      } else {
+        mask.style.display = "none";
+      }
+    }
+    
+    // ✅ 토스트 메시지 (목록 불러오기 등 가벼운 알림용)
+    function toast_(msg, type = "sub") {
+      if (!$toast) return;
+      $toast.textContent = String(msg || "");
+      $toast.classList.remove("ok","bad","sub","show");
+      $toast.classList.add(type);
+
+      void $toast.offsetWidth;
+      $toast.classList.add("show");
+
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        $toast.classList.remove("show");
+      }, 2600);
+    }
+
+    function showUploadResult_(json) {
+      lastSnippetText = json.snippet || "";
+      $btnCopy.disabled = !lastSnippetText;
+
+      $result.style.display = "block";
+      $result.textContent =
+        `업로드 완료!\n` +
+        `DB ID: ${json.id}\n` +
+        `Drive: ${json.drive_view_url}\n` +
+        `Orig Drive: ${json.orig_drive_view_url || "(없음)"}\n` +
+        `IMG_SRC: ${json.img_src}\n` +
+        `IMG_HREF: ${json.img_href}\n\n` +
+        `HTML 스니펫(복사해서 바로 사용):\n` +
+        `${lastSnippetText}`;
+    }
+
+    // ====== 목록 렌더링 관련 ======
+// ====== ✅ [추가] 리스트 필터링 상태 ======
+    let currentFilterType = 'all'; // all, resized, orig
+
+    window.filterList = function(type) {
+      currentFilterType = type;
+      
+      // 탭 디자인 갱신
+      document.querySelectorAll('.im-subtab').forEach(btn => {
+        btn.classList.toggle('on', btn.textContent.includes(type === 'all' ? '전체' : (type === 'orig' ? '원본' : '가공')));
+      });
+      
+      // 리스트 다시 그리기
+      renderList(lastListItems);
+    };
+
+// ====== ✅ [수정] 목록 렌더링 함수 (백업된 원본도 표시하도록 개선) ======
+    function renderList(items){
+      const q = String($listFilter.value || "").trim().toLowerCase();
+      
+      // 1. 검색어 & 탭 필터링
+      const filtered = (items || []).filter(it => {
+        // A. 검색어 체크
+        const searchMatch = !q || 
+          String(it.id || "").toLowerCase().includes(q) || 
+          String(it.base_name || "").toLowerCase().includes(q) || 
+          String(it.drive_name || "").toLowerCase().includes(q);
+        
+        if (!searchMatch) return false;
+
+        // B. 탭(유형) 체크
+        const isPureOrig = (it.scale_pct === "ORIG"); // '원본만 저장'한 파일
+        const hasBackup = !!it.orig_drive_view_url;   // '리사이징+원본 백업'한 파일
+        
+        if (currentFilterType === 'orig') {
+          // [수정] 원본 탭: 순수 원본이거나, 원본 백업이 있는 경우 모두 표시
+          return isPureOrig || hasBackup;
+        }
+        if (currentFilterType === 'resized') {
+          // 가공 탭: 순수 원본만 아니면 표시 (리사이징된 파일들)
+          return !isPureOrig;
+        }
+        return true; // 전체 탭
+      });
+
+      $listCount.textContent = `${filtered.length}개`;
+      $listArea.innerHTML = "";
+
+      if (filtered.length === 0) {
+        $listArea.innerHTML = `<div style="text-align:center; padding:60px 0; color:#adb5bd; font-size:14px;">조건에 맞는 이미지가 없습니다.</div>`;
+        return;
+      }
+
+      // 2. 카드 아이템 생성
+      for (const it of filtered) {
+        // 현재 '원본 탭'을 보고 있거나, 이 파일 자체가 순수 원본인 경우 -> '원본 모드'로 표시
+        const isPureOrig = (it.scale_pct === "ORIG");
+        const showAsOrig = (currentFilterType === 'orig') || isPureOrig;
+
+        const created = it.created_at ? String(it.created_at).slice(0,10) : "";
+        
+        // 제목 설정 (원본 모드면 원본 파일명 우선 표시)
+        const title = (showAsOrig && it.orig_drive_name) 
+          ? it.orig_drive_name 
+          : (it.base_name || it.drive_name || it.id || "제목 없음");
+        
+        // 링크 설정 (원본 모드면 원본 드라이브 링크 연결)
+        const driveLink = showAsOrig 
+          ? (it.orig_drive_view_url || it.drive_view_url || "#")
+          : (it.drive_view_url || "#");
+        
+        // 썸네일 설정
+        const thumbSrc = it.img_src || ""; 
+        // 원본 모드일 때는 썸네일 대신 드라이브 아이콘을 띄울지 결정
+        // (리사이징된 썸네일이 있으면 보여주되, 배지로 원본임을 표시)
+        const displayThumb = thumbSrc 
+          ? thumbSrc 
+          : "https://ssl.gstatic.com/images/branding/product/1x/drive_2020q4_48dp.png";
+
+        const card = document.createElement("div");
+        card.className = "im-clean-item";
+
+        // 배지(Badge) 결정
+        let badgeHtml = "";
+        if (showAsOrig) {
+           // 원본으로 표시 중일 때
+           if (isPureOrig) badgeHtml = `<span class="im-badge orig">ORIGINAL (Main)</span>`;
+           else badgeHtml = `<span class="im-badge orig" style="background:#fff7ed; color:#c2410c; border-color:#ffedd5;">ORIGINAL (Backup)</span>`;
+        } else {
+           // 리사이징으로 표시 중일 때
+           badgeHtml = `<span class="im-badge resized">${it.scale_pct}%</span>`;
+        }
+
+        // HTML 조립
+        card.innerHTML = `
+          <img class="im-clean-thumb" src="${displayThumb}" alt="" onerror="this.src='https://ssl.gstatic.com/images/branding/product/1x/drive_2020q4_48dp.png'">
+          
+          <div class="im-clean-info">
+            <div class="im-clean-title" title="${escapeHtml(title)}">${escapeHtml(title)}</div>
+            <div class="im-clean-meta">
+              ${badgeHtml}
+              <span>${escapeHtml(it.id)}</span>
+              <span>· ${created}</span>
+            </div>
+          </div>
+
+          <div class="im-clean-actions">
+            <a href="${driveLink}" target="_blank" class="im-btn-icon" title="Drive에서 열기">📂</a>
+            <button type="button" class="im-btn-icon btnCopy" title="HTML 스니펫 복사">📋</button>
+            <button type="button" class="im-btn-icon btnGet" title="상세 정보 확인">ℹ️</button>
+
+            <button type="button" class="im-btn-icon btnDel" title="이미지 삭제" style="color:#e11d48; border-color:#fecdd3; background:#fff1f2;">🗑️</button>
+          </div>
+        `;
+
+        // [이벤트] 스니펫 복사 (원본 모드여도 스니펫은 리사이징된 버전 태그를 복사해줌 - 편의성)
+        card.querySelector(".btnCopy").addEventListener("click", async () => {
+          const got = await loadOne(it.id);
+          const snip = got?.snippet || "";
+          if (!snip) { 
+             alert("이 파일은 HTML 스니펫이 없습니다.\n(이미지 태그 생성 불가)"); 
+             return; 
+          }
+          await copyToClipboard(snip);
+          alert("📋 HTML 스니펫이 복사되었습니다!");
+        });
+
+        // [이벤트] 상세 정보
+        card.querySelector(".btnGet").addEventListener("click", async () => {
+          const got = await loadOne(it.id);
+          if (!got) return;
+          
+          const typeInfo = isPureOrig ? "순수 원본" : (showAsOrig ? "원본 (백업본)" : "리사이징 가공본");
+          
+          alert(
+            `[이미지 상세 정보]\n\n` +
+            `ID: ${got.id}\n` +
+            `모드: ${typeInfo}\n` +
+            `파일명: ${title}\n` +
+            `등록일: ${got.created_at}\n\n` +
+            `Drive 링크: ${driveLink}`
+          );
+        });
+
+        // [이벤트] 삭제 버튼 클릭
+        card.querySelector(".btnDel").addEventListener("click", () => {
+          openConfirmDelete(it.id);
+        });
+
+        $listArea.appendChild(card);
+      }
+    }
+
+    $listFilter.addEventListener("input", () => renderList(lastListItems));
+    $btnReloadList.addEventListener("click", () => loadList());
+
+    // JSONP 호출 함수 (목록/상세 조회용)
+    function jsonpCall_(url, cbName, timeoutMs = 12000){
+      return new Promise((resolve) => {
+        let done = false;
+        const timer = setTimeout(() => {
+          if (done) return;
+          done = true;
+          cleanup();
+          resolve({ ok:false, error:"timeout" });
+        }, timeoutMs);
+
+        function cleanup(){
+          clearTimeout(timer);
+          try { delete window[cbName]; } catch(e){}
+          if (script && script.parentNode) script.parentNode.removeChild(script);
+        }
+
+        window[cbName] = (data) => {
+          if (done) return;
+          done = true;
+          cleanup();
+          resolve(data);
+        };
+
+        const script = document.createElement("script");
+        script.src = url + (url.includes("?") ? "&" : "?") + `_=${Date.now()}`;
+        script.onerror = () => {
+          if (done) return;
+          done = true;
+          cleanup();
+          resolve({ ok:false, error:"script_load_failed" });
+        };
+        document.head.appendChild(script);
+      });
+    }
+
+    async function loadList(){
+      currentListNonce = makeNonce_();
+      const cb = `__im_list_cb_${currentListNonce.replace(/[^a-zA-Z0-9_]/g,"_")}`;
+      const url = `${WEBAPP_URL}?mode=list&callback=${encodeURIComponent(cb)}&nonce=${encodeURIComponent(currentListNonce)}`;
+
+      toast_("목록 요청 전송…", "sub");
+      const data = await jsonpCall_(url, cb, 12000);
+
+      if (data && data.ok) {
+        lastListItems = Array.isArray(data.items) ? data.items : [];
+        renderList(lastListItems);
+        toast_(`목록 로드 완료 (${lastListItems.length}개)`, "ok");
+      } else {
+        toast_("목록 응답 없음.", "bad");
+      }
+    }
+
+    function loadOne(id){
+      const nonce = makeNonce_();
+      const cb = `__im_get_cb_${nonce.replace(/[^a-zA-Z0-9_]/g,"_")}`;
+      const url = `${WEBAPP_URL}?mode=get&id=${encodeURIComponent(id)}&callback=${encodeURIComponent(cb)}&nonce=${encodeURIComponent(nonce)}`;
+      toast_("상세 요청…", "sub");
+
+      return new Promise(async (resolve) => {
+        const data = await jsonpCall_(url, cb, 12000);
+        if (data && data.ok && data.item) resolve(data.item);
+        else {
+          resolve(null);
+          toast_("상세 불러오기 실패", "bad");
+        }
+      });
+    }
 
     // ============================================
-    // 6. 업로드 및 이벤트 연결
+    // ✅ 1. API 통신 함수 (iframe 대체, fetch 사용)
     // ============================================
-    
-    // 파일 변경 시 미리보기
+    async function apiPost(bodyObj) {
+      const url = `${WEBAPP_URL}?_ts=${Date.now()}`;
+      
+      const res = await fetch(url, {
+        method: "POST",
+        body: JSON.stringify(bodyObj) // Apps Script는 text/plain 처럼 받음
+      });
+
+      const text = await res.text();
+      let data = null;
+      try { data = JSON.parse(text); } catch (e) {}
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 100)}`);
+      if (!data) throw new Error(`서버 응답 오류 (JSON 아님): ${text.slice(0, 100)}`);
+      if (!data.ok) throw new Error(data.error || "서버 처리 실패");
+      
+      return data;
+    }
+
+    // ============================================
+    // ✅ 2. 파일 이벤트들
+    // ============================================
     $file.addEventListener("change", async () => {
       revokeAllPreviewUrls();
       $grid.innerHTML = "";
@@ -928,7 +1092,10 @@
       const $previewContainer = document.getElementById("filePreviewContainer");
       const $previewImg = document.getElementById("filePreviewImg");
     
-      if (!f) { if ($previewContainer) $previewContainer.style.display = "none"; return; }
+      if (!f) {
+        if ($previewContainer) $previewContainer.style.display = "none";
+        return;
+      }
     
       try {
         sourceImg = await loadFileAsImage(f);
@@ -946,32 +1113,19 @@
 
     $wmFile.addEventListener("change", async () => {
       const f = $wmFile.files?.[0];
-      try { watermarkImg = f ? await loadFileAsImage(f) : null; } 
-      catch (e) { watermarkImg = null; alert("워터마크 실패"); }
+      try {
+        watermarkImg = f ? await loadFileAsImage(f) : null;
+      } catch (e) {
+        watermarkImg = null;
+        alert("워터마크 로딩 실패");
+      }
     });
 
-// ✅ [수정] 미리보기 생성 버튼 (안전장치 추가됨)
     $btnMake.addEventListener("click", async () => {
-      
-      // 1. [안전장치] 이미지가 메모리에 없는데 파일은 선택되어 있다면? -> 다시 로딩 시도!
-      if (!sourceImg && $file.files && $file.files[0]) {
-        try {
-          setBusy_(true, "이미지 다시 읽는 중...");
-          sourceImg = await loadFileAsImage($file.files[0]);
-        } catch (e) {
-          console.error(e); // 로딩 실패 시엔 어쩔 수 없음
-        } finally {
-          setBusy_(false);
-        }
+      if (!sourceImg) {
+        alert("원본 이미지를 먼저 선택해줘.");
+        return;
       }
-
-      // 2. 그래도 없으면 경고
-      if (!sourceImg) { 
-        alert("원본 이미지를 먼저 선택해줘."); 
-        return; 
-      }
-
-      // 3. 기존 로직 실행
       revokeAllPreviewUrls();
       $grid.innerHTML = "";
       selectedScale = null;
@@ -981,6 +1135,7 @@
 
       try {
         setBusy_(true, "미리보기 생성 중...");
+        // 렌더링에 시간이 걸릴 수 있으므로 잠시 대기
         await new Promise(r => setTimeout(r, 50));
 
         for (const s of SCALES) {
@@ -990,7 +1145,9 @@
         }
         for (const s of SCALES) {
           const v = previews.get(s);
-          $grid.appendChild(makePreviewCard({ scale: s, url: v.url, w: v.w, h: v.h, bytes: v.bytes }));
+          $grid.appendChild(makePreviewCard({
+            scale: s, url: v.url, w: v.w, h: v.h, bytes: v.bytes
+          }));
         }
         selectedScale = 0.5;
         renderScaleChips();
@@ -998,32 +1155,46 @@
         $btnUpload.disabled = false;
       } catch (e) {
         console.error(e);
-        alert("미리보기 실패: " + (e?.message || e));
+        alert("미리보기 생성 실패: " + (e?.message || e));
       } finally {
         setBusy_(false);
       }
     });
 
-    // 업로드 버튼
+    // ============================================
+    // ✅ 3. 업로드 버튼 클릭 (새로운 Fetch 로직 적용)
+    // ============================================
     $btnUpload.addEventListener("click", async () => {
       const baseName = safeTrim($baseName.value);
-      if (!baseName) { window.showAlert_("파일명 입력 필요", "📂"); $btnUpload.disabled = false; return; }
+      if (!baseName) {
+        window.showAlert_("파일명(기본)을\n입력해 주세요.", "📂");
+        $btnUpload.disabled = false;
+        return;
+      }
     
       const $onlyOrigOn = document.getElementById("onlyOrigOn");
       const isOnlyOrig = $onlyOrigOn ? $onlyOrigOn.checked : false;
+    
       let finalBlob = null;
       let outW = 0, outH = 0, outBytes = 0, pct = 0;
     
+      // 전송할 이미지 결정
       if (isOnlyOrig) {
         const origFile = $file.files?.[0];
-        if (!origFile) { window.showAlert_("파일 없음", "⚠️"); return; }
+        if (!origFile) {
+          window.showAlert_("파일이 선택되지 않았습니다.", "⚠️");
+          return;
+        }
         finalBlob = origFile;
         outW = sourceImg?.naturalWidth || 0;
         outH = sourceImg?.naturalHeight || 0;
         outBytes = origFile.size;
         pct = 100;
       } else {
-        if (selectedScale == null) { window.showAlert_("버전 선택 필요", "✨"); return; }
+        if (selectedScale == null) {
+          window.showAlert_("업로드할 품질 버전을\n선택해 주세요.", "✨");
+          return;
+        }
         const v = previews.get(selectedScale);
         if (!v) return;
         finalBlob = v.blob;
@@ -1035,52 +1206,74 @@
     
       try {
         $btnUpload.disabled = true;
-        setBusy_(true, "업로드 중...");
+        setBusy_(true, "이미지 데이터 변환 중...");
     
+        // 1. Base64 변환
         const b64 = await blobToBase64(finalBlob);
+    
+        // 2. 원본 데이터 준비
         const $saveOrigOn = document.getElementById("saveOrigOn");
         const shouldSaveOrig = $saveOrigOn ? $saveOrigOn.checked : false;
         const origFile = $file.files?.[0] || null;
         
-        let orig_base64 = "", orig_mime = "", orig_filename = "";
+        let orig_base64 = "";
+        let orig_mime = "";
+        let orig_filename = "";
+    
         if ((shouldSaveOrig || isOnlyOrig) && origFile) {
           orig_base64 = isOnlyOrig ? b64 : await blobToBase64(origFile);
           orig_mime = origFile.type;
-          orig_filename = origFile.name || "original";
+          orig_filename = origFile.name || "original_image";
         }
         
-        const label = (safeTrim($noteText.value).split("\n")[0] || "").trim() || "Cheese";
+        const origW = sourceImg?.naturalWidth || 0;
+        const origH = sourceImg?.naturalHeight || 0;
+        const label = (safeTrim($noteText.value).split("\n")[0] || "").trim() || "© Cheesehistory.com";
+        const version = versionToday();
+        const blur = Number($blurPx.value) || 0;
+        
+        // 3. Payload 구성
         const payload = {
           mode: "upload",
-          filename: `img_${versionToday()}_${pct}.jpg`,
+          filename: `img_${version}_${pct}.jpg`,
           mime: isOnlyOrig ? orig_mime : "image/jpeg",
           base64: b64, 
-          orig_base64, orig_mime, orig_filename,
+          
+          orig_base64: orig_base64,
+          orig_mime: orig_mime,
+          orig_filename: orig_filename,
           save_orig: shouldSaveOrig || isOnlyOrig,
           only_orig: isOnlyOrig, 
+            
           meta: {
-            base_name: baseName, label, version: versionToday(),
-            scale: isOnlyOrig ? 1.0 : selectedScale, scale_pct: pct,
-            blur_px: isOnlyOrig ? 0 : (Number($blurPx.value)||0),
-            wm_alpha: isOnlyOrig ? 0 : (Number($wmAlpha.value)||0),
-            orig_w: (sourceImg?.naturalWidth||0), orig_h: (sourceImg?.naturalHeight||0),
-            out_w: outW, out_h: outH, bytes: outBytes,
+            base_name: baseName,
+            label,
+            version,
+            scale: isOnlyOrig ? 1.0 : selectedScale,
+            scale_pct: pct,
+            blur_px: isOnlyOrig ? 0 : blur,
+            wm_alpha: isOnlyOrig ? 0 : (Number($wmAlpha.value) || 0),
+            orig_w: origW,
+            orig_h: origH,
+            out_w: outW,
+            out_h: outH,
+            bytes: outBytes,
             save_orig: shouldSaveOrig || isOnlyOrig
           }
         };
     
-        setBusy_(true, "서버 저장 중...");
+        setBusy_(true, "서버로 전송 및 저장 중... (잠시만 기다려주세요)");
+        
+        // 4. 전송 (await로 대기, 타임아웃 없음)
         const res = await apiPost(payload);
         
-        lastSnippetText = res.item.snippet || "";
-        $btnCopy.disabled = !lastSnippetText;
-        $result.style.display = "block";
-        $result.textContent = `완료! ID:${res.item.id}`;
-        
+        // 5. 성공 처리
+        showUploadResult_(res);
         window.showAlert_("업로드 완료!", "✅");
+
       } catch (e) {
-        console.error(e);
-        window.showAlert_("실패:\n" + (e.message || e), "❌");
+        console.error("Upload Error:", e);
+        window.showAlert_("업로드 실패:\n" + (e.message || e), "❌");
       } finally {
         setBusy_(false);
         $btnUpload.disabled = false;
@@ -1089,103 +1282,189 @@
 
     $btnCopy.addEventListener("click", async () => {
       if (!lastSnippetText) return;
-      await copyToClipboard(lastSnippetText);
-      alert("복사 완료");
+      const ok = await copyToClipboard(lastSnippetText);
+      alert(ok ? "스니펫 복사 완료!" : "복사 실패");
     });
-
-// ============================================
-    // 7. 삭제 기능 (window에 등록하여 접근 보장)
-    // ============================================
-    window.openConfirmDelete = function(id) {
-      targetDeleteId = id;
-      document.getElementById("confirmOverlay").style.display = "flex";
-    };
-
-    window.closeConfirm_ = function() {
-      targetDeleteId = null;
-      document.getElementById("confirmOverlay").style.display = "none";
-    };
-
-    const btnRealDelete = document.getElementById("btnRealDelete");
-    if (btnRealDelete) {
-      btnRealDelete.onclick = async () => {
-        if (!targetDeleteId) return;
-        const id = targetDeleteId;
-        window.closeConfirm_(); // 모달 닫기
-
-        try {
-          setBusy_(true, "이미지 삭제 중..."); 
-          const res = await apiPost({
-            mode: "delete",
-            id: id
-          });
-
-          if (res.ok) {
-            window.showAlert_("삭제되었습니다.", "🗑️");
-            // 목록 새로고침
-            window.loadList();
-          } else {
-            throw new Error(res.error);
-          }
-        } catch (e) {
-          console.error(e);
-          window.showAlert_("삭제 실패:\n" + (e.message || e), "❌");
-        } finally {
-          setBusy_(false); // 로딩 끄기
-        }
-      };
-    }
-
-    // 초기화 함수
-    window.resetAllSettings_ = function() {
-      if (!confirm("초기화 하시겠습니까?")) return;
-      document.getElementById("baseName").value = "";
-      document.getElementById("imgFile").value = "";
-      sourceImg = null; watermarkImg = null; selectedScale = null;
-      revokeAllPreviewUrls();
-      $grid.innerHTML = ""; $scalePick.innerHTML = "";
-      document.getElementById("filePreviewContainer").style.display = "none";
-      resetUploadResult();
-      $btnUpload.disabled = true;
-      window.moveTab(1);
-    };
-
-    // 탭 이동 함수
-    window.moveTab = function(tabNum) {
-      document.querySelectorAll('.im-tab').forEach(b => b.classList.toggle('on', b.dataset.tab == tabNum));
-      document.querySelectorAll('.im-panel').forEach(p => p.classList.toggle('on', p.id === `panel-${tabNum}`));
-      if(tabNum==4) $btnReloadList.click();
-    };
-
-    // 기타 UI 이벤트
-    document.querySelectorAll('.im-tab').forEach(btn => {
-      btn.addEventListener('click', function() { window.moveTab(this.dataset.tab); });
-    });
-    $jpegQ.addEventListener("input", () => $jpegQVal.textContent = Number($jpegQ.value).toFixed(2));
-    $blurPx.addEventListener("input", () => $blurPxVal.textContent = Number($blurPx.value).toFixed(1));
-    $wmAlpha.addEventListener("input", () => $wmAlphaVal.textContent = Number($wmAlpha.value).toFixed(2));
-    $noteFont.addEventListener("input", () => $noteFontVal.textContent = $noteFont.value + "px");
 
     window.addEventListener("beforeunload", revokeAllPreviewUrls);
-
-    // ✅ 버전 정보 표시 (이 부분이 포함되었습니다!)
+    
+    // 버전 표시
     (function showVersion(){
       const el = document.getElementById("sysVersion");
       if (!el) return;
-      
       const d = new Date(document.lastModified);
-      if (isNaN(d.getTime())) { 
-        el.textContent = "V. UNKNOWN"; 
-        return; 
-      }
-      
+      if (isNaN(d.getTime())) { el.textContent = "V. UNKNOWN"; return; }
       const z = (n) => (n < 10 ? "0" + n : n);
       const vStr = d.getFullYear() + z(d.getMonth() + 1) + z(d.getDate()) + "_" + z(d.getHours()) + z(d.getMinutes());
-      
       el.textContent = "V." + vStr;
     })();
 
-  })(); // ✅ 모든 코드의 끝
+  })(); 
+
+  // ====== 전역 함수들 ======
+  window.showAlert_ = function(msg, icon = "⚠️") {
+    const overlay = document.getElementById("modalOverlay");
+    document.getElementById("modalMsg").textContent = msg;
+    document.getElementById("modalIcon").textContent = icon;
+    overlay.style.display = "flex";
+    document.body.style.overflow = "hidden";
+  };
+  
+  window.closeModal_ = function() {
+    const overlay = document.getElementById("modalOverlay");
+    overlay.style.display = "none";
+    document.body.style.overflow = "";
+  };
+  
+  window.moveTab = function(tabNum) {
+    const fileInput = document.getElementById("imgFile");
+    const isOnlyOrig = document.getElementById("onlyOrigOn")?.checked || false;
+
+    if (tabNum == 2) {
+      if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+        window.showAlert_("가공할 이미지를\n먼저 선택해 주세요."); 
+        return;
+      }
+      if (isOnlyOrig) tabNum = 3;
+    }
+
+    document.querySelectorAll('.im-tab').forEach(btn => btn.classList.remove('on'));
+    document.querySelectorAll('.im-panel').forEach(panel => panel.classList.remove('on'));
+
+    const targetTab = document.querySelector(`.im-tab[data-tab="${tabNum}"]`);
+    const targetPanel = document.getElementById(`panel-${tabNum}`);
+    
+    if (targetTab) targetTab.classList.add('on');
+    if (targetPanel) targetPanel.classList.add('on');
+
+    if (tabNum == 3) {
+      const onlyArea = document.getElementById("onlyOrigConfirmArea");
+      const btnMake = document.getElementById("btnMakePreviews");
+      const uploadBtn = document.getElementById("btnUploadSelected");
+      const chipRow = document.getElementById("scalePick")?.closest('.im-row');
+      const helpText = document.querySelector("#panel-3 .im-help");
+
+      if (isOnlyOrig) {
+        if (onlyArea) onlyArea.style.display = "block";
+        if (btnMake) btnMake.style.display = "none";
+        if (chipRow) chipRow.style.display = "none";
+        if (helpText) helpText.style.display = "none";
+        
+        if (uploadBtn) {
+            uploadBtn.style.display = "inline-flex";
+            uploadBtn.disabled = false;
+            uploadBtn.style.opacity = "1";
+        }
+        document.getElementById("origFileNameDisplay").textContent = "파일명: " + (fileInput.files[0]?.name || "");
+        window.selectedScale = 1.0; 
+      } else {
+        if (onlyArea) onlyArea.style.display = "none";
+        if (btnMake) btnMake.style.display = "inline-flex";
+        if (uploadBtn) uploadBtn.style.display = "inline-flex";
+        if (chipRow) chipRow.style.display = "flex";
+        if (helpText) helpText.style.display = "block";
+      }
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    if (tabNum == 4) {
+      const reloadBtn = document.getElementById("btnReloadList");
+      if (reloadBtn) reloadBtn.click();
+    }
+  };
+
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.im-tab').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const num = this.getAttribute('data-tab');
+        if(num) window.moveTab(num);
+      });
+    });
+  });
+
+  window.resetAllSettings_ = function() {
+    if (!confirm("모든 설정과 선택한 이미지를 초기화하시겠습니까?")) return;
+  
+    document.getElementById("baseName").value = "";
+    document.getElementById("imgFile").value = "";
+    document.getElementById("saveOrigOn").checked = true;
+    document.getElementById("onlyOrigOn").checked = false;
+  
+    document.getElementById("wmOn").checked = true;
+    document.getElementById("jpegQ").value = 0.72;
+    document.getElementById("jpegQVal").textContent = "0.72";
+    document.getElementById("blurPx").value = 0.5;
+    document.getElementById("blurPxVal").textContent = "0.5";
+    document.getElementById("wmAlpha").value = 0.25;
+    document.getElementById("wmAlphaVal").textContent = "0.25";
+    document.getElementById("noteOn").checked = true;
+  
+    sourceImg = null;
+    watermarkImg = null;
+    selectedScale = null;
+    
+    if (typeof revokeAllPreviewUrls === "function") revokeAllPreviewUrls();
+    document.getElementById("previewGrid").innerHTML = "";
+    document.getElementById("scalePick").innerHTML = "";
+    
+    const $previewContainer = document.getElementById("filePreviewContainer");
+    if ($previewContainer) $previewContainer.style.display = "none";
+  
+    document.getElementById("uploadResult").style.display = "none";
+    document.getElementById("btnUploadSelected").disabled = true;
+    document.getElementById("btnCopySnippet").disabled = true;
+  
+    moveTab(1);
+
+    // ====== ✅ [추가] 삭제 관련 로직 ======
+    let targetDeleteId = null;
+
+    // 1. 삭제 모달 열기
+    function openConfirmDelete(id) {
+      targetDeleteId = id;
+      document.getElementById("confirmOverlay").style.display = "flex";
+    }
+
+    // 2. 삭제 모달 닫기
+    window.closeConfirm_ = function() {
+      targetDeleteId = null;
+      document.getElementById("confirmOverlay").style.display = "none";
+    }
+
+    // 3. '네, 삭제합니다' 버튼 클릭 이벤트
+    document.getElementById("btnRealDelete").addEventListener("click", async () => {
+      if (!targetDeleteId) return;
+      
+      const id = targetDeleteId;
+      closeConfirm_(); // 모달 먼저 닫기
+
+      try {
+        setBusy_(true, "이미지 삭제 중..."); // 로딩 켜기
+        
+        // API 호출 (mode: "delete")
+        const res = await apiPost({
+          mode: "delete",
+          id: id
+        });
+
+        if (res.ok) {
+          window.showAlert_("삭제되었습니다.", "🗑️");
+          // 목록 새로고침
+          loadList();
+        } else {
+          throw new Error(res.error);
+        }
+
+      } catch (e) {
+        console.error(e);
+        window.showAlert_("삭제 실패:\n" + (e.message || e), "❌");
+      } finally {
+        setBusy_(false); // 로딩 끄기
+      }
+    });
+    
+    // toast_는 이제 내부 함수이므로 접근 불가할 수 있음, 필요하면 window.toast_로 노출하거나 생략
+  };
 </script>
 
   <div id="globalMask" class="im-global-mask">
