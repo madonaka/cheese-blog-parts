@@ -827,13 +827,13 @@
       renderList(lastListItems);
     };
 
-    // ====== ✅ [수정] 목록 렌더링 함수 (디자인 개선됨) ======
+// ====== ✅ [수정] 목록 렌더링 함수 (백업된 원본도 표시하도록 개선) ======
     function renderList(items){
       const q = String($listFilter.value || "").trim().toLowerCase();
       
-      // 1. 검색어 & 탭 필터링 동시 적용
+      // 1. 검색어 & 탭 필터링
       const filtered = (items || []).filter(it => {
-        // 검색어 체크
+        // A. 검색어 체크
         const searchMatch = !q || 
           String(it.id || "").toLowerCase().includes(q) || 
           String(it.base_name || "").toLowerCase().includes(q) || 
@@ -841,75 +841,115 @@
         
         if (!searchMatch) return false;
 
-        // 탭(유형) 체크
-        const isOrig = (it.scale_pct === "ORIG"); // API에서 ORIG로 내려옴
-        if (currentFilterType === 'orig') return isOrig;
-        if (currentFilterType === 'resized') return !isOrig;
-        return true; // all
+        // B. 탭(유형) 체크
+        const isPureOrig = (it.scale_pct === "ORIG"); // '원본만 저장'한 파일
+        const hasBackup = !!it.orig_drive_view_url;   // '리사이징+원본 백업'한 파일
+        
+        if (currentFilterType === 'orig') {
+          // [수정] 원본 탭: 순수 원본이거나, 원본 백업이 있는 경우 모두 표시
+          return isPureOrig || hasBackup;
+        }
+        if (currentFilterType === 'resized') {
+          // 가공 탭: 순수 원본만 아니면 표시 (리사이징된 파일들)
+          return !isPureOrig;
+        }
+        return true; // 전체 탭
       });
 
       $listCount.textContent = `${filtered.length}개`;
       $listArea.innerHTML = "";
 
       if (filtered.length === 0) {
-        $listArea.innerHTML = `<div style="text-align:center; padding:40px; color:#adb5bd;">조건에 맞는 이미지가 없습니다.</div>`;
+        $listArea.innerHTML = `<div style="text-align:center; padding:60px 0; color:#adb5bd; font-size:14px;">조건에 맞는 이미지가 없습니다.</div>`;
         return;
       }
 
-      // 2. 카드 생성
+      // 2. 카드 아이템 생성
       for (const it of filtered) {
-        const isOrig = (it.scale_pct === "ORIG");
+        // 현재 '원본 탭'을 보고 있거나, 이 파일 자체가 순수 원본인 경우 -> '원본 모드'로 표시
+        const isPureOrig = (it.scale_pct === "ORIG");
+        const showAsOrig = (currentFilterType === 'orig') || isPureOrig;
+
         const created = it.created_at ? String(it.created_at).slice(0,10) : "";
-        const title = it.base_name || it.drive_name || it.id || "제목 없음";
-        const driveLink = it.drive_view_url || "#";
-        const thumbSrc = it.img_src || ""; // 리사이징된 이미지는 img_src가 썸네일 역할
         
-        // 원본은 썸네일이 없을 수 있으므로 아이콘으로 대체하거나 원본 링크 사용
-        const displayThumb = (isOrig && !thumbSrc) ? "https://ssl.gstatic.com/images/branding/product/1x/drive_2020q4_48dp.png" : thumbSrc;
+        // 제목 설정 (원본 모드면 원본 파일명 우선 표시)
+        const title = (showAsOrig && it.orig_drive_name) 
+          ? it.orig_drive_name 
+          : (it.base_name || it.drive_name || it.id || "제목 없음");
+        
+        // 링크 설정 (원본 모드면 원본 드라이브 링크 연결)
+        const driveLink = showAsOrig 
+          ? (it.orig_drive_view_url || it.drive_view_url || "#")
+          : (it.drive_view_url || "#");
+        
+        // 썸네일 설정
+        const thumbSrc = it.img_src || ""; 
+        // 원본 모드일 때는 썸네일 대신 드라이브 아이콘을 띄울지 결정
+        // (리사이징된 썸네일이 있으면 보여주되, 배지로 원본임을 표시)
+        const displayThumb = thumbSrc 
+          ? thumbSrc 
+          : "https://ssl.gstatic.com/images/branding/product/1x/drive_2020q4_48dp.png";
 
         const card = document.createElement("div");
         card.className = "im-clean-item";
 
+        // 배지(Badge) 결정
+        let badgeHtml = "";
+        if (showAsOrig) {
+           // 원본으로 표시 중일 때
+           if (isPureOrig) badgeHtml = `<span class="im-badge orig">ORIGINAL (Main)</span>`;
+           else badgeHtml = `<span class="im-badge orig" style="background:#fff7ed; color:#c2410c; border-color:#ffedd5;">ORIGINAL (Backup)</span>`;
+        } else {
+           // 리사이징으로 표시 중일 때
+           badgeHtml = `<span class="im-badge resized">${it.scale_pct}%</span>`;
+        }
+
+        // HTML 조립
         card.innerHTML = `
           <img class="im-clean-thumb" src="${displayThumb}" alt="" onerror="this.src='https://ssl.gstatic.com/images/branding/product/1x/drive_2020q4_48dp.png'">
           
           <div class="im-clean-info">
             <div class="im-clean-title" title="${escapeHtml(title)}">${escapeHtml(title)}</div>
             <div class="im-clean-meta">
-              ${isOrig 
-                ? `<span class="im-badge orig">ORIGINAL</span>` 
-                : `<span class="im-badge resized">${it.scale_pct}%</span>`}
-              <span>${it.id}</span>
+              ${badgeHtml}
+              <span>${escapeHtml(it.id)}</span>
               <span>· ${created}</span>
             </div>
           </div>
 
           <div class="im-clean-actions">
             <a href="${driveLink}" target="_blank" class="im-btn-icon" title="Drive에서 열기">📂</a>
-            <button type="button" class="im-btn-icon btnCopy" title="HTML 복사">📋</button>
-            <button type="button" class="im-btn-icon btnGet" title="상세 정보">ℹ️</button>
+            <button type="button" class="im-btn-icon btnCopy" title="HTML 스니펫 복사">📋</button>
+            <button type="button" class="im-btn-icon btnGet" title="상세 정보 확인">ℹ️</button>
           </div>
         `;
 
-        // 이벤트 연결 (기존 로직 유지)
+        // [이벤트] 스니펫 복사 (원본 모드여도 스니펫은 리사이징된 버전 태그를 복사해줌 - 편의성)
         card.querySelector(".btnCopy").addEventListener("click", async () => {
           const got = await loadOne(it.id);
           const snip = got?.snippet || "";
-          if (!snip) { alert("스니펫을 가져오지 못했습니다."); return; }
+          if (!snip) { 
+             alert("이 파일은 HTML 스니펫이 없습니다.\n(이미지 태그 생성 불가)"); 
+             return; 
+          }
           await copyToClipboard(snip);
-          alert("📋 스니펫 복사 완료!");
+          alert("📋 HTML 스니펫이 복사되었습니다!");
         });
 
+        // [이벤트] 상세 정보
         card.querySelector(".btnGet").addEventListener("click", async () => {
           const got = await loadOne(it.id);
           if (!got) return;
+          
+          const typeInfo = isPureOrig ? "순수 원본" : (showAsOrig ? "원본 (백업본)" : "리사이징 가공본");
+          
           alert(
-            `[상세 정보]\n` +
+            `[이미지 상세 정보]\n\n` +
             `ID: ${got.id}\n` +
-            `파일명: ${got.drive_name}\n` +
-            `타입: ${isOrig ? "원본 파일" : "리사이징 가공본"}\n` +
-            `크기: ${got.out_w} x ${got.out_h}\n` +
-            `Drive: ${got.drive_view_url}`
+            `모드: ${typeInfo}\n` +
+            `파일명: ${title}\n` +
+            `등록일: ${got.created_at}\n\n` +
+            `Drive 링크: ${driveLink}`
           );
         });
 
