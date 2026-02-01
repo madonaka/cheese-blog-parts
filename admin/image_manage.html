@@ -935,49 +935,43 @@
 
     // ✅ Apps Script (iframe form 업로드) 응답 수신부 최종 수정
     window.addEventListener("message", (ev) => {
+      // 1. 데이터 파싱 및 유효성 검사
       let data = ev.data;
       if (typeof data === "string") {
         try { data = JSON.parse(data); } catch (e) { return; }
       }
-      
-      // 데이터가 유효하지 않거나 ok 필드가 없으면 무시
       if (!data || typeof data !== "object" || !("ok" in data)) return;
     
-      // ⚠️ Nonce 체크: 서버에서 nonce를 안 보냈거나 일치하지 않아도 
-      // 업로드 시도 중이었다면(currentUploadNonce 존재) 실행되도록 보완
-      const nonce = data.nonce || "";
-      
-      if (currentUploadNonce) {
-        // Nonce가 있으면 검증하고, 없으면 그냥 진행 (서버 응답 누락 대비)
-        if (nonce && nonce !== currentUploadNonce) return;
+      console.log("서버 응답 수신:", data); // 확인용 콘솔 로그
     
-        stopUploadWatchdog_(); // 타이머 중지
-    
-        if (data.ok) {
-          // 1. 결과 텍스트 영역 갱신
-          showUploadResult_(data); 
-          toast_(`업로드 완료!`, "ok");
-          
-          // 2. ✅ 모달 알림창 표시
-          window.showAlert_(
-            `업로드가 완료되었습니다!\n\n파일명: ${data.filename || '확인불가'}\nDB ID: ${data.id || '-'}`, 
-            "✅"
-          );
-        } else {
-          toast_("업로드 실패", "bad");
-          window.showAlert_(
-            "업로드 실패:\n" + (data.error || "알 수 없는 서버 오류"), 
-            "❌"
-          );
-        }
-    
-        // 상태 초기화
-        $btnUpload.disabled = false;
-        currentUploadNonce = ""; 
-        return;
+      // 2. 타이머(Watchdog) 즉시 중지
+      // "응답을 받지 못했어요" 메시지가 뜨지 않게 하는 핵심입니다.
+      if (typeof stopUploadWatchdog_ === "function") {
+        stopUploadWatchdog_();
       }
+    
+      // 3. 결과 처리
+      if (data.ok) {
+        // 성공 시 모달 및 알림
+        if (typeof showUploadResult_ === "function") showUploadResult_(data);
+        if (typeof toast_ === "function") toast_("업로드 완료!", "ok");
+    
+        window.showAlert_(
+          `업로드가 완료되었습니다!\n\nID: ${data.id || '-'}\n파일명: ${data.drive_name || '확인완료'}`,
+          "✅"
+        );
+      } else {
+        // 실패 시 모달 및 알림
+        if (typeof toast_ === "function") toast_("업로드 실패", "bad");
+        window.showAlert_("업로드 실패:\n" + (data.error || "알 수 없는 오류"), "❌");
+      }
+    
+      // 4. UI 상태 복구
+      const btn = document.getElementById("btnUploadSelected");
+      if (btn) btn.disabled = false;
+      currentUploadNonce = ""; 
     });
-
+    
     // ====== 이벤트 ======
     $file.addEventListener("change", async () => {
       // 기존 초기화 로직 유지
