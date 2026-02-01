@@ -143,6 +143,23 @@
       from { opacity: 0; transform: translateY(20px); }
       to { opacity: 1; transform: translateY(0); }
     }
+    /* [8. 로딩 마스크 & 스피너 (추가됨)] */
+    .im-global-mask { 
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+      background: rgba(255, 255, 255, 0.8); z-index: 99999; 
+      display: none; align-items: center; justify-content: center; flex-direction: column; 
+    }
+    .im-global-spinner { 
+      width: 50px; height: 50px; 
+      border: 5px solid #e2e8f0; border-top: 5px solid #3182f6; 
+      border-radius: 50%; animation: imGlobalSpin 1s linear infinite; margin-bottom: 10px; 
+    }
+    .im-global-text { 
+      font-weight: 800; color: #3182f6; font-size: 16px; 
+      animation: imPulse 1.5s ease-in-out infinite; 
+    }
+    @keyframes imGlobalSpin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    @keyframes imPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
   </style>
 </head>
 
@@ -739,7 +756,22 @@
     }
     let toastTimer = null;
     let watchdogTimer = null;
-
+    
+    // ✅ 로딩 화면 제어 함수
+    function setBusy_(isBusy, msg = "처리 중입니다...") {
+      const mask = document.getElementById("globalMask");
+      const txt = document.getElementById("globalMaskText");
+      
+      if (!mask) return;
+      
+      if (isBusy) {
+        if (txt) txt.textContent = msg;
+        mask.style.display = "flex"; // 화면 가림
+      } else {
+        mask.style.display = "none"; // 가림 해제
+      }
+    }
+    
     function toast_(msg, type = "sub") {
       if (!$toast) return;
 
@@ -1050,7 +1082,129 @@
       }
     });
 
-   // ====== 업로드 (Drive + DB) ======
+// ====== ✅ [추가] 로딩 화면 제어 함수 ======
+    function setBusy_(isBusy, msg = "처리 중입니다...") {
+      const mask = document.getElementById("globalMask");
+      const txt = document.getElementById("globalMaskText");
+      
+      if (!mask) return;
+      
+      if (isBusy) {
+        if (txt) txt.textContent = msg;
+        mask.style.display = "flex";
+      } else {
+        mask.style.display = "none";
+      }
+    }
+
+    // ====== ✅ [수정] 업로드 와치독 & 응답 리스너 (로딩 해제 로직 포함) ======
+    // (기존 상단에 있던 리스너가 있다면 지우고 이 부분을 사용하세요)
+    
+    function stopUploadWatchdog_() {
+      if (watchdogTimer) {
+        clearTimeout(watchdogTimer);
+        watchdogTimer = null;
+      }
+    }
+
+    function startUploadWatchdog_() {
+      stopUploadWatchdog_();
+      watchdogTimer = setTimeout(() => {
+        if (currentUploadNonce) {
+          setBusy_(false); // 로딩 끄기
+          window.showAlert_("응답 시간이 초과되었습니다.\n저장은 되었을 수 있으니 Drive를 확인해 주세요.", "⏳");
+          $btnUpload.disabled = false;
+        }
+      }, 15000); // 15초 제한
+    }
+
+    window.addEventListener("message", (ev) => {
+      let data = ev.data;
+      try {
+        if (typeof data === "string") data = JSON.parse(data);
+      } catch (e) { return; }
+
+      // 1. nonce가 없거나 내가 보낸 것과 다르면 무시
+      if (!data.nonce || data.nonce !== currentUploadNonce) return;
+
+      // 2. 타이머 정지
+      stopUploadWatchdog_(); 
+
+      // 3. ✅ 로딩 화면 끄기
+      setBusy_(false);
+
+      // 4. 결과 알림
+      if (data.ok) {
+        window.showAlert_("업로드 완료!", "✅");
+      } else {
+        window.showAlert_("실패: " + data.error, "❌");
+      }
+      
+      $btnUpload.disabled = false;
+      currentUploadNonce = "";
+    });
+// ====== ✅ [추가] 로딩 화면 제어 함수 ======
+    function setBusy_(isBusy, msg = "처리 중입니다...") {
+      const mask = document.getElementById("globalMask");
+      const txt = document.getElementById("globalMaskText");
+      
+      if (!mask) return;
+      
+      if (isBusy) {
+        if (txt) txt.textContent = msg;
+        mask.style.display = "flex";
+      } else {
+        mask.style.display = "none";
+      }
+    }
+
+    // ====== ✅ [수정] 업로드 와치독 & 응답 리스너 (로딩 해제 로직 포함) ======
+    
+    function stopUploadWatchdog_() {
+      if (watchdogTimer) {
+        clearTimeout(watchdogTimer);
+        watchdogTimer = null;
+      }
+    }
+
+    function startUploadWatchdog_() {
+      stopUploadWatchdog_();
+      watchdogTimer = setTimeout(() => {
+        if (currentUploadNonce) {
+          setBusy_(false); // 로딩 끄기
+          window.showAlert_("응답 시간이 초과되었습니다.\n저장은 되었을 수 있으니 Drive를 확인해 주세요.", "⏳");
+          $btnUpload.disabled = false;
+        }
+      }, 15000); // 15초 제한
+    }
+
+    window.addEventListener("message", (ev) => {
+      let data = ev.data;
+      try {
+        if (typeof data === "string") data = JSON.parse(data);
+      } catch (e) { return; }
+
+      // 1. nonce가 없거나 내가 보낸 것과 다르면 무시
+      if (!data.nonce || data.nonce !== currentUploadNonce) return;
+
+      // 2. 타이머 정지
+      stopUploadWatchdog_(); 
+
+      // 3. ✅ 로딩 화면 끄기
+      setBusy_(false);
+
+      // 4. 결과 알림
+      if (data.ok) {
+        window.showAlert_("업로드 완료!", "✅");
+      } else {
+        window.showAlert_("실패: " + data.error, "❌");
+      }
+      
+      $btnUpload.disabled = false;
+      currentUploadNonce = "";
+    });
+
+    // ====== 업로드 (Drive + DB) ======
     $btnUpload.addEventListener("click", async () => {
       const baseName = safeTrim($baseName.value);
       if (!baseName) {
@@ -1096,7 +1250,7 @@
     
       try {
         $btnUpload.disabled = true;
-        toast_("업로드 데이터 준비 중...", "sub");
+        setBusy_(true, "업로드 데이터 준비 중..."); // ✅ [수정] 로딩 마스크 켜기
     
         // 최종 결정된 Blob을 Base64로 변환
         const b64 = await blobToBase64(finalBlob);
@@ -1162,7 +1316,7 @@
         $form.action = WEBAPP_URL;
         $formPayload.value = JSON.stringify(payload);
         
-        toast_("업로드 요청 전송 중...", "sub");
+        setBusy_(true, "서버로 이미지 전송 및 저장 중..."); // ✅ [수정] 상태 메시지 변경
         $form.submit();
         
         startUploadWatchdog_();
@@ -1173,6 +1327,8 @@
           currentUploadNonce = "";
           $btnUpload.disabled = false;
       
+          setBusy_(false); // ✅ [추가] 에러 시 로딩 끄기
+          
           // ✅ 클라이언트 측 오류 발생 시 모달 호출
           window.showAlert_("업로드 준비 중 오류가 발생했습니다:\n" + (e?.message || e), "❌");
         }
@@ -1341,8 +1497,14 @@
     // 1단계 탭으로 이동
     moveTab(1);
     
-    toast_("모든 설정이 초기화되었습니다.", "ok");
+    // toast_는 이제 사용하지 않으므로 showAlert_로 대체하거나 그냥 둠
+    // window.showAlert_("모든 설정이 초기화되었습니다.", "✨"); 
   };
   </script>
+
+  <div id="globalMask" class="im-global-mask">
+  <div class="im-global-spinner"></div>
+  <div id="globalMaskText" class="im-global-text">처리 중입니다...</div>
+</div>
 </body>
 </html>
