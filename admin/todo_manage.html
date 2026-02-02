@@ -370,7 +370,7 @@
     document.getElementById('view-log-container').style.display = (mode==='log')?'block':'none';
   }
 
-// 🚀 [수정] 계층형 뷰 렌더링 (아이디어 슬라이더 추가됨)
+// 🚀 [수정] 계층형 뷰 렌더링 (접기/펼치기 버그 수정됨)
   function renderGoalTree() {
     const root = document.getElementById('goal-tree-root'); root.innerHTML = "";
     const bigGoals = g_goals.filter(g => g['유형'] === '큰 목표');
@@ -380,11 +380,11 @@
       const themeColor = bg['색상'] || "#4f46e5";
       const card = document.createElement('div'); card.className = "goal-card";
       
+      // --- 큰 목표 헤더 ---
       const header = document.createElement('div'); 
       header.className = "goal-card-header"; 
       header.style.background = `linear-gradient(135deg, ${themeColor} 0%, ${adjustColor(themeColor,-20)} 100%)`;
       
-      // 토글 기능
       header.onclick = function() {
         const body = card.querySelector('.mid-goal-group');
         const icon = header.querySelector('.toggle-icon');
@@ -407,9 +407,10 @@
       `;
       card.appendChild(header);
 
+      // --- 중간 목표 그룹 (큰 목표의 바디) ---
       const body = document.createElement('div'); 
       body.className = "mid-goal-group";
-      body.style.display = "none"; // 초기 접힘 상태
+      body.style.display = "none"; // 초기 상태: 접힘
 
       const midGoals = g_goals.filter(m => m['상위ID'] === bg.ID);
       midGoals.forEach(mg => {
@@ -420,17 +421,28 @@
         const midDesc = mg['상세내용'] ? `<span style="font-weight:400; font-size:0.85rem; color:#64748b; margin-left:8px;">${mg['상세내용']}</span>` : '';
         
         // 1. 중간 목표 헤더
-        let html = `<div class="mid-goal-header" onclick="toggleDisplay(this)"><span>🚩 ${mg['제목']} ${midDesc}</span><div onclick="event.stopPropagation()" class="row-actions"><button class="row-btn" onclick="openEditModal('goal', '${mg.ID}')">✏️</button><button class="row-btn delete" onclick="deleteItem('${mg.ID}')">🗑️</button></div></div>`;
-        
-        // 🚀 [NEW] 2. 연동된 아이디어 슬라이더 생성
+        const midHeader = document.createElement('div');
+        midHeader.className = "mid-goal-header";
+        // ✅ [Fix] 헤더 클릭 시 바로 다음 형제(contentWrapper)를 토글
+        midHeader.onclick = function() { toggleDisplay(this); };
+        midHeader.innerHTML = `<span>🚩 ${mg['제목']} ${midDesc}</span><div onclick="event.stopPropagation()" class="row-actions"><button class="row-btn" onclick="openEditModal('goal', '${mg.ID}')">✏️</button><button class="row-btn delete" onclick="deleteItem('${mg.ID}')">🗑️</button></div>`;
+        midItem.appendChild(midHeader);
+
+        // 2. ✅ [Fix] 콘텐츠 래퍼 (슬라이더 + 할일 목록을 감싸는 div)
+        const contentWrapper = document.createElement('div');
+        contentWrapper.style.display = "block"; // 기본 펼침 상태
+
+        // 3. 아이디어 슬라이더 (래퍼 안에 넣음)
         const relatedIdeas = g_tasks.filter(t => t['유형'] === '아이디어' && String(t['연결_중간목표ID']||"").includes(mg.ID));
-        
         if (relatedIdeas.length > 0) {
-          html += `<div class="mid-idea-slider">`;
+          const slider = document.createElement('div');
+          slider.className = "mid-idea-slider"; // Flex 속성 유지됨
+          
+          let sliderHtml = "";
           relatedIdeas.forEach(idea => {
              const iDate = idea['기한'] ? idea['기한'].split('T')[0] : '';
-             const iDesc = (idea['상세내용']||"").replace(/<[^>]*>?/gm, ''); // 태그 제거
-             html += `
+             const iDesc = (idea['상세내용']||"").replace(/<[^>]*>?/gm, ''); 
+             sliderHtml += `
                <div class="mid-idea-card-mini" onclick="openEditModal('idea', '${idea.ID}')">
                  <div class="mic-date">💡 ${iDate}</div>
                  <div class="mic-title">${idea['제목']}</div>
@@ -438,19 +450,22 @@
                </div>
              `;
           });
-          html += `</div>`;
+          slider.innerHTML = sliderHtml;
+          contentWrapper.appendChild(slider);
         }
 
-        midItem.innerHTML = html;
-
-        // 3. 할 일 목록
-        const taskList = document.createElement('div'); taskList.className = "task-list";
-        const tasks = g_tasks.filter(t => String(t['연결_중간목표ID']||"").includes(mg.ID) && t['유형'] !== '아이디어'); // 아이디어 제외하고 할일/버그만
+        // 4. 할 일 목록 (래퍼 안에 넣음)
+        const taskList = document.createElement('div'); 
+        taskList.className = "task-list";
+        const tasks = g_tasks.filter(t => String(t['연결_중간목표ID']||"").includes(mg.ID) && t['유형'] !== '아이디어');
         
         if(tasks.length > 0) tasks.forEach(t => taskList.appendChild(createTaskRow(t)));
         else if(relatedIdeas.length === 0) taskList.innerHTML = `<div style="padding:15px;color:#cbd5e1;font-size:0.85rem;">할 일 없음</div>`;
         
-        midItem.appendChild(taskList); 
+        contentWrapper.appendChild(taskList);
+        
+        // 최종 조립
+        midItem.appendChild(contentWrapper);
         body.appendChild(midItem);
       });
       card.appendChild(body); root.appendChild(card);
