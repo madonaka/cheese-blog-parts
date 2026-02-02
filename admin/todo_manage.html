@@ -489,26 +489,55 @@
     $('#input-detail').summernote('code', memoContent);
   }
 
+// 🚀 [수정] 로그 렌더링 (버그 배지 빨간색 표시)
   function renderLogs() {
-    const root = document.getElementById('log-timeline-root'); root.innerHTML = "";
-    if(g_logs.length===0) { root.innerHTML = `<div style="color:#cbd5e1; font-size:0.9rem;">작업 로그가 없습니다.</div>`; return; }
+    const root = document.getElementById('log-timeline-root'); 
+    root.innerHTML = "";
+    
+    if(g_logs.length===0) { 
+      root.innerHTML = `<div style="color:#cbd5e1; font-size:0.9rem;">작업 로그가 없습니다.</div>`; 
+      return; 
+    }
+    
     g_logs.slice(0, 30).forEach(log => {
-      const item = document.createElement('div'); item.className = "log-item";
+      const item = document.createElement('div'); 
+      item.className = "log-item";
+      
       const dateStr = log['날짜'] ? log['날짜'].split('T')[0] : '';
       const title = log['제목'] || "작업 기록";
+      
       let relatedHtml = "";
       if(log['관련_목표ID']) {
         const relTask = g_tasks.find(t => t.ID === log['관련_목표ID']) || g_goals.find(g => g.ID === log['관련_목표ID']);
         if(relTask) {
-          if (relTask['유형'] === '버그') { relatedHtml = `<div class="log-related" style="background:#fecaca; color:#b91c1c; border:1px solid #f87171;">🐞 버그 Fix: ${relTask['제목']}</div>`; } 
-          else { relatedHtml = `<div class="log-related">📌 관련: ${relTask['제목']}</div>`; }
+          // 🐞 버그 타입이면 빨간 배지
+          if (relTask['유형'] === '버그') { 
+            relatedHtml = `<div class="log-related" style="background:#fecaca; color:#b91c1c; border:1px solid #f87171;">🐞 버그 Fix: ${relTask['제목']}</div>`; 
+          } 
+          // 📌 일반 작업이면 초록 배지
+          else { 
+            relatedHtml = `<div class="log-related">📌 관련: ${relTask['제목']}</div>`; 
+          }
         }
       }
+
       item.innerHTML = `
-        <div class="log-dot"></div><div class="log-card">
-          <div class="log-header"><div style="display:flex; align-items:center;"><span class="log-date">${dateStr}</span>${log['소요시간']?`<span class="log-duration">⏱ ${log['소요시간']}</span>`:''}</div><div class="log-actions"><button class="row-btn" onclick="openEditLog('${log.ID}')">✏️</button><button class="row-btn delete" onclick="deleteItem('${log.ID}')">🗑️</button></div></div>
+        <div class="log-dot"></div>
+        <div class="log-card">
+          <div class="log-header">
+            <div style="display:flex; align-items:center;">
+              <span class="log-date">${dateStr}</span>
+              ${log['소요시간'] ? `<span style="font-size:0.8rem; color:#64748b; margin-left:8px;">⏱ ${log['소요시간']}</span>` : ''}
+            </div>
+            <div class="log-actions">
+              <button class="row-btn" onclick="openEditLog('${log.ID}')">✏️</button>
+              <button class="row-btn delete" onclick="deleteItem('${log.ID}')">🗑️</button>
+            </div>
+          </div>
           ${relatedHtml}
-          <div class="log-title">${title}</div><div class="log-body">${log['내용']}</div>${log['태그']?`<div><span class="log-tag">${log['태그']}</span></div>`:''}
+          <div class="log-title">${title}</div>
+          <div class="log-body">${log['내용']}</div>
+          ${log['태그'] ? `<div style="margin-top:8px;"><span class="log-tag" style="font-size:0.8rem; color:#3b82f6; background:#eff6ff; padding:2px 6px; border-radius:4px;">${log['태그']}</span></div>` : ''}
         </div>`;
       root.appendChild(item);
     });
@@ -518,12 +547,44 @@
   function toggleDisplay(el) { const next = el.nextElementSibling; if(next) next.style.display = next.style.display==="none"?"block":"none"; }
   function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
+// 🚀 [수정] 로그 작성 시 '할 일' + '버그' 모두 선택 가능하도록 변경
   function updateLogTaskOptions(selectedId = "") {
-    const select = document.getElementById('log-related-id'); select.innerHTML = '<option value="">(없음)</option>';
-    const tasks = g_tasks.filter(t => t['유형'] === '할일' && t['상태'] !== '완료');
-    if(tasks.length > 0) { const group = document.createElement('optgroup'); group.label = "진행 중인 할 일"; tasks.forEach(t => { const op = document.createElement('option'); op.value = t.ID; op.textContent = t['제목']; group.appendChild(op); }); select.appendChild(group); }
+    const select = document.getElementById('log-related-id'); 
+    select.innerHTML = '<option value="">(없음)</option>';
+    
+    // 1. 진행 중인 할 일 & 버그 가져오기
+    const tasks = g_tasks.filter(t => 
+      (t['유형'] === '할일' || t['유형'] === '버그') && t['상태'] !== '완료'
+    );
+
+    if(tasks.length > 0) { 
+      const group = document.createElement('optgroup'); 
+      group.label = "진행 중인 작업 (할일/버그)"; 
+      tasks.forEach(t => { 
+        const op = document.createElement('option'); 
+        op.value = t.ID; 
+        // 버그면 앞에 [버그] 표시
+        const prefix = (t['유형'] === '버그') ? '[🐞버그] ' : '';
+        op.textContent = prefix + t['제목']; 
+        group.appendChild(op); 
+      }); 
+      select.appendChild(group); 
+    }
+    
+    // 2. 중간 목표 가져오기
     const mids = g_goals.filter(g => g['유형'] === '중간 목표');
-    if(mids.length > 0) { const group2 = document.createElement('optgroup'); group2.label = "중간 목표"; mids.forEach(m => { const op = document.createElement('option'); op.value = m.ID; op.textContent = m['제목']; group2.appendChild(op); }); select.appendChild(group2); }
+    if(mids.length > 0) { 
+      const group2 = document.createElement('optgroup'); 
+      group2.label = "중간 목표"; 
+      mids.forEach(m => { 
+        const op = document.createElement('option'); 
+        op.value = m.ID; 
+        op.textContent = m['제목']; 
+        group2.appendChild(op); 
+      }); 
+      select.appendChild(group2); 
+    }
+    
     if(selectedId) select.value = selectedId;
   }
 
