@@ -1,195 +1,599 @@
-/**
- * Cheese Lab 통합 할 일 관리 시스템 (Backend - v2.0)
- * - 추가: 수정(editItem), 삭제(deleteItem) 기능 완벽 지원
- */
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>Cheese Lab 통합 할 일 관리</title>
+  <link rel="stylesheet" href="./admin.css">
 
-function doGet(e) {
-  const mode = e.parameter.mode;
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  <script>
+    // ✅ (중요) 앱 스크립트 배포 후 주소가 바뀌었다면 꼭 갱신해주세요!
+    window.CHEESE_ADMIN_API_BASE = "https://script.google.com/macros/s/AKfycbwn1TrLeSIAe570LRWMJxRzx88u3LQYF38Kme9WhMd-YQsrMsSggrNy3I_2SGKGXTpS/exec";
+  </script>
+  <script src="./admin-common.js" defer></script>
 
-  if (mode === "getAllData") {
-    const goals = getSheetData_(ss, "goals_master");
-    const tasks = getSheetData_(ss, "task_master");
-    const logs = getSheetData_(ss, "work_log");
-    logs.sort((a, b) => new Date(b['날짜']) - new Date(a['날짜'])); // 최신순
+  <style>
+    /* ... 기존 CSS 유지 ... */
+    .dashboard-layout { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; align-items: start; }
+    @media (max-width: 900px) { .dashboard-layout { grid-template-columns: 1fr; } }
+    
+    .view-tabs { display: flex; gap: 8px; margin-bottom: 16px; border-bottom: 1px solid #e5e7eb; padding-bottom: 8px; }
+    .view-tab-btn { padding: 8px 16px; border-radius: 8px; font-weight: 600; font-size: 0.9rem; border: none; background: transparent; color: #6b7280; cursor: pointer; transition: all 0.2s; }
+    .view-tab-btn:hover { background: #f3f4f6; color: #374151; }
+    .view-tab-btn.active { background: #eff6ff; color: #2563eb; }
 
-    return responseJSON_({ result: "success", goals, tasks, logs });
-  }
-}
+    /* 카드 뷰 */
+    .goal-card { background: #fff; border-radius: 16px; margin-bottom: 24px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.05); }
+    .goal-card-header { background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%); color: white; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; }
+    .goal-card-title { font-size: 1.15rem; font-weight: 800; }
+    
+    /* 수정/삭제 버튼 그룹 (헤더용) */
+    .header-actions { display: flex; gap: 8px; }
+    .action-btn { background: rgba(255,255,255,0.2); border: none; color: white; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 0.8rem; transition: background 0.2s; }
+    .action-btn:hover { background: rgba(255,255,255,0.4); }
 
-function doPost(e) {
-  try {
-    const params = JSON.parse(e.postData.contents);
-    const mode = params.mode;
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    .mid-goal-group { margin-top: 10px; }
+    .mid-goal-item { border-left: 4px solid #10b981; background: #f9fafb; border-radius: 0 8px 8px 0; overflow: hidden; }
+    .mid-goal-header { padding: 10px 16px; font-weight: 700; color: #374151; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+    .mid-goal-header:hover { background: #f3f4f6; }
 
-    // ----------------------------------------------------
-    // 1. 항목 등록 (기존 유지)
-    // ----------------------------------------------------
-    if (mode === "addItem") {
-      let sheetName = "task_master";
-      let prefix = "T_"; 
-      if (["큰 목표", "중간 목표"].includes(params.type)) {
-        sheetName = "goals_master";
-        prefix = params.type === "큰 목표" ? "G_" : "M_";
-      } else if (params.type === "아이디어") {
-        prefix = "I_";
-      }
+    /* 일반 수정/삭제 버튼 (리스트용 - 회색톤) */
+    .row-actions { display: flex; gap: 4px; opacity: 0.4; transition: opacity 0.2s; }
+    .row-actions:hover { opacity: 1; }
+    .row-btn { background: transparent; border: none; cursor: pointer; font-size: 1rem; padding: 4px; color: #6b7280; }
+    .row-btn:hover { color: #111827; background: #e5e7eb; border-radius: 4px; }
+    .row-btn.delete:hover { color: #ef4444; background: #fee2e2; }
 
-      const sheet = ss.getSheetByName(sheetName);
-      const newId = prefix + Date.now().toString(36) + Math.floor(Math.random()*100);
-      const nowStr = new Date().toISOString().slice(0, 10);
+    /* Task Rows */
+    .task-list { background: #fff; border-top: 1px solid #f3f4f6; }
+    .task-row { display: flex; align-items: center; gap: 12px; padding: 8px 16px; border-bottom: 1px solid #f3f4f6; font-size: 0.95rem; }
+    .task-row:hover { background: #fdfdfd; }
 
-      let rowData = [];
-      if (sheetName === "goals_master") {
-        rowData = [newId, params.type, params.parentId||"", params.title, "진행중", 0, nowStr, ""];
-      } else {
-        rowData = [newId, params.type, params.connectedId||"", params.title, params.detail||"", params.priority||"보통", "대기", params.dueDate||"", ""];
-      }
-      sheet.appendRow(rowData);
-      return responseJSON_({ result: "success", msg: "등록 완료" });
+    /* Check Circle */
+    .check-circle { width: 22px; height: 22px; border: 2px solid #d1d5db; border-radius: 50%; cursor: pointer; position: relative; flex-shrink: 0; }
+    .check-circle.checked { background: #10b981; border-color: #10b981; }
+    .check-circle.checked::after { content: '✔'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 14px; }
+
+    /* 로그 컨테이너 */
+    .log-container { background: #fff; border-radius: 16px; padding: 24px; border: 1px solid #e5e7eb; position: sticky; top: 80px; max-height: calc(100vh - 100px); overflow-y: auto; }
+    .timeline { position: relative; padding-left: 24px; margin-top: 24px; border-left: 2px solid #e5e7eb; }
+    .timeline-item { position: relative; margin-bottom: 30px; }
+    .timeline-dot { position: absolute; left: -31px; top: 5px; width: 12px; height: 12px; background: #3b82f6; border: 3px solid #fff; border-radius: 50%; }
+    .timeline-content { background: #f9fafb; padding: 12px 14px; border-radius: 8px; font-size: 0.9rem; line-height: 1.6; color: #374151; white-space: pre-wrap; position: relative; }
+    .timeline-actions { position: absolute; top: 8px; right: 8px; display: none; }
+    .timeline-content:hover .timeline-actions { display: flex; gap: 4px; }
+
+    /* 모달 등 유틸 */
+    .fab-menu { position: fixed; bottom: 30px; right: 30px; display: flex; flex-direction: column; gap: 12px; align-items: flex-end; z-index: 1000; }
+    .fab-btn { width: 56px; height: 56px; border-radius: 50%; border: none; color: white; font-size: 24px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: transform 0.2s; }
+    .fab-main { background: #2563eb; }
+    .fab-sub { width: 48px; height: 48px; background: #4b5563; font-size: 20px; display: none; }
+    .fab-menu:hover .fab-sub { display: flex; }
+
+    .custom-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 2000; align-items: center; justify-content: center; backdrop-filter: blur(2px); }
+    .custom-modal.open { display: flex; }
+    .modal-box { background: #fff; padding: 28px; border-radius: 16px; width: 90%; max-width: 500px; max-height: 90vh; overflow-y: auto; }
+
+    /* 목표 상세 설명 스타일 */
+    .goal-card-desc {
+      font-size: 0.9rem;
+      color: rgba(255, 255, 255, 0.9);
+      margin-top: 4px;
+      font-weight: 400;
+      line-height: 1.4;
     }
-
-    if (mode === "addLog") {
-      const sheet = ss.getSheetByName("work_log");
-      const newId = "L_" + Date.now().toString(36);
-      const nowStr = new Date().toISOString().slice(0, 10);
-      sheet.appendRow([newId, params.date||nowStr, params.title||"", "관리자", params.content, params.relatedId||"", params.duration||"", params.tags||""]);
-      return responseJSON_({ result: "success", msg: "로그 저장 완료" });
+    .mid-goal-desc {
+      font-size: 0.8rem;
+      color: #6b7280;
+      margin-left: 8px;
+      font-weight: normal;
     }
+  </style>
+</head>
+<body>
 
-    // ----------------------------------------------------
-    // 2. 상태 업데이트 (기존 유지)
-    // ----------------------------------------------------
-    if (mode === "updateStatus") {
-      updateRow_(ss, "task_master", params.id, { "상태": params.status });
-      return responseJSON_({ result: "success" });
-    }
-
-    // ----------------------------------------------------
-    // 3. [NEW] 항목 삭제 (ID로 시트 자동 찾기)
-    // ----------------------------------------------------
-    if (mode === "deleteItem") {
-      const id = params.id;
-      const sheetName = getSheetNameById_(id);
-      if (!sheetName) throw new Error("알 수 없는 ID 형식입니다.");
-      
-      deleteRowById_(ss, sheetName, id);
-      return responseJSON_({ result: "success", msg: "삭제되었습니다." });
-    }
-
-    // ----------------------------------------------------
-    // 4. [NEW] 항목 수정 (ID로 시트 자동 찾기)
-    // ----------------------------------------------------
-    if (mode === "editItem") {
-      const id = params.id;
-      const sheetName = getSheetNameById_(id);
-      
-      // 업데이트할 필드 맵핑
-      let updates = {};
-      
-      if (sheetName === "goals_master") {
-        // 목표 수정
-        updates = { "제목": params.title };
-        // 목표는 필드가 적어서 제목 정도만 수정하거나 필요시 추가
-      } else if (sheetName === "task_master") {
-        // 할일/아이디어 수정
-        updates = {
-          "제목": params.title,
-          "상세내용": params.detail,
-          "우선순위": params.priority,
-          "기한": params.dueDate,
-          "연결_중간목표ID": params.connectedId // 부모 변경 가능
-        };
-      } else if (sheetName === "work_log") {
-        // 로그 수정
-        updates = {
-          "날짜": params.date,
-          "제목": params.title,
-          "내용": params.content,
-          "소요시간": params.duration,
-          "태그": params.tags
-        };
-      }
-
-      updateRow_(ss, sheetName, id, updates);
-      return responseJSON_({ result: "success", msg: "수정되었습니다." });
-    }
-
-  } catch (err) {
-    return responseJSON_({ result: "error", msg: err.toString() });
-  }
-}
-
-// --- Helpers ---
-
-// ID 접두사로 시트 이름 찾기
-function getSheetNameById_(id) {
-  if (id.startsWith("G_") || id.startsWith("M_")) return "goals_master";
-  if (id.startsWith("T_") || id.startsWith("I_")) return "task_master";
-  if (id.startsWith("L_")) return "work_log";
-  return null;
-}
-
-// 특정 ID의 행 삭제
-function deleteRowById_(ss, sheetName, id) {
-  const sheet = ss.getSheetByName(sheetName);
-  const data = sheet.getDataRange().getValues();
-  const idIdx = data[0].indexOf("ID");
+<div class="admin-shell">
+  <div id="admin-header-slot"></div>
   
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][idIdx]) === String(id)) {
-      sheet.deleteRow(i + 1);
-      return;
-    }
-  }
-  throw new Error("삭제할 ID를 찾지 못했습니다.");
-}
+  <main class="admin-main">
+    <aside id="admin-menu-slot" class="admin-sidebar"></aside>
 
-// 특정 ID의 행 수정 (updates 객체: { "컬럼명": "새값" })
-function updateRow_(ss, sheetName, id, updates) {
-  const sheet = ss.getSheetByName(sheetName);
-  const data = sheet.getDataRange().getValues();
-  const headers = data[0];
-  const idIdx = headers.indexOf("ID");
+    <section class="admin-content">
+      <div style="margin-bottom: 24px;">
+        <h2 style="font-size: 1.8rem; font-weight: 800; color: #111827; margin: 0;">Dashboard</h2>
+        <p style="color: #6b7280; margin-top: 4px;">나의 프로젝트 진행 상황과 하루 기록을 관리하세요.</p>
+      </div>
 
-  let rowIndex = -1;
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][idIdx]) === String(id)) {
-      rowIndex = i + 1;
-      break;
-    }
-  }
-  if (rowIndex === -1) throw new Error("수정할 ID를 찾지 못했습니다.");
+      <div class="dashboard-layout">
+        
+        <div>
+          <div class="view-tabs">
+            <button class="view-tab-btn active" onclick="switchView('card')" id="btn-view-card">🗂 계층형 뷰</button>
+            <button class="view-tab-btn" onclick="switchView('board')" id="btn-view-board">📋 리스트 뷰</button>
+          </div>
 
-  // 각 업데이트 필드 적용
-  for (const key in updates) {
-    const colIdx = headers.indexOf(key);
-    if (colIdx !== -1 && updates[key] !== undefined) {
-      sheet.getRange(rowIndex, colIdx + 1).setValue(updates[key]);
-    }
-  }
-}
+          <div id="view-card-container">
+            <div id="goal-tree-root">
+              <div class="card" style="padding:40px; text-align:center; color:#999;">로딩 중...</div>
+            </div>
+          </div>
 
-function getSheetData_(ss, sheetName) {
-  const sheet = ss.getSheetByName(sheetName);
-  if (!sheet) return [];
-  const data = sheet.getDataRange().getValues();
-  if (data.length < 2) return [];
-  const headers = data.shift();
-  return data.map(row => {
-    let obj = {};
-    headers.forEach((h, i) => {
-      if (row[i] instanceof Date) {
-        try { obj[h] = row[i].toISOString(); } catch(e) { obj[h] = String(row[i]); }
-      } else {
-        obj[h] = row[i];
+          <div id="view-board-container" style="display:none;">
+            <div style="background:#fff; border-radius:16px; border:1px solid #e5e7eb; overflow:hidden;">
+              <table style="width:100%; border-collapse:collapse; font-size:0.9rem;">
+                <thead style="background:#f9fafb; color:#6b7280;">
+                  <tr>
+                    <th style="padding:12px;">상태</th>
+                    <th>분류 / 경로</th>
+                    <th>제목</th>
+                    <th>기한</th>
+                    <th>관리</th>
+                  </tr>
+                </thead>
+                <tbody id="board-table-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="log-container">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <h3 style="margin: 0; font-size: 1.1rem; font-weight: 700;">📝 작업 로그</h3>
+            <button class="btn btn-primary" style="padding: 6px 12px; font-size: 0.8rem;" onclick="openLogModal()">+ 기록</button>
+          </div>
+          <div class="timeline" id="log-timeline-root"></div>
+        </div>
+
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="fab-menu">
+  <div style="position:relative;"><button class="fab-btn fab-sub" onclick="openLogModal()">📝</button></div>
+  <div style="position:relative;"><button class="fab-btn fab-main" onclick="openModal('할일')">+</button></div>
+</div>
+
+<div id="input-modal" class="custom-modal">
+  <div class="modal-box">
+    <h3 class="modal-title" id="todo-modal-title">새 항목 등록</h3>
+    <form id="todo-form" class="admin-form-grid">
+      <input type="hidden" id="edit-id"> <input type="hidden" id="edit-mode" value="false">
+
+      <div class="field admin-field-full" id="field-type-group">
+        <label>유형</label>
+        <div style="display:flex; gap:12px; background:#f9fafb; padding:10px; border-radius:8px;">
+          <label><input type="radio" name="type" value="할일" checked onclick="toggleFormFields()"> 할 일</label>
+          <label><input type="radio" name="type" value="아이디어" onclick="toggleFormFields()"> 아이디어</label>
+          <label><input type="radio" name="type" value="중간 목표" onclick="toggleFormFields()"> 중간 목표</label>
+          <label><input type="radio" name="type" value="큰 목표" onclick="toggleFormFields()"> 큰 목표</label>
+        </div>
+      </div>
+
+      <div class="field admin-field-full" id="field-parent">
+        <label>연결된 목표</label>
+        <select id="input-connected-id" style="width:100%;"><option value="">(선택 없음)</option></select>
+      </div>
+
+      <div class="field admin-field-full">
+        <label>제목</label>
+        <input type="text" id="input-title" required>
+      </div>
+      <div class="field admin-field-full" id="field-detail" style="display:none;">
+        <label>상세 내용</label>
+        <textarea id="input-detail"></textarea>
+      </div>
+      <div class="field" id="field-date">
+         <label>마감 기한</label>
+         <input type="date" id="input-due">
+      </div>
+      <div class="field" id="field-priority" style="display:none;">
+         <label>우선순위</label>
+         <select id="input-priority">
+           <option value="높음">높음</option>
+           <option value="보통" selected>보통</option>
+           <option value="낮음">낮음</option>
+         </select>
+      </div>
+
+      <div class="field admin-field-full" style="margin-top:16px; display:flex; gap:10px;">
+        <button type="submit" class="btn btn-primary" style="flex:1; justify-content:center;">저장하기</button>
+        <button type="button" class="btn" onclick="closeModal('input-modal')" style="flex:1; justify-content:center;">취소</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="log-modal" class="custom-modal">
+  <div class="modal-box">
+    <h3 class="modal-title" id="log-modal-title">작업 기록</h3>
+    <form id="log-form" class="admin-form-grid">
+      <input type="hidden" id="log-edit-id">
+      <input type="hidden" id="log-edit-mode" value="false">
+
+      <div class="field admin-field-full"><label>날짜</label><input type="date" id="log-date" required></div>
+      <div class="field admin-field-full"><label>제목 (선택)</label><input type="text" id="log-title" placeholder="비워두면 날짜로 표시"></div>
+      <div class="field admin-field-full"><label>내용</label><textarea id="log-content" required style="min-height:100px;"></textarea></div>
+      
+      <div class="field admin-field-full" id="log-idea-section" style="background:#f5f3ff; padding:16px; border-radius:12px; border:1px dashed #8b5cf6;">
+        <label style="color:#6d28d9; font-weight:700;">💡 아이디어 자동 등록</label>
+        <input type="text" id="log-idea-input" placeholder="입력 시 아이디어 목록에 추가됨" style="background:#fff;">
+      </div>
+
+      <div class="field"><label>시간</label><input type="text" id="log-duration"></div>
+      <div class="field"><label>태그</label><input type="text" id="log-tags"></div>
+      <div class="field admin-field-full" style="margin-top:16px; display:flex; gap:10px;">
+        <button type="submit" class="btn btn-primary" style="flex:1; justify-content:center;">저장</button>
+        <button type="button" class="btn" onclick="closeModal('log-modal')" style="flex:1; justify-content:center;">취소</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  window.CHEESE_ADMIN_ACTIVE_PAGE = "todo_manage";
+  let g_goals=[], g_tasks=[], g_logs=[];
+
+  document.addEventListener('DOMContentLoaded', loadAllData);
+
+  async function loadAllData() {
+    if(typeof showAdminLoading==='function') showAdminLoading("로딩 중...");
+    try {
+      const res = await fetch(window.CHEESE_ADMIN_API_BASE + "?mode=getAllData");
+      const json = await res.json();
+      if(json.result === "success") {
+        g_goals = json.goals; g_tasks = json.tasks; g_logs = json.logs||[];
+        renderGoalTree(); renderBoardView(); renderLogs(); updateParentOptions();
       }
-    });
-    return obj;
-  });
-}
+    } catch(e) { console.error(e); }
+    finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); }
+  }
 
-function responseJSON_(obj) {
-  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
-}
+  function switchView(mode) {
+    document.getElementById('btn-view-card').classList.toggle('active', mode==='card');
+    document.getElementById('btn-view-board').classList.toggle('active', mode==='board');
+    document.getElementById('view-card-container').style.display = (mode==='card')?'block':'none';
+    document.getElementById('view-board-container').style.display = (mode==='board')?'block':'none';
+  }
+
+  // --- 렌더링: 카드 뷰 ---
+  function renderGoalTree() {
+    const root = document.getElementById('goal-tree-root');
+    root.innerHTML = "";
+    const bigGoals = g_goals.filter(g => g['유형'] === '큰 목표');
+    
+    if(bigGoals.length===0) { root.innerHTML = `<div style="padding:30px;text-align:center;color:#999;">목표 없음</div>`; return; }
+  
+    bigGoals.forEach(bg => {
+      const card = document.createElement('div');
+      card.className = "goal-card";
+      
+      // ✅ 변경점: 제목 아래에 상세내용(desc) 추가
+      const descHtml = bg['상세내용'] ? `<div class="goal-card-desc">${bg['상세내용']}</div>` : '';
+  
+      const header = document.createElement('div');
+      header.className = "goal-card-header";
+      header.innerHTML = `
+        <div>
+          <div class="goal-card-title">${bg['제목']}</div>
+          ${descHtml}
+        </div>
+        <div class="header-actions">
+           <button class="action-btn" onclick="openEditModal('goal', '${bg.ID}')">✏️</button>
+           <button class="action-btn" onclick="deleteItem('${bg.ID}')">🗑️</button>
+        </div>
+      `;
+      card.appendChild(header);
+  
+      const body = document.createElement('div');
+      body.style.padding = "10px 20px 20px";
+  
+      const midGoals = g_goals.filter(m => m['상위ID'] === bg.ID);
+      midGoals.forEach(mg => {
+        const midGroup = document.createElement('div');
+        midGroup.className = "mid-goal-group";
+        const midItem = document.createElement('div');
+        midItem.className = "mid-goal-item";
+        
+        // ✅ 변경점: 중간 목표도 옆에 상세내용 표시 (괄호 등으로)
+        const midDesc = mg['상세내용'] ? `<span class="mid-goal-desc">(${mg['상세내용']})</span>` : '';
+  
+        midItem.innerHTML = `
+          <div class="mid-goal-header" onclick="toggleDisplay(this)">
+            <span>🚩 ${mg['제목']} ${midDesc}</span>
+            <div onclick="event.stopPropagation()" class="row-actions">
+              <button class="row-btn" onclick="openEditModal('goal', '${mg.ID}')">✏️</button>
+              <button class="row-btn delete" onclick="deleteItem('${mg.ID}')">🗑️</button>
+            </div>
+          </div>
+        `;
+        // ... (이하 Task 렌더링 코드는 동일) ...
+        const taskList = document.createElement('div');
+        taskList.className = "task-list";
+        const tasks = g_tasks.filter(t => String(t['연결_중간목표ID']||"").includes(mg.ID));
+        
+        if(tasks.length > 0) {
+          tasks.forEach(t => taskList.appendChild(createTaskRow(t)));
+        } else {
+          taskList.innerHTML = `<div style="padding:10px;color:#aaa;font-size:0.8rem;">할 일 없음</div>`;
+        }
+        midItem.appendChild(taskList);
+        midGroup.appendChild(midItem);
+        body.appendChild(midGroup);
+      });
+      card.appendChild(body);
+      root.appendChild(card);
+    });
+  }
+
+  function createTaskRow(t) {
+    const div = document.createElement('div');
+    div.className = "task-row";
+    const isDone = t['상태'] === '완료';
+    div.innerHTML = `
+      <div class="check-circle ${isDone?'checked':''}" onclick="toggleStatus('${t.ID}','${isDone?'대기':'완료'}')"></div>
+      <div style="flex:1; text-decoration:${isDone?'line-through':''}; color:${isDone?'#aaa':'#333'}">
+        ${t['제목']}
+      </div>
+      <div class="row-actions">
+        <button class="row-btn" onclick="openEditModal('task', '${t.ID}')">✏️</button>
+        <button class="row-btn delete" onclick="deleteItem('${t.ID}')">🗑️</button>
+      </div>
+    `;
+    return div;
+  }
+
+  // --- 렌더링: 로그 ---
+  function renderLogs() {
+    const root = document.getElementById('log-timeline-root');
+    root.innerHTML = "";
+    g_logs.slice(0, 20).forEach(log => {
+      const item = document.createElement('div');
+      item.className = "timeline-item";
+      const dateStr = log['날짜'] ? log['날짜'].split('T')[0] : '';
+      const title = log['제목'] || dateStr + " 기록";
+      
+      item.innerHTML = `
+        <div class="timeline-dot"></div>
+        <div class="timeline-content">
+          <div class="timeline-actions">
+            <button class="row-btn" onclick="openEditLog('${log.ID}')">✏️</button>
+            <button class="row-btn delete" onclick="deleteItem('${log.ID}')">🗑️</button>
+          </div>
+          <div style="font-weight:700; margin-bottom:4px;">${title}</div>
+          <div style="white-space:pre-wrap;">${log['내용']}</div>
+          ${log['태그']?`<div style="font-size:0.8rem;color:#d946ef;margin-top:6px;">${log['태그']}</div>`:''}
+        </div>
+      `;
+      root.appendChild(item);
+    });
+  }
+
+  // --- 렌더링: 보드 뷰 ---
+  function renderBoardView() {
+    const tbody = document.getElementById('board-table-body');
+    tbody.innerHTML = "";
+    g_tasks.forEach(t => {
+      const tr = document.createElement('tr');
+      const isDone = t['상태'] === '완료';
+      // 중간목표 이름 찾기
+      const midId = (t['연결_중간목표ID']||"").split(',')[0];
+      const mid = g_goals.find(g=>g.ID===midId);
+      const midTitle = mid ? mid['제목'] : (t['유형']==='아이디어'?'💡 아이디어':'미분류');
+
+      tr.innerHTML = `
+        <td style="text-align:center;"><div class="check-circle ${isDone?'checked':''}" onclick="toggleStatus('${t.ID}','${isDone?'대기':'완료'}')"></div></td>
+        <td style="color:#888;font-size:0.8rem;">${midTitle}</td>
+        <td style="${isDone?'text-decoration:line-through;color:#aaa':''}">${t['제목']}</td>
+        <td>${t['기한'] ? t['기한'].slice(5) : '-'}</td>
+        <td>
+           <div class="row-actions" style="opacity:1;">
+             <button class="row-btn" onclick="openEditModal('task', '${t.ID}')">✏️</button>
+             <button class="row-btn delete" onclick="deleteItem('${t.ID}')">🗑️</button>
+           </div>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  // --- 액션 로직 ---
+  
+  // 1. 항목 삭제
+  async function deleteItem(id) {
+    if(!confirm("정말 삭제하시겠습니까?\n(복구할 수 없습니다)")) return;
+    if(typeof showAdminLoading==='function') showAdminLoading("삭제 중...");
+    try {
+      await fetch(window.CHEESE_ADMIN_API_BASE, {
+        method: "POST",
+        body: JSON.stringify({ mode: "deleteItem", id: id })
+      });
+      loadAllData();
+    } catch(e) { alert("오류 발생"); }
+    finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); }
+  }
+
+  // 2. 항목 수정 모달 열기
+  function openEditModal(typeHint, id) {
+    let item = g_goals.find(x => x.ID === id) || g_tasks.find(x => x.ID === id);
+    if (!item) return;
+  
+    document.getElementById('input-modal').classList.add('open');
+    document.getElementById('todo-modal-title').textContent = "항목 수정";
+    document.getElementById('edit-mode').value = "true";
+    document.getElementById('edit-id').value = id;
+  
+    document.getElementById('input-title').value = item['제목'];
+    
+    // ✅ 변경점: 목표든 할일이든 '상세내용' 필드에 값 채우기
+    document.getElementById('input-detail').value = item['상세내용'] || ""; 
+  
+    const typeRadios = document.querySelectorAll('input[name="type"]');
+    typeRadios.forEach(r => {
+      if(r.value === item['유형']) r.checked = true;
+      else r.disabled = true;
+    });
+  
+    toggleFormFields(); 
+  
+    if(item['유형'] === '큰 목표') {
+      // 상위 ID 없음
+    } else if(item['유형'] === '중간 목표') {
+      updateParentOptions('중간 목표');
+      document.getElementById('input-connected-id').value = item['상위ID'];
+    } else {
+      updateParentOptions('할일');
+      document.getElementById('input-connected-id').value = item['연결_중간목표ID'];
+      document.getElementById('input-due').value = (item['기한']||"").split('T')[0];
+      document.getElementById('input-priority').value = item['우선순위'] || "보통";
+    }
+  }
+
+  // 3. 로그 수정 모달 열기
+  function openEditLog(id) {
+    const log = g_logs.find(x => x.ID === id);
+    if (!log) return;
+
+    document.getElementById('log-modal').classList.add('open');
+    document.getElementById('log-modal-title').textContent = "기록 수정";
+    document.getElementById('log-edit-mode').value = "true";
+    document.getElementById('log-edit-id').value = id;
+
+    document.getElementById('log-date').value = (log['날짜']||"").split('T')[0];
+    document.getElementById('log-title').value = log['제목'] || "";
+    document.getElementById('log-content').value = log['내용'] || "";
+    document.getElementById('log-duration').value = log['소요시간'] || "";
+    document.getElementById('log-tags').value = log['태그'] || "";
+    
+    // 수정 때는 아이디어 추가 섹션 숨기기 (복잡도 방지)
+    document.getElementById('log-idea-section').style.display = 'none';
+  }
+
+  // 4. 상태 토글
+  async function toggleStatus(id, newStatus) {
+    await fetch(window.CHEESE_ADMIN_API_BASE, {
+      method: "POST", body: JSON.stringify({ mode: "updateStatus", id: id, status: newStatus })
+    });
+    loadAllData();
+  }
+
+  // --- 모달 & 폼 유틸 ---
+  function openModal(type) {
+    document.getElementById('input-modal').classList.add('open');
+    document.getElementById('todo-modal-title').textContent = "새 항목 등록";
+    document.getElementById('edit-mode').value = "false";
+    document.getElementById('edit-id').value = "";
+    document.getElementById('todo-form').reset();
+    
+    // 라디오 버튼 활성화 리셋
+    document.querySelectorAll('input[name="type"]').forEach(r => r.disabled = false);
+    if(type) document.querySelector(`input[name="type"][value="${type}"]`).click();
+  }
+
+  function openLogModal() {
+    document.getElementById('log-modal').classList.add('open');
+    document.getElementById('log-modal-title').textContent = "작업 기록";
+    document.getElementById('log-edit-mode').value = "false";
+    document.getElementById('log-edit-id').value = "";
+    document.getElementById('log-form').reset();
+    document.getElementById('log-date').valueAsDate = new Date();
+    document.getElementById('log-idea-section').style.display = 'block';
+  }
+
+  function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+  function toggleDisplay(el) { const next = el.nextElementSibling; if(next) next.style.display = next.style.display==="none"?"block":"none"; }
+  
+  function toggleFormFields() {
+    const type = document.querySelector('input[name="type"]:checked').value;
+    const isGoal = type.includes("목표");
+    
+    // ✅ 변경점: 목표(Goal)여도 상세내용(detail)은 항상 보이게 설정!
+    document.getElementById('field-detail').style.display = "block"; 
+    
+    // 날짜, 우선순위는 목표일 때 숨김 (기존 유지)
+    document.getElementById('field-date').style.display = isGoal ? "none" : "block";
+    document.getElementById('field-priority').style.display = isGoal ? "none" : "block";
+    
+    updateParentOptions(type);
+  }
+
+  function updateParentOptions(type) {
+    const select = document.getElementById('input-connected-id');
+    const oldVal = select.value;
+    select.innerHTML = '<option value="">(선택 없음)</option>';
+    let opts = [];
+    if(!type || type==='할일' || type==='아이디어') opts = g_goals.filter(g => g['유형'] === '중간 목표');
+    else if(type==='중간 목표') opts = g_goals.filter(g => g['유형'] === '큰 목표');
+    
+    opts.forEach(o => {
+      const op = document.createElement('option');
+      op.value = o.ID; op.textContent = o['제목'];
+      select.appendChild(op);
+    });
+    // 값 복원 시도
+    select.value = oldVal;
+  }
+
+  // --- 저장 (Submit) ---
+  
+  // 할일/목표 폼
+  document.getElementById('todo-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const isEdit = document.getElementById('edit-mode').value === "true";
+    const editId = document.getElementById('edit-id').value;
+    const type = document.querySelector('input[name="type"]:checked').value;
+    
+    const payload = {
+        mode: isEdit ? "editItem" : "addItem",
+        id: editId, // 수정일 때만 사용됨
+        type: type,
+        title: document.getElementById('input-title').value,
+        parentId: document.getElementById('input-connected-id').value,
+        connectedId: document.getElementById('input-connected-id').value,
+        detail: document.getElementById('input-detail').value,
+        dueDate: document.getElementById('input-due').value,
+        priority: document.getElementById('input-priority').value
+    };
+
+    if(typeof showAdminLoading==='function') showAdminLoading("저장 중...");
+    await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify(payload) });
+    closeModal('input-modal'); loadAllData();
+    if(typeof hideAdminLoading==='function') hideAdminLoading();
+  });
+
+  // 로그 폼
+  document.getElementById('log-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const isEdit = document.getElementById('log-edit-mode').value === "true";
+    
+    const payload = {
+      mode: isEdit ? "editItem" : "addLog", // 수정 시엔 공통 editItem 호출 (ID가 L_로 시작하므로 자동처리됨)
+      id: document.getElementById('log-edit-id').value,
+      date: document.getElementById('log-date').value,
+      title: document.getElementById('log-title').value,
+      content: document.getElementById('log-content').value,
+      duration: document.getElementById('log-duration').value,
+      tags: document.getElementById('log-tags').value
+    };
+
+    if(typeof showAdminLoading==='function') showAdminLoading("저장 중...");
+    
+    // 1. 로그 저장
+    const requests = [fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify(payload) })];
+
+    // 2. 아이디어 동시 등록 (신규 작성일 때만)
+    const ideaVal = document.getElementById('log-idea-input').value;
+    if (!isEdit && ideaVal.trim() !== "") {
+      requests.push(fetch(window.CHEESE_ADMIN_API_BASE, {
+        method: "POST",
+        body: JSON.stringify({ mode: "addItem", type: "아이디어", title: ideaVal, detail: "로그 파생", priority: "보통" })
+      }));
+    }
+
+    await Promise.all(requests);
+    closeModal('log-modal'); loadAllData();
+    if(typeof hideAdminLoading==='function') hideAdminLoading();
+  });
+
+</script>
+</body>
+</html>
