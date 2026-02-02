@@ -351,6 +351,25 @@
     .history-item.expanded::after {
         content: '▲ 접기';
     }
+  /* 히스토리 아이템 스타일 */
+    .history-item { 
+      background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; 
+      padding: 12px; font-size: 0.9rem; position: relative;
+      cursor: pointer; transition: background 0.2s;
+    }
+    .history-item:hover { background: #f1f5f9; }
+
+    /* 기본 상태: 3줄까지만 보이고 말줄임 */
+    .history-content { 
+      color: #334155; line-height: 1.5; font-size: 0.9rem;
+      display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+      overflow: hidden; text-overflow: ellipsis;
+    }
+
+    /* 펼쳐진 상태: 전체 내용 표시 */
+    .history-item.expanded .history-content {
+      display: block; -webkit-line-clamp: unset; overflow: visible;
+    }
   </style>
 </head>
 <body>
@@ -887,7 +906,7 @@
     $('#input-detail').summernote('code', memoContent);
   }
 
-// 🚀 [수정] 로그 렌더링 (날짜 표시 오류 수정)
+// 🚀 [수정] 로그 렌더링 (날짜 밀림 완벽 해결)
   function renderLogs() {
     const root = document.getElementById('log-timeline-root'); 
     root.innerHTML = "";
@@ -897,13 +916,16 @@
       return; 
     }
     
-    // 1. 날짜별로 그룹핑 (로컬 시간대 적용)
+    // 1. 날짜별로 그룹핑
     const groupedLogs = {};
     g_logs.forEach(log => {
         let dateKey = '날짜 없음';
         if (log['날짜']) {
-            // ✅ [핵심] UTC 문자열을 Date 객체로 변환 후 로컬 날짜 추출
-            const d = new Date(log['날짜']);
+            // ✅ [핵심] 하이픈(-)을 슬래시(/)로 바꾸면 브라우저가 '로컬 시간'으로 인식함
+            // 예: "2026-02-02" (UTC) -> "2026/02/02" (내 시간 0시)
+            const rawDate = log['날짜'].substring(0, 10).replace(/-/g, '/');
+            const d = new Date(rawDate);
+            
             const year = d.getFullYear();
             const month = String(d.getMonth() + 1).padStart(2, '0');
             const day = String(d.getDate()).padStart(2, '0');
@@ -919,15 +941,13 @@
 
     // 3. 렌더링
     sortedDates.forEach(date => {
-        // 날짜 구분선
         const divider = document.createElement('div');
         divider.className = "log-date-divider";
         let dayOfWeek = "";
-        try { dayOfWeek = new Date(date).toLocaleDateString('ko-KR', { weekday: 'short' }); } catch(e){}
+        try { dayOfWeek = new Date(date.replace(/-/g,'/')).toLocaleDateString('ko-KR', { weekday: 'short' }); } catch(e){}
         divider.innerHTML = `<span class="log-date-badge">📅 ${date} (${dayOfWeek})</span>`;
         root.appendChild(divider);
 
-        // 로그 아이템
         groupedLogs[date].forEach(log => {
             const item = document.createElement('div'); 
             item.className = "log-item";
@@ -1090,43 +1110,41 @@
     renderRelatedIdeasInModal(id);
   }
 
-// 🚀 [수정] 히스토리 렌더링 (날짜 표시 오류 수정)
-// 🚀 [수정] 작업 히스토리 렌더링 (모든 기록 표시 + 날짜 오류 수정 + 내용 접기/펼치기)
+// 🚀 [수정] 히스토리 렌더링 (날짜 밀림 해결)
   function renderHistoryInModal(targetId) {
     const container = document.getElementById('related-history-section');
     const listRoot = document.getElementById('history-list-root');
     
-    // 1. 관련 로그 모두 가져오기 (ID 문자열 변환하여 비교)
+    // 관련 로그 가져오기
     const relatedLogs = g_logs.filter(l => String(l['관련_목표ID']) === String(targetId));
 
-    // 2. 기록이 없으면 섹션 숨김
     if (relatedLogs.length === 0) {
       container.style.display = 'none';
       return;
     }
 
-    // 3. 최신순 정렬 (날짜 -> 등록순)
+    // 최신순 정렬
     relatedLogs.sort((a, b) => {
-        const dateA = new Date(a['날짜']);
-        const dateB = new Date(b['날짜']);
+        const dateA = new Date(a['날짜'].substring(0,10).replace(/-/g,'/'));
+        const dateB = new Date(b['날짜'].substring(0,10).replace(/-/g,'/'));
         return dateB - dateA || Number(b.ID) - Number(a.ID);
     });
 
     container.style.display = 'block';
     listRoot.innerHTML = "";
 
-    // 4. 개수 제한 없이 '모두' 렌더링
     relatedLogs.forEach(log => {
         const item = document.createElement('div');
         item.className = 'history-item';
         
-        // 클릭 시 내용 펼치기/접기 토글
+        // 접기/펼치기
         item.onclick = function() { this.classList.toggle('expanded'); };
         
-        // ✅ 날짜 변환 (로컬 시간대 적용하여 하루 밀림 방지)
+        // ✅ [핵심] 날짜 변환 (하이픈 -> 슬래시)
         let dateStr = '';
         if (log['날짜']) {
-            const d = new Date(log['날짜']);
+            const rawDate = log['날짜'].substring(0, 10).replace(/-/g, '/');
+            const d = new Date(rawDate);
             const year = d.getFullYear();
             const month = String(d.getMonth() + 1).padStart(2, '0');
             const day = String(d.getDate()).padStart(2, '0');
@@ -1134,7 +1152,6 @@
         }
         
         const timeStr = log['소요시간'] ? `⏱ ${log['소요시간']}` : '';
-        // 줄바꿈을 <br>로 변환
         const content = (log['내용'] || "").replace(/\n/g, '<br>');
 
         item.innerHTML = `
