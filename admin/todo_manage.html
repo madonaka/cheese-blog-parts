@@ -680,7 +680,7 @@
     });
   }
 
-// 🚀 [수정] 버그 트래커 렌더링 (카드형 + 확인중 배지 기능)
+// 🚀 [수정] 버그 트래커 렌더링 (확인 취소 버튼 추가)
   function renderBugView() {
     const root = document.getElementById('bug-grid-root');
     root.innerHTML = "";
@@ -688,14 +688,14 @@
     // 아카이브 체크 여부 확인
     const showArchive = document.getElementById('toggle-bug-archive') ? document.getElementById('toggle-bug-archive').checked : false;
 
-    // 필터링: 버그 타입 + (아카이브 상태에 따라 '완료' 포함/미포함)
+    // 필터링
     const bugs = g_tasks.filter(t => {
       if (t['유형'] !== '버그') return false;
-      if (showArchive) return t['상태'] === '완료'; // 아카이브 체크 시: 해결된 것만
-      else return t['상태'] !== '완료'; // 체크 해제 시: 미해결만
+      if (showArchive) return t['상태'] === '완료'; 
+      else return t['상태'] !== '완료'; 
     });
     
-    // 정렬: 우선순위 높음 -> 최신순
+    // 정렬: 최신순 (ID 내림차순)
     bugs.sort((a,b) => (b['ID'] > a['ID'] ? 1 : -1));
 
     if(bugs.length === 0) { 
@@ -706,14 +706,11 @@
     bugs.forEach(t => {
       const card = document.createElement('div');
       
-      // ✅ 상태 확인 ('진행중' 상태를 '확인중/작업중'으로 사용)
       const isWorking = t['상태'] === '진행중';
       const isDone = t['상태'] === '완료';
 
-      // '작업중'이면 working 클래스 추가
       card.className = `bug-card ${isWorking ? 'working' : ''}`;
       
-      // 관련 작업(Parent) 찾기
       let parentTitle = "";
       if (t['연결_중간목표ID']) {
         const parent = g_tasks.find(x => x.ID === t['연결_중간목표ID']) || g_goals.find(x => x.ID === t['연결_중간목표ID']);
@@ -722,16 +719,19 @@
       
       const plainText = (t['상세내용'] || "내용 없음").replace(/<[^>]*>?/gm, '').slice(0, 100) + "...";
 
-      // 버튼 HTML 생성
+      // 🚀 [수정] 버튼 로직 개선
       let buttonsHtml = "";
       if (isDone) {
           buttonsHtml = `<button class="bug-btn restore" onclick="toggleStatus('${t.ID}', '대기')">↩️ 미해결/복구</button>`;
       } else {
           if (isWorking) {
-              // 작업중 -> 해결 완료
-              buttonsHtml = `<button class="bug-btn solve" onclick="toggleStatus('${t.ID}', '완료')">✅ 해결 완료!</button>`;
+              // 🚀 [NEW] 확인 취소 버튼 추가
+              buttonsHtml = `
+                <button class="bug-btn restore" onclick="toggleStatus('${t.ID}', '대기')">↩️ 확인 취소</button>
+                <button class="bug-btn solve" onclick="toggleStatus('${t.ID}', '완료')">✅ 해결 완료!</button>
+              `;
           } else {
-              // 대기 -> 확인 시작
+              // 대기 상태
               buttonsHtml = `
                 <button class="bug-btn check" onclick="toggleStatus('${t.ID}', '진행중')">🔍 확인 시작</button>
                 <button class="bug-btn solve" onclick="toggleStatus('${t.ID}', '완료')">바로 해결</button>
@@ -740,7 +740,9 @@
       }
 
       card.innerHTML = `
-        ${isWorking ? `<div class="bug-status-badge">🔥 확인중</div>` : ''} <div class="bug-content" onclick="openEditModal('task', '${t.ID}')" style="cursor:pointer; flex-grow:1;">
+        ${isWorking ? `<div class="bug-status-badge">🔥 확인중</div>` : ''} 
+        
+        <div class="bug-content" onclick="openEditModal('task', '${t.ID}')" style="cursor:pointer; flex-grow:1;">
           <div class="bug-parent-info">
              ${parentTitle ? `<span>🔗 ${parentTitle}</span>` : '<span>(연동 작업 없음)</span>'}
           </div>
@@ -755,6 +757,8 @@
       root.appendChild(card);
     });
   }
+
+
 // 🚀 [수정] 아이디어 뷰 (실현됨 배지 및 스타일 적용)
   function renderIdeaView() {
     const root = document.getElementById('idea-grid-root'); 
