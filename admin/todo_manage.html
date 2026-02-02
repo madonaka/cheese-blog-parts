@@ -464,23 +464,58 @@
     $('#input-detail').summernote('code', memoContent);
   }
 
+// 🚀 [수정] 로그 렌더링 (버그 배지 표시 기능 추가)
   function renderLogs() {
-    const root = document.getElementById('log-timeline-root'); root.innerHTML = "";
-    if(g_logs.length===0) { root.innerHTML = `<div style="color:#cbd5e1; font-size:0.9rem;">작업 로그가 없습니다.</div>`; return; }
+    const root = document.getElementById('log-timeline-root'); 
+    root.innerHTML = "";
+    
+    if(g_logs.length===0) { 
+      root.innerHTML = `<div style="color:#cbd5e1; font-size:0.9rem;">작업 로그가 없습니다.</div>`; 
+      return; 
+    }
+    
     g_logs.slice(0, 30).forEach(log => {
-      const item = document.createElement('div'); item.className = "log-item";
+      const item = document.createElement('div'); 
+      item.className = "log-item";
+      
       const dateStr = log['날짜'] ? log['날짜'].split('T')[0] : '';
       const title = log['제목'] || "작업 기록";
+      
+      // ✅ [핵심] 관련 작업 배지 처리 로직
       let relatedHtml = "";
       if(log['관련_목표ID']) {
+        // 연동된 할 일(또는 목표) 찾기
         const relTask = g_tasks.find(t => t.ID === log['관련_목표ID']) || g_goals.find(g => g.ID === log['관련_목표ID']);
-        if(relTask) relatedHtml = `<div class="log-related">📌 관련: ${relTask['제목']}</div>`;
+        
+        if(relTask) {
+          // 🐞 만약 연동된 작업이 '버그'라면 -> 빨간색 배지
+          if (relTask['유형'] === '버그') {
+            relatedHtml = `<div class="log-related" style="background:#fecaca; color:#b91c1c; border:1px solid #f87171;">🐞 버그 Fix: ${relTask['제목']}</div>`;
+          } 
+          // 📌 일반 작업이라면 -> 기본 초록색 배지
+          else {
+            relatedHtml = `<div class="log-related">📌 관련: ${relTask['제목']}</div>`;
+          }
+        }
       }
+
       item.innerHTML = `
-        <div class="log-dot"></div><div class="log-card">
-          <div class="log-header"><div style="display:flex; align-items:center;"><span class="log-date">${dateStr}</span>${log['소요시간']?`<span class="log-duration">⏱ ${log['소요시간']}</span>`:''}</div><div class="log-actions"><button class="row-btn" onclick="openEditLog('${log.ID}')">✏️</button><button class="row-btn delete" onclick="deleteItem('${log.ID}')">🗑️</button></div></div>
-          ${relatedHtml}
-          <div class="log-title">${title}</div><div class="log-body">${log['내용']}</div>${log['태그']?`<div><span class="log-tag">${log['태그']}</span></div>`:''}
+        <div class="log-dot"></div>
+        <div class="log-card">
+          <div class="log-header">
+            <div style="display:flex; align-items:center;">
+              <span class="log-date">${dateStr}</span>
+              ${log['소요시간'] ? `<span style="font-size:0.8rem; color:#64748b; margin-left:8px;">⏱ ${log['소요시간']}</span>` : ''}
+            </div>
+            <div class="log-actions">
+              <button class="row-btn" onclick="openEditLog('${log.ID}')">✏️</button>
+              <button class="row-btn delete" onclick="deleteItem('${log.ID}')">🗑️</button>
+            </div>
+          </div>
+          
+          ${relatedHtml} <div class="log-title" style="font-weight:700; font-size:1rem; margin-bottom:6px;">${title}</div>
+          <div class="log-body" style="font-size:0.95rem; color:#334155; white-space:pre-wrap;">${log['내용']}</div>
+          ${log['태그'] ? `<div style="margin-top:8px;"><span class="log-tag" style="font-size:0.8rem; color:#3b82f6; background:#eff6ff; padding:2px 6px; border-radius:4px;">${log['태그']}</span></div>` : ''}
         </div>`;
       root.appendChild(item);
     });
