@@ -222,6 +222,32 @@
     
     /* 타임라인 선 연결 끊기 방지 (마지막 아이템 처리) */
     .log-item:last-child::before { display: block; background: linear-gradient(to bottom, #e2e8f0 50%, transparent 100%); }
+
+  /* 🚀 [NEW] 모달 내 히스토리 스타일 개선 */
+    .history-list { display: flex; flex-direction: column; gap: 10px; }
+    
+    .history-item { 
+      background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; 
+      padding: 12px; font-size: 0.9rem; position: relative;
+    }
+    
+    .history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .history-date { 
+      font-weight: 700; color: #64748b; font-size: 0.75rem; 
+      background: #fff; padding: 2px 8px; border-radius: 12px; border: 1px solid #e2e8f0; 
+    }
+    .history-time { font-size: 0.75rem; color: #94a3b8; font-weight: 600; }
+    
+    .history-content { color: #334155; line-height: 1.5; white-space: pre-wrap; font-size: 0.9rem; }
+
+    /* 더보기 버튼 */
+    .history-more-btn {
+      width: 100%; padding: 10px; margin-top: 5px;
+      background: #fff; border: 1px dashed #cbd5e1; border-radius: 8px;
+      color: #64748b; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+      transition: all 0.2s;
+    }
+    .history-more-btn:hover { background: #f1f5f9; color: #3b82f6; border-color: #3b82f6; }
   </style>
 </head>
 <body>
@@ -843,21 +869,67 @@
     renderRelatedIdeasInModal(id);
   }
 
+// 🚀 [수정] 모달 내 히스토리 렌더링 (접기/펼치기 적용)
   function renderHistoryInModal(targetId) {
     const container = document.getElementById('related-history-section');
     const listRoot = document.getElementById('history-list-root');
-    const relatedLogs = g_logs.filter(l => l['관련_목표ID'] === targetId);
     
-    if (relatedLogs.length > 0) {
-      container.style.display = 'block';
-      listRoot.innerHTML = relatedLogs.map(log => `
-        <div class="history-item">
-          <div class="history-date">📅 ${log['날짜'] ? log['날짜'].split('T')[0] : ''}</div>
-          <div class="history-content">${log['내용']}</div>
-        </div>
-      `).join('');
-    } else {
+    // 1. 관련 로그 가져오기 & 최신순 정렬
+    const relatedLogs = g_logs.filter(l => l['관련_목표ID'] === targetId)
+                              .sort((a, b) => new Date(b['날짜']) - new Date(a['날짜']));
+    
+    if (relatedLogs.length === 0) {
       container.style.display = 'none';
+      return;
+    }
+
+    container.style.display = 'block';
+    listRoot.innerHTML = "";
+
+    // 2. 보여줄 개수 설정 (최신 2개만)
+    const visibleCount = 2; 
+    const hasMore = relatedLogs.length > visibleCount;
+
+    relatedLogs.forEach((log, index) => {
+        const item = document.createElement('div');
+        item.className = 'history-item';
+        
+        // 2개 넘어가면 숨김 처리
+        if (index >= visibleCount) item.style.display = 'none'; 
+        
+        const dateStr = log['날짜'] ? log['날짜'].split('T')[0] : '';
+        const timeStr = log['소요시간'] ? `⏱ ${log['소요시간']}` : '';
+        
+        // 내용 (줄바꿈 처리)
+        const content = (log['내용'] || "").replace(/\n/g, '<br>');
+
+        item.innerHTML = `
+            <div class="history-header">
+                <span class="history-date">📅 ${dateStr}</span>
+                <span class="history-time">${timeStr}</span>
+            </div>
+            <div class="history-content">${content}</div>
+        `;
+        listRoot.appendChild(item);
+    });
+
+    // 3. [더보기] 버튼 추가
+    if (hasMore) {
+        const moreBtn = document.createElement('button');
+        moreBtn.className = 'history-more-btn';
+        moreBtn.innerHTML = `▼ 지난 기록 더보기 (${relatedLogs.length - visibleCount}개)`;
+        
+        moreBtn.onclick = function() {
+            // 숨겨진 아이템 모두 표시
+            const hiddenItems = listRoot.querySelectorAll('.history-item[style*="display: none"]');
+            hiddenItems.forEach(el => {
+                el.style.display = 'block';
+                // 살짝 페이드인 효과 (선택사항)
+                el.style.animation = 'fadeIn 0.3s ease-in';
+            });
+            moreBtn.style.display = 'none'; // 버튼 숨김
+        };
+        listRoot.appendChild(moreBtn);
     }
   }
 
