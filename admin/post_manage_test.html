@@ -2064,11 +2064,32 @@ function extractTokensMetaFromHtml_(html){
 
         // ✅ [추가] HTML에 저장된 섹션 순서(JSON)가 있다면 복원
         const savedSections = extractSectionsJsonFromHtml_(current.html || "");
+        
         if (savedSections && Array.isArray(savedSections) && savedSections.length > 0) {
-           // 1. 상태(섹션 배열) 덮어쓰기
+           // Case 1: 순서표(메타데이터)가 있으면 그걸 그대로 따름
            templateState.sections = savedSections;
-           // 2. UI 및 슬롯/토큰 갱신 (이미 입력된 값은 보존됨)
            await refreshSectionState_();
+        } else {
+           // ✅ Case 2 [NEW]: 순서표가 없으면, "본문에 있는 것"만 남기고 템플릿에서 쳐냄
+           // 1. 현재 HTML 안에 존재하는 슬롯 이름들(BODY_1, BODY_2...)을 찾음
+           const bodiesFound = extractBodies_(current.html || "");
+           const existingSlots = new Set(Object.keys(bodiesFound));
+
+           // 2. 템플릿의 섹션 목록에서 "본문에 없는 슬롯"을 가진 섹션은 제거
+           const filteredSections = templateState.sections.filter(sec => {
+              // 문자열 섹션이거나 슬롯이 없는 섹션(고정 헤더/푸터 등)은 유지
+              if (typeof sec === 'string') return true;
+              if (!sec.vars || !sec.vars.SLOT) return true;
+
+              // 슬롯이 있는 섹션은 HTML에 그 슬롯 데이터가 있을 때만 유지
+              return existingSlots.has(sec.vars.SLOT);
+           });
+
+           // 3. 필터링 결과가 템플릿 기본값과 다르면 상태 업데이트
+           if (filteredSections.length !== templateState.sections.length) {
+              templateState.sections = filteredSections;
+              await refreshSectionState_();
+           }
         }
         
         const bodies = extractBodies_(current.html || "");
