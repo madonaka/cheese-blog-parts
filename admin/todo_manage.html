@@ -1091,30 +1091,39 @@
   }
 
 // 🚀 [수정] 히스토리 렌더링 (날짜 표시 오류 수정)
+// 🚀 [수정] 작업 히스토리 렌더링 (모든 기록 표시 + 날짜 오류 수정 + 내용 접기/펼치기)
   function renderHistoryInModal(targetId) {
     const container = document.getElementById('related-history-section');
     const listRoot = document.getElementById('history-list-root');
     
-    // 관련 로그 가져오기 & 최신순 정렬
-    const relatedLogs = g_logs.filter(l => l['관련_목표ID'] === targetId)
-                              .sort((a, b) => new Date(b['날짜']) - new Date(a['날짜']));
-    
+    // 1. 관련 로그 모두 가져오기 (ID 문자열 변환하여 비교)
+    const relatedLogs = g_logs.filter(l => String(l['관련_목표ID']) === String(targetId));
+
+    // 2. 기록이 없으면 섹션 숨김
     if (relatedLogs.length === 0) {
       container.style.display = 'none';
       return;
     }
 
+    // 3. 최신순 정렬 (날짜 -> 등록순)
+    relatedLogs.sort((a, b) => {
+        const dateA = new Date(a['날짜']);
+        const dateB = new Date(b['날짜']);
+        return dateB - dateA || Number(b.ID) - Number(a.ID);
+    });
+
     container.style.display = 'block';
     listRoot.innerHTML = "";
 
-    // 모두 렌더링
+    // 4. 개수 제한 없이 '모두' 렌더링
     relatedLogs.forEach(log => {
         const item = document.createElement('div');
         item.className = 'history-item';
         
+        // 클릭 시 내용 펼치기/접기 토글
         item.onclick = function() { this.classList.toggle('expanded'); };
         
-        // ✅ [핵심] 날짜 변환 로직 적용
+        // ✅ 날짜 변환 (로컬 시간대 적용하여 하루 밀림 방지)
         let dateStr = '';
         if (log['날짜']) {
             const d = new Date(log['날짜']);
@@ -1125,6 +1134,7 @@
         }
         
         const timeStr = log['소요시간'] ? `⏱ ${log['소요시간']}` : '';
+        // 줄바꿈을 <br>로 변환
         const content = (log['내용'] || "").replace(/\n/g, '<br>');
 
         item.innerHTML = `
