@@ -149,6 +149,19 @@
     .history-title { font-size: 1rem; font-weight: 700; color: #475569; margin-bottom: 12px; }
     .history-item { background: #fff; border: 1px solid #e2e8f0; padding: 12px; border-radius: 8px; font-size: 0.9rem; margin-bottom: 8px; }
     .history-date { font-weight: 600; color: var(--primary); font-size: 0.75rem; margin-bottom: 4px; }
+
+    /* 🐞 버그 카드 스타일 (게시판/리스트용) */
+    .bug-badge {
+      display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 4px;
+      font-size: 0.75rem; font-weight: 700; color: #b91c1c; background: #fecaca; border: 1px solid #f87171;
+    }
+    /* 로그 모달 내 버그 섹션 */
+    #log-bug-section {
+      background: #fef2f2; padding: 12px; border-radius: 8px; border: 1px dashed #ef4444; margin-top: 10px;
+    }
+    #log-bug-section label { color: #b91c1c; font-weight: 700; display:flex; align-items:center; gap:4px; }
+    #log-bug-section input { border-color: #fca5a5; }
+
   </style>
 </head>
 <body>
@@ -214,6 +227,7 @@
         <div style="display:flex; gap:12px; background:#f8fafc; padding:10px; border-radius:8px; overflow-x:auto;">
           <label style="white-space:nowrap;"><input type="radio" name="type" value="할일" checked onclick="toggleFormFields()"> 할 일</label>
           <label style="white-space:nowrap;"><input type="radio" name="type" value="아이디어" onclick="toggleFormFields()"> 아이디어</label>
+          <label style="white-space:nowrap; color:#ef4444; font-weight:bold;"><input type="radio" name="type" value="버그" onclick="toggleFormFields()"> 🔥 버그</label>
           <label style="white-space:nowrap;"><input type="radio" name="type" value="중간 목표" onclick="toggleFormFields()"> 중간 목표</label>
           <label style="white-space:nowrap;"><input type="radio" name="type" value="큰 목표" onclick="toggleFormFields()"> 큰 목표</label>
         </div>
@@ -267,6 +281,11 @@
       <div class="field admin-field-full" style="background:#f0f9ff; padding:10px; border-radius:8px; border:1px solid #bae6fd;"><label style="color:#0284c7; font-weight:600;">🔗 관련 작업 연동 (선택)</label><select id="log-related-id" style="width:100%; border:1px solid #bae6fd;"><option value="">(없음)</option></select><p style="font-size:0.75rem; color:#0ea5e9; margin:4px 0 0;">* 이 로그를 특정 작업과 연결합니다.</p></div>
       <div class="field admin-field-full"><label>내용</label><textarea id="log-content" required style="min-height:100px;"></textarea></div>
       <div class="field admin-field-full" id="log-idea-section" style="background:#f0fdf4; padding:16px; border-radius:12px; border:1px dashed #16a34a;"><label style="color:#15803d; font-weight:700;">💡 아이디어 (선택)</label><input type="text" id="log-idea-input" placeholder="여기에 적으면 아이디어 함에 추가됨" style="background:#fff; border-color:#86efac;"></div>
+      <div class="field admin-field-full" id="log-bug-section">
+        <label>🐞 버그 발견 (선택)</label>
+        <input type="text" id="log-bug-input" placeholder="발견한 버그나 에러 내용을 적어주세요" style="background:#fff;">
+        <p style="font-size:0.75rem; color:#ef4444; margin:4px 0 0;">* 입력 시 '버그' 항목으로 자동 등록됩니다.</p>
+      </div>  
       <div class="field"><label>시간</label><input type="text" id="log-duration"></div>
       <div class="field"><label>태그</label><input type="text" id="log-tags"></div>
       <div class="field admin-field-full" style="margin-top:20px; display:flex; gap:10px;"><button type="submit" class="btn btn-primary" style="flex:1; justify-content:center; padding:12px;">저장</button><button type="button" class="btn" onclick="closeModal('log-modal')" style="flex:1; justify-content:center; padding:12px;">취소</button></div>
@@ -343,20 +362,62 @@
     container.appendChild(row); return container;
   }
 
-  function renderBoardView() {
-    const tbody = document.getElementById('board-table-body'); tbody.innerHTML = "";
+function renderBoardView() {
+    const tbody = document.getElementById('board-table-body');
+    tbody.innerHTML = "";
+    
+    // 아이디어 제외하고 정렬 (완료된 것은 뒤로)
     const boardTasks = g_tasks.filter(t => t['유형'] !== '아이디어').sort((a,b) => (a['상태']==='완료'?1:-1));
-    if(boardTasks.length === 0) { tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding:30px; color:#cbd5e1;">등록된 할 일이 없습니다.</td></tr>`; return; }
+    
+    if(boardTasks.length === 0) { 
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding:30px; color:#cbd5e1;">등록된 할 일이 없습니다.</td></tr>`; 
+      return; 
+    }
+
     boardTasks.forEach(t => {
-      const tr = document.createElement('tr'); const isDone = t['상태'] === '완료';
+      const tr = document.createElement('tr');
+      const isDone = t['상태'] === '완료';
       let pathHtml = `<span style="color:#cbd5e1;">(미분류)</span>`;
-      const midId = (t['연결_중간목표ID']||"").split(',')[0];
-      const mid = g_goals.find(g=>g.ID===midId);
-      if(mid) { const big = g_goals.find(g=>g.ID===mid['상위ID']); const bgCol = big ? (big['색상'] || "#94a3b8") : "#94a3b8"; pathHtml = `<div class="path-badge" style="background:${bgCol};">${big?big['제목']:'?'} > ${mid['제목']}</div>`; }
+
+      // [수정] 유형별 경로/배지 표시 로직 분기
+      if (t['유형'] === '버그') {
+        // 🐞 버그인 경우
+        pathHtml = `<div class="bug-badge">🐞 BUG Fix</div>`;
+      } else {
+        // 📄 일반 할 일인 경우 (중간목표 > 큰목표 추적)
+        const midId = (t['연결_중간목표ID']||"").split(',')[0];
+        const mid = g_goals.find(g => g.ID === midId);
+        if(mid) {
+          const big = g_goals.find(g => g.ID === mid['상위ID']);
+          const bgCol = big ? (big['색상'] || "#94a3b8") : "#94a3b8";
+          pathHtml = `<div class="path-badge" style="background:${bgCol};">${big?big['제목']:'?'} > ${mid['제목']}</div>`;
+        }
+      }
+
+      // 공통 로직: 행 클릭 시 수정 모달
       tr.onclick = function() { openEditModal('task', t.ID); };
+
+      // 공통 로직: 관련 로그 개수
       const relatedCount = g_logs.filter(l => l['관련_목표ID'] === t.ID).length;
       const badgeHtml = relatedCount > 0 ? `<span class="log-count-badge">📝 ${relatedCount}</span>` : '';
-      tr.innerHTML = `<td style="text-align:center;"><div class="check-circle ${isDone?'checked':''}" onclick="event.stopPropagation(); toggleStatus('${t.ID}','${isDone?'대기':'완료'}')"></div></td><td>${pathHtml}</td><td><div style="font-weight:600; text-decoration:${isDone?'line-through':''}; color:${isDone?'#cbd5e1':'#334155'}">${t['제목']} ${badgeHtml}</div></td><td style="color:#64748b; font-size:0.85rem;">${t['기한'] ? t['기한'].slice(5) : '-'}</td>`;
+      
+      // (선택사항) 버그 제목 강조용 접두사
+      const titlePrefix = (t['유형'] === '버그') ? '<span style="color:#ef4444; margin-right:4px;">[Err]</span>' : '';
+
+      tr.innerHTML = `
+        <td style="text-align:center;">
+          <div class="check-circle ${isDone?'checked':''}" onclick="event.stopPropagation(); toggleStatus('${t.ID}','${isDone?'대기':'완료'}')"></div>
+        </td>
+        <td>${pathHtml}</td>
+        <td>
+          <div style="font-weight:600; text-decoration:${isDone?'line-through':''}; color:${isDone?'#cbd5e1':'#334155'}">
+            ${titlePrefix}${t['제목']} ${badgeHtml}
+          </div>
+        </td>
+        <td style="color:#64748b; font-size:0.85rem;">
+          ${t['기한'] ? t['기한'].slice(5) : '-'}
+        </td>
+      `;
       tbody.appendChild(tr);
     });
   }
@@ -462,6 +523,9 @@
     const isGoal = type.includes("목표");
     if (isGoal) { document.getElementById('field-start-date').style.display = "block"; document.getElementById('field-due-date').style.display = "block"; document.getElementById('field-priority').style.display = "none"; } 
     else { document.getElementById('field-start-date').style.display = "none"; document.getElementById('field-due-date').style.display = "block"; document.getElementById('field-priority').style.display = "block"; }
+    // 버그일 때 우선순위 자동 '높음' 세팅 (선택사항)
+    if (type === '버그') document.getElementById('input-priority').value = '높음';
+    
     document.getElementById('field-color').style.display = (type === "큰 목표") ? "block" : "none";
     updateParentOptions(type);
   }
@@ -569,17 +633,80 @@
     if(typeof showAdminLoading==='function') showAdminLoading("저장 중..."); await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify(payload) }); closeModal('input-modal'); loadAllData(); if(typeof hideAdminLoading==='function') hideAdminLoading();
   });
 
+// 로그 저장 폼 이벤트 리스너
   document.getElementById('log-form').addEventListener('submit', async (e) => {
-    e.preventDefault(); const isEdit = document.getElementById('log-edit-mode').value === "true";
+    e.preventDefault();
+    
+    // 1. 기본 데이터 준비
+    const isEdit = document.getElementById('log-edit-mode').value === "true";
+    const relatedId = document.getElementById('log-related-id').value; // 연동된 할 일 ID
+
     const payload = { 
-      mode: isEdit ? "editItem" : "addLog", id: document.getElementById('log-edit-id').value, 
-      date: document.getElementById('log-date').value, title: document.getElementById('log-title').value, 
-      content: document.getElementById('log-content').value, duration: document.getElementById('log-duration').value, tags: document.getElementById('log-tags').value,
-      relatedId: document.getElementById('log-related-id').value
+      mode: isEdit ? "editItem" : "addLog", 
+      id: document.getElementById('log-edit-id').value, 
+      date: document.getElementById('log-date').value, 
+      title: document.getElementById('log-title').value, 
+      content: document.getElementById('log-content').value, 
+      duration: document.getElementById('log-duration').value, 
+      tags: document.getElementById('log-tags').value,
+      relatedId: relatedId // ✅ 할 일 연동 ID (핵심)
     };
-    if(typeof showAdminLoading==='function') showAdminLoading("저장 중..."); const requests = [fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify(payload) })];
-    const ideaVal = document.getElementById('log-idea-input').value; if (!isEdit && ideaVal.trim() !== "") requests.push(fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify({ mode: "addItem", type: "아이디어", title: ideaVal, detail: "로그 파생", priority: "보통" }) }));
-    await Promise.all(requests); closeModal('log-modal'); loadAllData(); if(typeof hideAdminLoading==='function') hideAdminLoading();
+
+    if(typeof showAdminLoading === 'function') showAdminLoading("저장 중..."); 
+
+    try {
+      const requests = [];
+
+      // [요청 1] 로그 데이터 저장
+      requests.push(fetch(window.CHEESE_ADMIN_API_BASE, { 
+        method: "POST", 
+        body: JSON.stringify(payload) 
+      }));
+
+      // [요청 2] 아이디어 동시 등록 (신규 작성이고, 내용이 있을 때만)
+      const ideaInput = document.getElementById('log-idea-input');
+      if (!isEdit && ideaInput && ideaInput.value.trim() !== "") {
+        requests.push(fetch(window.CHEESE_ADMIN_API_BASE, { 
+          method: "POST", 
+          body: JSON.stringify({ 
+            mode: "addItem", 
+            type: "아이디어", 
+            title: ideaInput.value, 
+            detail: "작업 로그 작성 중 파생됨: " + payload.title, 
+            priority: "보통" 
+          }) 
+        }));
+      }
+
+      // [요청 3] 버그 리포트 동시 등록 (HTML에 입력칸이 있다면 처리)
+      const bugInput = document.getElementById('log-bug-input');
+      if (!isEdit && bugInput && bugInput.value.trim() !== "") {
+         requests.push(fetch(window.CHEESE_ADMIN_API_BASE, { 
+           method: "POST", 
+           body: JSON.stringify({ 
+             mode: "addItem", 
+             type: "버그", 
+             title: bugInput.value, 
+             detail: "작업 로그 작성 중 발견된 에러", 
+             priority: "높음",
+             connectedId: relatedId // 버그도 해당 작업에 연결
+           }) 
+         }));
+      }
+
+      // 모든 요청 병렬 처리
+      await Promise.all(requests); 
+
+      // 완료 처리
+      closeModal('log-modal'); 
+      loadAllData(); 
+
+    } catch (err) {
+      console.error("로그 저장 실패:", err);
+      alert("저장 중 오류가 발생했습니다.");
+    } finally {
+      if(typeof hideAdminLoading === 'function') hideAdminLoading();
+    }
   });
 </script>
 </body>
