@@ -263,6 +263,48 @@
       animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     }
     @keyframes popIn { from { transform: scale(0); } to { transform: scale(1); } }
+  /* 🚀 [NEW] 버그 카드 스타일 */
+    .bug-card {
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 20px;
+      transition: all 0.2s; position: relative; box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+      display: flex; flex-direction: column; height: 100%; 
+      border-top: 5px solid #ef4444; /* 기본 빨강 */
+    }
+    .bug-card:hover { transform: translateY(-3px); box-shadow: 0 10px 20px -5px rgba(239, 68, 68, 0.15); }
+
+    /* 작업중(확인중) 상태 강조 */
+    .bug-card.working {
+      border: 2px solid #f87171; /* 붉은 테두리 */
+      background: #fef2f2; /* 연한 붉은 배경 */
+    }
+
+    /* 배지 (확인중/작업중) */
+    .bug-status-badge {
+      position: absolute; top: -10px; right: 12px;
+      background: #ef4444; color: white; font-size: 0.75rem;
+      padding: 4px 10px; border-radius: 20px; font-weight: 800;
+      box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.4);
+      z-index: 2;
+      animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    
+    /* 버그 카드 내용 */
+    .bug-parent-info { font-size: 0.75rem; color: #94a3b8; margin-bottom: 4px; display:flex; align-items:center; gap:4px; }
+    .bug-title { font-weight: 800; font-size: 1.05rem; margin-bottom: 8px; color: #7f1d1d; line-height: 1.3; }
+    .bug-body { font-size: 0.9rem; color: #7f1d1d; opacity:0.8; line-height: 1.5; flex-grow: 1; margin-bottom: 16px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+
+    /* 버그 액션 버튼 */
+    .bug-footer { display: flex; gap: 8px; margin-top: auto; border-top: 1px solid #fee2e2; padding-top: 12px; }
+    .bug-btn { flex: 1; border: none; padding: 8px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 600; transition: 0.2s; }
+    
+    .bug-btn.check { background: #fff1f2; color: #e11d48; } 
+    .bug-btn.check:hover { background: #ffe4e6; }
+    
+    .bug-btn.solve { background: #f0fdf4; color: #16a34a; } 
+    .bug-btn.solve:hover { background: #dcfce7; }
+    
+    .bug-btn.restore { background: #f1f5f9; color: #64748b; }
+    .bug-btn.restore:hover { background: #e2e8f0; }
   </style>
 </head>
 <body>
@@ -292,14 +334,15 @@
         <div id="view-board-container" style="display:none;"><div class="board-container"><table class="board-table"><thead><tr><th style="width:50px; text-align:center;">완료</th><th>경로</th><th>제목</th><th style="width:110px;">마감일</th></tr></thead><tbody id="board-table-body"></tbody></table></div></div>
         
         <div id="view-bug-container" style="display:none;">
-          <div class="board-container bug-container">
-            <div class="bug-header-alert">
-              <span>🚨 해결해야 할 버그 목록</span>
+          <div class="idea-container">
+            <div class="idea-toolbar">
+              <span style="font-size:0.9rem; color:#b91c1c; font-weight:600;">🚨 발견된 버그 및 이슈 트래커</span>
+              <label style="cursor:pointer; display:flex; align-items:center; gap:6px; font-size:0.9rem;">
+                <input type="checkbox" id="toggle-bug-archive" onchange="renderBugView()">
+                <span>✅ 해결된 버그 보기 (아카이브)</span>
+              </label>
             </div>
-            <table class="board-table">
-              <thead><tr><th style="width:50px; text-align:center;">완료</th><th>연동 작업</th><th>내용</th><th style="width:100px;">상태</th></tr></thead>
-              <tbody id="bug-table-body"></tbody>
-            </table>
+            <div id="bug-grid-root" class="idea-grid"></div>
           </div>
         </div>
 
@@ -591,50 +634,81 @@
     });
   }
 
-  // 🚀 [NEW] 버그 트래커 뷰
+// 🚀 [수정] 버그 트래커 렌더링 (카드형 + 확인중 배지 기능)
   function renderBugView() {
-    const tbody = document.getElementById('bug-table-body');
-    tbody.innerHTML = "";
+    const root = document.getElementById('bug-grid-root');
+    root.innerHTML = "";
     
-    // 버그만 필터링
-    const bugs = g_tasks.filter(t => t['유형'] === '버그').sort((a,b) => (a['상태']==='완료'?1:-1));
+    // 아카이브 체크 여부 확인
+    const showArchive = document.getElementById('toggle-bug-archive') ? document.getElementById('toggle-bug-archive').checked : false;
+
+    // 필터링: 버그 타입 + (아카이브 상태에 따라 '완료' 포함/미포함)
+    const bugs = g_tasks.filter(t => {
+      if (t['유형'] !== '버그') return false;
+      if (showArchive) return t['상태'] === '완료'; // 아카이브 체크 시: 해결된 것만
+      else return t['상태'] !== '완료'; // 체크 해제 시: 미해결만
+    });
     
+    // 정렬: 우선순위 높음 -> 최신순
+    bugs.sort((a,b) => (b['ID'] > a['ID'] ? 1 : -1));
+
     if(bugs.length === 0) { 
-        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding:30px; color:#cbd5e1;">발견된 버그가 없습니다! 🎉</td></tr>`; 
+        root.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:60px; color:#cbd5e1;">${showArchive ? '해결된 버그 기록이 없습니다.' : '발견된 버그가 없습니다! 🎉'}</div>`; 
         return; 
     }
 
     bugs.forEach(t => {
-      const tr = document.createElement('tr');
+      const card = document.createElement('div');
+      
+      // ✅ 상태 확인 ('진행중' 상태를 '확인중/작업중'으로 사용)
+      const isWorking = t['상태'] === '진행중';
       const isDone = t['상태'] === '완료';
+
+      // '작업중'이면 working 클래스 추가
+      card.className = `bug-card ${isWorking ? 'working' : ''}`;
       
       // 관련 작업(Parent) 찾기
-      let parentTitle = "-";
+      let parentTitle = "";
       if (t['연결_중간목표ID']) {
         const parent = g_tasks.find(x => x.ID === t['연결_중간목표ID']) || g_goals.find(x => x.ID === t['연결_중간목표ID']);
         if (parent) parentTitle = parent['제목'];
       }
-
-      tr.onclick = function() { openEditModal('task', t.ID); };
       
-      tr.innerHTML = `
-        <td style="text-align:center;">
-          <div class="check-circle ${isDone?'checked':''}" onclick="event.stopPropagation(); toggleStatus('${t.ID}','${isDone?'대기':'완료'}')"></div>
-        </td>
-        <td style="color:#64748b; font-size:0.9rem;">${parentTitle}</td>
-        <td>
-          <div style="font-weight:600; text-decoration:${isDone?'line-through':''}; color:${isDone?'#cbd5e1':'#b91c1c'}">
-            ${t['제목']}
+      const plainText = (t['상세내용'] || "내용 없음").replace(/<[^>]*>?/gm, '').slice(0, 100) + "...";
+
+      // 버튼 HTML 생성
+      let buttonsHtml = "";
+      if (isDone) {
+          buttonsHtml = `<button class="bug-btn restore" onclick="toggleStatus('${t.ID}', '대기')">↩️ 미해결/복구</button>`;
+      } else {
+          if (isWorking) {
+              // 작업중 -> 해결 완료
+              buttonsHtml = `<button class="bug-btn solve" onclick="toggleStatus('${t.ID}', '완료')">✅ 해결 완료!</button>`;
+          } else {
+              // 대기 -> 확인 시작
+              buttonsHtml = `
+                <button class="bug-btn check" onclick="toggleStatus('${t.ID}', '진행중')">🔍 확인 시작</button>
+                <button class="bug-btn solve" onclick="toggleStatus('${t.ID}', '완료')">바로 해결</button>
+              `;
+          }
+      }
+
+      card.innerHTML = `
+        ${isWorking ? `<div class="bug-status-badge">🔥 확인중</div>` : ''} <div class="bug-content" onclick="openEditModal('task', '${t.ID}')" style="cursor:pointer; flex-grow:1;">
+          <div class="bug-parent-info">
+             ${parentTitle ? `<span>🔗 ${parentTitle}</span>` : '<span>(연동 작업 없음)</span>'}
           </div>
-        </td>
-        <td style="text-align:center;">
-           ${isDone ? '<span style="color:#10b981;font-weight:bold;font-size:0.8rem;">해결됨</span>' : '<span style="color:#ef4444;font-weight:bold;font-size:0.8rem;">대기중</span>'}
-        </td>
+          <div class="bug-title">${t['제목']}</div>
+          <div class="bug-body">${plainText}</div>
+        </div>
+        
+        <div class="bug-footer">
+          ${buttonsHtml}
+        </div>
       `;
-      tbody.appendChild(tr);
+      root.appendChild(card);
     });
   }
-
 // 🚀 [수정] 아이디어 뷰 (실현됨 배지 및 스타일 적용)
   function renderIdeaView() {
     const root = document.getElementById('idea-grid-root'); 
