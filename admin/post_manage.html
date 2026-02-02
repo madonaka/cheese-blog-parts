@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>포스트 관리 </title>
+  <title>포스트 관리</title>
 
   <!-- ✅ 메인 관리자 CSS 재사용 -->
   <link rel="stylesheet" href="./admin.css" />
@@ -442,7 +442,6 @@
     <div class="pm-global-text">처리 중입니다...</div>
   </div>
 
-  <script src="./admin-common.js"></script>  
   <!-- ✅ 반드시 포함해야 하는 공통 스크립트 유지 -->
   <script src="./admin-common.js"></script>
 
@@ -929,7 +928,31 @@
       return html;
     }
 
-function buildTokensMetaComment_(vars){
+    // ✅ [NEW] 섹션 정보(순서)를 저장하기 위한 메타데이터 생성 (FIX)
+    function buildSectionsMetaComment_(sections) {
+      if (!Array.isArray(sections) || sections.length === 0) return "";
+      const data = sections.map(s => (typeof s === "string" ? { name: s.trim() } : s));
+      try {
+        return `<!-- sections_json: ${JSON.stringify(data)} -->\n`;
+      } catch (e) {
+        return "";
+      }
+    }
+
+    // ✅ [NEW] 저장된 HTML에서 섹션 정보(JSON) 추출 (FIX)
+    function extractSectionsJsonFromHtml_(html) {
+      const t = String(html || "");
+      // <!-- sections_json: [...] -->
+      const m = t.match(/<!--\s*sections_json\s*:\s*([\s\S]*?)\s*-->/i);
+      if (!m) return null;
+      try {
+        return JSON.parse(m[1]);
+      } catch (e) {
+        return null;
+      }
+    }
+    
+    function buildTokensMetaComment_(vars){
       // ✅ 템플릿에서 감지된 token 목록 + 현재 vars 키를 합쳐서 저장
       // - IMG_SRC_1 같이 번호 토큰도 그대로 저장됨
       // - reserved/slot 계열은 제외
@@ -1097,7 +1120,7 @@ function extractTokensMetaFromHtml_(html){
     
     async function collectTokensFromTemplate_(manifest, slotNames){
       const supported = new Set([
-        "THUMB_URL","CANONICAL_URL","YEAR","MONTH","YEAR_NAV_JSON",
+        "THUMB_URL","CANONICAL_URL","YEAR","MONTH","YEAR_NAV_JSON", "CURRENT_KEY", "GENEALOGY_DATA",
         "IMG_ID","IMG_SRC","IMG_HREF","IMG_OW","IMG_OH","IMG_ALT","IMG_TITLE","IMG_SNIPPET",
         "ZOOM_LABEL"
       ]);
@@ -1431,15 +1454,14 @@ function extractTokensMetaFromHtml_(html){
       tokenNames.forEach(tok => {
         const wrap = document.createElement("div");
         wrap.className = "pm-dyn-item";
-        const isYearNav = String(tok) === "YEAR_NAV_JSON";
-
+        const isLongText = ["YEAR_NAV_JSON", "GENEALOGY_DATA"].includes(String(tok));
         wrap.innerHTML = `
             <div class="pm-dyn-head">
               <div class="pm-dyn-key">${escapeHtml(tok)}</div>
               <button type="button" class="pm-btn small ghost pm-dyn-clear" data-clear-token="${escapeHtml(tok)}">비우기</button>
             </div>
-            ${
-              isYearNav
+          ${
+              isLongText // ✅ 변수명 변경 (isYearNav -> isLongText)
                 ? `<textarea class="pm-textarea pm-dyn-textarea" data-token="${escapeHtml(tok)}"
                      placeholder="${escapeHtml(tokenPlaceholder_(tok))}"></textarea>`
                 : `<input class="pm-input" data-token="${escapeHtml(tok)}" style="width:100%;"
@@ -1570,6 +1592,10 @@ function extractTokensMetaFromHtml_(html){
         case "YEAR": return "예: 2026";
         case "MONTH": return "예: 01";
         case "YEAR_NAV_JSON": return "줄입력 예:\n2022,https://.../2022.html\n2023,https://.../2023.html\n2024,";
+        // ✅ 가계도 관련 예시 추가
+        case "CURRENT_KEY": return "예: /joseon-3 (현재 페이지 식별자)";
+        case "GENEALOGY_DATA": return "줄입력 예(왕조,제목,링크):\n조선,1편:건국,/joseon-1\n조선,2편:태종,/joseon-2\n조선,3편:세종,";
+        
         case "ZOOM_LABEL": return "예: 이미지 크게보기 (확대 링크 문구)";
         default: return "";
       }
@@ -1649,6 +1675,11 @@ function extractTokensMetaFromHtml_(html){
         tokenVals.YEAR_NAV_JSON = lineToYearNavJson_(tokenVals.YEAR_NAV_JSON);
       }
 
+      // ✅ 가계도 데이터: JSON 형식이 아니면(대괄호로 시작 안하면) 줄단위 변환기 실행
+      if (tokenVals.GENEALOGY_DATA && !String(tokenVals.GENEALOGY_DATA).trim().startsWith("[")) {
+        tokenVals.GENEALOGY_DATA = lineToGenealogyJson_(tokenVals.GENEALOGY_DATA);
+      }
+      
       const vars = {
         TITLE: title,
         title: title,
@@ -1682,6 +1713,36 @@ function extractTokensMetaFromHtml_(html){
       return JSON.stringify(items);
     }
 
+    // ✅ 가계도 줄단위 입력 변환기
+    // 입력형식: 그룹(왕조), 라벨(제목), 링크 (쉼표 구분)
+    function lineToGenealogyJson_(txt){
+      const items = String(txt || "")
+        .trim()
+        .split(/\r?\n/)
+        .map(s => s.trim())
+        .filter(Boolean)
+        .map(line => {
+          // 쉼표(,)로 분리. 제목에 쉼표가 있을 수 있으니 주의해야 하지만, 일단 단순 split 사용
+          const parts = line.split(",");
+          
+          // 최소 2개(왕조, 제목)는 있어야 함
+          if (parts.length < 2) return null;
+          
+          const group = parts[0].trim();
+          const label = parts[1].trim();
+          // 링크는 없을 수도 있음 (선택 사항)
+          const href = parts.length > 2 ? parts.slice(2).join(",").trim() : ""; 
+          
+          if (!group || !label) return null;
+          
+          return { group: group, label: label, href: href };
+        })
+        .filter(Boolean);
+
+      return JSON.stringify(items);
+    }
+
+    
   async function analyzeAndRenderTemplate_(tplId){
       templateState.templateId = tplId || "";
       templateState.manifest = null;
@@ -1787,7 +1848,10 @@ function extractTokensMetaFromHtml_(html){
 
       const tokensMeta = buildTokensMetaComment_(vars);
 
-      assembled = metaHeader + tokensMeta + assembled;
+      // ✅ [추가] 현재 섹션 순서/구조 정보를 JSON 주석으로 저장
+      const sectionsMeta = buildSectionsMetaComment_(manifest.sections);
+      
+      assembled = metaHeader + sectionsMeta + tokensMeta + assembled;
       return { html: assembled, manifest };
     }
 
@@ -1929,7 +1993,7 @@ function extractTokensMetaFromHtml_(html){
       }
     }
 
-    async function rewrapTemplateKeepBody(){
+  async function rewrapTemplateKeepBody(){
       const tplId = $("templateSelect").value;
       if (!tplId) return setStatus("템플릿을 먼저 선택하세요.", false);
 
@@ -1938,7 +2002,20 @@ function extractTokensMetaFromHtml_(html){
         hideBanner();
         setStatus("래퍼 재적용(본문 유지) 중...", true);
 
-        // (수정) 현재 화면에 보이는 순서(State) 그대로 조립함
+        // [1] 현재 입력된 데이터(슬롯 내용, 토큰 값)를 먼저 백업합니다.
+        const savedSlots = getSlotValues_();
+        const savedTokens = getTokenValues_();
+
+        // [2] 선택한 새 템플릿의 구조(입력창, 섹션 리스트)를 화면에 그립니다.
+        // 이 과정이 빠져 있어서 입력창이 갱신되지 않았던 것입니다.
+        await analyzeAndRenderTemplate_(tplId);
+
+        // [3] 백업해둔 데이터를 이름(Key)이 일치하는 새 입력창에 다시 채워넣습니다.
+        // 예: 이전 템플릿의 BODY_1 내용 -> 새 템플릿의 BODY_1 입력창
+        setSlotValues_(savedSlots);
+        setTokenValues_(savedTokens);
+
+        // [4] 이제 갱신된 UI와 데이터를 바탕으로 최종 HTML을 조립합니다.
         const out = await assembleHtmlUsingState_(tplId, buildVarsForAssemble_());
         $("html").value = out.html;
         syncCharCount();
@@ -1985,6 +2062,36 @@ function extractTokensMetaFromHtml_(html){
           await analyzeAndRenderTemplate_($("templateSelect").value || "");
         }
 
+        // ✅ [추가] HTML에 저장된 섹션 순서(JSON)가 있다면 복원
+        const savedSections = extractSectionsJsonFromHtml_(current.html || "");
+        
+        if (savedSections && Array.isArray(savedSections) && savedSections.length > 0) {
+           // Case 1: 순서표(메타데이터)가 있으면 그걸 그대로 따름
+           templateState.sections = savedSections;
+           await refreshSectionState_();
+        } else {
+           // ✅ Case 2 [NEW]: 순서표가 없으면, "본문에 있는 것"만 남기고 템플릿에서 쳐냄
+           // 1. 현재 HTML 안에 존재하는 슬롯 이름들(BODY_1, BODY_2...)을 찾음
+           const bodiesFound = extractBodies_(current.html || "");
+           const existingSlots = new Set(Object.keys(bodiesFound));
+
+           // 2. 템플릿의 섹션 목록에서 "본문에 없는 슬롯"을 가진 섹션은 제거
+           const filteredSections = templateState.sections.filter(sec => {
+              // 문자열 섹션이거나 슬롯이 없는 섹션(고정 헤더/푸터 등)은 유지
+              if (typeof sec === 'string') return true;
+              if (!sec.vars || !sec.vars.SLOT) return true;
+
+              // 슬롯이 있는 섹션은 HTML에 그 슬롯 데이터가 있을 때만 유지
+              return existingSlots.has(sec.vars.SLOT);
+           });
+
+           // 3. 필터링 결과가 템플릿 기본값과 다르면 상태 업데이트
+           if (filteredSections.length !== templateState.sections.length) {
+              templateState.sections = filteredSections;
+              await refreshSectionState_();
+           }
+        }
+        
         const bodies = extractBodies_(current.html || "");
         setSlotValues_(bodies);
 
@@ -2071,8 +2178,9 @@ function extractTokensMetaFromHtml_(html){
 
         const html = res.html || "";
         const rawHtml = html || "";
-if ($("injectAlertModal")) $("injectAlertModal").checked = hasAlertModal_(rawHtml);
-$("html").value = stripAlertModal_(rawHtml);
+        
+        // ✅ 수정: 불필요한 모달 체크 로직 제거
+        $("html").value = rawHtml;
 
         const meta = readTemplateMeta_(html);
         if (meta.template_id) {
@@ -2082,6 +2190,13 @@ $("html").value = stripAlertModal_(rawHtml);
           await analyzeAndRenderTemplate_($("templateSelect").value || "");
         }
 
+        // ✅ [추가] 섹션 순서 복원
+        const savedSections = extractSectionsJsonFromHtml_(html);
+        if (savedSections && Array.isArray(savedSections) && savedSections.length > 0) {
+           templateState.sections = savedSections;
+           await refreshSectionState_();
+        }
+        
         setSlotValues_(extractBodies_(html));
         setTokenValues_(extractTokensMetaFromHtml_(html));
 
@@ -2183,6 +2298,13 @@ $("html").value = stripAlertModal_(rawHtml);
           await analyzeAndRenderTemplate_($("templateSelect").value || "");
         }
 
+        // ✅ [추가] 섹션 순서 복원
+        const savedSections = extractSectionsJsonFromHtml_(html);
+        if (savedSections && Array.isArray(savedSections) && savedSections.length > 0) {
+           templateState.sections = savedSections;
+           await refreshSectionState_();
+        }
+        
         setSlotValues_(extractBodies_(html));
         setTokenValues_(extractTokensMetaFromHtml_(html));
 
