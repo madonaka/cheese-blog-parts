@@ -305,6 +305,52 @@
     
     .bug-btn.restore { background: #f1f5f9; color: #64748b; }
     .bug-btn.restore:hover { background: #e2e8f0; }
+  /* 🚀 [수정] 히스토리 스타일 (접기/펼치기 기능용) */
+    .history-list { display: flex; flex-direction: column; gap: 8px; }
+    
+    .history-item { 
+      background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; 
+      padding: 12px; font-size: 0.9rem; position: relative;
+      cursor: pointer; /* 클릭 가능 표시 */
+      transition: background 0.2s;
+    }
+    .history-item:hover { background: #f1f5f9; }
+
+    .history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .history-date { 
+      font-weight: 700; color: #64748b; font-size: 0.75rem; 
+      background: #fff; padding: 2px 8px; border-radius: 12px; border: 1px solid #e2e8f0; 
+    }
+    .history-time { font-size: 0.75rem; color: #94a3b8; font-weight: 600; }
+    
+    /* 내용: 기본 3줄 말줄임 (...) 처리 */
+    .history-content { 
+      color: #334155; line-height: 1.5; font-size: 0.9rem;
+      
+      /* 3줄 이상 넘어가면 자르고 ... 표시 */
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: normal; /* pre-wrap 대신 normal을 써야 line-clamp가 먹힘 (JS에서 br태그 처리) */
+    }
+
+    /* 펼쳐졌을 때 (.expanded 클래스 추가 시) */
+    .history-item.expanded .history-content {
+      display: block; /* 박스 제한 해제 */
+      -webkit-line-clamp: unset;
+      overflow: visible;
+    }
+    
+    /* 펼침/접힘 힌트 (선택사항) */
+    .history-item::after {
+        content: '▼ 눌어서 더보기';
+        display: block; text-align: center; font-size: 0.7rem; color: #cbd5e1; margin-top: 6px;
+    }
+    .history-item.expanded::after {
+        content: '▲ 접기';
+    }
   </style>
 </head>
 <body>
@@ -985,7 +1031,7 @@
     renderRelatedIdeasInModal(id);
   }
 
-// 🚀 [수정] 모달 내 히스토리 렌더링 (접기/펼치기 적용)
+// 🚀 [수정] 모달 내 히스토리 렌더링 (모두 표시 + 내용 접기/펼치기)
   function renderHistoryInModal(targetId) {
     const container = document.getElementById('related-history-section');
     const listRoot = document.getElementById('history-list-root');
@@ -1002,21 +1048,20 @@
     container.style.display = 'block';
     listRoot.innerHTML = "";
 
-    // 2. 보여줄 개수 설정 (최신 2개만)
-    const visibleCount = 2; 
-    const hasMore = relatedLogs.length > visibleCount;
-
-    relatedLogs.forEach((log, index) => {
+    // 2. 개수 제한 없이 '모두' 렌더링
+    relatedLogs.forEach(log => {
         const item = document.createElement('div');
         item.className = 'history-item';
         
-        // 2개 넘어가면 숨김 처리
-        if (index >= visibleCount) item.style.display = 'none'; 
+        // 🚀 클릭 시 'expanded' 클래스 토글 (CSS에서 처리)
+        item.onclick = function() {
+            this.classList.toggle('expanded');
+        };
         
         const dateStr = log['날짜'] ? log['날짜'].split('T')[0] : '';
         const timeStr = log['소요시간'] ? `⏱ ${log['소요시간']}` : '';
         
-        // 내용 (줄바꿈 처리)
+        // 줄바꿈 문자를 <br> 태그로 변환 (CSS display: -webkit-box 와 호환 위해)
         const content = (log['내용'] || "").replace(/\n/g, '<br>');
 
         item.innerHTML = `
@@ -1028,27 +1073,7 @@
         `;
         listRoot.appendChild(item);
     });
-
-    // 3. [더보기] 버튼 추가
-    if (hasMore) {
-        const moreBtn = document.createElement('button');
-        moreBtn.className = 'history-more-btn';
-        moreBtn.innerHTML = `▼ 지난 기록 더보기 (${relatedLogs.length - visibleCount}개)`;
-        
-        moreBtn.onclick = function() {
-            // 숨겨진 아이템 모두 표시
-            const hiddenItems = listRoot.querySelectorAll('.history-item[style*="display: none"]');
-            hiddenItems.forEach(el => {
-                el.style.display = 'block';
-                // 살짝 페이드인 효과 (선택사항)
-                el.style.animation = 'fadeIn 0.3s ease-in';
-            });
-            moreBtn.style.display = 'none'; // 버튼 숨김
-        };
-        listRoot.appendChild(moreBtn);
-    }
   }
-
   function renderRelatedIdeasInModal(targetId) {
     const container = document.getElementById('related-idea-section');
     const root = document.getElementById('related-idea-root');
