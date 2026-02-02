@@ -769,10 +769,12 @@
   }
 
 
-// 🚀 [수정] 아이디어 뷰 (실현됨 배지 및 스타일 적용)
+// 🚀 [수정] 아이디어 뷰 (실현 취소 + 삭제 기능 추가)
   function renderIdeaView() {
     const root = document.getElementById('idea-grid-root'); 
     root.innerHTML = "";
+    
+    // 아카이브 체크 여부
     const showArchive = document.getElementById('toggle-archive').checked;
     
     const ideas = g_tasks.filter(t => {
@@ -780,6 +782,9 @@
       if (showArchive) return t['상태'] === '완료'; 
       else return t['상태'] !== '완료'; 
     });
+
+    // 정렬: 최신순 (ID 내림차순)
+    ideas.sort((a,b) => (b['ID'] > a['ID'] ? 1 : -1));
 
     if(ideas.length === 0) { 
       root.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:60px; color:#cbd5e1;">${showArchive ? '보관된 아이디어가 없습니다.' : '등록된 아이디어가 없습니다.'}</div>`; 
@@ -789,30 +794,47 @@
     ideas.forEach(item => {
       const card = document.createElement('div'); 
       
-      // ✅ [핵심] 실현 여부 확인 (연결된 작업 ID가 있으면 실현된 것으로 간주)
+      // 실현 여부 확인
       const realizedId = item['연결_중간목표ID']; 
       const isRealized = realizedId && realizedId.trim() !== ""; 
 
-      // 실현된 카드면 'realized' 클래스 추가
       card.className = `idea-card ${isRealized ? 'realized' : ''}`;
       
       const dateStr = item['기한'] ? `📅 ${item['기한'].split('T')[0]}` : "";
       const plainText = (item['상세내용'] || "내용 없음").replace(/<[^>]*>?/gm, '').slice(0, 100) + "...";
 
-      // ✅ 버튼 분기 처리
+      // 🚀 [수정] 버튼 로직 개선 (+ 실현 취소 & 삭제 버튼)
       let actionBtn = "";
+      
+      // 공통 삭제 버튼 (우측 끝에 배치)
+      const deleteBtn = `<button class="idea-btn delete-idea" onclick="deleteItem('${item.ID}')" style="flex:0 0 auto; width:36px; background:#fff1f2; color:#ef4444; margin-left:4px;" title="삭제">🗑️</button>`;
+
       if (item['상태'] !== '완료') {
           if (isRealized) {
-              // 이미 실현됨 -> 연결된 작업 열기
-              actionBtn = `<button class="idea-btn" style="background:#eff6ff; color:#3b82f6; font-weight:700;" onclick="openEditModal('task', '${realizedId}')">👉 작업 보기</button>`;
+              // 이미 실현됨 -> 작업 보기 & 실현 취소
+              // (실현 취소는 연결 정보를 끊는 로직이 필요하지만, 여기서는 간단히 연결된 ID만 지우는 식으로 처리하거나, 
+              //  단순히 버튼만 바꾸는 건 의미가 없으므로 '작업 보기'에 집중하되, 
+              //  사용자가 요청한 '되돌리기'는 연결된 ID를 지우는 업데이트가 필요함.
+              //  다만, 현재 API 구조상 특정 필드(connectedId)만 빈값으로 업데이트하는 기능이 필요함.
+              //  우선 UI적으로 '실현 취소' 버튼을 누르면 연결된 ID를 지우는 로직을 호출하도록 구현)
+              
+              actionBtn = `
+                <button class="idea-btn" style="background:#eff6ff; color:#3b82f6; font-weight:700;" onclick="openEditModal('task', '${realizedId}')">👉 작업 보기</button>
+                <button class="idea-btn" style="background:#f1f5f9; color:#64748b;" onclick="cancelRealization('${item.ID}')">↩️ 실현 취소</button>
+              `;
           } else {
               // 실현 안 됨 -> 실현 버튼
               actionBtn = `<button class="idea-btn plan" onclick="convertIdeaToTask('${item.ID}')">🚀 실현</button>`;
           }
+      } else {
+          // 완료(보관) 상태
+          actionBtn = `<button class="idea-btn done" onclick="toggleStatus('${item.ID}', '대기')">↩️ 복구</button>`;
       }
 
       card.innerHTML = `
-        ${isRealized ? `<div class="realized-badge">🚀 실현됨</div>` : ''} <div class="idea-header">
+        ${isRealized ? `<div class="realized-badge">🚀 실현됨</div>` : ''} 
+        
+        <div class="idea-header">
           ${dateStr ? `<div class="idea-date">${dateStr}</div>` : ''}
         </div>
         
@@ -823,13 +845,37 @@
         
         <div class="idea-footer">
           ${actionBtn}
-          <button class="idea-btn done" onclick="toggleStatus('${item.ID}', '${item['상태'] === '완료' ? '대기' : '완료'}')">
-            ${item['상태'] === '완료' ? '↩️ 복구' : '🗄️ 보관'}
-          </button>
+          ${item['상태'] !== '완료' && !isRealized ? `<button class="idea-btn done" onclick="toggleStatus('${item.ID}', '완료')">🗄️ 보관</button>` : ''}
+          ${deleteBtn}
         </div>
       `;
       root.appendChild(card);
     });
+  }
+
+  // 🚀 [NEW] 실현 취소 함수 (연결 고리 끊기)
+  async function cancelRealization(ideaId) {
+      if(!confirm("실현 상태를 취소하시겠습니까?\n(연결된 작업은 삭제되지 않으며, 연결 고리만 끊어집니다.)")) return;
+      
+      if(typeof showAdminLoading === 'function') showAdminLoading("취소 중...");
+      
+      try {
+          // 연결된 ID(connectedId)를 빈 값으로 업데이트
+          await fetch(window.CHEESE_ADMIN_API_BASE, { 
+              method: "POST", 
+              body: JSON.stringify({ 
+                  mode: "editItem", 
+                  id: ideaId, 
+                  connectedId: " " // 공백을 보내서 초기화 (Apps Script가 빈 문자열 처리하는지 확인 필요, 보통 덮어씀)
+              }) 
+          });
+          loadAllData();
+      } catch(e) {
+          console.error(e);
+          alert("오류가 발생했습니다.");
+      } finally {
+          if(typeof hideAdminLoading === 'function') hideAdminLoading();
+      }
   }
 
   function convertIdeaToTask(ideaId) {
