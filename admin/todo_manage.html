@@ -248,6 +248,21 @@
       transition: all 0.2s;
     }
     .history-more-btn:hover { background: #f1f5f9; color: #3b82f6; border-color: #3b82f6; }
+
+  /* 🚀 [NEW] 실현된 아이디어 스타일 */
+    .idea-card.realized { 
+      border: 2px solid #60a5fa; /* 파란 테두리 */
+      background: #f8fbff; /* 아주 연한 파란 배경 */
+    }
+    .realized-badge { 
+      position: absolute; top: -10px; right: 12px; 
+      background: #3b82f6; color: white; font-size: 0.75rem; 
+      padding: 4px 10px; border-radius: 20px; font-weight: 800; 
+      box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.4);
+      z-index: 2; 
+      animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    @keyframes popIn { from { transform: scale(0); } to { transform: scale(1); } }
   </style>
 </head>
 <body>
@@ -620,9 +635,12 @@
     });
   }
 
+// 🚀 [수정] 아이디어 뷰 (실현됨 배지 및 스타일 적용)
   function renderIdeaView() {
-    const root = document.getElementById('idea-grid-root'); root.innerHTML = "";
+    const root = document.getElementById('idea-grid-root'); 
+    root.innerHTML = "";
     const showArchive = document.getElementById('toggle-archive').checked;
+    
     const ideas = g_tasks.filter(t => {
       if (t['유형'] !== '아이디어') return false;
       if (showArchive) return t['상태'] === '완료'; 
@@ -635,18 +653,42 @@
     }
 
     ideas.forEach(item => {
-      const card = document.createElement('div'); card.className = "idea-card";
+      const card = document.createElement('div'); 
+      
+      // ✅ [핵심] 실현 여부 확인 (연결된 작업 ID가 있으면 실현된 것으로 간주)
+      const realizedId = item['연결_중간목표ID']; 
+      const isRealized = realizedId && realizedId.trim() !== ""; 
+
+      // 실현된 카드면 'realized' 클래스 추가
+      card.className = `idea-card ${isRealized ? 'realized' : ''}`;
+      
       const dateStr = item['기한'] ? `📅 ${item['기한'].split('T')[0]}` : "";
       const plainText = (item['상세내용'] || "내용 없음").replace(/<[^>]*>?/gm, '').slice(0, 100) + "...";
 
+      // ✅ 버튼 분기 처리
+      let actionBtn = "";
+      if (item['상태'] !== '완료') {
+          if (isRealized) {
+              // 이미 실현됨 -> 연결된 작업 열기
+              actionBtn = `<button class="idea-btn" style="background:#eff6ff; color:#3b82f6; font-weight:700;" onclick="openEditModal('task', '${realizedId}')">👉 작업 보기</button>`;
+          } else {
+              // 실현 안 됨 -> 실현 버튼
+              actionBtn = `<button class="idea-btn plan" onclick="convertIdeaToTask('${item.ID}')">🚀 실현</button>`;
+          }
+      }
+
       card.innerHTML = `
-        <div class="idea-header">${dateStr ? `<div class="idea-date">${dateStr}</div>` : ''}</div>
+        ${isRealized ? `<div class="realized-badge">🚀 실현됨</div>` : ''} <div class="idea-header">
+          ${dateStr ? `<div class="idea-date">${dateStr}</div>` : ''}
+        </div>
+        
         <div class="idea-content" onclick="openEditModal('idea', '${item.ID}')" style="cursor:pointer; flex-grow:1;">
-          <div class="idea-title">${item['제목']}</div>
+          <div class="idea-title" style="${isRealized ? 'color:#2563eb;' : ''}">${item['제목']}</div>
           <div class="idea-body">${plainText}</div>
         </div>
+        
         <div class="idea-footer">
-          ${item['상태'] !== '완료' ? `<button class="idea-btn plan" onclick="convertIdeaToTask('${item.ID}')">🚀 실현</button>` : ''}
+          ${actionBtn}
           <button class="idea-btn done" onclick="toggleStatus('${item.ID}', '${item['상태'] === '완료' ? '대기' : '완료'}')">
             ${item['상태'] === '완료' ? '↩️ 복구' : '🗄️ 보관'}
           </button>
