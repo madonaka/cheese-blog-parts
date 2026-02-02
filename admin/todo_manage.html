@@ -87,6 +87,22 @@
       margin-left: 8px;
       font-weight: normal;
     }
+    /* 할 일 상세 내용 박스 (기본 숨김) */
+    .task-detail {
+      display: none; /* 기본 숨김 */
+      padding: 10px 16px 10px 48px; /* 체크박스 너비만큼 들여쓰기 */
+      background: #f8fafc;
+      color: #4b5563;
+      font-size: 0.9rem;
+      line-height: 1.5;
+      border-bottom: 1px solid #f1f5f9;
+      white-space: pre-wrap; /* 줄바꿈 유지 */
+    }
+    
+    /* 할 일 행에 커서 포인터 추가 */
+    .task-row {
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -325,21 +341,67 @@
     });
   }
 
+  // --- [수정된 함수] 할 일 행 생성 (클릭 시 상세 펼치기 기능 추가) ---
   function createTaskRow(t) {
-    const div = document.createElement('div');
-    div.className = "task-row";
+    // 1. 컨테이너 생성 (행 + 상세내용을 담음)
+    const container = document.createElement('div');
+
+    // 2. 할 일 요약 행 (제목, 체크박스 등)
+    const row = document.createElement('div');
+    row.className = "task-row";
+    
+    // 클릭 시 상세 내용 토글 이벤트 연결
+    row.onclick = function() {
+      const detailEl = container.querySelector('.task-detail');
+      if (detailEl) {
+        // none이면 block으로, block이면 none으로 토글
+        detailEl.style.display = (detailEl.style.display === "none") ? "block" : "none";
+      }
+    };
+
     const isDone = t['상태'] === '완료';
-    div.innerHTML = `
-      <div class="check-circle ${isDone?'checked':''}" onclick="toggleStatus('${t.ID}','${isDone?'대기':'완료'}')"></div>
+    
+    row.innerHTML = `
+      <div class="check-circle ${isDone?'checked':''}" 
+           onclick="event.stopPropagation(); toggleStatus('${t.ID}','${isDone?'대기':'완료'}')"></div>
+      
       <div style="flex:1; text-decoration:${isDone?'line-through':''}; color:${isDone?'#aaa':'#333'}">
         ${t['제목']}
+        ${t['상세내용'] ? '<span style="font-size:0.75rem; color:#9ca3af; margin-left:6px;">📝</span>' : ''}
       </div>
+      
       <div class="row-actions">
-        <button class="row-btn" onclick="openEditModal('task', '${t.ID}')">✏️</button>
-        <button class="row-btn delete" onclick="deleteItem('${t.ID}')">🗑️</button>
+        <button class="row-btn" onclick="event.stopPropagation(); openEditModal('task', '${t.ID}')">✏️</button>
+        <button class="row-btn delete" onclick="event.stopPropagation(); deleteItem('${t.ID}')">🗑️</button>
       </div>
     `;
-    return div;
+
+    container.appendChild(row);
+
+    // 3. 상세 내용 영역 (숨겨진 상태로 생성)
+    // 상세내용이 있거나 기한이 설정된 경우에만 생성
+    if (t['상세내용'] || t['기한']) {
+      const detail = document.createElement('div');
+      detail.className = "task-detail";
+      // detail.style.display = "none"; // CSS에서 이미 none 처리했지만 명시적으로 한번 더
+      
+      let html = "";
+      if (t['상세내용']) {
+        html += `<div>${t['상세내용']}</div>`;
+      }
+      if (t['기한']) {
+        // 날짜만 깔끔하게 (YYYY-MM-DD)
+        const dateStr = t['기한'].split('T')[0];
+        html += `<div style="margin-top:6px; font-size:0.85rem; color:#2563eb; font-weight:600;">
+          📅 마감일: ${dateStr}
+        </div>`;
+      }
+      
+      detail.innerHTML = html;
+      container.appendChild(detail);
+    }
+
+    return container;
   }
 
   // --- 렌더링: 로그 ---
