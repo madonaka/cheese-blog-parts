@@ -502,8 +502,11 @@
       
       <div class="field admin-field-full" id="log-bug-section">
         <label>🐞 버그 발견 (선택)</label>
-        <input type="text" id="log-bug-input" placeholder="발견한 버그나 에러 내용을 적어주세요" style="background:#fff;">
-        <p style="font-size:0.75rem; color:#ef4444; margin:4px 0 0;">* 입력 시 '버그' 항목으로 자동 등록됩니다.</p>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+            <input type="text" id="log-bug-input" placeholder="버그 제목 (예: 로그인 시 404 에러)" style="background:#fff;">
+            <textarea id="log-bug-detail" placeholder="버그 상세 내용 (발생 경로, 증상 등)" style="background:#fff; min-height:60px;"></textarea>
+        </div>
+        <p style="font-size:0.75rem; color:#ef4444; margin:4px 0 0;">* 입력 시 '버그' 항목으로 자동 등록되며, 현재 로그와 연동됩니다.</p>
       </div>
 
       <div class="field"><label>시간</label><input type="text" id="log-duration"></div>
@@ -1164,45 +1167,84 @@
     }
   });
 
+// 🚀 [수정] 로그 저장 + 버그 동시 등록 + 상호 연동 로직
   document.getElementById('log-form').addEventListener('submit', async (e) => {
     e.preventDefault();
+    
     const isEdit = document.getElementById('log-edit-mode').value === "true";
     const relatedId = document.getElementById('log-related-id').value;
-
-    const payload = { 
-      mode: isEdit ? "editItem" : "addLog", id: document.getElementById('log-edit-id').value, 
-      date: document.getElementById('log-date').value, title: document.getElementById('log-title').value, 
-      content: document.getElementById('log-content').value, duration: document.getElementById('log-duration').value, tags: document.getElementById('log-tags').value,
-      relatedId: relatedId
-    };
+    
+    // 입력값 가져오기
+    const dateVal = document.getElementById('log-date').value;
+    const titleVal = document.getElementById('log-title').value;
+    let contentVal = document.getElementById('log-content').value; // 수정 가능하도록 let 선언
+    const durationVal = document.getElementById('log-duration').value;
+    const tagsVal = document.getElementById('log-tags').value;
+    
+    // 버그 입력값 확인
+    const bugTitle = document.getElementById('log-bug-input') ? document.getElementById('log-bug-input').value.trim() : "";
+    const bugDetail = document.getElementById('log-bug-detail') ? document.getElementById('log-bug-detail').value.trim() : "";
 
     if(typeof showAdminLoading === 'function') showAdminLoading("저장 중..."); 
 
     try {
       const requests = [];
-      requests.push(fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify(payload) }));
 
+      // 1. 버그가 있다면 -> 버그 먼저 등록 (ID 확보를 위해? 동시 실행해도 무방하지만 논리적 순서 고려)
+      // 하지만 Apps Script의 병렬 처리를 위해 Promise.all 사용
+      // 대신, 로그 내용에 버그 정보를 추가함
+      
+      if (!isEdit && bugTitle !== "") {
+         // 로그 본문에 자동 추가
+         contentVal += `\n\n[System] 🐞 버그 리포트 생성됨: ${bugTitle}`;
+         
+         // 버그 상세 내용에 로그 정보 추가
+         const bugFullDetail = `${bugDetail}\n\n---\n📌 발견된 작업 로그: ${titleVal || '제목 없는 로그'} (${dateVal})`;
+
+         // 버그 등록 요청
+         requests.push(fetch(window.CHEESE_ADMIN_API_BASE, { 
+           method: "POST", 
+           body: JSON.stringify({ 
+               mode: "addItem", 
+               type: "버그", 
+               title: bugTitle, 
+               detail: bugFullDetail, 
+               priority: "높음", 
+               connectedId: relatedId // 부모 작업과 연결
+           }) 
+         }));
+      }
+
+      // 2. 아이디어 자동 등록 (기존 로직 유지)
       const ideaInput = document.getElementById('log-idea-input');
       if (!isEdit && ideaInput && ideaInput.value.trim() !== "") {
         requests.push(fetch(window.CHEESE_ADMIN_API_BASE, { 
           method: "POST", 
-          body: JSON.stringify({ mode: "addItem", type: "아이디어", title: ideaInput.value, detail: "작업 로그 작성 중 파생됨: " + payload.title, priority: "보통" }) 
+          body: JSON.stringify({ mode: "addItem", type: "아이디어", title: ideaInput.value, detail: "작업 로그 작성 중 파생됨: " + titleVal, priority: "보통" }) 
         }));
       }
 
-      const bugInput = document.getElementById('log-bug-input');
-      if (!isEdit && bugInput && bugInput.value.trim() !== "") {
-         requests.push(fetch(window.CHEESE_ADMIN_API_BASE, { 
-           method: "POST", 
-           body: JSON.stringify({ mode: "addItem", type: "버그", title: bugInput.value, detail: "작업 로그 작성 중 발견된 에러", priority: "높음", connectedId: relatedId }) 
-         }));
-      }
+      // 3. 로그 저장 요청 (수정된 내용 포함)
+      const logPayload = { 
+        mode: isEdit ? "editItem" : "addLog", 
+        id: document.getElementById('log-edit-id').value, 
+        date: dateVal, 
+        title: titleVal, 
+        content: contentVal, // 버그 정보가 추가된 내용
+        duration: durationVal, 
+        tags: tagsVal,
+        relatedId: relatedId
+      };
+      requests.push(fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify(logPayload) }));
 
+      // 전체 실행
       await Promise.all(requests); 
-      closeModal('log-modal'); loadAllData(); 
+      
+      closeModal('log-modal'); 
+      loadAllData(); 
 
     } catch (err) {
-      console.error("로그 저장 실패:", err);
+      console.error("저장 실패:", err);
       alert("저장 중 오류가 발생했습니다.");
     } finally {
       if(typeof hideAdminLoading === 'function') hideAdminLoading();
