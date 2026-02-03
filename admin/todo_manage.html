@@ -1058,8 +1058,14 @@
         const response = await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify(payload) });
         const result = await response.json();
 
+        // 🚀 [수정] 아이디어 실현 연결 로직 + 자동 로그 추가
         if (!isEdit && result.id && originIdeaId) {
+            // 1. 기존 아이디어와 새 작업 연결 (서버 요청)
             await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify({ mode: "editItem", id: originIdeaId, connectedId: result.id }) });
+            
+            // 2. [NEW] 실현 로그 자동 생성! (여기에 추가하세요)
+            const taskTitle = document.getElementById('input-title').value;
+            await createAutoLog("realize_idea", taskTitle, result.id);
         }
         // 🚀 [추가] 여기가 핵심! 신규 등록 시 자동 로그 생성 로직
         if (!isEdit && result.result === "success") {
@@ -1139,14 +1145,13 @@
     finally { if(typeof hideAdminLoading === 'function') hideAdminLoading(); }
   });
 
-  // 🚀 [NEW] 자동 로그 생성 함수 (시스템이 대신 기록)
+// 🚀 [수정] 자동 로그 생성 함수 (케이스 추가)
   async function createAutoLog(actionType, itemTitle, itemId) {
     const today = new Date().toISOString().split('T')[0];
     let logTitle = "";
     let logContent = "";
     let tags = "System";
 
-    // 상황별 로그 내용 생성
     if (actionType === "create_bug") {
         logTitle = "🚨 버그 리포트 등록";
         logContent = `새로운 버그가 등록되었습니다.\n제목: ${itemTitle}`;
@@ -1163,9 +1168,14 @@
         logTitle = "✅ 달성/완료";
         logContent = `작업이 완료되었습니다!\n작업명: ${itemTitle}`;
         tags = "Done";
+    } 
+    // 👇 [여기] 아이디어 실현 케이스 추가!
+    else if (actionType === "realize_idea") {
+        logTitle = "🚀 아이디어 실현!";
+        logContent = `아이디어가 구체적인 작업으로 변환되었습니다.\n작업명: ${itemTitle}`;
+        tags = "Realization";
     }
 
-    // 서버로 전송 (화면 로딩 없이 조용히 처리)
     try {
         await fetch(window.CHEESE_ADMIN_API_BASE, {
             method: "POST",
@@ -1174,7 +1184,7 @@
                 date: today,
                 title: logTitle,
                 content: logContent,
-                relatedId: itemId || "", // 해당 항목과 자동 연결
+                relatedId: itemId || "",
                 tags: tags
             })
         });
