@@ -1255,21 +1255,21 @@
     }
   });
 
-// 🚀 [수정] 로그 저장 로직 (아이디어 자동 실현 '완벽' 차단)
+// 🚀 [수정] 로그 저장 로직 (목표 연결은 유지하고, 작업 연결만 차단)
   document.getElementById('log-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     
     const isEdit = document.getElementById('log-edit-mode').value === "true";
-    const relatedId = document.getElementById('log-related-id').value; // 사용자가 선택한 연동 작업 ID
+    const relatedId = document.getElementById('log-related-id').value; // 선택한 연동 ID
     
-    // 기본 입력값
+    // 입력값
     const dateVal = document.getElementById('log-date').value;
     const titleVal = document.getElementById('log-title').value;
     let contentVal = document.getElementById('log-content').value;
     const durationVal = document.getElementById('log-duration').value;
     const tagsVal = document.getElementById('log-tags').value;
     
-    // 추가 입력값 (버그 & 아이디어)
+    // 버그 & 아이디어 입력값
     const bugInput = document.getElementById('log-bug-input');
     const bugTitle = bugInput ? bugInput.value.trim() : "";
     const bugDetailVal = document.getElementById('log-bug-detail') ? document.getElementById('log-bug-detail').value.trim() : "";
@@ -1282,7 +1282,7 @@
     try {
       const requests = [];
 
-      // 1. 버그 등록 (버그는 연동 필요 -> connectedId 포함)
+      // 1. 버그 등록 (버그는 무조건 연동 유지)
       if (!isEdit && bugTitle !== "") {
          contentVal += `\n\n[System] 🐞 버그 리포트 생성됨: ${bugTitle}`;
          const bugFullDetail = `${bugDetailVal}\n\n---\n📌 발견된 작업 로그: ${titleVal || '제목 없는 로그'} (${dateVal})`;
@@ -1295,25 +1295,31 @@
                title: bugTitle, 
                detail: bugFullDetail, 
                priority: "높음", 
-               connectedId: relatedId // ✅ 버그는 연동 유지
+               connectedId: relatedId 
            }) 
          }));
       }
 
-      // 2. 아이디어 등록 (아이디어는 연동 절대 금지 -> connectedId 키 자체를 제거)
+      // 2. 아이디어 등록 (목표는 연결하고, 작업은 연결 안 함)
       if (!isEdit && ideaTitle !== "") {
-        const ideaPayload = { 
+        
+        // ✅ [핵심 로직] 선택한 ID가 목표(G_, M_)인 경우에만 연결합니다.
+        // (작업 T_ 이나 버그 B_ 인 경우 연결하면 '실현됨'으로 오해하므로 연결하지 않음)
+        let connectionForIdea = "";
+        if (relatedId && (relatedId.startsWith('G_') || relatedId.startsWith('M_'))) {
+            connectionForIdea = relatedId;
+        }
+
+        requests.push(fetch(window.CHEESE_ADMIN_API_BASE, { 
+          method: "POST", 
+          body: JSON.stringify({ 
              mode: "addItem", 
              type: "아이디어", 
              title: ideaTitle, 
              detail: "작업 로그 작성 중 파생됨: " + titleVal, 
-             priority: "보통"
-             // 🚨 [핵심] connectedId 필드를 아예 안 넣습니다!
-        };
-        
-        requests.push(fetch(window.CHEESE_ADMIN_API_BASE, { 
-          method: "POST", 
-          body: JSON.stringify(ideaPayload) 
+             priority: "보통",
+             connectedId: connectionForIdea // ✅ 목표일 때만 ID가 들어갑니다.
+          }) 
         }));
       }
 
