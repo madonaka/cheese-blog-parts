@@ -792,7 +792,7 @@
   }
 
 
-// 🚀 [수정] 아이디어 뷰 (실현 취소 + 삭제 버튼이 확실히 보이도록 수정)
+// 🚀 [수정] 아이디어 뷰 (목표 연결 시 실현됨 오표시 수정)
   function renderIdeaView() {
     const root = document.getElementById('idea-grid-root'); 
     root.innerHTML = "";
@@ -818,38 +818,46 @@
     ideas.forEach(item => {
       const card = document.createElement('div'); 
       
-      // 실현 여부 확인 (연결된 ID가 있고, 빈칸이 아니면 실현된 것)
       const realizedId = item['연결_중간목표ID']; 
-      const isRealized = realizedId && realizedId.trim().length > 0; 
+      
+      // ✅ [핵심 수정] ID가 'T_'(작업) 또는 'B_'(버그)로 시작할 때만 실현된 것으로 판단
+      // (중간 목표 'M_' 등은 단순 카테고리 연결이므로 제외)
+      const isRealized = realizedId && (realizedId.startsWith('T_') || realizedId.startsWith('B_'));
 
       card.className = `idea-card ${isRealized ? 'realized' : ''}`;
       
       const dateStr = item['기한'] ? `📅 ${item['기한'].split('T')[0]}` : "";
       const plainText = (item['상세내용'] || "내용 없음").replace(/<[^>]*>?/gm, '').slice(0, 100) + "...";
 
-      // 🔘 버튼 로직 생성
+      // 소속 목표 이름 찾기 (옵션)
+      let parentGoalName = "";
+      if (!isRealized && realizedId && realizedId.startsWith('M_')) {
+          const parent = g_goals.find(g => g.ID === realizedId);
+          if (parent) parentGoalName = `<div style="font-size:0.75rem; color:#059669; margin-bottom:4px;">🚩 ${parent['제목']}</div>`;
+      }
+
+      // 🔘 버튼 로직
       let actionBtn = "";
       
-      // 공통 삭제 버튼 (빨간 휴지통)
+      // 공통 삭제 버튼
       const deleteBtn = `<button class="idea-btn delete-idea" onclick="deleteItem('${item.ID}')" style="flex:0 0 auto; width:36px; background:#fff1f2; color:#ef4444; margin-left:4px;" title="삭제">🗑️</button>`;
 
       if (item['상태'] !== '완료') {
           if (isRealized) {
-              // ✅ [핵심] 이미 실현됨 -> '작업 보기' 와 '실현 취소' 버튼 두 개가 나와야 함
+              // 이미 실현됨 (작업으로 변환됨)
               actionBtn = `
                 <button class="idea-btn" style="background:#eff6ff; color:#3b82f6; font-weight:700;" onclick="openEditModal('task', '${realizedId}')">👉 작업 보기</button>
                 <button class="idea-btn" style="background:#f1f5f9; color:#64748b;" onclick="cancelRealization('${item.ID}')">↩️ 취소</button>
               `;
           } else {
-              // 실현 안 됨 -> '실현' 버튼
+              // 실현 안 됨 (일반 아이디어 or 목표에만 연결됨)
               actionBtn = `<button class="idea-btn plan" onclick="convertIdeaToTask('${item.ID}')">🚀 실현</button>`;
           }
       } else {
-          // 완료(보관) 상태 -> '복구' 버튼
+          // 완료(보관) 상태
           actionBtn = `<button class="idea-btn done" onclick="toggleStatus('${item.ID}', '대기')">↩️ 복구</button>`;
       }
 
-      // 보관 버튼 (실현 안 된 상태에서만 보관 가능하도록)
       const archiveBtn = (item['상태'] !== '완료' && !isRealized) 
           ? `<button class="idea-btn done" onclick="toggleStatus('${item.ID}', '완료')">🗄️ 보관</button>` 
           : '';
@@ -857,8 +865,8 @@
       card.innerHTML = `
         ${isRealized ? `<div class="realized-badge">🚀 실현됨</div>` : ''} 
         
-        <div class="idea-header">
-          ${dateStr ? `<div class="idea-date">${dateStr}</div>` : ''}
+        <div class="idea-header" style="flex-direction:column; align-items:flex-start;">
+          ${parentGoalName} ${dateStr ? `<div class="idea-date">${dateStr}</div>` : ''}
         </div>
         
         <div class="idea-content" onclick="openEditModal('idea', '${item.ID}')" style="cursor:pointer; flex-grow:1;">
@@ -875,6 +883,8 @@
       root.appendChild(card);
     });
   }
+
+  
 // 🚀 [NEW] 실현 취소 함수 (스크립트 태그 안쪽, 맨 마지막에 추가하세요)
   async function cancelRealization(ideaId) {
       if(!confirm("실현 상태를 취소하시겠습니까?\n(연결된 작업과의 고리를 끊습니다.)")) return;
