@@ -2262,6 +2262,12 @@ async function analyzeAndRenderTemplate_(tplId, keepSections = false){
         setBloggerMeta({ url: res.url, post_id: res.post_id, status: res.status });
         setStatus(`Blogger ${res.status === 'published' ? '발행' : '초안'} 완료`, true);
 
+        // 👇 [여기] 자동 로그 생성 코드 추가!
+        // (발행 상태인지 초안 상태인지 확인하여 로그 전송)
+        const logAction = (res.status === 'published') ? 'publish' : 'draft';
+        // await를 빼면 로그 저장을 기다리지 않고 바로 UI가 반응해서 더 빠릅니다.
+        createAutoLog(logAction, payload.title, id);
+   
         return res;
 
       }catch(e){
@@ -2850,6 +2856,44 @@ function clearEditor(){
         el.textContent = "V. " + verStr;
         el.title = "Last Modified: " + document.lastModified;
       })();
+    // 🚀 [NEW] 자동 로그 생성 함수 (포스트 발행 기록용)
+    async function createAutoLog(actionType, title, id) {
+      // todo_manage.html에서 사용하는 API 주소 (로그 저장용)
+      const LOG_API_BASE = "https://script.google.com/macros/s/AKfycbwn1TrLeSIAe570LRWMJxRzx88u3LQYF38Kme9WhMd-YQsrMsSggrNy3I_2SGKGXTpS/exec";
+      
+      const today = new Date().toISOString().split('T')[0];
+      let logTitle = "";
+      let logContent = "";
+      let tags = "System";
+
+      if (actionType === "publish") {
+          logTitle = "🚀 포스팅 발행됨";
+          logContent = `블로그 포스트가 발행(공개)되었습니다.\n제목: ${title}\nID: ${id}`;
+          tags = "Publish";
+      } else if (actionType === "draft") {
+          logTitle = "📝 포스팅 초안 저장";
+          logContent = `블로그 포스트가 초안으로 업데이트되었습니다.\n제목: ${title}\nID: ${id}`;
+          tags = "Draft";
+      }
+
+      // 다른 API로 보내야 하므로 fetch를 직접 사용
+      try {
+          await fetch(LOG_API_BASE, {
+              method: "POST",
+              body: JSON.stringify({
+                  mode: "addLog",
+                  date: today,
+                  title: logTitle,
+                  content: logContent,
+                  relatedId: id || "",
+                  tags: tags
+              })
+          });
+          console.log("자동 로그 기록 완료");
+      } catch(e) {
+          console.error("자동 로그 기록 실패:", e);
+      }
+    }
   </script>
   
 </body>
