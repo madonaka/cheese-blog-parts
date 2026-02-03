@@ -1014,8 +1014,26 @@
   }
 
   function deleteFromModal() { const id = document.getElementById('edit-id').value; deleteItem(id); closeModal('input-modal'); }
-  async function toggleStatus(id, newStatus) { await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify({ mode: "updateStatus", id: id, status: newStatus }) }); loadAllData(); }
-  async function deleteItem(id) { if(!confirm("정말 삭제하시겠습니까?")) return; if(typeof showAdminLoading==='function') showAdminLoading("삭제 중..."); await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify({ mode: "deleteItem", id: id }) }); loadAllData(); if(typeof hideAdminLoading==='function') hideAdminLoading(); }
+// 🚀 [수정] 상태 변경 + 완료 시 자동 로그
+  async function toggleStatus(id, newStatus) {
+    // 1. 상태 업데이트 요청
+    await fetch(window.CHEESE_ADMIN_API_BASE, { 
+        method: "POST", 
+        body: JSON.stringify({ mode: "updateStatus", id: id, status: newStatus }) 
+    });
+
+    // 2. '완료' 상태가 되면 자동으로 로그 남기기
+    if (newStatus === '완료') {
+        const item = g_goals.find(x => x.ID === id) || g_tasks.find(x => x.ID === id);
+        if (item) {
+            // 사용자에게 방해되지 않게 백그라운드에서 실행
+            await createAutoLog("complete", item['제목'], id);
+        }
+    }
+
+    // 3. 화면 갱신
+    loadAllData(); 
+  }  async function deleteItem(id) { if(!confirm("정말 삭제하시겠습니까?")) return; if(typeof showAdminLoading==='function') showAdminLoading("삭제 중..."); await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify({ mode: "deleteItem", id: id }) }); loadAllData(); if(typeof hideAdminLoading==='function') hideAdminLoading(); }
 
   document.getElementById('todo-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -1043,7 +1061,19 @@
         if (!isEdit && result.id && originIdeaId) {
             await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify({ mode: "editItem", id: originIdeaId, connectedId: result.id }) });
         }
-        
+        // 🚀 [추가] 여기가 핵심! 신규 등록 시 자동 로그 생성 로직
+        if (!isEdit && result.result === "success") {
+            const newId = result.id; // 서버에서 발급받은 새 ID
+            const title = document.getElementById('input-title').value;
+            
+            if (type === "버그") {
+                await createAutoLog("create_bug", title, newId);
+            } else if (type === "아이디어") {
+                await createAutoLog("create_idea", title, newId);
+            } else if (type.includes("목표")) { // 큰 목표, 중간 목표
+                await createAutoLog("create_goal", title, newId);
+            }
+        }
         closeModal('input-modal'); loadAllData();
     } catch(err) { console.error(err); alert("저장 중 오류 발생"); } 
     finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); }
@@ -1108,6 +1138,50 @@
     } catch (err) { console.error("저장 실패:", err); alert("저장 중 오류가 발생했습니다."); } 
     finally { if(typeof hideAdminLoading === 'function') hideAdminLoading(); }
   });
+
+  // 🚀 [NEW] 자동 로그 생성 함수 (시스템이 대신 기록)
+  async function createAutoLog(actionType, itemTitle, itemId) {
+    const today = new Date().toISOString().split('T')[0];
+    let logTitle = "";
+    let logContent = "";
+    let tags = "System";
+
+    // 상황별 로그 내용 생성
+    if (actionType === "create_bug") {
+        logTitle = "🚨 버그 리포트 등록";
+        logContent = `새로운 버그가 등록되었습니다.\n제목: ${itemTitle}`;
+        tags = "BugReport";
+    } else if (actionType === "create_idea") {
+        logTitle = "💡 새 아이디어";
+        logContent = `새로운 아이디어가 추가되었습니다.\n제목: ${itemTitle}`;
+        tags = "Idea";
+    } else if (actionType === "create_goal") {
+        logTitle = "🚩 목표 설정";
+        logContent = `새로운 목표가 수립되었습니다.\n목표명: ${itemTitle}`;
+        tags = "Goal";
+    } else if (actionType === "complete") {
+        logTitle = "✅ 달성/완료";
+        logContent = `작업이 완료되었습니다!\n작업명: ${itemTitle}`;
+        tags = "Done";
+    }
+
+    // 서버로 전송 (화면 로딩 없이 조용히 처리)
+    try {
+        await fetch(window.CHEESE_ADMIN_API_BASE, {
+            method: "POST",
+            body: JSON.stringify({
+                mode: "addLog",
+                date: today,
+                title: logTitle,
+                content: logContent,
+                relatedId: itemId || "", // 해당 항목과 자동 연결
+                tags: tags
+            })
+        });
+    } catch(e) {
+        console.error("자동 로그 생성 실패:", e);
+    }
+  }
 </script>
 </body>
 </html>
