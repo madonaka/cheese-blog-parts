@@ -906,7 +906,7 @@
     $('#input-detail').summernote('code', memoContent);
   }
 
-// 🚀 [수정] 로그 렌더링 (날짜 밀림 완벽 해결)
+// 🚀 [수정] 로그 렌더링 (날짜 밀림 해결 + 날짜별 그룹화 적용)
   function renderLogs() {
     const root = document.getElementById('log-timeline-root'); 
     root.innerHTML = "";
@@ -921,11 +921,8 @@
     g_logs.forEach(log => {
         let dateKey = '날짜 없음';
         if (log['날짜']) {
-            // ✅ [핵심] 하이픈(-)을 슬래시(/)로 바꾸면 브라우저가 '로컬 시간'으로 인식함
-            // 예: "2026-02-02" (UTC) -> "2026/02/02" (내 시간 0시)
-            const rawDate = log['날짜'].substring(0, 10).replace(/-/g, '/');
-            const d = new Date(rawDate);
-            
+            // ✅ [핵심] UTC 문자열을 브라우저 로컬 시간대(KST)로 변환
+            const d = new Date(log['날짜']);
             const year = d.getFullYear();
             const month = String(d.getMonth() + 1).padStart(2, '0');
             const day = String(d.getDate()).padStart(2, '0');
@@ -941,13 +938,21 @@
 
     // 3. 렌더링
     sortedDates.forEach(date => {
+        // 날짜 구분선
         const divider = document.createElement('div');
         divider.className = "log-date-divider";
+        
+        // 구분선 스타일 적용 (CSS가 없을 경우를 대비해 인라인 스타일 일부 적용)
+        divider.style.cssText = "display:flex; align-items:center; margin:30px 0 15px; font-weight:700; color:#475569; font-size:0.9rem;";
+        
         let dayOfWeek = "";
-        try { dayOfWeek = new Date(date.replace(/-/g,'/')).toLocaleDateString('ko-KR', { weekday: 'short' }); } catch(e){}
-        divider.innerHTML = `<span class="log-date-badge">📅 ${date} (${dayOfWeek})</span>`;
+        try { dayOfWeek = new Date(date).toLocaleDateString('ko-KR', { weekday: 'short' }); } catch(e){}
+        
+        // 구분선 HTML (before/after 가상요소는 CSS 필요, 여기선 심플하게 텍스트만)
+        divider.innerHTML = `<span style="background:#f1f5f9; padding:4px 12px; border-radius:20px;">📅 ${date} (${dayOfWeek})</span>`;
         root.appendChild(divider);
 
+        // 해당 날짜의 로그들 출력
         groupedLogs[date].forEach(log => {
             const item = document.createElement('div'); 
             item.className = "log-item";
@@ -959,9 +964,9 @@
                 const relTask = g_tasks.find(t => t.ID === log['관련_목표ID']) || g_goals.find(g => g.ID === log['관련_목표ID']);
                 if(relTask) {
                     if (relTask['유형'] === '버그') { 
-                        relatedHtml = `<div class="log-related" style="background:#fecaca; color:#b91c1c; border:1px solid #f87171; margin-bottom:6px;">🐞 버그 Fix: ${relTask['제목']}</div>`; 
+                        relatedHtml = `<div class="log-related" style="background:#fecaca; color:#b91c1c; border:1px solid #f87171; padding:2px 8px; border-radius:4px; font-size:0.75rem; margin-bottom:6px; display:inline-block;">🐞 버그 Fix: ${relTask['제목']}</div>`; 
                     } else { 
-                        relatedHtml = `<div class="log-related" style="margin-bottom:6px;">📌 관련: ${relTask['제목']}</div>`; 
+                        relatedHtml = `<div class="log-related" style="background:#ecfdf5; color:#059669; padding:2px 8px; border-radius:4px; font-size:0.75rem; margin-bottom:6px; display:inline-block;">📌 관련: ${relTask['제목']}</div>`; 
                     }
                 }
             }
@@ -972,7 +977,7 @@
                 <div class="log-dot"></div>
                 <div class="log-card">
                     <div class="log-header" style="margin-bottom: 4px;">
-                        <div class="log-time">
+                        <div class="log-time" style="font-size:0.75rem; color:#94a3b8;">
                             ${log['소요시간'] ? `⏱ ${log['소요시간']}` : ''}
                         </div>
                         <div class="log-actions">
