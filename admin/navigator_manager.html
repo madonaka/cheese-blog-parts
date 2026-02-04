@@ -120,8 +120,12 @@
                   <div style="border-top:1px solid #eee; margin-top:15px; padding-top:15px;">
                     <div class="form-label" style="margin-bottom:8px;">👇 하단 추가 영역 (선택사항)</div>
                     <div class="form-group">
-                      <label class="form-label">하단 문구 (비우면 사라짐)</label>
-                      <input type="text" id="easyFooterText" class="input" placeholder="예: ※ 클릭 시 상세 페이지로 이동합니다." oninput="renderPreview()">
+                      <label class="form-label">하단 문구</label>
+                      <input type="text" id="easyFooterText" class="input" placeholder="예: 조선 바로가기" oninput="renderPreview()">
+                    </div>
+                    <div class="form-group" style="margin-top:8px;">
+                      <label class="form-label">🔗 이동할 링크 (비우면 글자만 표시)</label>
+                      <input type="text" id="easyFooterLink" class="input" placeholder="예: /joseon-main" oninput="renderPreview()">
                     </div>
                     <div class="form-group" style="margin-top:8px;">
                       <label class="form-label">하단 배경색</label>
@@ -136,7 +140,7 @@
                     <div class="data-row data-header">
                       <div class="data-cell">그룹</div>
                       <div class="data-cell">이름</div>
-                      <div class="data-cell">링크 (전체 주소 가능)</div>
+                      <div class="data-cell">링크</div>
                       <div class="data-cell">×</div>
                     </div>
                     <div id="dataRows"></div>
@@ -152,6 +156,9 @@
                 <div class="card" style="height: 100%; display:flex; flex-direction:column;">
                   <div class="card-title">👀 실시간 미리보기</div>
                   <div id="easyPreview" class="preview-box"></div>
+                  <p style="font-size:12px; color:#888; text-align:center; margin-top:10px;">
+                    * 현재 보고 있는 페이지는 자동으로 <strong>빨간 테두리</strong>가 표시됩니다.
+                  </p>
                 </div>
               </div>
             </div>
@@ -210,7 +217,7 @@
     }
 
     function loadItemToEditor(key, title) {
-      if(!confirm(`[${key}] 불러오시겠습니까? (작성 중인 내용은 사라집니다)`)) return;
+      if(!confirm(`[${key}] 불러오시겠습니까?`)) return;
       document.getElementById('easyKey').value = key;
       document.getElementById('easyTitle').value = title;
       fetch(API_URL + "?mode=getComponent&key=" + key)
@@ -224,6 +231,7 @@
     function parseHtmlToEasyMode(html) {
       const parser = new DOMParser();
       const doc = parser.parseFromString(html, "text/html");
+      
       const styleTag = doc.querySelector("style");
       if(styleTag) {
         const css = styleTag.innerHTML;
@@ -235,13 +243,27 @@
         if(sub) document.getElementById('easyColorSub').value = sub[1];
         if(footer) document.getElementById('easyColorFooter').value = footer[1];
       }
+      
       const titleEl = doc.querySelector(".namu-title");
       const iconEl = doc.querySelector(".namu-icon");
-      const footerEl = doc.querySelector(".namu-bottom-area");
-
       if(titleEl) document.getElementById('easyHeadTitle').value = titleEl.innerText;
       if(iconEl) document.getElementById('easyIcon').value = iconEl.innerText;
-      if(footerEl) document.getElementById('easyFooterText').value = footerEl.innerHTML;
+
+      // 하단 텍스트 및 링크 파싱
+      const footerEl = doc.querySelector(".namu-bottom-area");
+      if(footerEl) {
+        const linkEl = footerEl.querySelector("a");
+        if(linkEl) {
+          document.getElementById('easyFooterText').value = linkEl.innerText;
+          document.getElementById('easyFooterLink').value = linkEl.getAttribute("href");
+        } else {
+          document.getElementById('easyFooterText').value = footerEl.innerHTML;
+          document.getElementById('easyFooterLink').value = "";
+        }
+      } else {
+        document.getElementById('easyFooterText').value = "";
+        document.getElementById('easyFooterLink').value = "";
+      }
 
       const scriptTag = doc.querySelector("script");
       if(scriptTag) {
@@ -265,7 +287,7 @@
       row.innerHTML = `
         <div class="data-cell"><input type="text" class="inp-group" value="${group}" oninput="renderPreview()" placeholder="그룹"></div>
         <div class="data-cell"><input type="text" class="inp-label" value="${label}" oninput="renderPreview()" placeholder="이름"></div>
-        <div class="data-cell"><input type="text" class="inp-href" value="${href}" oninput="renderPreview()" placeholder="전체 주소 가능"></div>
+        <div class="data-cell"><input type="text" class="inp-href" value="${href}" oninput="renderPreview()" placeholder="링크"></div>
         <div class="data-cell"><button class="btn-icon" onclick="this.parentElement.parentElement.remove(); renderPreview()">×</button></div>
       `;
       container.appendChild(row);
@@ -278,8 +300,16 @@
       const footerColor = document.getElementById('easyColorFooter').value;
       const headTitle = document.getElementById('easyHeadTitle').value;
       const icon = document.getElementById('easyIcon').value;
+      
       const footerText = document.getElementById('easyFooterText').value.trim();
-      let footerHtml = footerText ? `<div class="namu-bottom-area">${footerText}</div>` : "";
+      const footerLink = document.getElementById('easyFooterLink').value.trim();
+      
+      let footerHtml = "";
+      if(footerText) {
+        // 링크가 있으면 <a> 태그로 감싸기
+        const content = footerLink ? `<a href="${footerLink}">${footerText}</a>` : footerText;
+        footerHtml = `<div class="namu-bottom-area">${content}</div>`;
+      }
 
       const rows = [];
       document.querySelectorAll('#dataRows .data-row').forEach(row => {
@@ -326,7 +356,11 @@
 
 .namu-group-header { background: var(--nw-color-group); color: var(--nw-text-black); text-align: center; font-weight: bold; padding: 8px; border-bottom: 1px solid var(--nw-color-border); border-top: 1px solid var(--nw-color-border); }
 .namu-group-header:first-child { border-top: none; }
+
+/* 하단 영역 스타일 + 링크 스타일 */
 .namu-bottom-area { background-color: var(--nw-color-footer); padding: 10px; text-align: center; font-size: 0.9em; color: #333; border-top: 2px solid var(--nw-color-header); }
+.namu-bottom-area a { text-decoration: none; color: inherit; font-weight: bold; display: inline-block; width: 100%; height: 100%; }
+.namu-bottom-area a:hover { text-decoration: underline; }
 
 .namu-group-grid { display: grid; grid-template-columns: repeat(4, 1fr); width: 100%; }
 .namu-cell { display: flex; align-items: center; justify-content: center; padding: 12px 5px; text-align: center; text-decoration: none; color: var(--nw-text-black); font-size: 0.95em; border-right: 1px solid var(--nw-color-border); border-bottom: 1px solid var(--nw-color-border); background: #fff; transition: background 0.2s; word-break: keep-all; }
@@ -349,9 +383,8 @@
     const genealogyData = ${jsonData};
     const container = root.querySelector(".namu-genealogy-grid");
     if (container) {
-      const currentPath = location.pathname; // 짧은 주소
-      const currentFullUrl = location.href;  // 긴 주소 (전체)
-
+      const currentPath = location.pathname;
+      const currentFullUrl = location.href;
       const grouped = genealogyData.reduce((acc, item) => { const g = item.group || "기타"; (acc[g] ||= []).push(item); return acc; }, {});
       container.innerHTML = "";
       Object.keys(grouped).forEach(groupName => {
@@ -360,12 +393,7 @@
         grouped[groupName].forEach(it => {
           const el = document.createElement(it.href ? "a" : "div"); el.className = "namu-cell"; el.textContent = it.label;
           if (it.href) el.href = it.href;
-
-          // [핵심 수정] 짧은 주소 포함 OR 긴 주소 포함 여부 모두 체크
-          if (it.href && (currentPath.indexOf(it.href) !== -1 || currentFullUrl.indexOf(it.href) !== -1)) { 
-            el.classList.add("active"); 
-            el.setAttribute("aria-current", "page"); 
-          }
+          if (it.href && (currentPath.indexOf(it.href) !== -1 || currentFullUrl.indexOf(it.href) !== -1)) { el.classList.add("active"); el.setAttribute("aria-current", "page"); }
           grid.appendChild(el);
         });
         container.appendChild(grid);
@@ -400,7 +428,14 @@
         fetch(API_URL, { method: "POST", body: JSON.stringify({ mode: "deleteLibrary", key: key }) }).then(r => r.json()).then(res => { if(res.result === "success") { alert("삭제되었습니다."); loadLibraryList(); resetForm(); } });
       }
     }
-    function resetForm() { document.getElementById('easyKey').value = "NAV_NEW"; document.getElementById('easyTitle').value = ""; document.getElementById('easyFooterText').value = ""; document.getElementById('dataRows').innerHTML = ""; addRows(); renderPreview(); }
+    function resetForm() {
+      document.getElementById('easyKey').value = "NAV_NEW";
+      document.getElementById('easyTitle').value = "";
+      document.getElementById('easyFooterText').value = "";
+      document.getElementById('easyFooterLink').value = "";
+      document.getElementById('dataRows').innerHTML = "";
+      addRows(); renderPreview();
+    }
 
     window.onload = function() { loadLibraryList(); addRows(); renderPreview(); };
   </script>
