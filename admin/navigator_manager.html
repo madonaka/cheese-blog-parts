@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>네비게이터(템플릿) 관리자</title>
+    <link rel="stylesheet" href="admin.css">
+    <style>
+        .nav-container { display: flex; gap: 20px; height: calc(100vh - 80px); }
+        .nav-list-section { width: 300px; background: #fff; border-right: 1px solid #ddd; display: flex; flex-direction: column; }
+        .nav-list { flex: 1; overflow-y: auto; list-style: none; padding: 0; margin: 0; }
+        .nav-item { padding: 15px; border-bottom: 1px solid #eee; cursor: pointer; transition: 0.2s; }
+        .nav-item:hover, .nav-item.active { background: #f0f7ff; }
+        .nav-item h4 { margin: 0 0 5px 0; font-size: 14px; color: #333; }
+        .nav-item p { margin: 0; font-size: 12px; color: #888; }
+        
+        .nav-editor-section { flex: 1; display: flex; flex-direction: column; background: #fff; padding: 20px; overflow-y: auto; }
+        .editor-header { display: flex; gap: 10px; margin-bottom: 15px; align-items: center; }
+        .editor-input { padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
+        .code-area { width: 100%; height: 300px; font-family: monospace; padding: 10px; background: #2d2d2d; color: #f8f8f2; border-radius: 4px; resize: vertical; margin-bottom: 20px; }
+        
+        .preview-area { border: 2px dashed #ddd; padding: 20px; min-height: 200px; background: #fafafa; border-radius: 4px; }
+        .btn-primary { background: #007bff; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
+        .btn-danger { background: #dc3545; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
+        .btn-secondary { background: #6c757d; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
+
+        /* 복사 태그 표시용 */
+        .tag-display { background: #e9ecef; padding: 10px; border-radius: 4px; font-family: monospace; color: #d63384; margin-top: 10px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+    <div class="admin-wrapper">
+        <div id="menu-slot"></div>
+
+        <div class="admin-content">
+            <div id="header-slot"></div>
+
+            <div class="nav-container">
+                <div class="nav-list-section">
+                    <div style="padding:15px; border-bottom:1px solid #ddd;">
+                        <button class="btn-primary" style="width:100%" onclick="createNew()">+ 새 네비게이터 만들기</button>
+                    </div>
+                    <ul class="nav-list" id="navigatorList">
+                        <li style="padding:20px; text-align:center;">로딩 중...</li>
+                    </ul>
+                </div>
+
+                <div class="nav-editor-section" id="editorPanel" style="display:none;">
+                    <div class="editor-header">
+                        <input type="text" id="editKey" class="editor-input" placeholder="KEY (예: NAV_MAIN)" style="width: 200px; font-weight:bold;">
+                        <input type="text" id="editTitle" class="editor-input" placeholder="제목 (관리용)" style="flex:1;">
+                        <button class="btn-secondary" onclick="loadDefaultTemplate()">🔄 기본 템플릿 넣기</button>
+                        <button class="btn-danger" onclick="deleteCurrent()">삭제</button>
+                        <button class="btn-primary" onclick="saveCurrent()">💾 저장</button>
+                    </div>
+
+                    <div class="tag-display" onclick="copyTag()" title="클릭해서 복사">
+                        &lt;div class="cheese-template" data-key="<span id="displayKey">KEY</span>"&gt;&lt;/div&gt;
+                    </div>
+                    <p style="font-size:12px; color:#666; margin-bottom:15px;">👆 위 태그를 클릭해 복사한 뒤, 블로그 글(HTML 모드)에 붙여넣으세요.</p>
+
+                    <label>HTML / CSS / JS 코드 수정:</label>
+                    <textarea id="htmlContent" class="code-area" oninput="updatePreview()"></textarea>
+
+                    <label>미리보기 (실제 작동 확인):</label>
+                    <div id="previewBox" class="preview-area"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        // ▼▼▼ Apps Script 배포 URL (수정 필수!) ▼▼▼
+        const API_URL = "https://script.google.com/macros/s/아이디_입력/exec"; 
+
+        // 1. 공통 레이아웃 로드
+        $(document).ready(function() {
+            $("#menu-slot").load("admin-menu.html");
+            $("#header-slot").load("admin-header.html");
+            loadList();
+        });
+
+        let currentData = null;
+
+        // 2. 목록 불러오기 (Read)
+        function loadList() {
+            $.getJSON(API_URL + "?mode=getAllData", function(res) {
+                // library 데이터가 없으면 getAllData 대신 getComponents 리스트 로직이 필요할 수 있음
+                // 여기서는 기존 getAllData가 library를 안 준다면, 
+                // Code.gs의 doGet에 library 전체를 주는 로직이 추가되어야 함.
+                // 편의상 ?mode=getComponents&keys=ALL 같은 걸 쓴다고 가정하거나
+                // 가장 좋은 건: doGet에 mode='getLibraryList'를 추가하는 것.
+                
+                // (임시) 일단 getComponents로 모든 키를 다 가져올 순 없으니,
+                // Code.gs의 loadLibraryFromSheet_ 함수를 활용해 목록을 주는 API가 있다고 가정하고 작성합니다.
+                // 만약 없다면 Code.gs의 doGet에 `if(mode === 'getLibraryList') return responseJSON_(loadLibraryFromSheet_());` 추가 필요.
+                
+                // 여기서는 '가계도' 예시를 강제로 보여주는 하드코딩 (테스트용)
+                // 실제로는 API 호출로 바꿔야 함.
+                
+                // ★ 실제 구현 시: Code.gs에 목록 반환 기능 추가 후 아래 주석 해제
+                /*
+                fetch(API_URL + "?mode=getLibraryList")
+                    .then(r => r.json())
+                    .then(data => renderList(data));
+                */
+               
+               // 일단 테스트를 위해 가짜 데이터 렌더링
+               renderList([
+                   { key: "NAV_GENEALOGY", title: "왕조 가계도" },
+                   { key: "NAV_SIDEBAR", title: "사이드바 메뉴" } // 예시
+               ]);
+            });
+        }
+        
+        // 실제로는 Code.gs에서 'getLibraryList'를 호출해야 완벽합니다.
+        // 현재 Code.gs에는 목록 반환이 없으므로, 일단 리스트를 수동으로 관리하거나 
+        // 1번 단계의 Code.gs 업데이트 때 getLibraryList도 추가하는 게 좋습니다.
+
+        function renderList(list) {
+            const html = list.map(item => `
+                <li class="nav-item" onclick="selectItem('${item.key}')">
+                    <h4>${item.key}</h4>
+                    <p>${item.title || '제목 없음'}</p>
+                </li>
+            `).join('');
+            $("#navigatorList").html(html);
+        }
+
+        // 3. 아이템 선택 & 데이터 로딩
+        function selectItem(key) {
+            $(".nav-item").removeClass("active");
+            // $(this).addClass("active"); // 클릭한 요소 찾기 복잡하니 생략
+
+            // 서버에서 내용 가져오기
+            fetch(`${API_URL}?mode=getComponents&keys=${key}`)
+                .then(r => r.json())
+                .then(json => {
+                    const content = json.items[key];
+                    // 제목은 별도로 가져와야 하지만, 일단 리스트에 있는 정보를 쓴다고 가정
+                    // 또는 content 안에 주석으로 제목을 넣는 규칙을 정해도 됨.
+                    
+                    document.getElementById("editKey").value = key;
+                    document.getElementById("editTitle").value = key; // 임시
+                    document.getElementById("htmlContent").value = content;
+                    document.getElementById("displayKey").innerText = key;
+                    
+                    $("#editorPanel").show();
+                    updatePreview();
+                });
+        }
+
+        function createNew() {
+            document.getElementById("editKey").value = "";
+            document.getElementById("editTitle").value = "";
+            document.getElementById("htmlContent").value = "";
+            document.getElementById("displayKey").innerText = "KEY";
+            $("#editorPanel").show();
+            document.getElementById("htmlContent").focus();
+        }
+
+        // 4. 프리뷰 업데이트 (스크립트 실행 포함)
+        function updatePreview() {
+            const html = document.getElementById("htmlContent").value;
+            const previewBox = document.getElementById("previewBox");
+            const key = document.getElementById("editKey").value || "PREVIEW";
+            document.getElementById("displayKey").innerText = key;
+
+            previewBox.innerHTML = html;
+
+            // 스크립트 강제 실행 로직
+            const scripts = previewBox.querySelectorAll("script");
+            scripts.forEach(oldScript => {
+                const newScript = document.createElement("script");
+                Array.from(oldScript.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value));
+                newScript.appendChild(document.createTextNode(oldScript.innerHTML));
+                oldScript.parentNode.replaceChild(newScript, oldScript);
+            });
+        }
+
+        // 5. 기본 템플릿(가계도) 넣기
+        function loadDefaultTemplate() {
+            const template = `<div class="namu-wiki-container">
+  <div class="namu-main-header">
+    <span class="namu-icon">🧭</span>
+    <span class="namu-title">새 네비게이터</span>
+  </div>
+  <details class="namu-details">
+    <summary class="namu-summary">[ <span class="toggle-text">펼치기</span> ]</summary>
+    <div class="namu-body">
+      <div class="namu-genealogy-grid"></div>
+    </div>
+  </details>
+</div>
+<style>
+/* ... (아까 드린 CSS 전체) ... */
+.namu-wiki-container { border: 2px solid #00a495; margin: 20px 0; }
+.namu-main-header { background: #00a495; color: #fff; padding: 10px; text-align: center; font-weight: bold; }
+.namu-summary { background: #008f82; color: white; padding: 5px; cursor: pointer; text-align: center; }
+.namu-cell { padding: 10px; border: 1px solid #eee; text-align: center; }
+</style>
+<script>
+/* ... (아까 드린 JS) ... */
+console.log("네비게이터 로드됨");
+<\/script>
+`;
+            document.getElementById("htmlContent").value = template;
+            updatePreview();
+        }
+
+        // 6. 저장 (Save)
+        function saveCurrent() {
+            const key = document.getElementById("editKey").value;
+            const title = document.getElementById("editTitle").value;
+            const content = document.getElementById("htmlContent").value;
+
+            if(!key) return alert("KEY를 입력해주세요.");
+
+            const payload = {
+                mode: "saveLibrary",
+                key: key,
+                title: title,
+                content: content
+            };
+
+            if(confirm(`[${key}] 네비게이터를 저장하시겠습니까?`)) {
+                fetch(API_URL, {
+                    method: "POST",
+                    body: JSON.stringify(payload) // POST로 데이터 전송
+                })
+                .then(r => r.json())
+                .then(res => {
+                    if(res.result === "success") {
+                        alert("저장되었습니다! (캐시로 인해 30초 뒤 블로그에 반영됩니다)");
+                        loadList(); // 목록 새로고침
+                    } else {
+                        alert("오류: " + res.msg);
+                    }
+                });
+            }
+        }
+
+        // 7. 삭제
+        function deleteCurrent() {
+            const key = document.getElementById("editKey").value;
+            if(!key) return;
+
+            if(confirm(`정말 [${key}]를 삭제하시겠습니까? 복구할 수 없습니다.`)) {
+                fetch(API_URL, {
+                    method: "POST",
+                    body: JSON.stringify({ mode: "deleteLibrary", key: key })
+                })
+                .then(r => r.json())
+                .then(res => {
+                    if(res.result === "success") {
+                        alert("삭제되었습니다.");
+                        location.reload();
+                    }
+                });
+            }
+        }
+
+        function copyTag() {
+            const key = document.getElementById("displayKey").innerText;
+            const tag = `<div class="cheese-template" data-key="${key}"></div>`;
+            navigator.clipboard.writeText(tag).then(() => {
+                alert("태그가 복사되었습니다!\n블로그 HTML 모드에 붙여넣으세요:\n\n" + tag);
+            });
+        }
+    </script>
+</body>
+</html>
