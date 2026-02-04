@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>네비게이터 제작 도구</title>
+  <title>네비게이터 제작 도구 (모바일 대응판)</title>
 
   <link rel="stylesheet" href="./admin.css" />
   <script src="./admin-common.js"></script>
@@ -25,7 +25,6 @@
     .input:focus { border-color: #6366f1; ring: 2px solid #e0e7ff; }
     .input[type="color"] { padding: 2px; height: 42px; width: 100%; cursor: pointer; }
 
-    /* 데이터 리스트 스타일 */
     .data-list { border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
     .data-row { display: grid; grid-template-columns: 100px 1fr 1fr 40px; gap: 1px; background: #e2e8f0; }
     .data-cell { background: #fff; padding: 8px; }
@@ -41,8 +40,6 @@
     .btn.full { width: 100%; margin-top: 10px; }
 
     .preview-box { border: 2px dashed #cbd5e1; padding: 20px; border-radius: 12px; background: #f8fafc; min-height: 200px; }
-
-    /* [추가] 저장된 목록 스타일 */
     .saved-list { max-height: 200px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; }
     .saved-item { padding: 12px; border-bottom: 1px solid #eee; cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: 0.2s; }
     .saved-item:hover { background: #f1f5f9; }
@@ -50,8 +47,6 @@
     .saved-item .info { display: flex; flex-direction: column; }
     .saved-item .key { font-weight: bold; font-size: 14px; color: #334155; }
     .saved-item .title { font-size: 12px; color: #64748b; }
-    .saved-item .actions { display: flex; gap: 5px; }
-    .badge { background: #e2e8f0; color: #475569; padding: 2px 6px; border-radius: 4px; font-size: 10px; }
   </style>
 </head>
 
@@ -83,7 +78,6 @@
             <div style="display: grid; grid-template-columns: 350px 1fr; gap: 20px;">
               
               <div class="left-panel">
-                
                 <div class="card">
                   <div class="card-title">
                     ⚙️ 설정
@@ -136,18 +130,15 @@
                 </div>
 
                 <button class="btn primary full" style="padding: 15px;" onclick="saveEasyMode()">💾 저장하기</button>
-                <div style="margin-top: 10px; display: flex; gap: 5px;">
-                   <button class="btn danger full" style="margin-top:0;" onclick="deleteCurrent()">🗑 삭제</button>
-                </div>
+                <button class="btn danger full" style="margin-top:5px;" onclick="deleteCurrent()">🗑 삭제</button>
               </div>
 
               <div class="right-panel">
                 <div class="card" style="height: 100%; display:flex; flex-direction:column;">
-                  <div class="card-title">👀 실시간 미리보기</div>
+                  <div class="card-title">👀 실시간 미리보기 (모바일 확인은 창을 줄여보세요)</div>
                   <div id="easyPreview" class="preview-box"></div>
                 </div>
               </div>
-
             </div>
           </div>
 
@@ -181,11 +172,9 @@
       if(mode === 'raw') document.getElementById('rawHtml').value = generateHtmlFromEasyMode();
     }
 
-    // --- 목록 불러오기 ---
     function loadLibraryList() {
       const listEl = document.getElementById('savedItemsList');
       listEl.innerHTML = '<div style="padding:20px; text-align:center;">🔄 목록 불러오는 중...</div>';
-
       fetch(API_URL + "?mode=getLibraryList")
         .then(r => r.json())
         .then(res => {
@@ -195,12 +184,8 @@
               const div = document.createElement('div');
               div.className = 'saved-item';
               div.innerHTML = `
-                <div class="info">
-                  <span class="key">${item.key}</span>
-                  <span class="title">${item.title || '(제목 없음)'}</span>
-                </div>
-                <button class="btn secondary" style="padding:5px 10px; font-size:12px;">불러오기</button>
-              `;
+                <div class="info"><span class="key">${item.key}</span><span class="title">${item.title || '(제목 없음)'}</span></div>
+                <button class="btn secondary" style="padding:5px 10px; font-size:12px;">불러오기</button>`;
               div.onclick = () => loadItemToEditor(item.key, item.title);
               listEl.appendChild(div);
             });
@@ -210,70 +195,49 @@
         });
     }
 
-    // --- 데이터 불러오기 및 파싱 (HTML -> Easy Mode) ---
     function loadItemToEditor(key, title) {
-      if(!confirm(`[${key}] 데이터를 불러오시겠습니까?\n작성 중인 내용은 사라집니다.`)) return;
-
+      if(!confirm(`[${key}] 불러오시겠습니까? (작성 중인 내용은 사라집니다)`)) return;
       document.getElementById('easyKey').value = key;
       document.getElementById('easyTitle').value = title;
-
-      // HTML 내용 가져오기
       fetch(API_URL + "?mode=getComponent&key=" + key)
         .then(r => r.json())
         .then(res => {
-          if(res.result === "success") {
-            parseHtmlToEasyMode(res.html);
-            alert("불러왔습니다!");
-          } else {
-            alert("데이터를 가져오지 못했습니다.");
-          }
+          if(res.result === "success") { parseHtmlToEasyMode(res.html); alert("불러왔습니다!"); } 
+          else { alert("실패: " + res.msg); }
         });
     }
 
-    // ★ 핵심: HTML 코드를 분석해서 이지 에디터 폼에 채워넣기
     function parseHtmlToEasyMode(html) {
       const parser = new DOMParser();
       const doc = parser.parseFromString(html, "text/html");
-
-      // 1. 색상 추출 (CSS 변수 파싱)
       const styleTag = doc.querySelector("style");
       if(styleTag) {
         const css = styleTag.innerHTML;
-        const mainColorMatch = css.match(/--nw-color-header:\s*(#[0-9a-fA-F]{6})/);
-        const subColorMatch = css.match(/--nw-color-sub:\s*(#[0-9a-fA-F]{6})/);
-        if(mainColorMatch) document.getElementById('easyColorMain').value = mainColorMatch[1];
-        if(subColorMatch) document.getElementById('easyColorSub').value = subColorMatch[1];
+        const main = css.match(/--nw-color-header:\s*(#[0-9a-fA-F]{6})/);
+        const sub = css.match(/--nw-color-sub:\s*(#[0-9a-fA-F]{6})/);
+        if(main) document.getElementById('easyColorMain').value = main[1];
+        if(sub) document.getElementById('easyColorSub').value = sub[1];
       }
-
-      // 2. 제목 & 아이콘
       const titleEl = doc.querySelector(".namu-title");
       const iconEl = doc.querySelector(".namu-icon");
       if(titleEl) document.getElementById('easyHeadTitle').value = titleEl.innerText;
       if(iconEl) document.getElementById('easyIcon').value = iconEl.innerText;
 
-      // 3. 데이터 리스트 (Script 태그 내 JSON 파싱)
       const scriptTag = doc.querySelector("script");
       if(scriptTag) {
-        // genealogyData = [...] 패턴 찾기
         const jsonMatch = scriptTag.innerHTML.match(/genealogyData\s*=\s*(\[[\s\S]*?\]);/);
         if(jsonMatch && jsonMatch[1]) {
+          let jsonStr = jsonMatch[1].replace(/group:/g, '"group":').replace(/label:/g, '"label":').replace(/href:/g, '"href":');
           try {
-            // JS 객체 리터럴을 JSON으로 변환 (키에 따옴표가 없을 수 있으므로)
-            let jsonStr = jsonMatch[1];
-            // 키(key)에 따옴표가 없으면 붙여주는 정규식 (간단한 파싱용)
-            jsonStr = jsonStr.replace(/group:/g, '"group":').replace(/label:/g, '"label":').replace(/href:/g, '"href":');
-            const data = JSON.parse(jsonStr); // 안전하지 않지만 이지 에디터 생성 코드라면 작동함
-            
-            // 기존 리스트 비우고 새로 채우기
+            const data = JSON.parse(jsonStr);
             document.getElementById('dataRows').innerHTML = "";
             data.forEach(d => addRows(d.group, d.label, d.href));
-          } catch(e) { console.error("데이터 파싱 실패", e); }
+          } catch(e) {}
         }
       }
       renderPreview();
     }
 
-    // --- 기타 기능 ---
     function addRows(group="", label="", href="") {
       const container = document.getElementById('dataRows');
       const row = document.createElement('div');
@@ -293,7 +257,6 @@
       const subColor = document.getElementById('easyColorSub').value;
       const headTitle = document.getElementById('easyHeadTitle').value;
       const icon = document.getElementById('easyIcon').value;
-      
       const rows = [];
       document.querySelectorAll('#dataRows .data-row').forEach(row => {
         if(row.classList.contains('data-header')) return;
@@ -303,25 +266,19 @@
           href: row.querySelector('.inp-href').value
         });
       });
-
       const jsonData = JSON.stringify(rows, null, 2);
 
+      // ▼▼▼ [핵심] 모바일 반응형 CSS가 추가된 템플릿 ▼▼▼
       return `<div class="namu-wiki-container">
   <div class="namu-main-header">
     <span class="namu-icon">${icon}</span>
     <span class="namu-title">${headTitle}</span>
   </div>
-
   <details class="namu-details">
-    <summary class="namu-summary">
-      [ <span class="toggle-text">펼치기</span> ]
-    </summary>
-    <div class="namu-body">
-      <div class="namu-genealogy-grid"></div>
-    </div>
+    <summary class="namu-summary">[ <span class="toggle-text">펼치기</span> ]</summary>
+    <div class="namu-body"><div class="namu-genealogy-grid"></div></div>
   </details>
 </div>
-
 <style>
 .namu-wiki-container {
   --nw-color-header: ${mainColor};
@@ -330,92 +287,53 @@
   --nw-color-border: #ccc;
   --nw-text-white: #fff;
   --nw-text-black: #333;
-  
-  border: 2px solid var(--nw-color-header);
-  margin: 30px 0;
-  font-family: sans-serif;
-  box-sizing: border-box;
+  border: 2px solid var(--nw-color-header); margin: 30px 0; font-family: sans-serif; box-sizing: border-box;
 }
-
-.namu-main-header {
-  background-color: var(--nw-color-header);
-  color: var(--nw-text-white);
-  padding: 10px;
-  text-align: center;
-  font-weight: bold;
-  font-size: 1.1em;
-  display: flex; justify-content: center; align-items: center; gap: 8px;
-}
+.namu-main-header { background: var(--nw-color-header); color: var(--nw-text-white); padding: 10px; text-align: center; font-weight: bold; font-size: 1.1em; display:flex; justify-content:center; align-items:center; gap:8px; }
 .namu-details { background: #fff; display: block; }
-.namu-summary {
-  background-color: var(--nw-color-sub);
-  color: var(--nw-text-white);
-  text-align: center; padding: 6px; cursor: pointer; list-style: none;
-  font-size: 0.9em; border-top: 1px solid rgba(255,255,255,0.2);
-  user-select: none;
-}
+.namu-summary { background: var(--nw-color-sub); color: var(--nw-text-white); text-align: center; padding: 6px; cursor: pointer; list-style: none; font-size: 0.9em; border-top: 1px solid rgba(255,255,255,0.2); user-select: none; }
 .namu-summary::-webkit-details-marker { display: none; }
 .namu-body { background: #fff; padding: 0; }
 .namu-details[open] .namu-body { animation: fadeIn 0.3s ease-out; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
-.namu-group-header {
-  background-color: var(--nw-color-group); color: var(--nw-text-black);
-  text-align: center; font-weight: bold; padding: 8px;
-  border-bottom: 1px solid var(--nw-color-border);
-  border-top: 1px solid var(--nw-color-border);
-}
+.namu-group-header { background: var(--nw-color-group); color: var(--nw-text-black); text-align: center; font-weight: bold; padding: 8px; border-bottom: 1px solid var(--nw-color-border); border-top: 1px solid var(--nw-color-border); }
 .namu-group-header:first-child { border-top: none; }
+
+/* PC: 4칸 */
 .namu-group-grid { display: grid; grid-template-columns: repeat(4, 1fr); width: 100%; }
-.namu-cell {
-  display: flex; align-items: center; justify-content: center;
-  padding: 12px 5px; text-align: center; text-decoration: none;
-  color: var(--nw-text-black); font-size: 0.95em;
-  border-right: 1px solid var(--nw-color-border);
-  border-bottom: 1px solid var(--nw-color-border);
-  background: #fff; transition: background 0.2s;
-}
+.namu-cell { display: flex; align-items: center; justify-content: center; padding: 12px 5px; text-align: center; text-decoration: none; color: var(--nw-text-black); font-size: 0.95em; border-right: 1px solid var(--nw-color-border); border-bottom: 1px solid var(--nw-color-border); background: #fff; transition: background 0.2s; word-break: keep-all; }
 .namu-group-grid .namu-cell:nth-child(4n) { border-right: none; }
 .namu-cell:hover { background-color: #f0f0f0; text-decoration: underline; }
-.namu-cell.active {
-  background-color: #fff0f0; font-weight: bold;
-  color: var(--nw-color-header); box-shadow: inset 0 0 0 2px var(--nw-color-header);
-}
+.namu-cell.active { background-color: #fff0f0; font-weight: bold; color: var(--nw-color-header); box-shadow: inset 0 0 0 2px var(--nw-color-header); }
+
+/* ▼▼▼ [Mobile] 600px 이하에서는 2칸으로 변경 ▼▼▼ */
 @media (max-width: 600px) {
   .namu-group-grid { grid-template-columns: repeat(2, 1fr); }
-  .namu-group-grid .namu-cell { border-right: 1px solid var(--nw-color-border); }
+  /* 테두리 초기화 후 2번째마다 제거 */
+  .namu-group-grid .namu-cell { border-right: 1px solid var(--nw-color-border); padding: 14px 4px; font-size: 0.9em; }
   .namu-group-grid .namu-cell:nth-child(2n) { border-right: none; }
+  .namu-group-grid .namu-cell:nth-child(4n) { border-right: none; /* 4n도 2n에 포함되지만 안전장치 */ }
 }
 </style>
-
 <script>
 (function(){
   const unprocessed = document.querySelectorAll(".namu-wiki-container:not(.js-active)");
   unprocessed.forEach(root => {
     root.classList.add("js-active");
-
     const genealogyData = ${jsonData};
-
     const container = root.querySelector(".namu-genealogy-grid");
     if (container) {
       const currentPath = location.pathname;
-      const grouped = genealogyData.reduce((acc, item) => {
-        const g = item.group || "기타"; (acc[g] ||= []).push(item); return acc;
-      }, {});
+      const grouped = genealogyData.reduce((acc, item) => { const g = item.group || "기타"; (acc[g] ||= []).push(item); return acc; }, {});
       container.innerHTML = "";
       Object.keys(grouped).forEach(groupName => {
-        const header = document.createElement("div");
-        header.className = "namu-group-header"; header.textContent = groupName;
-        container.appendChild(header);
-        const grid = document.createElement("div");
-        grid.className = "namu-group-grid";
+        const header = document.createElement("div"); header.className = "namu-group-header"; header.textContent = groupName; container.appendChild(header);
+        const grid = document.createElement("div"); grid.className = "namu-group-grid";
         grouped[groupName].forEach(it => {
-          const el = document.createElement(it.href ? "a" : "div");
-          el.className = "namu-cell"; el.textContent = it.label;
+          const el = document.createElement(it.href ? "a" : "div"); el.className = "namu-cell"; el.textContent = it.label;
           if (it.href) el.href = it.href;
-          if (it.href && currentPath.indexOf(it.href) !== -1) {
-            el.classList.add("active"); el.setAttribute("aria-current", "page");
-          }
+          if (it.href && currentPath.indexOf(it.href) !== -1) { el.classList.add("active"); el.setAttribute("aria-current", "page"); }
           grid.appendChild(el);
         });
         container.appendChild(grid);
@@ -423,78 +341,36 @@
     }
     const details = root.querySelector(".namu-details");
     const summaryText = root.querySelector(".toggle-text");
-    if (details && summaryText) {
-      details.addEventListener("toggle", function() {
-        summaryText.textContent = details.open ? "접기" : "펼치기";
-      });
-    }
+    if (details && summaryText) { details.addEventListener("toggle", function() { summaryText.textContent = details.open ? "접기" : "펼치기"; }); }
   });
 })();
-<\/script>
-`;
+<\/script>`;
     }
 
     function renderPreview() {
       const html = generateHtmlFromEasyMode();
       const previewBox = document.getElementById('easyPreview');
       previewBox.innerHTML = html;
-      
-      previewBox.querySelectorAll('script').forEach(oldS => {
-        const newS = document.createElement('script');
-        newS.text = oldS.innerHTML;
-        oldS.parentNode.replaceChild(newS, oldS);
-      });
-      const details = previewBox.querySelector('details');
-      if(details) details.open = true;
+      previewBox.querySelectorAll('script').forEach(oldS => { const newS = document.createElement('script'); newS.text = oldS.innerHTML; oldS.parentNode.replaceChild(newS, oldS); });
+      const details = previewBox.querySelector('details'); if(details) details.open = true;
     }
-
     function saveEasyMode() {
-      const key = document.getElementById('easyKey').value;
-      const title = document.getElementById('easyTitle').value;
-      const content = generateHtmlFromEasyMode();
-
+      const key = document.getElementById('easyKey').value; const title = document.getElementById('easyTitle').value; const content = generateHtmlFromEasyMode();
       if(!key) return alert("KEY(ID)를 입력해주세요!");
-
-      if(confirm(`[${key}] 네비게이터를 저장하시겠습니까?`)) {
-        fetch(API_URL, {
-          method: "POST",
-          body: JSON.stringify({ mode: "saveLibrary", key: key, title: title || key, content: content })
-        })
-        .then(r => r.json())
-        .then(res => {
-          if(res.result === "success") {
-            alert("✅ 저장되었습니다!");
-            loadLibraryList();
-          } else { alert("❌ 오류: " + res.msg); }
-        });
+      if(confirm(`[${key}] 저장하시겠습니까?`)) {
+        fetch(API_URL, { method: "POST", body: JSON.stringify({ mode: "saveLibrary", key: key, title: title || key, content: content }) })
+        .then(r => r.json()).then(res => { if(res.result === "success") { alert("✅ 저장되었습니다!"); loadLibraryList(); } else { alert("❌ 오류: " + res.msg); } });
       }
     }
-
     function deleteCurrent() {
-      const key = document.getElementById('easyKey').value;
-      if(!key) return;
+      const key = document.getElementById('easyKey').value; if(!key) return;
       if(confirm(`정말 [${key}]를 삭제하시겠습니까?`)) {
-        fetch(API_URL, { method: "POST", body: JSON.stringify({ mode: "deleteLibrary", key: key }) })
-        .then(r => r.json())
-        .then(res => {
-          if(res.result === "success") { alert("삭제되었습니다."); loadLibraryList(); resetForm(); }
-        });
+        fetch(API_URL, { method: "POST", body: JSON.stringify({ mode: "deleteLibrary", key: key }) }).then(r => r.json()).then(res => { if(res.result === "success") { alert("삭제되었습니다."); loadLibraryList(); resetForm(); } });
       }
     }
+    function resetForm() { document.getElementById('easyKey').value = "NAV_NEW"; document.getElementById('easyTitle').value = ""; document.getElementById('dataRows').innerHTML = ""; addRows(); renderPreview(); }
 
-    function resetForm() {
-      document.getElementById('easyKey').value = "NAV_NEW";
-      document.getElementById('easyTitle').value = "";
-      document.getElementById('dataRows').innerHTML = "";
-      addRows();
-      renderPreview();
-    }
-
-    window.onload = function() {
-      loadLibraryList();
-      addRows(); // 빈 행 하나 추가
-      renderPreview();
-    };
+    window.onload = function() { loadLibraryList(); addRows(); renderPreview(); };
   </script>
 </body>
 </html>
