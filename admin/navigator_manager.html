@@ -1,274 +1,620 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>네비게이터(템플릿) 관리자</title>
-    <link rel="stylesheet" href="admin.css">
-    <style>
-        .nav-container { display: flex; gap: 20px; height: calc(100vh - 80px); }
-        .nav-list-section { width: 300px; background: #fff; border-right: 1px solid #ddd; display: flex; flex-direction: column; }
-        .nav-list { flex: 1; overflow-y: auto; list-style: none; padding: 0; margin: 0; }
-        .nav-item { padding: 15px; border-bottom: 1px solid #eee; cursor: pointer; transition: 0.2s; }
-        .nav-item:hover, .nav-item.active { background: #f0f7ff; }
-        .nav-item h4 { margin: 0 0 5px 0; font-size: 14px; color: #333; }
-        .nav-item p { margin: 0; font-size: 12px; color: #888; }
-        
-        .nav-editor-section { flex: 1; display: flex; flex-direction: column; background: #fff; padding: 20px; overflow-y: auto; }
-        .editor-header { display: flex; gap: 10px; margin-bottom: 15px; align-items: center; }
-        .editor-input { padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
-        .code-area { width: 100%; height: 300px; font-family: monospace; padding: 10px; background: #2d2d2d; color: #f8f8f2; border-radius: 4px; resize: vertical; margin-bottom: 20px; }
-        
-        .preview-area { border: 2px dashed #ddd; padding: 20px; min-height: 200px; background: #fafafa; border-radius: 4px; }
-        .btn-primary { background: #007bff; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
-        .btn-danger { background: #dc3545; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
-        .btn-secondary { background: #6c757d; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Library Manage</title>
 
-        /* 복사 태그 표시용 */
-        .tag-display { background: #e9ecef; padding: 10px; border-radius: 4px; font-family: monospace; color: #d63384; margin-top: 10px; cursor: pointer; }
-    </style>
+  <link rel="stylesheet" href="./admin.css" />
+  <script src="./admin-common.js"></script>
+
+  <style>
+    /* 로컬 스타일 (기존 유지하되 레이아웃 보정) */
+    .lm-wrap { padding: 0; } /* admin-content 내부 패딩이 있으므로 여기선 제거 */
+
+    .tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+    .tab-btn {
+      border:1px solid rgba(15,23,42,.14);
+      background:#fff;
+      border-radius:12px;
+      padding:10px 12px;
+      cursor:pointer;
+      font-weight:800;
+      transition: all 0.2s;
+    }
+    .tab-btn.active { background: #0f172a; color: #fff; outline:2px solid rgba(59,130,246,.35); }
+
+    .card {
+      background:#fff;
+      border:1px solid rgba(15,23,42,0.14);
+      border-radius:14px;
+      padding:14px;
+      box-shadow:0 10px 24px rgba(15,23,42,0.06);
+      margin-bottom:12px;
+    }
+
+    .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .input, .select, .textarea {
+      border:1px solid rgba(15,23,42,0.16);
+      border-radius:12px;
+      padding:10px 12px;
+      background:#fff;
+      min-height:42px;
+      outline:none;
+      font-family: inherit;
+    }
+    .textarea { width:100%; min-height:220px; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 13px; }
+
+    .btn {
+      border:1px solid rgba(15,23,42,0.14);
+      background:#0f172a;
+      color:#fff;
+      border-radius:12px;
+      padding:10px 12px;
+      cursor:pointer;
+      font-weight:800;
+    }
+    .btn.secondary { background:#fff; color:#0f172a; }
+    .mini-btn {
+      border:1px solid rgba(15,23,42,0.14);
+      background:#fff;
+      border-radius:10px;
+      padding:8px 10px;
+      cursor:pointer;
+      font-weight:800;
+      font-size: 12px;
+    }
+
+    .muted { color:rgba(15,23,42,0.65); font-size:13px; }
+    .hr { height:1px; background:rgba(15,23,42,0.10); margin:12px 0; }
+    .pill {
+      font-size:12px;
+      background:rgba(15,23,42,0.06);
+      border:1px solid rgba(15,23,42,0.10);
+      border-radius:999px;
+      padding:4px 10px;
+      font-weight:800;
+    }
+
+    .builder-grid { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+    @media (max-width: 980px){ .builder-grid{ grid-template-columns: 1fr; } }
+
+    .list { display:flex; flex-direction:column; gap:8px; }
+    .item {
+      border:1px solid rgba(15,23,42,0.14);
+      border-radius:14px;
+      padding:10px 12px;
+      display:flex;
+      align-items:center;
+      gap:10px;
+      box-shadow:0 10px 24px rgba(15,23,42,0.04);
+      background:#fff;
+    }
+    .item .name { font-weight:900; font-size: 14px; }
+    .item .meta { font-size:12px; color:rgba(15,23,42,0.65); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:520px; }
+
+    /* template editor drag */
+    .tpl-card { cursor:grab; }
+    .tpl-card.dragging { opacity:.45; }
+    .tpl-drop { outline:2px dashed rgba(59,130,246,.35); }
+  </style>
 </head>
+
 <body>
+  <div class="admin-shell">
+    <div id="admin-header-slot"></div>
 
-    <div class="admin-wrapper">
-        <div id="menu-slot"></div>
+    <div class="admin-main">
+      <aside id="admin-menu-slot" class="admin-sidebar"></aside>
 
-        <div class="admin-content">
-            <div id="header-slot"></div>
+      <main class="admin-content">
+        <div class="lm-wrap">
 
-            <div class="nav-container">
-                <div class="nav-list-section">
-                    <div style="padding:15px; border-bottom:1px solid #ddd;">
-                        <button class="btn-primary" style="width:100%" onclick="createNew()">+ 새 네비게이터 만들기</button>
-                    </div>
-                    <ul class="nav-list" id="navigatorList">
-                        <li style="padding:20px; text-align:center;">로딩 중...</li>
-                    </ul>
-                </div>
+          <div class="tabs">
+            <button class="tab-btn active" data-tab="builder">템플릿 빌더</button>
+            <button class="tab-btn" data-tab="sections">섹션 관리</button>
+            <button class="tab-btn" data-tab="templates">템플릿 보기</button>
+          </div>
 
-                <div class="nav-editor-section" id="editorPanel" style="display:none;">
-                    <div class="editor-header">
-                        <input type="text" id="editKey" class="editor-input" placeholder="KEY (예: NAV_MAIN)" style="width: 200px; font-weight:bold;">
-                        <input type="text" id="editTitle" class="editor-input" placeholder="제목 (관리용)" style="flex:1;">
-                        <button class="btn-secondary" onclick="loadDefaultTemplate()">🔄 기본 템플릿 넣기</button>
-                        <button class="btn-danger" onclick="deleteCurrent()">삭제</button>
-                        <button class="btn-primary" onclick="saveCurrent()">💾 저장</button>
-                    </div>
+          <section id="tab-builder">
+            <div class="card">
+              <div class="row">
+                <label style="font-weight:900;">API URL</label>
+                <input id="apiUrl" class="input" style="flex:1; min-width:200px;" />
+                <span class="muted">배포 /exec 주소</span>
+              </div>
 
-                    <div class="tag-display" onclick="copyTag()" title="클릭해서 복사">
-                        &lt;div class="cheese-template" data-key="<span id="displayKey">KEY</span>"&gt;&lt;/div&gt;
-                    </div>
-                    <p style="font-size:12px; color:#666; margin-bottom:15px;">👆 위 태그를 클릭해 복사한 뒤, 블로그 글(HTML 모드)에 붙여넣으세요.</p>
+              <div class="row" style="margin-top:10px;">
+                <label style="font-weight:900;">템플릿 ID</label>
+                <input id="tplId" class="input" placeholder="예: news_v1" />
+                <label style="font-weight:900;">템플릿 이름</label>
+                <input id="tplName" class="input" placeholder="예: 뉴스 레이아웃" />
 
-                    <label>HTML / CSS / JS 코드 수정:</label>
-                    <textarea id="htmlContent" class="code-area" oninput="updatePreview()"></textarea>
+                <button class="btn secondary" id="btnAutoImgSlots">IMG 슬롯 자동지정</button>
+                <button class="btn secondary" id="btnAutoBodySlots">BODY 슬롯 자동지정</button>
 
-                    <label>미리보기 (실제 작동 확인):</label>
-                    <div id="previewBox" class="preview-area"></div>
-                </div>
+                <button class="btn" id="btnSaveTemplate">템플릿 저장</button>
+                <button class="btn secondary" id="btnPreviewJson">JSON 미리보기</button>
+              </div>
+
+              <p class="muted" style="margin-top:10px; white-space:pre-line;">
+                왼쪽 섹션에서 추가 후 오른쪽 목록에서 관리하세요.
+                ✅ <strong>SLOT</strong> 버튼: 본문형이면 BODY_N, 이미지형이면 IMG_N 자동 개별 부여
+                ✅ <strong>자동지정</strong> 버튼: 전체 목록을 분석하여 한꺼번에 번호 부여
+              </p>
             </div>
+
+            <div class="builder-grid">
+              <div class="card">
+                <div class="row">
+                  <div style="font-weight:900;">섹션 목록(Drive)</div>
+                  <span class="pill" id="secCount">0</span>
+                  <div style="flex:1"></div>
+                  <input id="secSearch" class="input" placeholder="검색 (.html)" />
+                  <button class="btn secondary" id="btnReloadSections">새로고침</button>
+                </div>
+                <div class="hr"></div>
+                <div class="list" id="secList"></div>
+              </div>
+
+              <div class="card">
+                <div class="row">
+                  <div style="font-weight:900;">선택된 섹션</div>
+                  <span class="pill" id="selCount">0</span>
+                  <div style="flex:1"></div>
+                  <button class="btn secondary" id="btnClearSel">비우기</button>
+                </div>
+                <div class="hr"></div>
+                <div class="list" id="selList"></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="row">
+                <div style="font-weight:900;">JSON 미리보기</div>
+                <div style="flex:1"></div>
+                <span class="muted" id="jsonMsg"></span>
+              </div>
+              <div class="hr"></div>
+              <textarea id="jsonPreview" class="textarea" readonly></textarea>
+            </div>
+          </section>
+
+          <section id="tab-sections" style="display:none;">
+            <div class="card">
+              <div class="row">
+                <div style="font-weight:900;">섹션 생성/편집</div>
+                <div style="flex:1"></div>
+                <button class="btn secondary" id="btnSecLoadList">섹션 목록 불러오기</button>
+              </div>
+              <div class="hr"></div>
+              <div class="row">
+                <label style="font-weight:900;">파일명</label>
+                <input id="secName" class="input" placeholder="파일명.html" />
+                <button class="btn secondary" id="btnSecLoad">불러오기</button>
+                <button class="btn" id="btnSecSave">저장</button>
+                <button class="btn secondary" id="btnSecMakeBody">본문 마커 넣기</button>
+                <span class="muted" id="secMsg"></span>
+              </div>
+              <div style="margin-top:10px;">
+                <textarea id="secHtml" class="textarea" placeholder="HTML 입력"></textarea>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="row">
+                <div style="font-weight:900;">섹션 목록</div>
+                <span class="pill" id="secListCount2">0</span>
+              </div>
+              <div class="hr"></div>
+              <div class="list" id="secList2"></div>
+            </div>
+          </section>
+
+          <section id="tab-templates" style="display:none;">
+            <div class="card">
+              <div class="row">
+                <div style="font-weight:900;">템플릿 목록</div>
+                <div style="flex:1"></div>
+                <button class="btn secondary" id="btnTplReload">새로고침</button>
+              </div>
+              <div class="hr"></div>
+              <div class="list" id="tplList"></div>
+            </div>
+
+            <div class="card">
+              <div class="row">
+                <div style="font-weight:900;">템플릿 JSON</div>
+                <span class="muted" id="tplMsg"></span>
+              </div>
+              <textarea id="tplJson" class="textarea" readonly></textarea>
+            </div>
+
+            <div class="card">
+              <div class="row">
+                <div style="font-weight:900;">섹션 구성 편집</div>
+                <div style="flex:1"></div>
+                <button class="btn secondary" id="btnTplToBuilder">빌더로 보내기</button>
+                <button class="btn" id="btnTplSaveOrder">순서 저장</button>
+              </div>
+              <div class="hr"></div>
+              <div class="list" id="tplSectionsList"></div>
+            </div>
+          </section>
+
         </div>
+      </main>
     </div>
-
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script>
-        // ▼▼▼ Apps Script 배포 URL (수정 필수!) ▼▼▼
-        const API_URL = "https://script.google.com/macros/s/AKfycbxEfHER2lBOZnixi1iX5pwn22lwIOKy6IWcq8XiDmoRsGT34wf1N6eYUL3YYLi8Tho4/exec"; 
-
-        // 1. 공통 레이아웃 로드
-        $(document).ready(function() {
-            $("#menu-slot").load("admin-menu.html");
-            $("#header-slot").load("admin-header.html");
-            loadList();
-        });
-
-        let currentData = null;
-
-        // 2. 목록 불러오기 (Read)
-        function loadList() {
-            $.getJSON(API_URL + "?mode=getAllData", function(res) {
-                // library 데이터가 없으면 getAllData 대신 getComponents 리스트 로직이 필요할 수 있음
-                // 여기서는 기존 getAllData가 library를 안 준다면, 
-                // Code.gs의 doGet에 library 전체를 주는 로직이 추가되어야 함.
-                // 편의상 ?mode=getComponents&keys=ALL 같은 걸 쓴다고 가정하거나
-                // 가장 좋은 건: doGet에 mode='getLibraryList'를 추가하는 것.
-                
-                // (임시) 일단 getComponents로 모든 키를 다 가져올 순 없으니,
-                // Code.gs의 loadLibraryFromSheet_ 함수를 활용해 목록을 주는 API가 있다고 가정하고 작성합니다.
-                // 만약 없다면 Code.gs의 doGet에 `if(mode === 'getLibraryList') return responseJSON_(loadLibraryFromSheet_());` 추가 필요.
-                
-                // 여기서는 '가계도' 예시를 강제로 보여주는 하드코딩 (테스트용)
-                // 실제로는 API 호출로 바꿔야 함.
-                
-                // ★ 실제 구현 시: Code.gs에 목록 반환 기능 추가 후 아래 주석 해제
-                /*
-                fetch(API_URL + "?mode=getLibraryList")
-                    .then(r => r.json())
-                    .then(data => renderList(data));
-                */
-               
-               // 일단 테스트를 위해 가짜 데이터 렌더링
-               renderList([
-                   { key: "NAV_GENEALOGY", title: "왕조 가계도" },
-                   { key: "NAV_SIDEBAR", title: "사이드바 메뉴" } // 예시
-               ]);
-            });
-        }
-        
-        // 실제로는 Code.gs에서 'getLibraryList'를 호출해야 완벽합니다.
-        // 현재 Code.gs에는 목록 반환이 없으므로, 일단 리스트를 수동으로 관리하거나 
-        // 1번 단계의 Code.gs 업데이트 때 getLibraryList도 추가하는 게 좋습니다.
-
-        function renderList(list) {
-            const html = list.map(item => `
-                <li class="nav-item" onclick="selectItem('${item.key}')">
-                    <h4>${item.key}</h4>
-                    <p>${item.title || '제목 없음'}</p>
-                </li>
-            `).join('');
-            $("#navigatorList").html(html);
-        }
-
-        // 3. 아이템 선택 & 데이터 로딩
-        function selectItem(key) {
-            $(".nav-item").removeClass("active");
-            // $(this).addClass("active"); // 클릭한 요소 찾기 복잡하니 생략
-
-            // 서버에서 내용 가져오기
-            fetch(`${API_URL}?mode=getComponents&keys=${key}`)
-                .then(r => r.json())
-                .then(json => {
-                    const content = json.items[key];
-                    // 제목은 별도로 가져와야 하지만, 일단 리스트에 있는 정보를 쓴다고 가정
-                    // 또는 content 안에 주석으로 제목을 넣는 규칙을 정해도 됨.
-                    
-                    document.getElementById("editKey").value = key;
-                    document.getElementById("editTitle").value = key; // 임시
-                    document.getElementById("htmlContent").value = content;
-                    document.getElementById("displayKey").innerText = key;
-                    
-                    $("#editorPanel").show();
-                    updatePreview();
-                });
-        }
-
-        function createNew() {
-            document.getElementById("editKey").value = "";
-            document.getElementById("editTitle").value = "";
-            document.getElementById("htmlContent").value = "";
-            document.getElementById("displayKey").innerText = "KEY";
-            $("#editorPanel").show();
-            document.getElementById("htmlContent").focus();
-        }
-
-        // 4. 프리뷰 업데이트 (스크립트 실행 포함)
-        function updatePreview() {
-            const html = document.getElementById("htmlContent").value;
-            const previewBox = document.getElementById("previewBox");
-            const key = document.getElementById("editKey").value || "PREVIEW";
-            document.getElementById("displayKey").innerText = key;
-
-            previewBox.innerHTML = html;
-
-            // 스크립트 강제 실행 로직
-            const scripts = previewBox.querySelectorAll("script");
-            scripts.forEach(oldScript => {
-                const newScript = document.createElement("script");
-                Array.from(oldScript.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value));
-                newScript.appendChild(document.createTextNode(oldScript.innerHTML));
-                oldScript.parentNode.replaceChild(newScript, oldScript);
-            });
-        }
-
-        // 5. 기본 템플릿(가계도) 넣기
-        function loadDefaultTemplate() {
-            const template = `<div class="namu-wiki-container">
-  <div class="namu-main-header">
-    <span class="namu-icon">🧭</span>
-    <span class="namu-title">새 네비게이터</span>
   </div>
-  <details class="namu-details">
-    <summary class="namu-summary">[ <span class="toggle-text">펼치기</span> ]</summary>
-    <div class="namu-body">
-      <div class="namu-genealogy-grid"></div>
-    </div>
-  </details>
-</div>
-<style>
-/* ... (아까 드린 CSS 전체) ... */
-.namu-wiki-container { border: 2px solid #00a495; margin: 20px 0; }
-.namu-main-header { background: #00a495; color: #fff; padding: 10px; text-align: center; font-weight: bold; }
-.namu-summary { background: #008f82; color: white; padding: 5px; cursor: pointer; text-align: center; }
-.namu-cell { padding: 10px; border: 1px solid #eee; text-align: center; }
-</style>
-<script>
-/* ... (아까 드린 JS) ... */
-console.log("네비게이터 로드됨");
-<\/script>
-`;
-            document.getElementById("htmlContent").value = template;
-            updatePreview();
+
+  <script>
+    // 헤더 타이틀 및 활성 메뉴 설정
+    window.CHEESE_ADMIN_PAGE_SUBTITLE = "라이브러리 관리";
+    window.CHEESE_ADMIN_ACTIVE_PAGE = "library_manage"; // 메뉴 하이라이팅용
+  </script>
+
+  <script>
+    /** =========================
+     * ✅ admin-common.js 연동 (헤더/메뉴 렌더링)
+     * ========================= */
+    (function renderShellOnce(){
+      try{
+        if (window.AdminCommon && typeof window.AdminCommon.renderShell === "function"){
+          window.AdminCommon.renderShell({
+            headerSlotId: "admin-header-slot",
+            menuSlotId: "admin-menu-slot",
+            activeMenu: "library_manage"
+          });
         }
+      }catch(e){ console.error("AdminCommon render failed", e); }
+    })();
 
-        // 6. 저장 (Save)
-        function saveCurrent() {
-            const key = document.getElementById("editKey").value;
-            const title = document.getElementById("editTitle").value;
-            const content = document.getElementById("htmlContent").value;
+    const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbwXqz1uMy3EOrisCEKIe0Fk7yu0P6MQ1ddHDvo7Sr_CPEYY0RHP2GyUBL8YhaBqxnmBJg/exec";
+    const $ = (id)=>document.getElementById(id);
 
-            if(!key) return alert("KEY를 입력해주세요.");
+    function setMsg(el, text, isErr=false){
+      if (!el) return;
+      el.textContent = text || "";
+      el.style.color = isErr ? "crimson" : "rgba(15,23,42,0.65)";
+    }
 
-            const payload = {
-                mode: "saveLibrary",
-                key: key,
-                title: title,
-                content: content
-            };
+    function apiUrl(){ return ($("apiUrl")?.value || "").trim() || DEFAULT_API_URL; }
 
-            if(confirm(`[${key}] 네비게이터를 저장하시겠습니까?`)) {
-                fetch(API_URL, {
-                    method: "POST",
-                    body: JSON.stringify(payload) // POST로 데이터 전송
-                })
-                .then(r => r.json())
-                .then(res => {
-                    if(res.result === "success") {
-                        alert("저장되었습니다! (캐시로 인해 30초 뒤 블로그에 반영됩니다)");
-                        loadList(); // 목록 새로고침
-                    } else {
-                        alert("오류: " + res.msg);
-                    }
-                });
-            }
+    async function apiGet(mode, params={}){
+      const url = new URL(apiUrl());
+      url.searchParams.set("mode", mode);
+      url.searchParams.set("_ts", String(Date.now()));
+      Object.entries(params||{}).forEach(([k,v])=>{ if (v!==undefined && v!==null) url.searchParams.set(k, String(v)); });
+      const r = await fetch(url.toString(), { method:"GET", cache:"no-store" });
+      return await r.json();
+    }
+
+    async function apiPost(mode, bodyObj){
+      const url = new URL(apiUrl());
+      const body = new URLSearchParams();
+      body.set("mode", String(mode || ""));
+      Object.entries(bodyObj||{}).forEach(([k,v])=>{ if (v!==undefined && v!==null) body.set(k, String(v)); });
+      const r = await fetch(url.toString(), { method:"POST", body, cache:"no-store" });
+      return await r.json();
+    }
+
+    /** =========================
+     * Tabs
+     * ========================= */
+    document.querySelectorAll(".tab-btn").forEach(btn=>{
+      btn.onclick = ()=>{
+        document.querySelectorAll(".tab-btn").forEach(b=>b.classList.remove("active"));
+        btn.classList.add("active");
+        const tab = btn.dataset.tab;
+        ["builder","sections","templates"].forEach(t=>{
+          const el = $("tab-"+t);
+          if (el) el.style.display = (t===tab) ? "" : "none";
+        });
+      };
+    });
+
+    /** =========================
+     * 데이터 상태 및 유틸
+     * ========================= */
+    let ALL_SECTIONS = [];
+    let SELECTED = [];
+    let CURRENT_TPL = null;
+    let TPL_SECTIONS = [];
+    let _dragIndex = -1;
+
+    const SECTION_CACHE = new Map();
+
+    /**
+     * 특정 접두사(BODY 또는 IMG)로 시작하는 슬롯 번호의 최대값을 찾음
+     */
+    function findMaxSlotNumber_(prefix){
+      let maxN = 0;
+      for (const s of SELECTED){
+        try{
+          const v = JSON.parse(s.varsText || "{}");
+          // SLOT 또는 IMG_SLOT 키 모두에서 확인
+          const slotValue = String(v?.SLOT || v?.IMG_SLOT || "").trim().toUpperCase();
+          const m = slotValue.match(new RegExp(`^${prefix}_(\\d+)$`));
+          if (m) maxN = Math.max(maxN, parseInt(m[1], 10));
+        }catch(_){}
+      }
+      return maxN;
+    }
+
+    function isImageSectionName_(name){
+      const n = String(name || "").toLowerCase();
+      return n.includes("img") || n.includes("image") || n.includes("cheese_img");
+    }
+
+    async function getSectionHtmlCached(name) {
+      if (SECTION_CACHE.has(name)) return SECTION_CACHE.get(name);
+      try {
+        const r = await apiGet("getSection", { name });
+        const html = r.html || "";
+        SECTION_CACHE.set(name, html);
+        return html;
+      } catch(e) { return ""; }
+    }
+
+    /**
+     * 섹션이 본문형인지 이미지형인지 판단
+     */
+    async function checkSectionType(name) {
+      const html = await getSectionHtmlCached(name);
+      const isImg = isImageSectionName_(name) || /{{\s*(IMG_[A-Z0-9_]+|THUMB_URL)\s*}}/i.test(html);
+      const isBody = html.includes("{{BODY}}");
+      return { isImg, isBody };
+    }
+
+    /** =========================
+     * 렌더링 로직
+     * ========================= */
+    function renderSectionList(){
+      const q = $("secSearch").value.trim().toLowerCase();
+      const list = $("secList");
+      list.innerHTML = "";
+      const filtered = ALL_SECTIONS.filter(s=>!q || s.name.toLowerCase().includes(q));
+      $("secCount").textContent = filtered.length;
+
+      filtered.forEach(s=>{
+        const row = document.createElement("div");
+        row.className = "item";
+        row.innerHTML = `<div style="min-width:0;"><div class="name">${s.name}</div></div><div style="flex:1"></div><button class="mini-btn">추가</button>`;
+        row.querySelector("button").onclick = ()=>{
+          SELECTED.push({ name: s.name, varsText: "" });
+          renderSelected();
+          updateJsonPreviewSafe_();
+        };
+        list.appendChild(row);
+      });
+    }
+
+    function renderSelected(){
+      const list = $("selList");
+      list.innerHTML = "";
+      $("selCount").textContent = SELECTED.length;
+
+      SELECTED.forEach((s, idx)=>{
+        const row = document.createElement("div");
+        row.className = "item";
+        let vSummary = "";
+        try {
+          const v = JSON.parse(s.varsText || "{}");
+          const keys = Object.keys(v);
+          if(keys.length) vSummary = " · " + keys.map(k=>`${k}=${v[k]}`).join(", ");
+        } catch(e){}
+
+        row.innerHTML = `
+          <div style="min-width:0;">
+            <div class="name">${s.name}</div>
+            <div class="meta">#${idx+1}${vSummary}</div>
+          </div>
+          <div style="flex:1"></div>
+          <button class="mini-btn" data-act="up">↑</button>
+          <button class="mini-btn" data-act="down">↓</button>
+          <button class="mini-btn" data-act="slot">SLOT</button>
+          <button class="mini-btn" data-act="vars">vars</button>
+          <button class="mini-btn" data-act="rm">제거</button>
+        `;
+
+        row.querySelector('[data-act="up"]').onclick = ()=>{
+          if(idx<=0) return;
+          [SELECTED[idx-1], SELECTED[idx]] = [SELECTED[idx], SELECTED[idx-1]];
+          renderSelected(); updateJsonPreviewSafe_();
+        };
+        row.querySelector('[data-act="down"]').onclick = ()=>{
+          if(idx>=SELECTED.length-1) return;
+          [SELECTED[idx+1], SELECTED[idx]] = [SELECTED[idx], SELECTED[idx+1]];
+          renderSelected(); updateJsonPreviewSafe_();
+        };
+        row.querySelector('[data-act="rm"]').onclick = ()=>{
+          SELECTED.splice(idx,1); renderSelected(); updateJsonPreviewSafe_();
+        };
+
+        // ✅ SLOT 버튼 개별 지정 로직 수정
+        row.querySelector('[data-act="slot"]').onclick = async ()=>{
+          const type = await checkSectionType(s.name);
+          let vars = {}; try { vars = JSON.parse(s.varsText || "{}"); } catch(e){}
+          
+          if (type.isImg) {
+            const next = findMaxSlotNumber_("IMG") + 1;
+            // 기존 SLOT 키 제거 후 이미지 전용 키로 할당
+            delete vars.SLOT;
+            vars.IMG_SLOT = `IMG_${next}`;
+          } else {
+            const next = findMaxSlotNumber_("BODY") + 1;
+            // 기존 IMG_SLOT 키 제거 후 본문 전용 키로 할당
+            delete vars.IMG_SLOT;
+            vars.SLOT = `BODY_${next}`;
+          }
+          s.varsText = JSON.stringify(vars, null, 2);
+          renderSelected(); updateJsonPreviewSafe_();
+        };
+
+        row.querySelector('[data-act="vars"]').onclick = ()=>{
+          const v = prompt("vars(JSON) 입력", s.varsText || "");
+          if (v!==null) { s.varsText = v.trim(); renderSelected(); updateJsonPreviewSafe_(); }
+        };
+
+        list.appendChild(row);
+      });
+    }
+
+    function updateJsonPreviewSafe_(){
+      try{
+        const sections = SELECTED.map(s=>{
+          let vars = undefined;
+          if(s.varsText.trim()) {
+            try { vars = JSON.parse(s.varsText); } catch(e) { vars = undefined; }
+          }
+          return vars ? { name: s.name, vars } : { name: s.name };
+        });
+        $("jsonPreview").value = JSON.stringify({ id: $("tplId").value, name: $("tplName").value, sections }, null, 2);
+        setMsg($("jsonMsg"), "OK");
+      }catch(e){
+        setMsg($("jsonMsg"), "JSON 오류", true);
+      }
+    }
+
+    /** =========================
+     * 버튼 액션들
+     * ========================= */
+    async function autoAssignBodySlots_(){
+      let n = findMaxSlotNumber_("BODY");
+      for (let item of SELECTED) {
+        let v = {}; try { v = JSON.parse(item.varsText || "{}"); } catch(e){}
+        // 이미 본문 슬롯이 지정되어 있으면 패스
+        if (v.SLOT) continue;
+        
+        const type = await checkSectionType(item.name);
+        if (type.isBody) {
+          n++; 
+          v.SLOT = `BODY_${n}`;
+          // 이미지 슬롯 키가 있다면 제거 (중복 방지)
+          delete v.IMG_SLOT;
+          item.varsText = JSON.stringify(v, null, 2);
         }
+      }
+      renderSelected(); updateJsonPreviewSafe_();
+    }
 
-        // 7. 삭제
-        function deleteCurrent() {
-            const key = document.getElementById("editKey").value;
-            if(!key) return;
+    async function autoAssignImgSlots_(){
+      let n = findMaxSlotNumber_("IMG");
+      for (let item of SELECTED) {
+        let v = {}; try { v = JSON.parse(item.varsText || "{}"); } catch(e){}
+        // 이미 이미지 슬롯이 지정되어 있으면 패스
+        if (v.IMG_SLOT) continue;
 
-            if(confirm(`정말 [${key}]를 삭제하시겠습니까? 복구할 수 없습니다.`)) {
-                fetch(API_URL, {
-                    method: "POST",
-                    body: JSON.stringify({ mode: "deleteLibrary", key: key })
-                })
-                .then(r => r.json())
-                .then(res => {
-                    if(res.result === "success") {
-                        alert("삭제되었습니다.");
-                        location.reload();
-                    }
-                });
-            }
+        const type = await checkSectionType(item.name);
+        if (type.isImg) {
+          n++; 
+          v.IMG_SLOT = `IMG_${n}`;
+          // 본문 슬롯 키가 있다면 제거 (중복 방지)
+          delete v.SLOT;
+          item.varsText = JSON.stringify(v, null, 2);
         }
+      }
+      renderSelected(); updateJsonPreviewSafe_();
+    }
 
-        function copyTag() {
-            const key = document.getElementById("displayKey").innerText;
-            const tag = `<div class="cheese-template" data-key="${key}"></div>`;
-            navigator.clipboard.writeText(tag).then(() => {
-                alert("태그가 복사되었습니다!\n블로그 HTML 모드에 붙여넣으세요:\n\n" + tag);
-            });
-        }
-    </script>
+    async function reloadSections(){
+      const res = await apiGet("listSections");
+      ALL_SECTIONS = res.items || [];
+      renderSectionList();
+      
+      const list2 = $("secList2");
+      list2.innerHTML = "";
+      $("secListCount2").textContent = ALL_SECTIONS.length;
+      ALL_SECTIONS.forEach(s=>{
+        const r = document.createElement("div");
+        r.className = "item";
+        r.innerHTML = `<div class="name">${s.name}</div><div style="flex:1"></div><button class="mini-btn">편집</button>`;
+        r.querySelector("button").onclick = async ()=>{
+          $("secName").value = s.name;
+          const d = await apiGet("getSection", { name: s.name });
+          $("secHtml").value = d.html || "";
+          document.querySelector('[data-tab="sections"]').click();
+        };
+        list2.appendChild(r);
+      });
+    }
+
+    async function loadTemplates(){
+      const res = await apiGet("listTemplates");
+      const list = $("tplList");
+      list.innerHTML = "";
+      (res.items||[]).forEach(it=>{
+        const r = document.createElement("div");
+        r.className = "item";
+        r.innerHTML = `<div class="name">${it.id}</div><div style="flex:1"></div><button class="mini-btn">열기</button>`;
+        r.querySelector("button").onclick = async ()=>{
+          const d = await apiGet("getTemplate", { template_id: it.id });
+          $("tplJson").value = d.json || "";
+          const obj = JSON.parse(d.json || "{}");
+          CURRENT_TPL = obj;
+          TPL_SECTIONS = [...(obj.sections || [])];
+          renderTplSectionsEditor();
+        };
+        list.appendChild(r);
+      });
+    }
+
+    function renderTplSectionsEditor(){
+      const list = $("tplSectionsList");
+      list.innerHTML = "";
+      TPL_SECTIONS.forEach((s, i)=>{
+        const r = document.createElement("div");
+        r.className = "item";
+        r.innerHTML = `<div>${s.name}</div><div style="flex:1"></div><button class="mini-btn">삭제</button>`;
+        r.querySelector("button").onclick = ()=>{ TPL_SECTIONS.splice(i,1); renderTplSectionsEditor(); };
+        list.appendChild(r);
+      });
+    }
+
+    /** =========================
+     * 초기화 및 이벤트 바인딩
+     * ========================= */
+    $("btnReloadSections").onclick = reloadSections;
+    $("secSearch").oninput = renderSectionList;
+    $("btnClearSel").onclick = ()=>{ if(confirm("비울까요?")) { SELECTED=[]; renderSelected(); updateJsonPreviewSafe_(); } };
+    $("btnAutoBodySlots").onclick = autoAssignBodySlots_;
+    $("btnAutoImgSlots").onclick = autoAssignImgSlots_;
+    $("btnPreviewJson").onclick = updateJsonPreviewSafe_;
+
+    $("btnSaveTemplate").onclick = async ()=>{
+      const res = await apiPost("templateUpsert", { template_id: $("tplId").value, json: $("jsonPreview").value, name: $("tplName").value });
+      if(res.ok) alert("저장 완료");
+    };
+
+    $("btnSecSave").onclick = async ()=>{
+      const res = await apiPost("sectionUpsert", { name: $("secName").value, html: $("secHtml").value });
+      if(res.ok) { alert("저장 완료"); reloadSections(); }
+    };
+
+    $("btnSecLoad").onclick = async ()=>{
+      const d = await apiGet("getSection", { name: $("secName").value });
+      $("secHtml").value = d.html || "";
+    };
+
+    $("btnSecMakeBody").onclick = ()=>{
+      $("secHtml").value = `\n{{BODY}}\n`;
+    };
+
+    $("btnTplReload").onclick = loadTemplates;
+    $("btnTplToBuilder").onclick = ()=>{
+      if(!CURRENT_TPL) return;
+      $("tplId").value = CURRENT_TPL.id;
+      $("tplName").value = CURRENT_TPL.name;
+      SELECTED = TPL_SECTIONS.map(s=>({ name: s.name, varsText: JSON.stringify(s.vars||{}, null, 2) }));
+      renderSelected(); updateJsonPreviewSafe_();
+      document.querySelector('[data-tab="builder"]').click();
+    };
+
+    window.onload = ()=>{
+      $("apiUrl").value = DEFAULT_API_URL;
+      reloadSections();
+      loadTemplates();
+    };
+  </script>
 </body>
 </html>
