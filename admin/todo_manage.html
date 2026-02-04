@@ -766,21 +766,35 @@
     $('#input-detail').summernote('code', memoContent);
   }
 
-// 🚀 [수정] 로그 렌더링 (날짜 밀림 해결)
+// 🚀 [수정] 로그 렌더링 (날짜 밀림 해결 + 최신순 정렬 추가)
   function renderLogs() {
     const root = document.getElementById('log-timeline-root'); root.innerHTML = "";
     if(g_logs.length === 0) { root.innerHTML = `<div style="color:#cbd5e1; font-size:0.9rem; text-align:center; padding:20px;">작업 로그가 없습니다.</div>`; return; }
+
+    // [추가] 로그를 날짜 내림차순(최신순) -> ID 내림차순(최신순)으로 미리 정렬
+    // 이렇게 하면 그룹핑할 때 내부 아이템들도 최신순으로 정렬됨
+    g_logs.sort((a, b) => {
+        const da = new Date(a['날짜']);
+        const db = new Date(b['날짜']);
+        return db - da || b.ID - a.ID; 
+    });
     
     const groupedLogs = {};
     g_logs.forEach(log => {
         let dateKey = '날짜 없음';
         if (log['날짜']) {
-            const rawDate = log['날짜'].substring(0, 10).replace(/-/g, '/'); // 로컬 시간 보정
-            const d = new Date(rawDate);
-            const year = d.getFullYear();
-            const month = String(d.getMonth() + 1).padStart(2, '0');
-            const day = String(d.getDate()).padStart(2, '0');
-            dateKey = `${year}-${month}-${day}`;
+            // [수정] 단순 substring은 UTC 기준으로 잘라서 하루 전으로 밀릴 수 있음.
+            // new Date로 전체 시간을 파싱한 뒤 로컬 연/월/일을 가져와야 함.
+            const d = new Date(log['날짜']);
+            if (!isNaN(d.getTime())) {
+                const year = d.getFullYear();
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                dateKey = `${year}-${month}-${day}`;
+            } else {
+                 // 파싱 실패 시 fallback
+                 dateKey = log['날짜'].substring(0, 10);
+            }
         }
         if (!groupedLogs[dateKey]) groupedLogs[dateKey] = [];
         groupedLogs[dateKey].push(log);
@@ -793,6 +807,7 @@
         divider.innerHTML = `<span class="log-date-badge">📅 ${date} (${dayOfWeek})</span>`;
         root.appendChild(divider);
 
+        // 이미 g_logs를 정렬했으므로 여기서는 순서대로 뿌리면 됨 (최신 = 위)
         groupedLogs[date].forEach(log => {
             const item = document.createElement('div'); item.className = "log-item";
             const title = log['제목'] ? `<div class="log-title" style="font-weight:700; font-size:0.95rem; margin-bottom:4px;">${log['제목']}</div>` : '';
@@ -834,7 +849,15 @@
   }
 
   function openLogModal() {
-    document.getElementById('log-modal').classList.add('open'); document.getElementById('log-date').valueAsDate = new Date(); document.getElementById('log-edit-mode').value="false";
+    document.getElementById('log-modal').classList.add('open'); 
+    
+    // [수정] valueAsDate = new Date()는 UTC 기준이라 새벽에 작성 시 날짜가 어제로 밀림
+    // 로컬 시간대 기준 오늘 날짜 문자열(YYYY-MM-DD)을 직접 주입
+    const now = new Date();
+    const localDate = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+    document.getElementById('log-date').value = localDate;
+    
+    document.getElementById('log-edit-mode').value="false";
     document.getElementById('log-form').reset(); document.getElementById('log-idea-section').style.display='block'; updateLogTaskOptions();
   }
 
@@ -1009,7 +1032,21 @@
   function openEditLog(id) {
     const log = g_logs.find(x => x.ID === id); if (!log) return;
     document.getElementById('log-modal').classList.add('open'); document.getElementById('log-modal-title').textContent = "기록 수정"; document.getElementById('log-edit-mode').value = "true"; document.getElementById('log-edit-id').value = id;
-    document.getElementById('log-date').value = (log['날짜']||"").split('T')[0]; document.getElementById('log-title').value = log['제목'] || ""; document.getElementById('log-content').value = log['내용'] || ""; document.getElementById('log-duration').value = log['소요시간'] || ""; document.getElementById('log-tags').value = log['태그'] || ""; document.getElementById('log-idea-section').style.display = 'none';
+    
+    // [수정] 수정 모드에서도 날짜 파싱 오류 방지
+    const d = new Date(log['날짜']);
+    let localIso = "";
+    if(!isNaN(d.getTime())) {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        localIso = `${year}-${month}-${day}`;
+    } else {
+        localIso = (log['날짜']||"").split('T')[0];
+    }
+    document.getElementById('log-date').value = localIso;
+
+    document.getElementById('log-title').value = log['제목'] || ""; document.getElementById('log-content').value = log['내용'] || ""; document.getElementById('log-duration').value = log['소요시간'] || ""; document.getElementById('log-tags').value = log['태그'] || ""; document.getElementById('log-idea-section').style.display = 'none';
     updateLogTaskOptions(log['관련_목표ID']);
   }
 
