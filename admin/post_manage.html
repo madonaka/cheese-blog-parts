@@ -2213,67 +2213,65 @@ function extractTokensMetaFromHtml_(html){
     }
 
     // ===== Blogger =====
-    // [수정] 결과(res)를 반환하도록 변경된 버전
-    async function exportToBlogger(publishState = null){
-      const id = getTargetId();
-      if (!id) return setStatus("id가 필요합니다.", false);
-
-      try{
-        setBusy_(true);
-
-        const tplId = $("templateSelect").value;
-        if (tplId){
-          setStatus("업로드 전 최종 HTML 생성(템플릿 조립) 중...", true);
-          const out = await assembleHtmlUsingState_(tplId, buildVarsForAssemble_());
-          $("html").value = out.html;
-          syncCharCount();
-        }
-
-        const labelsCsv = $("bloggerLabelsTop").value.trim();
-        const actionUi = $("bloggerLabelsActionTop").value || "replace";
-
-        const payload = {
-          id,
-          title: $("title").value.trim(),
-          html: $("html").value,
-          publish: (publishState !== null) ? String(publishState) : "keep", 
-          labels: labelsCsv,
-          labels_action: labelsCsv ? actionUi : "keep"
-        };
-
-        hideBanner();
-        setStatus("Blogger 업로드/수정 중...", true);
-
-        const res = await apiPost("bloggerUpsert", payload);
-        setDebug(res);
-
-        if (!res || !res.ok) {
-          const errMsg = res?.message || "서버 응답 오류";
-          setStatus("Blogger 업로드 실패: " + errMsg, false);
-          // ✅ 에러를 명시적으로 던져서 pipelinePublish_의 catch 블록이 실행되게 함
-          throw new Error(errMsg); 
-        }
-
-        setBloggerMeta({ url: res.url, post_id: res.post_id, status: res.status });
-        setStatus(`Blogger ${res.status === 'published' ? '발행' : '초안'} 완료`, true);
-
-        // 👇 [여기] 자동 로그 생성 코드 추가!
-        // (발행 상태인지 초안 상태인지 확인하여 로그 전송)
-        const logAction = (res.status === 'published') ? 'publish' : 'draft';
-        // await를 빼면 로그 저장을 기다리지 않고 바로 UI가 반응해서 더 빠릅니다.
-        createAutoLog(logAction, payload.title, id);
-        
-        return res;
-
-      }catch(e){
-        setStatus("Blogger 업로드 오류: " + (e?.message || e), false);
-        setDebug(String(e && e.stack ? e.stack : e));
-        // 실패 시 에러를 던져서 pipelinePublish_가 멈추게 함
-        throw e; 
-      }finally{
-        setBusy_(false);
+  async function exportToBlogger(publishState = null){
+    const id = getTargetId();
+    if (!id) return setStatus("id가 필요합니다.", false);
+  
+    try{
+      setBusy_(true);
+  
+      // ✅ [추가] API 호출 전 이전 상태 저장
+      // current가 없으면(새 글) null, 있으면 blogger_status('published' or 'draft') 사용
+      const prevStatus = (current && current.blogger_status) ? current.blogger_status : null;
+  
+      const tplId = $("templateSelect").value;
+      if (tplId){
+        setStatus("업로드 전 최종 HTML 생성(템플릿 조립) 중...", true);
+        const out = await assembleHtmlUsingState_(tplId, buildVarsForAssemble_());
+        $("html").value = out.html;
+        syncCharCount();
       }
+  
+      const labelsCsv = $("bloggerLabelsTop").value.trim();
+      const actionUi = $("bloggerLabelsActionTop").value || "replace";
+  
+      const payload = {
+        id,
+        title: $("title").value.trim(),
+        html: $("html").value,
+        publish: (publishState !== null) ? String(publishState) : "keep", 
+        labels: labelsCsv,
+        labels_action: labelsCsv ? actionUi : "keep"
+      };
+  
+      hideBanner();
+      setStatus("Blogger 업로드/수정 중...", true);
+  
+      const res = await apiPost("bloggerUpsert", payload);
+      setDebug(res);
+  
+      if (!res || !res.ok) {
+        const errMsg = res?.message || "서버 응답 오류";
+        setStatus("Blogger 업로드 실패: " + errMsg, false);
+        throw new Error(errMsg); 
+      }
+  
+      setBloggerMeta({ url: res.url, post_id: res.post_id, status: res.status });
+      setStatus(`Blogger ${res.status === 'published' ? '발행' : '초안'} 완료`, true);
+  
+      // ✅ [수정] 결과 상태(res.status)와 이전 상태(prevStatus)를 함께 전달
+      createAutoLog(res.status, payload.title, id, prevStatus);
+  
+      return res;
+  
+    }catch(e){
+      setStatus("Blogger 업로드 오류: " + (e?.message || e), false);
+      setDebug(String(e && e.stack ? e.stack : e));
+      throw e; 
+    }finally{
+      setBusy_(false);
     }
+  }
 
  async function importFromBlogger(){
       const id = getTargetId();
@@ -2851,27 +2849,37 @@ function clearEditor(){
         el.textContent = "V. " + verStr;
         el.title = "Last Modified: " + document.lastModified;
       })();
+    
     // 🚀 [NEW] 자동 로그 생성 함수 (포스트 발행 기록용)
-    async function createAutoLog(actionType, title, id) {
-      // todo_manage.html에서 사용하는 API 주소 (로그 저장용)
+    // [수정된 createAutoLog 함수]
+    async function createAutoLog(newStatus, title, id, prevStatus) {
       const LOG_API_BASE = "https://script.google.com/macros/s/AKfycbwn1TrLeSIAe570LRWMJxRzx88u3LQYF38Kme9WhMd-YQsrMsSggrNy3I_2SGKGXTpS/exec";
       
       const today = new Date().toISOString().split('T')[0];
       let logTitle = "";
       let logContent = "";
       let tags = "System";
-
-      if (actionType === "publish") {
-          logTitle = "🚀 포스팅 발행됨";
-          logContent = `블로그 포스트가 발행(공개)되었습니다.\n제목: ${title}\nID: ${id}`;
-          tags = "Publish";
-      } else if (actionType === "draft") {
-          logTitle = "📝 포스팅 초안 저장";
-          logContent = `블로그 포스트가 초안으로 업데이트되었습니다.\n제목: ${title}\nID: ${id}`;
+    
+      // 상태 분기 로직
+      if (newStatus === "published") {
+          if (prevStatus === "published") {
+              // 1. 기존에 포스팅 되어있는 (파란불/published) 글을 다시 발행 -> "수정"
+              logTitle = "📝 포스팅 수정됨 (발행)";
+              logContent = `기존에 발행된 포스트 내용을 수정했습니다.\n제목: ${title}\nID: ${id}`;
+              tags = "Update";
+          } else {
+              // 2. 새로 발행하거나, 초안(draft) 상태였던 글을 발행 -> "발행"
+              logTitle = "🚀 포스팅 발행됨";
+              logContent = `포스트를 정식으로 발행(공개)했습니다.\n제목: ${title}\nID: ${id}`;
+              tags = "Publish";
+          }
+      } else {
+          // 3. 초안(draft)으로 저장/발행 -> "초안 발행"
+          logTitle = "💾 포스팅 초안 저장";
+          logContent = `포스팅을 초안 상태로 저장(발행)했습니다.\n제목: ${title}\nID: ${id}`;
           tags = "Draft";
       }
-
-      // 다른 API로 보내야 하므로 fetch를 직접 사용
+    
       try {
           await fetch(LOG_API_BASE, {
               method: "POST",
@@ -2884,7 +2892,7 @@ function clearEditor(){
                   tags: tags
               })
           });
-          console.log("자동 로그 기록 완료");
+          console.log("자동 로그 기록 완료:", logTitle);
       } catch(e) {
           console.error("자동 로그 기록 실패:", e);
       }
