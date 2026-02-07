@@ -1044,7 +1044,7 @@
       }
     });
 
-// ====== [핵심] 일괄 업로드 버튼 (HTML 수정 버전) ======
+// ====== [핵심] 일괄 업로드 버튼 (최종 진단 수정판) ======
     $btnUpload.addEventListener("click", async () => {
       // 1. 공통 데이터 준비
       const origFile = $file.files?.[0];
@@ -1055,7 +1055,8 @@
       // 원본 파일명 (확장자 제외)
       const origNameOnly = origFile.name.substring(0, origFile.name.lastIndexOf('.')) || origFile.name;
       
-      // 기본 식별명: 사용자입력값이 없으면 원본명 사용
+      // [수정 1] 파일명 규칙 단순화
+      // 입력값이 있으면 그것만 쓰고, 없으면 원본명 사용 (중복 결합 X)
       const rootName = userBaseName || origNameOnly;
 
       const isOnlyOrig = document.getElementById("onlyOrigOn")?.checked || false;
@@ -1077,33 +1078,30 @@
           
           const b64 = await blobToBase64(origFile);
           
-          // ★ 파일명 트릭: 서버가 무조건 "${base_name}_${id}_ORIG" 형식으로 저장함
-          // 따라서 base_name에 "입력명_원본명"을 합쳐서 보냄
-          // 결과 파일명: "입력명_원본명_ID_ORIG.확장자"
-          let nameForOrig = userBaseName ? `${userBaseName}_${origNameOnly}` : origNameOnly;
-
           const payload = {
             mode: "upload",
             mime: origFile.type,
             base64: b64, // 유효성 검사 통과용
             
-            // 서버 로직상 only_orig=true일 때 orig_base64가 있어야 저장됨
             save_orig: true,
             only_orig: true,
             orig_base64: b64, 
             orig_mime: origFile.type,
             
             meta: {
-              base_name: nameForOrig, // 조작된 파일명 전달
+              base_name: rootName, // [수정] 깔끔해진 이름 전달
               version: version,
               scale: 1.0, 
-              scale_pct: "ORIG", // (시트의 해당 열 서식을 '텍스트'로 변경하세요)
+              
+              // [수정 2] #NUM! 오류 방지: 'ORIG' 문자 대신 숫자 100 전송
+              // (목록 조회 시 100도 원본으로 인식하도록 이미 수정되어 있음)
+              scale_pct: 100, 
+              
               orig_w: origW, orig_h: origH, bytes: origFile.size
             }
           };
 
           const res = await window.apiPost(payload);
-          // 서버가 반환한 실제 저장된 이름 표시 (snippet이 없으면 drive_name 사용)
           const savedName = res.orig_drive_name || res.drive_name || "Original File";
           successLogs.push(`\n${res.snippet || ""}`);
           
@@ -1133,11 +1131,8 @@
           const b64 = await blobToBase64(res.blob);
           const pct = Math.round(cfg.scale * 100);
 
-          // ★ 가공본 파일명 생성
-          // 서버 규칙: "${base_name}__V날짜__Q비율__ID.jpg"
-          // base_name에 태그와 옵션을 몰아넣어 식별 가능하게 함
-          
-          let nameForJob = rootName; // "입력명" 또는 "원본명"
+          // 가공본 파일명 생성
+          let nameForJob = rootName; 
           
           // 태그 추가: 입력명_(태그)
           if(cfg.userTag) nameForJob += `_(${cfg.userTag})`;
@@ -1145,18 +1140,18 @@
           // 블러 여부 추가
           if(cfg.blurPx > 0) nameForJob += `_blur`;
           
-          // 최종 base_name: "숙종_(네이버)_blur"
-          // 서버 저장 결과: "숙종_(네이버)_blur__V2023...__Q60__IMG... .jpg"
+          // 최종 결과 예: "숙종_(네이버)_blur"
+          // 서버가 저장할 때 ID와 날짜는 자동으로 붙습니다.
 
           const payload = {
             mode: "upload",
             mime: "image/jpeg",
             base64: b64,
-            save_orig: false, // 원본은 위에서 이미 저장함
+            save_orig: false,
             orig_base64: "",
             
             meta: {
-              base_name: nameForJob, // 여기가 핵심
+              base_name: nameForJob,
               label: (cfg.noteText||"").split("\n")[0],
               version: version,
               scale: cfg.scale, 
@@ -1169,7 +1164,7 @@
           };
           
           const serverRes = await window.apiPost(payload);
-          const savedName = serverRes.drive_name || `Job #${i+1}`;
+          const fName = serverRes.drive_name || `Job #${i+1}`;
           if (serverRes.snippet) {
             successLogs.push(`\n${serverRes.snippet}`);
           }
@@ -1185,7 +1180,7 @@
         window.setBusy_(false);
       }
     });
-
+    
     function finishUpload(logs) {
       resetUploadResult();
       const combined = logs.join("\n\n");
