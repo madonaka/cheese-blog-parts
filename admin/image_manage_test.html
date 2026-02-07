@@ -868,12 +868,15 @@
       renderList(lastListItems);
     };
 
-    function renderList(items){
+function renderList(items){
       const q = String($listFilter.value || "").trim().toLowerCase();
       const filtered = (items || []).filter(it => {
         const searchMatch = !q || String(it.id||"").toLowerCase().includes(q) || String(it.base_name||"").toLowerCase().includes(q);
         if (!searchMatch) return false;
-        const isPureOrig = (it.scale_pct === "ORIG");
+        
+        // ✅ [수정 1] "ORIG" 문자열 또는 숫자 100일 경우 모두 원본으로 인식
+        const isPureOrig = (it.scale_pct === "ORIG" || it.scale_pct == 100);
+        
         const hasBackup = !!it.orig_drive_view_url;
         if (currentFilterType === 'orig') return isPureOrig || hasBackup;
         if (currentFilterType === 'resized') return !isPureOrig;
@@ -888,7 +891,9 @@
       }
 
       for (const it of filtered) {
-        const isPureOrig = (it.scale_pct === "ORIG");
+        // ✅ [수정 2] 여기서도 100을 원본으로 인식하도록 동일하게 수정
+        const isPureOrig = (it.scale_pct === "ORIG" || it.scale_pct == 100);
+        
         const showAsOrig = (currentFilterType === 'orig') || isPureOrig;
         const title = (showAsOrig && it.orig_drive_name) ? it.orig_drive_name : (it.base_name || it.id);
         const driveLink = showAsOrig ? (it.orig_drive_view_url || "#") : (it.drive_view_url || "#");
@@ -896,9 +901,16 @@
 
         const card = document.createElement("div");
         card.className = "im-clean-item";
-        let badgeHtml = showAsOrig 
-          ? (isPureOrig ? `<span class="im-badge orig">ORIGINAL</span>` : `<span class="im-badge orig">ORIG (Backup)</span>`)
-          : `<span class="im-badge resized">${it.scale_pct}%</span>`;
+        
+        // 배지 표시 로직
+        let badgeHtml = "";
+        if (showAsOrig) {
+           badgeHtml = isPureOrig 
+             ? `<span class="im-badge orig">ORIGINAL</span>` 
+             : `<span class="im-badge orig">ORIG (Backup)</span>`;
+        } else {
+           badgeHtml = `<span class="im-badge resized">${it.scale_pct}%</span>`;
+        }
 
         card.innerHTML = `
           <img class="im-clean-thumb" src="${thumbSrc}" onerror="this.src='https://ssl.gstatic.com/images/branding/product/1x/drive_2020q4_48dp.png'">
@@ -1044,20 +1056,17 @@
       }
     });
 
-// ====== [핵심] 일괄 업로드 버튼 (최종 진단 수정판) ======
+// ====== [핵심] 일괄 업로드 버튼 (최종 수정판) ======
     $btnUpload.addEventListener("click", async () => {
-      // 1. 공통 데이터 준비
       const origFile = $file.files?.[0];
       if (!origFile) { window.showAlert_("파일이 선택되지 않았습니다."); return; }
 
-      // 사용자 입력명 (없으면 빈값)
+      // 1. 파일명 결정
       const userBaseName = safeTrim($baseName.value);
-      // 원본 파일명 (확장자 제외)
       const origNameOnly = origFile.name.substring(0, origFile.name.lastIndexOf('.')) || origFile.name;
       
-      // [수정 1] 파일명 규칙 단순화
-      // 입력값이 있으면 그것만 쓰고, 없으면 원본명 사용 (중복 결합 X)
-      const rootName = userBaseName || origNameOnly;
+      // ✅ [수정 3] 파일명 단순화: 입력값이 있으면 그것만, 없으면 원본명만 (중복 결합 금지)
+      const finalBaseName = userBaseName || origNameOnly;
 
       const isOnlyOrig = document.getElementById("onlyOrigOn")?.checked || false;
       const shouldSaveOrig = document.getElementById("saveOrigOn")?.checked || false;
@@ -1070,31 +1079,29 @@
       let successLogs = [];
 
       try {
-        // ============================================================
-        // [단계 1] 원본 파일 업로드 (독립 실행)
-        // ============================================================
+        // ------------------------------------------------------------
+        // [1] 원본 파일 저장
+        // ------------------------------------------------------------
         if (isOnlyOrig || shouldSaveOrig) {
           window.setBusy_(true, "원본 파일 저장 중...");
-          
           const b64 = await blobToBase64(origFile);
           
           const payload = {
             mode: "upload",
             mime: origFile.type,
-            base64: b64, // 유효성 검사 통과용
-            
+            base64: b64, 
             save_orig: true,
-            only_orig: true,
+            only_orig: true, 
             orig_base64: b64, 
             orig_mime: origFile.type,
             
             meta: {
-              base_name: rootName, // [수정] 깔끔해진 이름 전달
+              base_name: finalBaseName, // ✅ 깔끔한 이름 전달
               version: version,
               scale: 1.0, 
               
-              // [수정 2] #NUM! 오류 방지: 'ORIG' 문자 대신 숫자 100 전송
-              // (목록 조회 시 100도 원본으로 인식하도록 이미 수정되어 있음)
+              // ✅ [수정 4] #NUM! 오류 방지: 숫자 100 전송
+              // (위에서 수정한 renderList 덕분에 목록에서는 ORIGINAL로 보임)
               scale_pct: 100, 
               
               orig_w: origW, orig_h: origH, bytes: origFile.size
@@ -1102,7 +1109,8 @@
           };
 
           const res = await window.apiPost(payload);
-          const savedName = res.orig_drive_name || res.drive_name || "Original File";
+          // 서버가 저장한 실제 이름 표시
+          const savedName = res.orig_drive_name || res.drive_name || "Original";
           successLogs.push(`\n${res.snippet || ""}`);
           
           if (isOnlyOrig) {
@@ -1111,9 +1119,9 @@
           }
         }
 
-        // ============================================================
-        // [단계 2] 가공된 이미지들 순차 업로드
-        // ============================================================
+        // ------------------------------------------------------------
+        // [2] 가공 이미지(리사이징) 저장
+        // ------------------------------------------------------------
         if (jobResults.length === 0) {
            if(shouldSaveOrig) { finishUpload(successLogs); return; }
            throw new Error("업로드할 작업 결과물이 없습니다.");
@@ -1127,21 +1135,24 @@
           window.setBusy_(true, `가공본 업로드 중 (${i+1}/${jobResults.length})...`);
           
           const res = jobResults[i];
-          const cfg = res.config;
+          const cfg = res.config; // 작업 생성 당시 저장된 설정값
           const b64 = await blobToBase64(res.blob);
           const pct = Math.round(cfg.scale * 100);
 
-          // 가공본 파일명 생성
-          let nameForJob = rootName; 
+          // ✅ [수정 5] 가공본 파일명 생성 (태그 적용 확인)
+          let nameForJob = finalBaseName;
           
-          // 태그 추가: 입력명_(태그)
-          if(cfg.userTag) nameForJob += `_(${cfg.userTag})`;
+          // 태그가 있으면 붙이기 (예: _(태그))
+          if (cfg.userTag) {
+             nameForJob += `_(${cfg.userTag})`; 
+          }
           
-          // 블러 여부 추가
-          if(cfg.blurPx > 0) nameForJob += `_blur`;
+          // 블러가 있으면 붙이기
+          if (cfg.blurPx > 0) {
+             nameForJob += `_blur`;
+          }
           
-          // 최종 결과 예: "숙종_(네이버)_blur"
-          // 서버가 저장할 때 ID와 날짜는 자동으로 붙습니다.
+          // 최종: "입력명_(태그)_blur" -> 서버가 ID, 날짜 등을 붙여서 저장함
 
           const payload = {
             mode: "upload",
