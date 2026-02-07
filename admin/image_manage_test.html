@@ -1364,22 +1364,6 @@
       }
     });
 
-        // 3. 서버 전송
-        window.setBusy_(true, "서버로 전송 및 저장 중...");
-        const res = await window.apiPost(payload);
-
-        showUploadResult_(res);
-        window.showAlert_("업로드 완료!", "✅");
-
-      } catch (e) {
-        console.error("Upload Error:", e);
-        window.showAlert_("업로드 실패:\n" + (e.message || e), "❌");
-      } finally {
-        window.setBusy_(false);
-        $btnUpload.disabled = false;
-      }
-    });
-
     $btnCopy.addEventListener("click", async () => {
       if (!lastSnippetText) return;
       const ok = await copyToClipboard(lastSnippetText);
@@ -1387,7 +1371,76 @@
     });
 
     window.addEventListener("beforeunload", revokeAllPreviewUrls);
-    
+
+
+    // [추가] 현재 UI 설정을 큐에 저장
+    window.addCurrentJob = function() {
+      if (!sourceImg) { alert("원본 이미지가 없습니다."); return; }
+      
+      const useWm = document.getElementById("wmOn").checked;
+      if (useWm && !watermarkImg) { alert("워터마크 이미지가 로드되지 않았습니다."); return; }
+
+      const job = {
+        id: Date.now(),
+        // 중요: 현재 시점의 워터마크 이미지 객체를 참조 저장
+        wmImg: watermarkImg, 
+        useWm: useWm,
+        jpegQ: Number(document.getElementById("jpegQ").value),
+        blurPx: Number(document.getElementById("blurPx").value),
+        wmAlpha: Number(document.getElementById("wmAlpha").value),
+        noteText: document.getElementById("noteText").value,
+        noteOn: document.getElementById("noteOn").checked,
+        notePos: document.getElementById("notePos").value,
+        noteFont: Number(document.getElementById("noteFont").value),
+        scale: 1.0 // 기본 100% 크기 (필요시 UI 추가하여 변경 가능)
+      };
+
+      jobQueue.push(job);
+      renderJobQueueUI();
+      alert(`작업이 추가되었습니다. (총 ${jobQueue.length}개)\n필요하다면 설정을 바꾸고 또 추가하세요.`);
+    };
+
+    // [추가] 작업 목록 UI 갱신
+    function renderJobQueueUI() {
+      const area = document.getElementById("jobQueueArea");
+      const list = document.getElementById("jobList");
+      const cnt = document.getElementById("jobCount");
+      const btnGo = document.getElementById("btnGoStep3");
+
+      if (jobQueue.length > 0) {
+        area.style.display = "block";
+        btnGo.disabled = false;
+        btnGo.textContent = `총 ${jobQueue.length}개 작업 확정 및 생성 →`;
+      } else {
+        area.style.display = "none";
+        btnGo.disabled = true;
+      }
+
+      cnt.textContent = jobQueue.length;
+      list.innerHTML = "";
+      
+      jobQueue.forEach((job, idx) => {
+        const div = document.createElement("div");
+        div.className = "im-clean-item";
+        // 간단한 요약 표시
+        div.innerHTML = `
+          <div class="im-clean-info">
+            <div class="im-clean-title">#${idx+1}. ${job.useWm ? "워터마크 ON" : "워터마크 OFF"}</div>
+            <div class="im-clean-meta">
+              블러 ${job.blurPx}px · 품질 ${job.jpegQ} · 텍스트 ${job.noteOn ? "있음" : "없음"}
+            </div>
+          </div>
+          <button type="button" onclick="removeJob(${job.id})" class="im-smallbtn" style="color:#e11d48;">삭제</button>
+        `;
+        list.appendChild(div);
+      });
+    }
+
+    // [추가] 작업 삭제
+    window.removeJob = function(id) {
+      jobQueue = jobQueue.filter(j => j.id !== id);
+      renderJobQueueUI();
+    };
     // 버전 표시
     (function showVersion(){
       const el = document.getElementById("sysVersion");
@@ -1591,74 +1644,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   }
 });
-// [추가] 현재 UI 설정을 큐에 저장
-    window.addCurrentJob = function() {
-      if (!sourceImg) { alert("원본 이미지가 없습니다."); return; }
-      
-      const useWm = document.getElementById("wmOn").checked;
-      if (useWm && !watermarkImg) { alert("워터마크 이미지가 로드되지 않았습니다."); return; }
 
-      const job = {
-        id: Date.now(),
-        // 중요: 현재 시점의 워터마크 이미지 객체를 참조 저장
-        wmImg: watermarkImg, 
-        useWm: useWm,
-        jpegQ: Number(document.getElementById("jpegQ").value),
-        blurPx: Number(document.getElementById("blurPx").value),
-        wmAlpha: Number(document.getElementById("wmAlpha").value),
-        noteText: document.getElementById("noteText").value,
-        noteOn: document.getElementById("noteOn").checked,
-        notePos: document.getElementById("notePos").value,
-        noteFont: Number(document.getElementById("noteFont").value),
-        scale: 1.0 // 기본 100% 크기 (필요시 UI 추가하여 변경 가능)
-      };
-
-      jobQueue.push(job);
-      renderJobQueueUI();
-      alert(`작업이 추가되었습니다. (총 ${jobQueue.length}개)\n필요하다면 설정을 바꾸고 또 추가하세요.`);
-    };
-
-    // [추가] 작업 목록 UI 갱신
-    function renderJobQueueUI() {
-      const area = document.getElementById("jobQueueArea");
-      const list = document.getElementById("jobList");
-      const cnt = document.getElementById("jobCount");
-      const btnGo = document.getElementById("btnGoStep3");
-
-      if (jobQueue.length > 0) {
-        area.style.display = "block";
-        btnGo.disabled = false;
-        btnGo.textContent = `총 ${jobQueue.length}개 작업 확정 및 생성 →`;
-      } else {
-        area.style.display = "none";
-        btnGo.disabled = true;
-      }
-
-      cnt.textContent = jobQueue.length;
-      list.innerHTML = "";
-      
-      jobQueue.forEach((job, idx) => {
-        const div = document.createElement("div");
-        div.className = "im-clean-item";
-        // 간단한 요약 표시
-        div.innerHTML = `
-          <div class="im-clean-info">
-            <div class="im-clean-title">#${idx+1}. ${job.useWm ? "워터마크 ON" : "워터마크 OFF"}</div>
-            <div class="im-clean-meta">
-              블러 ${job.blurPx}px · 품질 ${job.jpegQ} · 텍스트 ${job.noteOn ? "있음" : "없음"}
-            </div>
-          </div>
-          <button type="button" onclick="removeJob(${job.id})" class="im-smallbtn" style="color:#e11d48;">삭제</button>
-        `;
-        list.appendChild(div);
-      });
-    }
-
-    // [추가] 작업 삭제
-    window.removeJob = function(id) {
-      jobQueue = jobQueue.filter(j => j.id !== id);
-      renderJobQueueUI();
-    };
 
   
 </script>
