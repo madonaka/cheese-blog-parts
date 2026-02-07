@@ -316,7 +316,19 @@
                   <input id="noteFont" class="im-range" type="range" min="10" max="48" step="1" value="18" />
                   <span id="noteFontVal" style="font-weight:900;">18px</span>
                 </div>
-            
+              <div style="margin-top:20px; border-top:1px dashed #cbd5e1; padding-top:20px;">
+                  <div class="im-row" style="justify-content: space-between; align-items:center;">
+                    <span class="im-label">설정 미리보기</span>
+                    <button type="button" onclick="previewCurrentSettings()" class="im-smallbtn" style="background:#fff; border:1px solid #cbd5e1;">
+                      👀 현재 설정으로 미리보기 확인 (Test)
+                    </button>
+                  </div>
+                  
+                  <div id="step2PreviewBox" style="display:none; text-align:center; margin-top:12px; background:#e2e8f0; border-radius:12px; padding:12px;">
+                     <img id="step2PreviewImg" style="max-width:100%; border-radius:8px; box-shadow:0 4px 10px rgba(0,0,0,0.1);" />
+                     <p class="im-help">▲ 현재 설정이 적용된 예시입니다. 마음에 들면 아래 '작업 추가'를 누르세요.</p>
+                  </div>
+                </div>
                 <div style="margin-top:24px; padding:20px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:16px;">
                   <h3 style="margin:0 0 8px; font-size:16px; color:#0369a1;">➕ 작업 대기열에 추가</h3>
                   <p class="im-help" style="margin-bottom:12px;">현재 설정(워터마크, 블러, 텍스트 등)을 하나의 작업으로 저장합니다.</p>
@@ -1125,6 +1137,53 @@
       toast_(`작업 #${jobQueue.length} 추가됨`, "ok");
     };
 
+    // [추가] Step 2에서 현재 설정 미리보기 (큐에 넣기 전 확인용)
+    window.previewCurrentSettings = async function() {
+      if (!sourceImg) { alert("원본 이미지가 없습니다."); return; }
+      
+      // 1. 현재 DOM 설정값 읽기 (addCurrentJob 로직과 동일)
+      const useWm = document.getElementById("wmOn").checked;
+      if (useWm && !watermarkImg) { alert("워터마크 이미지를 먼저 선택해주세요."); return; }
+
+      const tempConfig = {
+        // 테스트용 임시 config
+        wmImg: watermarkImg, 
+        useWm: useWm,
+        jpegQ: Number(document.getElementById("jpegQ").value),
+        blurPx: Number(document.getElementById("blurPx").value),
+        wmAlpha: Number(document.getElementById("wmAlpha").value),
+        noteText: document.getElementById("noteText").value,
+        noteOn: document.getElementById("noteOn").checked,
+        notePos: document.getElementById("notePos").value,
+        noteFont: Number(document.getElementById("noteFont").value),
+        scale: 1.0 
+      };
+
+      try {
+        window.setBusy_(true, "미리보기 생성 중...");
+        
+        // 2. 렌더링 함수 재사용 (기존 로직 활용)
+        const result = await renderPreviewBlob(tempConfig);
+        
+        // 3. 결과 표시
+        const url = URL.createObjectURL(result.blob);
+        const img = document.getElementById("step2PreviewImg");
+        const box = document.getElementById("step2PreviewBox");
+        
+        if (img && box) {
+           // 기존 URL 해제 (메모리 누수 방지)
+           if (img.src && img.src.startsWith("blob:")) URL.revokeObjectURL(img.src);
+           
+           img.src = url;
+           box.style.display = "block";
+        }
+      } catch (e) {
+        alert("미리보기 실패: " + e.message);
+      } finally {
+        window.setBusy_(false);
+      }
+    };
+    
     // ✅ [추가] 작업 목록 그리기
     function renderJobQueueUI() {
       const area = document.getElementById("jobQueueArea");
