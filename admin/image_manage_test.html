@@ -1045,146 +1045,157 @@
     });
 
 // ====== [핵심] 일괄 업로드 버튼 ======
+// ====== [핵심] 일괄 업로드 버튼 (수정됨: 원본 독립 전송 & 파일명 로직 개선) ======
     $btnUpload.addEventListener("click", async () => {
-      // 1. 공통 준비
-      const baseName = safeTrim($baseName.value);
-      if (!baseName) { window.showAlert_("파일명(기본)을 입력하세요."); return; }
+      // 1. 공통 데이터 준비
+      const origFile = $file.files?.[0];
+      if (!origFile) { window.showAlert_("파일이 선택되지 않았습니다."); return; }
+
+      // 사용자가 입력한 파일명이 없으면, '원본 파일명(확장자 제외)'을 기본값으로 사용
+      let finalBaseName = safeTrim($baseName.value);
+      if (!finalBaseName) {
+        finalBaseName = origFile.name.substring(0, origFile.name.lastIndexOf('.')) || origFile.name;
+      }
+
+      // 원본 파일 확장자 추출 (예: .png, .jpg)
+      const origExt = origFile.name.substring(origFile.name.lastIndexOf('.')) || ".jpg";
 
       const isOnlyOrig = document.getElementById("onlyOrigOn")?.checked || false;
-      const origFile = $file.files?.[0];
+      const shouldSaveOrig = document.getElementById("saveOrigOn")?.checked || false;
+      
       const version = versionToday();
       const origW = sourceImg?.naturalWidth || 0;
       const origH = sourceImg?.naturalHeight || 0;
 
       $btnUpload.disabled = true;
+      let successLogs = [];
 
       try {
         // ============================================================
-        // CASE A: [원본 전용 모드] (파일명 미반영 문제 해결됨)
+        // [단계 1] 원본 파일 업로드 (독립 실행)
         // ============================================================
-        if (isOnlyOrig) {
-          if (!origFile) throw new Error("원본 파일 없음");
-          setBusy_(true, "원본 업로드 중...");
+        // '원본만 저장' 모드이거나, '다중 작업' 모드에서 원본 저장을 체크했을 때 실행
+        if (isOnlyOrig || shouldSaveOrig) {
+          window.setBusy_(true, "원본 파일 저장 중...");
+          
           const b64 = await blobToBase64(origFile);
           
-          // ✅ [수정됨] 입력한 파일명이 있으면 그것을 사용
-          const finalName = baseName ? `${baseName}_ORIG.jpg` : `img_${version}_ORIG.jpg`;
+          // 원본 파일명 규칙: 사용자가 적은 이름 + _ORIG + 원래 확장자
+          // 예: 조선왕조_ORIG.png
+          const origName = `${finalBaseName}_ORIG${origExt}`;
 
           const payload = {
             mode: "upload",
-            filename: finalName, // 수정된 이름 사용
+            filename: origName,
             mime: origFile.type,
             base64: b64,
-            save_orig: true, 
-            only_orig: true,
-            orig_base64: "", // 원본 모드는 base64 필드 자체가 원본임
+            save_orig: true,
+            only_orig: true, // 서버에 원본임을 알림
+            orig_base64: "", 
             orig_mime: "",
             meta: {
-              base_name: baseName, 
+              base_name: finalBaseName,
               version: version,
               scale: 1.0, scale_pct: 100,
               orig_w: origW, orig_h: origH, bytes: origFile.size
             }
           };
+
           const res = await window.apiPost(payload);
-          showUploadResult_(res);
-          window.showAlert_("원본 업로드가 완료되었습니다!", "✅");
-
-        } else {
-          // ============================================================
-          // CASE B: [다중 작업 모드] (원본 저장 로직 강화)
-          // ============================================================
-          if (jobResults.length === 0) throw new Error("업로드할 결과물 없음");
-          if (!confirm(`${jobResults.length}개 파일을 업로드하시겠습니까?`)) {
-            $btnUpload.disabled = false; return;
-          }
-
-          const shouldSaveOrig = document.getElementById("saveOrigOn")?.checked || false;
-          let origData = null;
+          if (res.snippet) successLogs.push(`\n${res.snippet}`);
           
-          // ✅ 원본 데이터 준비 (에러 방지용 안전 장치)
-          if (shouldSaveOrig && origFile) {
-            setBusy_(true, "원본 데이터 읽는 중...");
-            try {
-              origData = {
-                b64: await blobToBase64(origFile),
-                name: origFile.name, 
-                type: origFile.type
-              };
-            } catch (err) {
-              console.error("원본 읽기 실패:", err);
-              if(!confirm("원본 데이터를 읽는데 실패했습니다. 가공본만 업로드할까요?")) {
-                 $btnUpload.disabled = false; setBusy_(false); return;
-              }
-              shouldSaveOrig = false; // 실패 시 원본 저장 끄기
-            }
+          // '원본만 저장' 모드라면 여기서 종료
+          if (isOnlyOrig) {
+            finishUpload(successLogs);
+            return;
           }
-
-          let successLogs = [];
-          for (let i = 0; i < jobResults.length; i++) {
-            setBusy_(true, `업로드 중 (${i+1}/${jobResults.length})...`);
-            const res = jobResults[i];
-            const cfg = res.config;
-            const b64 = await blobToBase64(res.blob);
-            
-            // 첫 번째 파일 전송 때만 원본 데이터를 실어 보냄
-            const includeOrig = (i === 0 && shouldSaveOrig && origData);
-
-            // 파일명 생성
-            const pct = Math.round(cfg.scale * 100);
-            const tagPart = cfg.userTag ? `_${cfg.userTag}` : ""; 
-            let autoSuffix = `_${pct}pct`;
-            if (cfg.blurPx > 0) autoSuffix += `_blur`;
-            const namePrefix = baseName || `img_${version}`;
-            const finalFileName = `${namePrefix}${tagPart}${autoSuffix}_job${i+1}.jpg`;
-
-            const payload = {
-              mode: "upload",
-              filename: finalFileName,
-              mime: "image/jpeg",
-              base64: b64,
-              
-              // ✅ 원본 저장 필드 명시적 설정
-              save_orig: !!includeOrig, 
-              orig_base64: includeOrig ? origData.b64 : "",
-              orig_filename: includeOrig ? origData.name : "",
-              orig_mime: includeOrig ? origData.type : "",
-              
-              meta: {
-                base_name: baseName,
-                label: (cfg.noteText||"").split("\n")[0],
-                version: version,
-                scale: cfg.scale, 
-                scale_pct: pct,
-                blur_px: cfg.blurPx, 
-                wm_alpha: cfg.wmAlpha,
-                orig_w: origW, orig_h: origH, 
-                out_w: res.w, out_h: res.h,
-                bytes: res.bytes
-              }
-            };
-            
-            const serverRes = await window.apiPost(payload);
-            if (serverRes.snippet) successLogs.push(`\n${serverRes.snippet}`);
-          }
-          
-          resetUploadResult();
-          const combined = successLogs.join("\n\n");
-          $result.style.display = "block";
-          $result.textContent = `✅ 완료!\n\n${combined}`;
-          lastSnippetText = combined;
-          $btnCopy.disabled = false;
-          window.showAlert_("모든 작업이 완료되었습니다!", "🎉");
         }
+
+        // ============================================================
+        // [단계 2] 가공된 이미지들 순차 업로드
+        // ============================================================
+        if (jobResults.length === 0) {
+           // 작업이 없는데 원본은 저장했다면 성공으로 처리
+           if(shouldSaveOrig) { finishUpload(successLogs); return; }
+           throw new Error("업로드할 작업 결과물이 없습니다.");
+        }
+
+        if (!confirm(`총 ${jobResults.length}개의 가공 이미지를 업로드하시겠습니까?`)) {
+          $btnUpload.disabled = false; window.setBusy_(false); return;
+        }
+
+        for (let i = 0; i < jobResults.length; i++) {
+          window.setBusy_(true, `가공본 업로드 중 (${i+1}/${jobResults.length})...`);
+          
+          const res = jobResults[i];
+          const cfg = res.config;
+          const b64 = await blobToBase64(res.blob);
+
+          // 파일명 생성 로직
+          const pct = Math.round(cfg.scale * 100);
+          
+          // 1. 사용자 태그 (입력값 있으면 _(태그) 붙임)
+          const tagPart = cfg.userTag ? `_(${cfg.userTag})` : "";
+          
+          // 2. 자동 접미사
+          let autoSuffix = `_${pct}pct`;
+          if (cfg.blurPx > 0) autoSuffix += `_blur`;
+          
+          // 3. 고유 ID (Job 번호) - 중복 방지
+          const jobId = `_j${i+1}`;
+
+          // 최종: 기본명 + 태그 + 자동옵션 + 순번 + .jpg (가공본은 무조건 jpg)
+          // 예: 조선왕조_(네이버용)_60pct_blur_j1.jpg
+          const finalFileName = `${finalBaseName}${tagPart}${autoSuffix}${jobId}.jpg`;
+
+          const payload = {
+            mode: "upload",
+            filename: finalFileName,
+            mime: "image/jpeg",
+            base64: b64,
+            save_orig: false, // 원본은 위에서 이미 저장했으므로 여기선 끔
+            orig_base64: "",
+            orig_filename: "",
+            orig_mime: "",
+            meta: {
+              base_name: finalBaseName,
+              label: (cfg.noteText||"").split("\n")[0],
+              version: version,
+              scale: cfg.scale, scale_pct: pct,
+              blur_px: cfg.blurPx, wm_alpha: cfg.wmAlpha,
+              orig_w: origW, orig_h: origH, out_w: res.w, out_h: res.h,
+              bytes: res.bytes
+            }
+          };
+          
+          const serverRes = await window.apiPost(payload);
+          if (serverRes.snippet) {
+            successLogs.push(`\n${serverRes.snippet}`);
+          }
+        }
+        
+        finishUpload(successLogs);
+
       } catch(e) {
         console.error(e);
         window.showAlert_("실패: " + e.message, "❌");
-      } finally {
-        setBusy_(false);
         $btnUpload.disabled = false;
+      } finally {
+        window.setBusy_(false);
       }
     });
 
+    // 업로드 완료 후 처리 함수
+    function finishUpload(logs) {
+      resetUploadResult();
+      const combined = logs.join("\n\n");
+      $result.style.display = "block";
+      $result.textContent = `✅ 모든 작업 완료!\n\n${combined}`;
+      lastSnippetText = combined;
+      $btnCopy.disabled = false;
+      window.showAlert_("모든 파일이 저장되었습니다.", "🎉");
+      $btnUpload.disabled = false;
+    }
     $btnCopy.addEventListener("click", async () => {
       if (!lastSnippetText) return;
       await copyToClipboard(lastSnippetText);
