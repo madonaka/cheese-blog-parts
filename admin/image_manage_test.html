@@ -349,6 +349,12 @@
               </div>
             </div>
 
+            <div class="im-row">
+              <div class="im-label">파일명 태그</div>
+              <input id="fileTag" class="im-input" type="text" placeholder="예: (네이버용) 또는 _cover" style="flex:1;" />
+              <span class="im-help">입력 시 파일명 뒤에 붙습니다.</span>
+            </div>
+            
             <div style="margin-top:24px; padding:20px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:16px;">
               <h3 style="margin:0 0 8px; font-size:16px; color:#0369a1;">➕ 작업 대기열에 추가</h3>
               <p class="im-help" style="margin-bottom:12px;">현재 설정(워터마크, 블러, 텍스트 등)을 작업 목록에 담습니다.</p>
@@ -1088,18 +1094,23 @@
             const b64 = await blobToBase64(res.blob);
             const includeOrig = (i === 0 && shouldSaveOrig);
 
-            // ✅ [여기부터 수정됨] 파일명 생성 로직 변경
+            // ✅ [파일명 생성 로직 업데이트]
             const pct = Math.round(cfg.scale * 100);
             
-            // 꼬리표 만들기 (예: _60pct_blur)
-            let suffix = `_${pct}pct`;
-            if (cfg.blurPx > 0) suffix += `_blur`;
+            // 1. 사용자 태그 (있으면 앞에 붙임)
+            // 예: 입력값이 "(네이버)"라면 -> "_(네이버)" 형태로 변환 or 그냥 붙이기
+            // 여기서는 입력한 그대로 붙이거나, 구분자(_)를 추가할 수 있습니다.
+            const tagPart = cfg.userTag ? `_${cfg.userTag}` : ""; 
+            
+            // 2. 자동 접미사 (비율, 블러)
+            let autoSuffix = `_${pct}pct`;
+            if (cfg.blurPx > 0) autoSuffix += `_blur`;
 
-            // 기본 파일명 결정 (입력값 있으면 사용, 없으면 날짜기반)
             const namePrefix = baseName || `img_${version}`;
             
-            // 최종 파일명: "입력명_60pct_job1.jpg"
-            const finalFileName = `${namePrefix}${suffix}_job${i+1}.jpg`;
+            // 최종: 기본명 + 사용자태그 + 자동태그 + job번호
+            // 예: "숙종_환국_(네이버)_60pct_job1.jpg"
+            const finalFileName = `${namePrefix}${tagPart}${autoSuffix}_job${i+1}.jpg`;
 
             const payload = {
               mode: "upload",
@@ -1154,15 +1165,20 @@
     window.addEventListener("beforeunload", revokeAllPreviewUrls);
 
     // ✅ [추가] 현재 설정 큐에 담기 (올바른 위치)
-    window.addCurrentJob = function() {
+ window.addCurrentJob = function() {
       if (!sourceImg) { alert("원본 이미지가 없습니다."); return; }
-      
       const useWm = document.getElementById("wmOn").checked;
-      if (useWm && !watermarkImg) { alert("워터마크 이미지가 필요합니다."); return; }
+      if (useWm && !watermarkImg) { alert("워터마크 이미지가 없습니다."); return; }
+
+      const scaleInput = document.querySelector('input[name="scaleOpt"]:checked');
+      const currentScale = scaleInput ? Number(scaleInput.value) : 1.0;
+      
+      // ✅ [추가] 사용자 입력 태그 가져오기
+      const userTag = document.getElementById("fileTag").value.trim();
 
       const job = {
         id: Date.now(),
-        wmImg: watermarkImg, // 참조
+        wmImg: watermarkImg, 
         useWm: useWm,
         jpegQ: Number(document.getElementById("jpegQ").value),
         blurPx: Number(document.getElementById("blurPx").value),
@@ -1171,17 +1187,19 @@
         noteOn: document.getElementById("noteOn").checked,
         notePos: document.getElementById("notePos").value,
         noteFont: Number(document.getElementById("noteFont").value),
-        scale: 1.0 
+        
+        scale: currentScale,
+        userTag: userTag // ✅ 저장
       };
 
       jobQueue.push(job);
       renderJobQueueUI();
-      // 성공 피드백 (토스트 메시지 활용)
-      toast_(`작업 #${jobQueue.length} 추가됨`, "ok");
+      
+      const tagMsg = userTag ? ` (태그: ${userTag})` : "";
+      toast_(`작업 추가됨${tagMsg}`, "ok");
     };
-
- // [수정] Step 2에서 현재 설정 미리보기 (크기 선택 반영)
-// [수정] Step 2 설정 미리보기 (선택된 크기 반영)
+   
+    // [수정] Step 2 설정 미리보기 (선택된 크기 반영)
     window.previewCurrentSettings = async function() {
       if (!sourceImg) { alert("원본 이미지가 없습니다."); return; }
       
@@ -1323,7 +1341,9 @@
       const useWm = document.getElementById("wmOn").checked;
       if (useWm && !watermarkImg) { alert("워터마크 이미지가 없습니다."); return; }
 
-      // 공통 설정값 읽기
+      // ✅ [추가] 일괄 추가 시에도 태그 적용
+      const userTag = document.getElementById("fileTag").value.trim();
+
       const baseConfig = {
         wmImg: watermarkImg,
         useWm: useWm,
@@ -1334,24 +1354,24 @@
         noteOn: document.getElementById("noteOn").checked,
         notePos: document.getElementById("notePos").value,
         noteFont: Number(document.getElementById("noteFont").value),
+        
+        userTag: userTag // ✅ 공통 저장
       };
 
-      // 3가지 스케일로 각각 작업 생성
       const scales = [0.6, 0.5, 0.4];
       
       scales.forEach((sc, i) => {
         const job = {
           ...baseConfig,
-          id: Date.now() + i, // ID 겹치지 않게
+          id: Date.now() + i, 
           scale: sc
         };
         jobQueue.push(job);
       });
 
       renderJobQueueUI();
-      alert(`3개의 작업(60%, 50%, 40%)이 대기열에 추가되었습니다.\n총 대기열: ${jobQueue.length}개`);
+      alert(`3개의 작업이 추가되었습니다.${userTag ? "\n태그: " + userTag : ""}`);
     };
-    
   })(); 
 
   // ====== 전역 (모달 관련) ======
