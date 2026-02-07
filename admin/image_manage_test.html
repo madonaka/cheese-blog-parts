@@ -967,7 +967,6 @@
 
     // ====== 이벤트 리스너 (파일 선택) ======
     $file.addEventListener("change", async () => {
-      // 1. 기존 URL 해제 (에러 방지)
       try { revokeAllPreviewUrls(); } catch(e) { console.warn(e); }
       
       $grid.innerHTML = "";
@@ -975,6 +974,16 @@
       resetUploadResult();
       
       const f = $file.files?.[0];
+      
+      // ✅ [추가됨] 파일 선택 시 파일명을 입력창에 자동 입력 (확장자 제거)
+      if (f) {
+        const nameWithoutExt = f.name.substring(0, f.name.lastIndexOf('.')) || f.name;
+        // 이미 입력된 값이 없을 때만 자동 입력
+        if (!$baseName.value.trim()) {
+          $baseName.value = nameWithoutExt;
+        }
+      }
+
       const $previewContainer = document.getElementById("filePreviewContainer");
       const $previewImg = document.getElementById("filePreviewImg");
 
@@ -1035,8 +1044,9 @@
       }
     });
 
-    // ====== [핵심] 일괄 업로드 버튼 ======
+// ====== [핵심] 일괄 업로드 버튼 ======
     $btnUpload.addEventListener("click", async () => {
+      // 1. 공통 준비
       const baseName = safeTrim($baseName.value);
       if (!baseName) { window.showAlert_("파일명(기본)을 입력하세요."); return; }
 
@@ -1049,31 +1059,41 @@
       $btnUpload.disabled = true;
 
       try {
-        // [A] 원본 전용 모드
+        // ============================================================
+        // CASE A: [원본 전용 모드] (파일명 미반영 문제 해결됨)
+        // ============================================================
         if (isOnlyOrig) {
           if (!origFile) throw new Error("원본 파일 없음");
           setBusy_(true, "원본 업로드 중...");
           const b64 = await blobToBase64(origFile);
           
+          // ✅ [수정됨] 입력한 파일명이 있으면 그것을 사용
+          const finalName = baseName ? `${baseName}_ORIG.jpg` : `img_${version}_ORIG.jpg`;
+
           const payload = {
             mode: "upload",
-            filename: `img_${version}_ORIG.jpg`,
+            filename: finalName, // 수정된 이름 사용
             mime: origFile.type,
             base64: b64,
-            save_orig: true, only_orig: true,
-            orig_base64: "", orig_mime: "",
+            save_orig: true, 
+            only_orig: true,
+            orig_base64: "", // 원본 모드는 base64 필드 자체가 원본임
+            orig_mime: "",
             meta: {
-              base_name: baseName, version: version,
+              base_name: baseName, 
+              version: version,
               scale: 1.0, scale_pct: 100,
               orig_w: origW, orig_h: origH, bytes: origFile.size
             }
           };
           const res = await window.apiPost(payload);
           showUploadResult_(res);
-          window.showAlert_("업로드 완료!", "✅");
+          window.showAlert_("원본 업로드가 완료되었습니다!", "✅");
 
- } else {
-          // [B] 다중 작업 모드
+        } else {
+          // ============================================================
+          // CASE B: [다중 작업 모드] (원본 저장 로직 강화)
+          // ============================================================
           if (jobResults.length === 0) throw new Error("업로드할 결과물 없음");
           if (!confirm(`${jobResults.length}개 파일을 업로드하시겠습니까?`)) {
             $btnUpload.disabled = false; return;
@@ -1081,12 +1101,23 @@
 
           const shouldSaveOrig = document.getElementById("saveOrigOn")?.checked || false;
           let origData = null;
+          
+          // ✅ 원본 데이터 준비 (에러 방지용 안전 장치)
           if (shouldSaveOrig && origFile) {
-            setBusy_(true, "원본 읽는 중...");
-            origData = {
-              b64: await blobToBase64(origFile),
-              name: origFile.name, type: origFile.type
-            };
+            setBusy_(true, "원본 데이터 읽는 중...");
+            try {
+              origData = {
+                b64: await blobToBase64(origFile),
+                name: origFile.name, 
+                type: origFile.type
+              };
+            } catch (err) {
+              console.error("원본 읽기 실패:", err);
+              if(!confirm("원본 데이터를 읽는데 실패했습니다. 가공본만 업로드할까요?")) {
+                 $btnUpload.disabled = false; setBusy_(false); return;
+              }
+              shouldSaveOrig = false; // 실패 시 원본 저장 끄기
+            }
           }
 
           let successLogs = [];
@@ -1095,51 +1126,46 @@
             const res = jobResults[i];
             const cfg = res.config;
             const b64 = await blobToBase64(res.blob);
-            const includeOrig = (i === 0 && shouldSaveOrig);
+            
+            // 첫 번째 파일 전송 때만 원본 데이터를 실어 보냄
+            const includeOrig = (i === 0 && shouldSaveOrig && origData);
 
-            // ✅ [파일명 생성 로직 업데이트]
+            // 파일명 생성
             const pct = Math.round(cfg.scale * 100);
-            
-            // 1. 사용자 태그 (있으면 앞에 붙임)
-            // 예: 입력값이 "(네이버)"라면 -> "_(네이버)" 형태로 변환 or 그냥 붙이기
-            // 여기서는 입력한 그대로 붙이거나, 구분자(_)를 추가할 수 있습니다.
             const tagPart = cfg.userTag ? `_${cfg.userTag}` : ""; 
-            
-            // 2. 자동 접미사 (비율, 블러)
             let autoSuffix = `_${pct}pct`;
             if (cfg.blurPx > 0) autoSuffix += `_blur`;
-
             const namePrefix = baseName || `img_${version}`;
-            
-            // 최종: 기본명 + 사용자태그 + 자동태그 + job번호
-            // 예: "숙종_환국_(네이버)_60pct_job1.jpg"
             const finalFileName = `${namePrefix}${tagPart}${autoSuffix}_job${i+1}.jpg`;
 
             const payload = {
               mode: "upload",
-              filename: finalFileName, // 수정된 변수 사용
+              filename: finalFileName,
               mime: "image/jpeg",
               base64: b64,
-              save_orig: includeOrig,
+              
+              // ✅ 원본 저장 필드 명시적 설정
+              save_orig: !!includeOrig, 
               orig_base64: includeOrig ? origData.b64 : "",
               orig_filename: includeOrig ? origData.name : "",
               orig_mime: includeOrig ? origData.type : "",
+              
               meta: {
                 base_name: baseName,
                 label: (cfg.noteText||"").split("\n")[0],
                 version: version,
-                scale: cfg.scale, scale_pct: pct,
-                blur_px: cfg.blurPx, wm_alpha: cfg.wmAlpha,
-                orig_w: origW, orig_h: origH, out_w: res.w, out_h: res.h,
+                scale: cfg.scale, 
+                scale_pct: pct,
+                blur_px: cfg.blurPx, 
+                wm_alpha: cfg.wmAlpha,
+                orig_w: origW, orig_h: origH, 
+                out_w: res.w, out_h: res.h,
                 bytes: res.bytes
               }
             };
             
             const serverRes = await window.apiPost(payload);
-            // 결과창에 파일명도 같이 표시 (알아보기 쉽게)
-            if (serverRes.snippet) {
-              successLogs.push(`\n${serverRes.snippet}`);
-            }
+            if (serverRes.snippet) successLogs.push(`\n${serverRes.snippet}`);
           }
           
           resetUploadResult();
@@ -1148,7 +1174,7 @@
           $result.textContent = `✅ 완료!\n\n${combined}`;
           lastSnippetText = combined;
           $btnCopy.disabled = false;
-          window.showAlert_("모든 업로드 완료!", "🎉");
+          window.showAlert_("모든 작업이 완료되었습니다!", "🎉");
         }
       } catch(e) {
         console.error(e);
