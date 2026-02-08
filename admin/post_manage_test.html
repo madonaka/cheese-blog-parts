@@ -183,6 +183,71 @@
     resize: vertical; min-height: 60px;
   }
   .fn-del-btn { color: #ef4444; cursor: pointer; text-decoration: underline; background: none; border: none; }
+
+  /* [추가] 통합 모달 레이아웃 (좌: 에디터 / 우: 목록) */
+.pm-modal-full {
+  width: 95%; max-width: 1400px; height: 90vh;
+  display: flex; overflow: hidden;
+  background: #fff; border-radius: 16px;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+}
+.pm-pane-left {
+  flex: 2; display: flex; flex-direction: column;
+  border-right: 1px solid #e2e8f0; min-width: 0;
+}
+.pm-pane-right {
+  width: 380px; background: #f8fafc;
+  display: flex; flex-direction: column;
+  border-left: 1px solid #e2e8f0;
+}
+.pm-pane-head {
+  padding: 12px 20px; font-weight: 800; font-size: 15px; color: #1e293b;
+  border-bottom: 1px solid #e2e8f0; background: #fff;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.pm-pane-body { flex: 1; overflow-y: auto; padding: 20px; position: relative; }
+.pm-pane-foot {
+  padding: 15px 20px; border-top: 1px solid #e2e8f0; background: #fff;
+  text-align: right; display: flex; justify-content: flex-end; gap: 8px;
+}
+
+/* 탭 버튼 스타일 */
+.pm-tabs { display: flex; background: #f1f5f9; padding: 4px; border-radius: 8px; gap: 4px; }
+.pm-tab {
+  padding: 6px 12px; border: none; background: none; font-size: 13px; font-weight: bold;
+  color: #64748b; cursor: pointer; border-radius: 6px; transition: all 0.2s;
+}
+.pm-tab.active { background: #fff; color: #2563eb; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+
+/* 에디터 스타일 */
+.pm-editor-block { margin-bottom: 30px; position: relative; }
+.pm-editor-label {
+  display: inline-block; font-size: 11px; font-weight: bold; color: #94a3b8;
+  margin-bottom: 5px; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;
+}
+.pm-editor-textarea {
+  width: 100%; min-height: 150px; padding: 15px;
+  border: 1px solid #cbd5e1; border-radius: 8px;
+  font-family: monospace; font-size: 14px; line-height: 1.6;
+  outline: none; resize: vertical; transition: border 0.2s;
+}
+.pm-editor-textarea:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+
+/* 우측 주석 리스트 아이템 */
+.fn-live-item {
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
+  padding: 12px; margin-bottom: 10px; transition: all 0.2s;
+}
+.fn-live-item:hover { border-color: #94a3b8; transform: translateY(-1px); }
+.fn-live-head {
+  display: flex; justify-content: space-between; font-size: 12px;
+  font-weight: bold; color: #64748b; margin-bottom: 6px;
+}
+.fn-live-text {
+  width: 100%; border: 1px solid #e2e8f0; background: #fafafa;
+  padding: 8px; font-size: 13px; border-radius: 6px; resize: vertical; min-height: 60px;
+}
+.fn-live-text:focus { background: #fff; border-color: #3b82f6; outline: none; }
 </style>
   
 </head>
@@ -495,23 +560,52 @@
     <button class="pm-btn" onclick="saveAllPost()">전체 저장</button>
   </div>
   
-  <div id="fnManagerModal" class="pm-modal-backdrop">
-    <div class="pm-modal">
-      <div class="pm-col-preview">
-        <div class="pm-head">블로그 미리보기 (자동 번호 적용됨)</div>
-        <div id="fnPreviewArea" class="pm-body blog-preview-content">
-          </div>
-      </div>
+  <div id="integratedModal" class="pm-modal-backdrop">
+    <div class="pm-modal-full">
       
-      <div class="pm-col-edit">
-        <div class="pm-head">주석 내용 편집</div>
-        <div id="fnEditorList" class="pm-body" style="background:#f1f5f9;">
+      <div class="pm-pane-left">
+        <div class="pm-pane-head">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span>📝 통합 에디터</span>
+            <button class="pm-btn pm-btn-sm pm-btn-primary" onclick="insertFootnoteAtCursor()">+ 주석 추가 (*?)</button>
           </div>
-        <div class="pm-foot">
-          <button class="pm-btn" onclick="closeFnManager()">취소</button>
-          <button class="pm-btn pm-btn-primary" onclick="applyFootnoteChanges()">적용하기 (본문 업데이트)</button>
+          <div class="pm-tabs">
+            <button class="pm-tab active" onclick="switchView('edit')">편집 모드</button>
+            <button class="pm-tab" onclick="switchView('preview')">미리보기</button>
+          </div>
+        </div>
+        
+        <div id="viewEdit" class="pm-pane-body">
+          <div class="pm-editor-block">
+            <span class="pm-editor-label">Body 1</span>
+            <textarea id="edit_body_1" class="pm-editor-textarea" oninput="detectFootnotes()" onfocus="setLastFocus(this)"></textarea>
+          </div>
+          <div class="pm-editor-block">
+            <span class="pm-editor-label">Body 2</span>
+            <textarea id="edit_body_2" class="pm-editor-textarea" oninput="detectFootnotes()" onfocus="setLastFocus(this)"></textarea>
+          </div>
+          <div class="pm-editor-block">
+            <span class="pm-editor-label">Body 3</span>
+            <textarea id="edit_body_3" class="pm-editor-textarea" oninput="detectFootnotes()" onfocus="setLastFocus(this)"></textarea>
+          </div>
+        </div>
+  
+        <div id="viewPreview" class="pm-pane-body blog-preview-content" style="display:none; background:#fff;"></div>
+      </div>
+  
+      <div class="pm-pane-right">
+        <div class="pm-pane-head">
+          주석 목록 (자동 정렬)
+          <span id="fnTotalCount" style="background:#eff6ff; color:#2563eb; padding:2px 8px; border-radius:12px; font-size:12px;">0</span>
+        </div>
+        <div id="fnListArea" class="pm-pane-body">
+          </div>
+        <div class="pm-pane-foot">
+          <button class="pm-btn" onclick="closeIntegratedManager()">취소</button>
+          <button class="pm-btn pm-btn-primary" onclick="applyIntegratedChanges()">적용하기</button>
         </div>
       </div>
+  
     </div>
   </div>
 
@@ -2700,219 +2794,255 @@ function clearEditor(){
           };
         }
 
-    /* =========================================
-   통합 주석 관리자 로직 (Integrated Footnote Manager)
+/* =========================================
+   [추가] 통합 관리자 핵심 로직 (3.0 버전)
    ========================================= */
-    let parsedFootnotes = []; // 추출된 주석 데이터 저장소
-    
-    // 1. 관리자 열기
-    window.openFootnoteManager = function() {
-  // Body 1, 2, 3 내용 가져오기 (ID는 실제 상황에 맞게 수정 필요)
-      const bodies = [
-        document.getElementById('body_1')?.value || '',
-        document.getElementById('body_2')?.value || '',
-        document.getElementById('body_3')?.value || ''
-      ];
-    
-      parsedFootnotes = [];
-      let globalIndex = 1;
-      let combinedHtml = "";
-    
-      // 각 본문을 순회하며 처리
-      bodies.forEach((html, bodyIdx) => {
-        if (!html.trim()) return;
-    
-        // 정규식: data-note 속성이 있는 a 태그 찾기
-        // 예: <a ... data-note="%EC%A3%BC%EC%84%9D%EB%82%B4%EC%9A%A9">...</a>
-        const regex = /<a [^>]*data-note="([^"]+)"[^>]*>.*?<\/a>/g;
-    
-        // 해당 본문에서 주석을 순서대로 찾아서 임시 번호 부여
-        let processedHtml = html.replace(regex, (match, encodedContent) => {
-          let content = "";
-          try { content = decodeURIComponent(encodedContent); } catch(e) { content = "디코딩 오류"; }
-          
-          const currentNum = globalIndex++;
-          
-          // 데이터 저장 (나중에 편집/적용을 위해)
-          parsedFootnotes.push({
-            num: currentNum,
-            content: content,
-            originalMatch: match, // 원본 태그 문자열
-            isDeleted: false
-          });
-    
-          // 미리보기용 태그 (번호가 매겨진 상태)
-          return `<a href="#fn_preview_${currentNum}" class="cheese-footnote-ref" title="${content.replace(/"/g, '&quot;')}">*${currentNum}</a>`;
-        });
-    
-        // 기존에 있던 <hr><ol class="cheese-footnotes">...</ol> (주석 목록)은 미리보기에서 제거 (중복 방지)
-        processedHtml = processedHtml.replace(/<hr>\s*<ol class="cheese-footnotes">[\s\S]*?<\/ol>/gi, '');
-    
-        combinedHtml += `<div style="margin-bottom: 30px; border-bottom:1px dashed #eee; padding-bottom:20px;">
-          <span style="font-size:10px; color:#999; display:block; margin-bottom:5px;">BODY ${bodyIdx + 1}</span>
-          ${processedHtml}
-        </div>`;
-      });
-    
-      // 하단에 주석 목록 미리보기 생성
-      if (parsedFootnotes.length > 0) {
-        combinedHtml += `<div class="cheese-footnotes-preview" style="margin-top:20px; padding-top:20px; border-top:1px solid #333;">
-          <strong>Footnotes</strong>
-          <ol class="cheese-footnotes">
-            ${parsedFootnotes.map(fn => `<li id="fn_preview_${fn.num}">${fn.content}</li>`).join('')}
-          </ol>
-        </div>`;
-      } else {
-        combinedHtml += `<div style="text-align:center; color:#999; margin-top:20px;">(감지된 주석이 없습니다)</div>`;
-      }
-    
-      // 화면에 그리기
-      document.getElementById('fnPreviewArea').innerHTML = combinedHtml;
-      renderFnEditorList();
+let g_footnotes = []; // 주석 데이터 메모리
+let lastFocusedInput = null; // 커서 위치 기억용
+
+// 1. 모달 열기: 메인 화면의 내용을 모달로 가져옴
+window.openIntegratedManager = function() {
+  document.getElementById('edit_body_1').value = document.getElementById('body_1').value;
+  document.getElementById('edit_body_2').value = document.getElementById('body_2').value;
+  document.getElementById('edit_body_3').value = document.getElementById('body_3').value;
+  
+  // 초기화
+  window.switchView('edit');
+  window.detectFootnotes();
+  // 기본 포커스
+  lastFocusedInput = document.getElementById('edit_body_1');
+  
+  document.getElementById('integratedModal').style.display = 'flex';
+};
+
+window.closeIntegratedManager = function() {
+  document.getElementById('integratedModal').style.display = 'none';
+};
+
+// 포커스 추적 (주석 삽입 위치용)
+window.setLastFocus = function(el) {
+  lastFocusedInput = el;
+};
+
+// 2. 탭 전환 (편집 <-> 미리보기)
+window.switchView = function(mode) {
+  const vEdit = document.getElementById('viewEdit');
+  const vPrev = document.getElementById('viewPreview');
+  const tabs = document.querySelectorAll('.pm-tab');
+  
+  if(mode === 'edit') {
+    vEdit.style.display = 'block';
+    vPrev.style.display = 'none';
+    tabs[0].classList.add('active');
+    tabs[1].classList.remove('active');
+  } else {
+    renderFullPreview(); // 미리보기 생성
+    vEdit.style.display = 'none';
+    vPrev.style.display = 'block';
+    tabs[0].classList.remove('active');
+    tabs[1].classList.add('active');
+  }
+};
+
+// 3. 실시간 주석 감지 (Left -> Right)
+window.detectFootnotes = function() {
+  const bodies = [
+    document.getElementById('edit_body_1').value,
+    document.getElementById('edit_body_2').value,
+    document.getElementById('edit_body_3').value
+  ];
+  
+  g_footnotes = [];
+  let globalIdx = 1;
+  // data-note 속성이 있는 태그 찾기
+  const regex = /<a [^>]*data-note="([^"]+)"[^>]*>.*?<\/a>/g;
+
+  bodies.forEach((html, bIdx) => {
+    let match;
+    while ((match = regex.exec(html)) !== null) {
+      const encoded = match[1];
+      let content = "Error";
+      try { content = decodeURIComponent(encoded); } catch(e){}
       
-      // 모달 띄우기
-      document.getElementById('fnManagerModal').style.display = 'flex';
-    }
-    
-    // 2. 우측 에디터 리스트 그리기
-    function renderFnEditorList() {
-      const container = document.getElementById('fnEditorList');
-      container.innerHTML = "";
-    
-      if (parsedFootnotes.length === 0) {
-        container.innerHTML = "<p style='text-align:center; color:#666; padding:20px;'>편집할 주석이 없습니다.</p>";
-        return;
-      }
-    
-      parsedFootnotes.forEach((fn, idx) => {
-        if (fn.isDeleted) return; // 삭제된 건 건너뜀
-    
-        const div = document.createElement('div');
-        div.className = 'fn-edit-item';
-        div.innerHTML = `
-          <div class="fn-edit-header">
-            <span>#${fn.num}번 주석</span>
-            <button class="fn-del-btn" onclick="markFootnoteDeleted(${idx})">삭제</button>
-          </div>
-          <textarea class="fn-edit-textarea" oninput="updateFootnoteData(${idx}, this.value)">${fn.content}</textarea>
-        `;
-        container.appendChild(div);
+      g_footnotes.push({
+        idx: globalIdx++,
+        content: content,
+        bodyNum: bIdx + 1,
+        fullTag: match[0] // 교체용 원본 태그
       });
     }
+  });
+
+  renderFnList();
+};
+
+// 4. 우측 리스트 렌더링
+function renderFnList() {
+  const listEl = document.getElementById('fnListArea');
+  document.getElementById('fnTotalCount').textContent = g_footnotes.length;
+  listEl.innerHTML = "";
+
+  if(g_footnotes.length === 0) {
+    listEl.innerHTML = "<div style='text-align:center; color:#999; margin-top:40px;'>본문에 주석이 없습니다.<br>왼쪽 에디터에서 추가해보세요.</div>";
+    return;
+  }
+
+  g_footnotes.forEach((fn, i) => {
+    const item = document.createElement('div');
+    item.className = 'fn-live-item';
+    item.innerHTML = `
+      <div class="fn-live-head">
+        <span>#${fn.idx} (Body ${fn.bodyNum})</span>
+        <span style="color:#ef4444; cursor:pointer;" onclick="deleteFootnoteTag(${i})">삭제</span>
+      </div>
+      <textarea class="fn-live-text" oninput="updateFootnoteText(${i}, this.value)">${fn.content}</textarea>
+    `;
+    listEl.appendChild(item);
+  });
+}
+
+// 5. 커서 위치에 주석 태그 추가
+window.insertFootnoteAtCursor = function() {
+  if (!lastFocusedInput) {
+    alert("왼쪽 에디터를 클릭해서 입력 위치를 선택해주세요.");
+    return;
+  }
+  
+  const content = prompt("주석 내용을 입력하세요:");
+  if (!content) return;
+
+  const encoded = encodeURIComponent(content);
+  const tempId = Math.random().toString(36).substr(2, 5);
+  // 화면엔 *? 로 표시 (자동정렬 대기)
+  const tag = `<a id="ref_${tempId}" href="#note_${tempId}" class="cheese-footnote-ref" data-note="${encoded}">*?</a>`;
+
+  const start = lastFocusedInput.selectionStart;
+  const end = lastFocusedInput.selectionEnd;
+  const text = lastFocusedInput.value;
+
+  lastFocusedInput.value = text.substring(0, start) + tag + text.substring(end);
+  lastFocusedInput.focus();
+  
+  // 리스트 즉시 갱신
+  detectFootnotes();
+};
+
+// 6. 주석 내용 수정 (Right -> Left Sync)
+window.updateFootnoteText = function(index, newText) {
+  const fn = g_footnotes[index];
+  const targetId = 'edit_body_' + fn.bodyNum;
+  const targetEl = document.getElementById(targetId);
+  
+  const newEncoded = encodeURIComponent(newText);
+  // 원본 태그의 data-note 부분만 교체
+  const newTag = fn.fullTag.replace(/data-note="([^"]+)"/, `data-note="${newEncoded}"`);
+  
+  targetEl.value = targetEl.value.replace(fn.fullTag, newTag);
+  
+  // 메모리 동기화를 위해 재파싱 (단, 입력 중 끊김 방지 위해 리스트는 다시 그리지 않음이 좋지만 여기선 단순하게 처리)
+  // detectFootnotes(); // 여기선 호출 생략하고 적용 시점에 재확인해도 됨
+  
+  // *중요*: g_footnotes 배열 자체도 업데이트해줘야 함 (삭제 시 참조 위해)
+  fn.content = newText;
+  fn.fullTag = newTag; 
+};
+
+// 7. 주석 삭제
+window.deleteFootnoteTag = function(index) {
+  if(!confirm("본문에서 이 주석 태그를 삭제할까요?")) return;
+  const fn = g_footnotes[index];
+  const targetEl = document.getElementById('edit_body_' + fn.bodyNum);
+  targetEl.value = targetEl.value.replace(fn.fullTag, '');
+  detectFootnotes();
+};
+
+// 8. 미리보기 (HTML 변환)
+function renderFullPreview() {
+  const previewEl = document.getElementById('viewPreview');
+  let combinedHtml = "";
+  let currentFnIdx = 1;
+  const noteList = [];
+
+  ['edit_body_1', 'edit_body_2', 'edit_body_3'].forEach((id, i) => {
+    let html = document.getElementById(id).value;
+    // 기존 목록 제거
+    html = html.replace(/(\n\n)?<hr>\s*<ol class="cheese-footnotes">[\s\S]*?<\/ol>/gi, '');
     
-    // 3. 데이터 업데이트 (내용 수정)
-    window.updateFootnoteData = function(idx, val) {
-      parsedFootnotes[idx].content = val;
-      // (옵션) 실시간 미리보기 갱신은 성능을 위해 생략하거나 여기서 구현 가능
-    };
+    // 미리보기용 태그 변환 (*? -> *1)
+    html = html.replace(/<a [^>]*data-note="([^"]+)"[^>]*>.*?<\/a>/g, (m, enc) => {
+      const num = currentFnIdx++;
+      let txt = "";
+      try { txt = decodeURIComponent(enc); } catch(e){}
+      noteList.push({ num, txt });
+      return `<sup style="color:#2563eb; font-weight:bold;">*${num}</sup>`;
+    });
     
-    // 4. 데이터 삭제 (실제 삭제는 적용 시점에)
-    window.markFootnoteDeleted = function(idx) {
-      if (confirm("이 주석을 삭제하시겠습니까?\n(적용 버튼을 누르면 본문에서도 태그가 사라집니다)")) {
-        parsedFootnotes[idx].isDeleted = true;
-        renderFnEditorList(); // 리스트 다시 그리기
-      }
-    };
+    // 줄바꿈 처리
+    html = html.replace(/\n/g, '<br>');
     
-    // 5. 적용하기 (본문 업데이트)
-    window.applyFootnoteChanges = function() {
-      const bodyIds = ['body_1', 'body_2', 'body_3'];
-      let globalCounter = 1; // 최종 번호 카운터
-      let validFootnotes = []; // 최종적으로 살아남은 주석들
+    combinedHtml += `<div style="margin-bottom:30px;">${html}</div>`;
+  });
+
+  // 하단 목록 생성
+  if(noteList.length > 0) {
+    combinedHtml += `<hr><ol class="cheese-footnotes" style="padding-left:20px; font-size:0.9em; color:#555;">`;
+    noteList.forEach(n => {
+      combinedHtml += `<li style="margin-bottom:5px;">${n.txt}</li>`;
+    });
+    combinedHtml += `</ol>`;
+  }
+  
+  previewEl.innerHTML = combinedHtml;
+}
+
+// 9. 최종 적용 (모달 -> 메인화면)
+window.applyIntegratedChanges = function() {
+  let globalIdx = 1;
+  const notesForList = [];
+  const bodies = ['modal_body_1', 'modal_body_2', 'modal_body_3'];
+  const targetBodies = ['body_1', 'body_2', 'body_3'];
+
+  // 각 본문 업데이트
+  bodies.forEach((modalId, idx) => {
+    let html = document.getElementById(modalId).value;
     
-      // A. 각 본문을 순회하며 태그 교체
-      bodyIds.forEach(bId => {
-        const el = document.getElementById(bId);
-        if (!el) return;
-    
-        let html = el.value;
-        
-        // 기존 주석 목록(<ol>...) 제거 (깨끗한 상태에서 다시 붙이기 위해)
-        html = html.replace(/<hr>\s*<ol class="cheese-footnotes">[\s\S]*?<\/ol>/gi, '');
-    
-        // 본문 내의 주석 태그 찾기
-        const regex = /<a [^>]*data-note="([^"]+)"[^>]*>.*?<\/a>/g;
-        
-        // replace는 순차적으로 실행되므로, parsedFootnotes 배열(순서대로 저장됨)을 소비하며 매칭
-        // 주의: parsedFootnotes는 전체 Body 통합 순서임. 
-        // 여기서 replace를 돌릴 때, 우리가 처음에 openFootnoteManager에서 파싱했던 그 순서대로 매칭이 될 것이라는 가정이 필요함.
-        // (HTML 구조가 크게 바뀌지 않았다면 순서는 일치합니다)
-        
-        // 큐(Queue) 방식으로 처리하기 위해 현재 처리 중인 글로벌 인덱스 추적
-        // 하지만 replace 콜백 안에서 외부 배열 인덱스를 쓰려면, 
-        // 전체 body를 합쳐서 처리하는게 아니라 나누어 처리하므로 약간의 트릭이 필요.
-        // -> "파싱했던 순서대로" 다시 매칭된다는 점을 이용.
-        
-      });
+    // 기존 목록 제거
+    html = html.replace(/(\n\n)?<hr>\s*<ol class="cheese-footnotes">[\s\S]*?<\/ol>/gi, '');
+
+    // 태그 확정 (*? -> *1, *2...)
+    const regex = /<a [^>]*data-note="([^"]+)"[^>]*>.*?<\/a>/g;
+    html = html.replace(regex, (match, encoded) => {
+      const num = globalIdx++;
+      let content = "";
+      try { content = decodeURIComponent(encoded); } catch(e){}
+      notesForList.push({ num, content });
       
-      // *** 중요: replace 로직의 정확성을 위해 다시 한번 전체 흐름을 잡습니다. ***
-      // 위에서 `parsedFootnotes`는 이미 전체 본문 순서대로 정렬되어 있습니다.
-      // 따라서 Body 1부터 순서대로 replace를 수행하며 배열을 앞에서부터 꺼내 쓰면 됩니다.
-      
-      let tempQueue = [...parsedFootnotes]; // 복사본 생성
+      // 최종 태그 포맷
+      return `<a id="fn${num}-ref" href="#fn${num}" class="cheese-footnote-ref" data-note="${encoded}">*${num}</a>`;
+    });
+
+    // 메인 화면에 반영
+    document.getElementById(targetBodies[idx]).value = html;
+  });
+
+  // 마지막 본문에 리스트 붙이기
+  if(notesForList.length > 0) {
+    let listHtml = '\n\n<hr>\n<ol class="cheese-footnotes">';
+    notesForList.forEach(n => {
+      listHtml += `\n  <li id="fn${n.num}">\n    <a href="#fn${n.num}-ref" class="cheese-footnote-index">*${n.num}</a>\n    ${n.content}\n  </li>`;
+    });
+    listHtml += '\n</ol>';
+
+    let targetEl = document.getElementById('body_3');
+    if(!targetEl.value.trim()) targetEl = document.getElementById('body_2');
+    if(!targetEl.value.trim()) targetEl = document.getElementById('body_1');
     
-      bodyIds.forEach(bId => {
-        const el = document.getElementById(bId);
-        if (!el) return;
-        let html = el.value;
-    
-        // 1. 기존 주석 목록 제거
-        html = html.replace(/(\n\n)?<hr>\s*<ol class="cheese-footnotes">[\s\S]*?<\/ol>/gi, '');
-    
-        // 2. 태그 교체
-        const regex = /<a [^>]*data-note="([^"]+)"[^>]*>.*?<\/a>/g;
-        
-        html = html.replace(regex, (match) => {
-          const currentItem = tempQueue.shift(); // 큐에서 하나 꺼냄
-          
-          if (!currentItem) return match; // 매칭 오류 시 원본 유지
-          if (currentItem.isDeleted) return ''; // 삭제된 주석은 태그 자체를 제거
-    
-          // 살아있는 주석: 번호 재할당 및 내용 업데이트
-          const newNum = globalCounter++;
-          const newEncoded = encodeURIComponent(currentItem.content);
-          
-          // 수집 (나중에 하단 리스트용)
-          validFootnotes.push({ num: newNum, content: currentItem.content });
-    
-          // 최종 태그 포맷 (번호와 data-note 업데이트)
-          // ID는 유니크해야 하므로 번호 기반으로 재생성
-          return `<a id="fn${newNum}-ref" href="#fn${newNum}" class="cheese-footnote-ref" data-note="${newEncoded}">*${newNum}</a>`;
-        });
-    
-        el.value = html; // 변경된 HTML 반영
-      });
-    
-      // B. 마지막 Body에 주석 목록(<ol>) 붙이기
-      // 내용이 있는 마지막 Body를 찾음
-      let targetId = 'body_3';
-      if (!document.getElementById('body_3').value.trim()) targetId = 'body_2';
-      if (!document.getElementById('body_2').value.trim()) targetId = 'body_1';
-      
-      const targetEl = document.getElementById(targetId);
-      
-      if (targetEl && validFootnotes.length > 0) {
-        let listHtml = '\n\n<hr>\n<ol class="cheese-footnotes">';
-        validFootnotes.forEach(fn => {
-          listHtml += `\n  <li id="fn${fn.num}">\n    <a href="#fn${fn.num}-ref" class="cheese-footnote-index">*${fn.num}</a>\n    ${fn.content}\n  </li>`;
-        });
-        listHtml += '\n</ol>';
-        
-        targetEl.value = targetEl.value.trimEnd() + listHtml;
-      }
-    
-      closeFnManager();
-      alert("주석이 정리되고 본문에 적용되었습니다!");
-    }
-    
-    window.closeFnManager = function() {
-      document.getElementById('fnManagerModal').style.display = 'none';
-    };
-    
-    window.saveAllPost = function() {
-      // 여기에 전체 저장 로직 구현 (예: 각 Body 내용을 서버로 전송)
-      alert("전체 저장 기능은 아직 구현되지 않았습니다. API 연동이 필요합니다.");
-    };
+    targetEl.value = targetEl.value + listHtml;
+  }
+
+  closeIntegratedManager();
+  // alert("적용되었습니다!"); (너무 자주 뜨면 귀찮으니 생략 가능)
+};
     
     /* ===========================================================
        ✅ [NEW] 섹션 라이브러리 모달 & 추가 로직
