@@ -798,11 +798,10 @@
              <div id="related-idea-root" style="font-size:0.9rem; color:#0c4a6e;"></div>
           </div>
 
-        <div class="modal-footer-custom">
-          <button type="button" class="btn-close-custom" onclick="closeModal('input-modal')">닫기</button>
-          <button type="button" class="btn-edit-custom" id="btn-switch-edit" onclick="toggleEditMode(true)" style="padding:12px 24px; border-radius:12px; background:#3b82f6; color:#fff; border:none; font-weight:700; cursor:pointer;">✏️ 수정하기</button>
-          <button type="submit" class="btn-save-custom" id="btn-save-submit" style="display:none;">💾 저장하기</button>
-        </div>
+        </div> </div> <div class="modal-footer-custom">
+        <button type="button" class="btn-close-custom" onclick="closeModal('input-modal')">닫기</button>
+        <button type="submit" class="btn-save-custom">💾 저장하기</button>
+      </div>
 
     </form>
   </div>
@@ -839,14 +838,8 @@
   window.CHEESE_ADMIN_ACTIVE_PAGE = "todo_manage";
   let g_goals=[], g_tasks=[], g_logs=[];
 
-  document.addEventListener('DOMContentLoaded', () => {
-    if (typeof window.loadAllData === "function") {
-      window.loadAllData();
-    } else {
-      console.error("[todo_manage] loadAllData is not defined. admin-common.js 로드/경로를 확인하세요.");
-    }
-  });
-  
+  document.addEventListener('DOMContentLoaded', loadAllData);
+
   // [추가] 버튼 로딩 상태 토글 함수
   function toggleBtnLoading(btn, isLoading) {
     if (!btn) return;
@@ -867,35 +860,33 @@
     }
   }
   
-// [완전 수정] 아이디어 실현 (타입 변경 없이 '완료' 처리)
-async function realizeIdea(ideaId) {
-    if(!confirm("⚡ 이 아이디어를 '실현됨(완료)' 상태로 변경하시겠습니까?")) return;
-
-    if(typeof showAdminLoading === 'function') showAdminLoading("실현 처리 중...");
-
+  async function loadAllData() {
+    if(typeof showAdminLoading==='function') showAdminLoading("데이터 동기화 중...");
     try {
-        // 상태를 '완료'로 변경하여 실현됨 탭으로 이동시킴
-        const response = await fetch(window.CHEESE_ADMIN_API_BASE, { 
-            method: "POST", 
-            body: JSON.stringify({ mode: "updateStatus", id: ideaId, status: "완료" }) 
-        });
-        
-        const idea = g_tasks.find(t => t.ID === ideaId);
-        if(idea) {
-             await createAutoLog("realize_idea", idea['제목'], ideaId);
-        }
+      const res = await fetch(window.CHEESE_ADMIN_API_BASE + "?mode=getAllData");
+      const json = await res.json();
+      if(json.result === "success") {
+        g_goals = json.goals; g_tasks = json.tasks; g_logs = json.logs||[];
+        renderGoalTree(); renderBoardView(); renderBugView(); renderIdeaView(); renderLogs(); updateParentOptions();
+      }
+    } catch(e) { console.error(e); }
+    finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); }
+  }
 
-        await loadAllData();
-        // 실현됨 탭으로 자동 이동하고 싶다면 아래 주석 해제
-        // switchIdeaTab('realized'); 
-
-    } catch (e) {
-        console.error(e);
-        alert("오류가 발생했습니다.");
-    } finally {
-        if(typeof hideAdminLoading === 'function') hideAdminLoading();
-    }
-}
+  // [추가] 현재 선택된 아이디어 탭 (기본값: 전체)
+  let g_currentIdeaTab = 'all';
+  
+  // [추가] 아이디어 탭 전환 함수
+  function switchIdeaTab(tabName) {
+    g_currentIdeaTab = tabName;
+    
+    // 탭 버튼 스타일 업데이트
+    document.querySelectorAll('.idea-tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.getElementById('itab-' + tabName).classList.add('active');
+    
+    // 뷰 다시 그리기
+    renderIdeaView();
+  }
   
   // 🚀 [수정] 탭 전환 함수
   function switchView(mode) {
@@ -1150,114 +1141,23 @@ async function realizeIdea(ideaId) {
     });
   }
 
-// [수정] 아이디어 뷰 렌더링
+// [수정] 아이디어 뷰 렌더링 (탭 필터 + 카드 리스트)
 function renderIdeaView() {
   const root = document.getElementById('idea-list-root');
   root.innerHTML = "";
 
   const sortMode = document.getElementById('idea-sort-select').value;
   
-  // 1. 전체 아이디어 데이터 준비
+  // 1. 전체 아이디어 데이터 준비 (할일 중 부모 없는 고아 포함)
   let rawIdeas = g_tasks.filter(t => {
     if (t['유형'] === '아이디어') return true;
+    // 고아 태스크(부모X 혹은 부모가 큰목표)도 아이디어로 취급
     if (t['유형'] === '할 일') {
         const parentId = t['연결_중간목표ID'];
         if (!parentId || parentId.trim() === "" || parentId.startsWith("G_")) return true;
     }
     return false;
   });
-
-  // 2. 탭 필터링
-  let filteredIdeas = rawIdeas.filter(item => {
-    const realizedId = item['연결_중간목표ID']; 
-    // [수정] 실현 여부: 상태가 '완료'이거나, 다른 작업(T_, B_)과 연결된 경우
-    const isRealized = (item['상태'] === '완료') || (realizedId && (realizedId.startsWith('T_') || realizedId.startsWith('B_')));
-    
-    const color = item['색상'] || '#64748b';
-
-    if (g_currentIdeaTab === 'realized') return isRealized; 
-    if (isRealized) return false; // 다른 탭에서는 실현된 것 숨김
-
-    if (g_currentIdeaTab === 'all') return true;
-    if (g_currentIdeaTab === 'blog') return color === '#db2777';
-    if (g_currentIdeaTab === 'system') return color === '#2563eb';
-    if (g_currentIdeaTab === 'biz') return color === '#d97706';
-    if (g_currentIdeaTab === 'etc') return (color === '#64748b' || !color);
-    
-    return true;
-  });
-
-  // 3. 정렬
-  filteredIdeas.sort((a, b) => {
-    const dateA = a['기한'] ? new Date(a['기한']).getTime() : 0;
-    const dateB = b['기한'] ? new Date(b['기한']).getTime() : 0;
-    if (sortMode === 'oldest') return (dateA - dateB) || (a.ID - b.ID);
-    return (dateB - dateA) || (b.ID - a.ID);
-  });
-
-  if (filteredIdeas.length === 0) {
-    let msg = "등록된 아이디어가 없습니다.";
-    if (g_currentIdeaTab === 'realized') msg = "아직 실현된 아이디어가 없습니다. 🚀";
-    root.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:60px; color:#cbd5e1;">${msg}</div>`;
-    return;
-  }
-
-  // 4. 카드 렌더링
-  filteredIdeas.forEach(item => {
-    const card = document.createElement('div');
-    
-    let catClass = 'cat-etc';
-    const c = item['색상'];
-    if (c === '#db2777') catClass = 'cat-blog';
-    else if (c === '#2563eb') catClass = 'cat-system';
-    else if (c === '#d97706') catClass = 'cat-biz';
-    
-    // [수정] 실현된 상태 판단
-    const realizedId = item['연결_중간목표ID'];
-    const isRealized = (item['상태'] === '완료') || (realizedId && (realizedId.startsWith('T_') || realizedId.startsWith('B_')));
-
-    card.className = `idea-card-item ${catClass} ${isRealized ? 'is-realized' : ''}`;
-    
-    const dateStr = item['기한'] ? item['기한'].split('T')[0] : '';
-    const plainText = (item['상세내용'] || "내용 없음").replace(/<[^>]*>?/gm, '').slice(0, 100) + "...";
-    
-    let badgeLabel = "💭 잡담";
-    let badgeColor = "#64748b";
-    if (catClass === 'cat-blog') { badgeLabel = "📝 블로그"; badgeColor = "#db2777"; }
-    else if (catClass === 'cat-system') { badgeLabel = "⚙️ 시스템"; badgeColor = "#2563eb"; }
-    else if (catClass === 'cat-biz') { badgeLabel = "🧀 사업"; badgeColor = "#d97706"; }
-    if (isRealized) { badgeLabel = "🚀 실현됨"; badgeColor = "#10b981"; }
-
-    let buttons = "";
-    if (isRealized) {
-      buttons = `<button class="btn" style="font-size:0.8rem; background:#fff; border:1px solid #cbd5e1;" onclick="event.stopPropagation(); cancelRealization('${item.ID}')">↩️ 실현 취소</button>`;
-    } else {
-      // [수정] 함수명 변경 (convertIdeaToTask -> realizeIdea)
-      buttons = `<button class="btn" style="font-size:0.8rem; background:#eff6ff; color:#3b82f6; border:1px solid #bfdbfe; font-weight:700;" onclick="event.stopPropagation(); realizeIdea('${item.ID}')">⚡ 실현하기</button>`;
-    }
-
-    // [추가] 삭제 버튼 포함
-    card.innerHTML = `
-      <div class="ici-header">
-        <span class="ici-badge" style="background:${badgeColor}">${badgeLabel}</span>
-        <div class="ici-date">📅 ${dateStr}</div>
-      </div>
-      <div class="ici-title">${item['제목']}</div>
-      <div class="ici-body">${plainText}</div>
-      <div class="ici-footer">
-        ${buttons}
-        <div style="display:flex; gap:4px;">
-            <button class="row-btn" style="font-size:1rem;" onclick="event.stopPropagation(); openEditModal('idea', '${item.ID}')">✏️</button>
-            <button class="row-btn" style="font-size:1rem; color:#ef4444;" onclick="event.stopPropagation(); deleteItem('${item.ID}')">🗑️</button>
-        </div>
-      </div>
-    `;
-    
-    card.onclick = () => openEditModal('idea', item.ID);
-    
-    root.appendChild(card);
-  });
-}
 
   // 2. 탭에 따른 필터링
   let filteredIdeas = rawIdeas.filter(item => {
@@ -1356,19 +1256,15 @@ function renderIdeaView() {
 }
 
   // 아이디어 실현 취소
-async function cancelRealization(ideaId) {
-    if(!confirm("실현 상태를 취소하시겠습니까?")) return;
-    if(typeof showAdminLoading === 'function') showAdminLoading("취소 중...");
-    try {
-        // 상태를 '대기'로 변경 (연결ID 초기화는 덤)
-        await fetch(window.CHEESE_ADMIN_API_BASE, { 
-            method: "POST", 
-            body: JSON.stringify({ mode: "editItem", id: ideaId, status: "대기", connectedId: "" }) 
-        });
-        loadAllData(); 
-    } catch(e) { console.error(e); alert("오류가 발생했습니다."); } 
-    finally { if(typeof hideAdminLoading === 'function') hideAdminLoading(); }
-}
+  async function cancelRealization(ideaId) {
+      if(!confirm("실현 상태를 취소하시겠습니까?\n(연결된 작업과의 고리를 끊습니다.)")) return;
+      if(typeof showAdminLoading === 'function') showAdminLoading("취소 중...");
+      try {
+          await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify({ mode: "editItem", id: ideaId, connectedId: "" }) });
+          loadAllData(); 
+      } catch(e) { console.error(e); alert("오류가 발생했습니다."); } 
+      finally { if(typeof hideAdminLoading === 'function') hideAdminLoading(); }
+  }
 
 // [수정] 아이디어 실현 (날짜 꼬임 방지 로직 적용)
   function convertIdeaToTask(ideaId) {
@@ -1499,40 +1395,39 @@ async function cancelRealization(ideaId) {
     document.getElementById('log-form').reset(); document.getElementById('log-idea-section').style.display='block'; updateLogTaskOptions();
   }
 
- // [수정] 읽기/수정 모드 토글
-function toggleEditMode(isEdit) {
+  function toggleEditMode(isEdit) {
     const form = document.getElementById('todo-form');
+    // Select all inputs to disable/enable
     const inputs = form.querySelectorAll('input, select, textarea');
-    const btnSave = document.getElementById('btn-save-submit');
-    const btnSwitch = document.getElementById('btn-switch-edit');
-    const editActions = document.getElementById('edit-actions'); // 헤더의 삭제 버튼 영역
-
-    document.getElementById('edit-mode').value = isEdit ? "true" : "false";
     
     if (isEdit) {
-      // 수정 모드: 입력 활성화, 저장 버튼 표시
+      // Enable inputs
       inputs.forEach(el => el.disabled = false);
-      if(btnSave) btnSave.style.display = 'block';
-      if(btnSwitch) btnSwitch.style.display = 'none';
-      if(editActions) editActions.style.display = 'flex'; // 수정 시 삭제 버튼 보임
-
+      
+      // Show 'edit actions' which contains the Delete button
+      const editActions = document.getElementById('edit-actions');
+      if(editActions) editActions.style.display = 'flex';
+      
+      // Initialize or Enable Summernote
       if (!$('#input-detail').summernote('exists')) {
-        $('#input-detail').summernote({ height: 250 });
+        $('#input-detail').summernote({ height: 250, toolbar: [['style', ['bold', 'italic', 'underline', 'clear']], ['font', ['strikethrough']], ['para', ['ul', 'ol']], ['insert', ['link', 'picture']], ['view', ['fullscreen', 'codeview']]] });
       } else {
         $('#input-detail').summernote('enable');
       }
     } else {
-      // 읽기 모드: 입력 비활성화, 수정 버튼 표시
+      // Disable inputs (View Mode)
       inputs.forEach(el => el.disabled = true);
-      if(btnSave) btnSave.style.display = 'none';
-      if(btnSwitch) btnSwitch.style.display = 'block';
-      if(editActions) editActions.style.display = 'none'; // 읽기 모드에선 헤더 삭제 버튼 숨김 (안전)
       
+      // Hide delete button container
+      const editActions = document.getElementById('edit-actions');
+      if(editActions) editActions.style.display = 'none';
+      
+      // Disable Summernote
       if ($('#input-detail').summernote('exists')) {
         $('#input-detail').summernote('disable');
       }
     }
-}
+  }
 
 function openModal(type) {
   document.getElementById('input-modal').classList.add('open'); 
@@ -1655,13 +1550,14 @@ function toggleFormFields() {
         document.getElementById('input-due').value = (item['기한']||"").split('T')[0];
         document.getElementById('input-priority').value = item['우선순위'] || "보통";
     }
-
-    // [중요 변경] 기본은 '읽기 전용'으로 엽니다.
-    toggleEditMode(false);
     
-    // 모달 헤더의 삭제 버튼 로직 (toggleEditMode가 제어하므로 여기서는 이벤트만 연결)
+    // [중요 수정] 기존에는 toggleEditMode(false)로 호출하여 비활성화/삭제버튼 숨김 상태였음.
+    // 바로 수정 및 삭제가 가능하도록 true로 호출합니다.
+    toggleEditMode(true);
+    
     const delBtn = document.getElementById('btn-delete-modal'); 
     if(delBtn) {
+        delBtn.style.display = "block"; 
         delBtn.onclick = () => deleteFromModal();
     }
 
