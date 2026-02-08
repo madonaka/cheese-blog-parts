@@ -112,7 +112,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }, 300); 
     }
 
-    // 툴팁 박스 자체에 마우스를 올렸을 때 꺼짐 방지
+    // ★ [PC Fix 핵심] 툴팁 박스 자체에 마우스를 올렸을 때 꺼짐 방지
     tooltip.addEventListener('mouseenter', function() {
         if(tooltipTimeout) {
             clearTimeout(tooltipTimeout);
@@ -185,4 +185,4 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-  });
+});
