@@ -1419,59 +1419,73 @@ async function realizeIdea(ideaId) {
   }
 
 function toggleEditMode(isEdit) {
-  const viewTa = document.getElementById('detail-readonly'); // ✅ 읽기박스
-  const editTa = document.getElementById('input-detail');    // ✅ 썸머노트 원본 textarea
-  const $edit = $('#input-detail');
+  // ✅ [추가] 버튼 표시 규칙을 toggleEditMode가 단일 책임으로 관리
+  const btnSave   = document.getElementById('btn-save-submit');
+  const btnSwitch = document.getElementById('btn-switch-edit');
 
+  // "등록"인지 "기존 항목"인지: edit-id가 비어있으면 신규 등록
+  const isCreate = !document.getElementById('edit-id')?.value;
+
+  if (isCreate) {
+    // ✅ 신규 등록: 등록하기만
+    if (btnSave) {
+      btnSave.innerHTML = "💾 등록하기";
+      btnSave.style.display = "inline-block";
+    }
+    if (btnSwitch) btnSwitch.style.display = "none";
+  } else {
+    // ✅ 기존 항목(상세)
+    if (isEdit) {
+      // 수정모드: 저장하기만
+      if (btnSave) {
+        btnSave.innerHTML = "💾 저장하기";
+        btnSave.style.display = "inline-block";
+      }
+      if (btnSwitch) btnSwitch.style.display = "none";
+    } else {
+      // 읽기모드: 수정하기만
+      if (btnSave) btnSave.style.display = "none";
+      if (btnSwitch) {
+        btnSwitch.innerHTML = "✏️ 수정하기";
+        btnSwitch.style.display = "inline-block";
+      }
+    }
+  }
+
+  // ---- 아래는 기존 toggleEditMode 로직 그대로 유지 ----
+  const viewTa = document.getElementById('detail-readonly');
+  const editTa = document.getElementById('input-detail');
+  const $edit = $('#input-detail');
   const hasSummernote = !!($.fn && $.fn.summernote);
 
-  // 현재 “내용”을 어디서 가져올지 결정
-  // - 수정모드 → 썸머노트가 있으면 썸머노트 내용이 최신
-  // - 아니면 textarea 값
   const currentHtml = (hasSummernote && $edit.summernote('exists'))
     ? $edit.summernote('code')
     : (editTa.value || "");
 
   if (!isEdit) {
-    // =====================
-    // ✅ 읽기모드: 텍스트박스만
-    // =====================
-
-    // 1) 썸머노트 UI는 무조건 숨김
     if (hasSummernote && $edit.summernote('exists')) {
       $edit.summernote('disable');
       $edit.next('.note-editor').hide();
     }
-    editTa.style.display = 'none';      // 원본 textarea도 숨김
-    // 혹시 남아있는 note-editor가 있으면 싹 숨김(안전장치)
+    editTa.style.display = 'none';
     $(editTa).siblings('.note-editor').hide();
     $(editTa).next('.note-editor').hide();
 
-    // 2) 읽기 전용 텍스트박스만 표시
-    //    (썸머노트 html → 텍스트로 보이게 변환)
     viewTa.value = htmlToPlainText_(currentHtml);
     viewTa.style.display = 'block';
-
     return;
   }
 
-  // =====================
-  // ✅ 수정모드: 썸머노트만
-  // =====================
-
-  // 1) 읽기 텍스트박스는 무조건 숨김
   viewTa.style.display = 'none';
 
   if (!hasSummernote) {
-    // 썸머노트 로딩이 안 된 경우: 어쩔 수 없이 편집 textarea를 보여줌(최후 수단)
     editTa.style.display = 'block';
     editTa.readOnly = false;
     return;
   }
 
-  // 2) 썸머노트 1회 초기화
   if (!$edit.summernote('exists')) {
-    editTa.style.display = 'block'; // 초기화 순간만 필요
+    editTa.style.display = 'block';
     $edit.summernote({
       height: 250,
       toolbar: [
@@ -1484,13 +1498,13 @@ function toggleEditMode(isEdit) {
     });
   }
 
-  // 3) 썸머노트만 보이게 강제
   $edit.summernote('enable');
   $edit.summernote('code', currentHtml);
 
-  editTa.style.display = 'none';          // ✅ 원본 textarea는 숨김
-  $edit.next('.note-editor').show();      // ✅ 에디터 UI만 표시
+  editTa.style.display = 'none';
+  $edit.next('.note-editor').show();
 }
+
 
 // ✅ HTML → 텍스트로 바꿔서 “읽기용 텍스트박스”에 넣기
 function htmlToPlainText_(html) {
