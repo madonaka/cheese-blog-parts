@@ -502,7 +502,7 @@
       const fnModalCloseBtn = document.getElementById("fnModalCloseBtn");
 
       let seq = 0;
-      let activeFnContext = null; // Stores callback for the active footnote action
+      let activeFnContext = null;
       const STORAGE_KEY = "bcg_global_footnotes";
 
       function showToast(msg){
@@ -522,10 +522,12 @@
         return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
       }
 
+      // ✅ [핵심 수정] 주석 태그(HR, OL, UL, LI, A, DIV, BLOCKQUOTE 등)가 이스케이프되지 않도록 정규식 강화
       function protectAllowedTags_(s){
         const src = String(s ?? "");
         const map = [];
-        const re = /<\/?(?:strong|em|u|s)\s*>|<br\s*\/?>|<mark\s+style="background:\s*#[0-9a-fA-F]{3,8}\s*"\s*>|<\/mark>|<span\s+style="color:\s*#[0-9a-fA-F]{3,8}\s*"\s*>|<\/span>|<table\s+class="cheese-table"\s*>|<\/table>|<thead\s*>|<\/thead>|<tbody\s*>|<\/tbody>|<tr\s*>|<\/tr>|<th\s*>|<\/th>|<td\s*>|<\/td>|<caption\s*>|<\/caption>|<a\s+[^>]*cheese-footnote-ref[^>]*>.*?<\/a>|<hr\s*\/?>|<\/?ol[^>]*>|<\/?ul[^>]*>|<\/?li[^>]*>|<\/?a[^>]*>|<\/?div[^>]*>/gi;
+        // 기본 서식 태그 + 블록 태그(hr, ol, ul, li, div, blockquote, pre) + 링크(a) 허용
+        const re = /<\/?(?:strong|em|u|s)\s*>|<br\s*\/?>|<mark\s+style="background:\s*#[0-9a-fA-F]{3,8}\s*"\s*>|<\/mark>|<span\s+style="color:\s*#[0-9a-fA-F]{3,8}\s*"\s*>|<\/span>|<table\s+class="cheese-table"\s*>|<\/table>|<thead\s*>|<\/thead>|<tbody\s*>|<\/tbody>|<tr\s*>|<\/tr>|<th\s*>|<\/th>|<td\s*>|<\/td>|<caption\s*>|<\/caption>|<a\s+[^>]*cheese-footnote-ref[^>]*>.*?<\/a>|<hr\s*\/?>|<\/?ol[^>]*>|<\/?ul[^>]*>|<\/?li[^>]*>|<\/?a[^>]*>|<\/?div[^>]*>|<\/?blockquote[^>]*>|<\/?pre[^>]*>/gi;
         const out = src.replace(re, (m)=>{
           const key = `@@ALLOWED_TAG_${map.length}@@`;
           map.push(m);
@@ -553,9 +555,12 @@
         if (chunks.length === 0) return "";
         return chunks.map(chunk => {
           const trimmedChunk = chunk.trim();
+          // ✅ [핵심 수정] 블록 태그로 시작하면 P 태그 감싸기 건너뛰기
+          // hr, ol, ul, div, blockquote, pre 등으로 시작하는 경우 (대소문자 무관)
           if (allowTags && /^(<table|<ol|<ul|<div|<hr|<blockquote|<pre)/i.test(trimmedChunk)) {
              return escapeText_(trimmedChunk, allowTags);
           }
+          
           const brOnlyRegex = /^(<br\s*\/?>)+$/i;
           if (brOnlyRegex.test(trimmedChunk.replace(/\s/g, ''))) return trimmedChunk; 
           
@@ -631,8 +636,6 @@
         if (!fnModal) return;
         fnModal.hidden = true;
         fnModal.style.display = 'none';
-        
-        // Restore focus to body if possible
         if (activeFnContext && activeFnContext.restoreFocus) {
              activeFnContext.restoreFocus();
         }
@@ -656,7 +659,7 @@
       fnModalCloseBtn.onclick = closeFnModal;
       fnModal.onclick = (e) => { if (e.target === fnModal) closeFnModal(); };
       fnInput.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && e.ctrlKey) confirmFnModal(); // Ctrl+Enter to submit
+        if (e.key === "Enter" && e.ctrlKey) confirmFnModal(); 
         if (e.key === "Escape") closeFnModal();
       });
 
@@ -833,7 +836,6 @@
       function updateGlobalFnUI() {
         const list = loadGlobalFootnotes();
         globalFnCountEl.textContent = list.length;
-        // 열려있는 모든 블록에게 시작 번호 재설정 신호
         document.querySelectorAll("[data-bcg-block]").forEach(b => {
            if(b.bcgCheckStartIdx) b.bcgCheckStartIdx();
         });
@@ -872,7 +874,6 @@
           updateGlobalFnUI();
           showToast("전체 주석이 초기화되었어. 새 글 작성 시작!");
           
-          // 열려있는 블록도 리셋
           document.querySelectorAll("[data-bcg-block]").forEach(b => {
             if (b.bcgData) b.bcgData.footnotes = [];
             if (b.bcgRegenerate) b.bcgRegenerate();
@@ -889,7 +890,6 @@
         const newRaw = prompt("현재 저장된 주석 목록이야. (수정 불가, 확인용)\n\n" + preview + "\n\n편집 기능을 넣으려면 코드를 더 짜야 해... 😅");
       });
 
-      // 초기 로드 시 UI 업데이트
       updateGlobalFnUI();
 
 
@@ -909,7 +909,6 @@
         
         const parts = [headPart, bodyHtml].filter(Boolean);
 
-        // 로컬 블록의 리스트 포함 (옵션)
         if (includeList && myFootnotes && myFootnotes.length > 0) {
             const listHtml = generateFootnoteListHtml(myFootnotes, myStartIndex);
             parts.push(`\n<hr>\n<ol class="cheese-footnotes">\n${listHtml}</ol>`);
@@ -925,7 +924,6 @@
         wrap.className = "bcg-card";
         wrap.setAttribute("data-bcg-block", id);
         
-        // 데이터 저장소
         wrap.bcgData = { footnotes: [] };
 
         wrap.innerHTML = `
@@ -1044,7 +1042,6 @@
         const colorEl = wrap.querySelector("[data-color]");
         const bgEl = wrap.querySelector("[data-bg]");
 
-        // 시작 번호 자동 설정
         function checkStartIdx() {
            if (!wrap.bcgData.hasManualIdx) {
               const globalList = loadGlobalFootnotes();
@@ -1052,11 +1049,10 @@
            }
         }
         wrap.bcgCheckStartIdx = checkStartIdx;
-        // 초기 1회 실행
         setTimeout(checkStartIdx, 0);
 
         startIdxEl.addEventListener("input", () => {
-           wrap.bcgData.hasManualIdx = true; // 수동 조작 플래그
+           wrap.bcgData.hasManualIdx = true; 
            regenerate();
         });
 
@@ -1069,7 +1065,7 @@
                 heading: headingEl.value,
                 body: bodyEl.value,
                 allowTags: keepRawEl.checked,
-                includeList: false, // 로컬 미리보기엔 리스트 제외 (하단 바에서 통합 복사하므로)
+                includeList: false,
                 myFootnotes: wrap.bcgData.footnotes,
                 myStartIndex: myStartIdx
             });
@@ -1167,15 +1163,10 @@
             ensureAllowTagsOn_();
             
             if (fmt === "footnote") {
-               // 모달 오픈!
                openFnModal({
                  onConfirm: (noteContent) => {
-                    // 1. 로컬 저장
                     wrap.bcgData.footnotes.push(noteContent);
-                    // 2. 글로벌 저장 (LocalStorage)
                     const newTotalCount = appendGlobalFootnote(noteContent);
-                    
-                    // 3. 현재 주석의 번호는? 
                     const currentIdx = newTotalCount;
 
                     restoreSel_();
