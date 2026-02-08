@@ -1,165 +1,151 @@
-// Cheese Footnote Tooltip (위키 스타일 주석 + 모바일 모달)
-  document.addEventListener('DOMContentLoaded', function () {
-    var refs = document.querySelectorAll('.cheese-footnote-ref');
-    if (!refs.length) return;
+document.addEventListener('DOMContentLoaded', function () {
+    // -----------------------------------------------------------
+    // 1. 링크 자동 감지 및 스타일 적용 (나무위키 스타일)
+    // -----------------------------------------------------------
+    const myHost = window.location.hostname; // 내 블로그 도메인
+    const postBody = document.querySelector('.post-body'); // 본문 영역
+    const footnotes = document.querySelector('.cheese-footnotes'); // 주석 영역
 
-    // 터치/모바일 환경 판별 함수
-	// 터치/모바일 + 좁은 화면이면 모바일처럼 취급
-	function isTouchLike() {
-	  var realTouch =
-	    ('ontouchstart' in window) ||
-	    (navigator.maxTouchPoints && navigator.maxTouchPoints > 0) ||
-	    (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
-	
-	  var narrowViewport = window.innerWidth <= 900; // 폭이 좁으면 모바일 취급
-	
-	  return realTouch || narrowViewport;
-	}
-	
-	var touchMode = isTouchLike();
+    // 본문과 주석 영역 내의 모든 a 태그 수집
+    let allLinks = [];
+    if(postBody) allLinks = allLinks.concat(Array.from(postBody.getElementsByTagName('a')));
+    if(footnotes) allLinks = allLinks.concat(Array.from(footnotes.getElementsByTagName('a')));
 
-    /* ───── 공통: 모바일 모달 요소 만들기 ───── */
-    var modal = document.createElement('div');
-    modal.className = 'cheese-footnote-modal';
-    modal.innerHTML =
-      '<div class="cheese-footnote-modal-inner">' +
-        '<div class="cheese-footnote-modal-body"></div>' +
-        '<button type="button" class="cheese-footnote-modal-close">닫기</button>' +
-      '</div>';
-    document.body.appendChild(modal);
+    allLinks.forEach(a => {
+        // 주석 번호(*1)나 이미지가 포함된 링크는 제외
+        if(a.classList.contains('cheese-footnote-ref') || a.querySelector('img')) return;
+        
+        const href = a.getAttribute('href');
+        if(!href || href.startsWith('#') || href.startsWith('javascript')) return;
 
-    var modalBody  = modal.querySelector('.cheese-footnote-modal-body');
-    var modalClose = modal.querySelector('.cheese-footnote-modal-close');
-
-    // 모달 열기 전 스크롤 위치
-    var cheeseScrollYBeforeModal = 0;
-
-    function cheeseLockScroll() {
-      cheeseScrollYBeforeModal =
-        window.pageYOffset || document.documentElement.scrollTop || 0;
-
-      // ✅ html/body 스크롤락
-      document.documentElement.style.overflow = 'hidden';
-      document.body.style.overflow = 'hidden';
-    }
-
-    function cheeseUnlockScroll() {
-      document.documentElement.style.overflow = '';
-      document.body.style.overflow = '';
-
-      // 모달 열기 전 위치로 복귀
-      window.scrollTo(0, cheeseScrollYBeforeModal || 0);
-    }
-
-    function openModal(html) {
-      modalBody.innerHTML = html;
-      modalBody.scrollTop = 0;  // 항상 맨 위에서 시작하게
-      modal.classList.add('is-open');
-	  cheeseLockScroll();      // 모달 열릴 때 배경 스크롤 잠그기
-    }
-    function closeModal() {
-      modal.classList.remove('is-open');
-	  cheeseUnlockScroll();    // 모달 닫힐 때 다시 풀어주기
-    }
-
-    modalClose.addEventListener('click', closeModal);
-    modal.addEventListener('click', function (e) {
-      if (e.target === modal) closeModal();   // 바깥 검은 영역 탭해도 닫힘
+        // 외부 링크 판별 (http로 시작하고, 내 도메인이 아님)
+        if(href.startsWith('http') && !href.includes(myHost)) {
+            a.classList.add('namu-external');
+            a.target = "_blank"; // 새 창 열기
+        } 
+        // 내부 링크 판별
+        else {
+            a.classList.add('namu-internal');
+            // title 속성이 없으면 텍스트를 title로 설정 (툴팁용)
+            if(!a.getAttribute('title') && a.textContent.trim()) {
+                a.setAttribute('data-tooltip-text', a.textContent.trim());
+            }
+        }
     });
 
-    // 데스크톱에서 hover 지원 여부 (툴팁용)
+    // -----------------------------------------------------------
+    // 2. 주석 및 툴팁 시스템 시작
+    // -----------------------------------------------------------
+    var refs = document.querySelectorAll('.cheese-footnote-ref');
+    var internalLinks = document.querySelectorAll('.namu-internal'); // 내부 링크도 툴팁 대상
+    
+    function isTouchLike() {
+      return (('ontouchstart' in window) || (navigator.maxTouchPoints > 0));
+    }
+    var touchMode = isTouchLike();
     var hasHover = window.matchMedia && window.matchMedia('(hover: hover)').matches;
     var enableTooltip = hasHover && !touchMode;
 
-    /* ───── 각 주석 번호 처리 ───── */
+    // 모달 생성
+    var modal = document.createElement('div');
+    modal.className = 'cheese-footnote-modal';
+    modal.innerHTML = '<div class="cheese-footnote-modal-inner"><div class="cheese-footnote-modal-body"></div><button class="cheese-footnote-modal-close">닫기</button></div>';
+    document.body.appendChild(modal);
+
+    var mBody = modal.querySelector('.cheese-footnote-modal-body');
+    var mClose = modal.querySelector('.cheese-footnote-modal-close');
+    
+    const closeModal = () => modal.classList.remove('is-open');
+    mClose.onclick = closeModal;
+    modal.onclick = (e) => { if(e.target === modal) closeModal(); };
+
+    // 툴팁 생성
+    var tooltip = document.createElement('div');
+    tooltip.className = 'cheese-footnote-tooltip';
+    document.body.appendChild(tooltip);
+
+    // -----------------------------------------------------------
+    // [공통 함수] 툴팁 표시 로직
+    // -----------------------------------------------------------
+    function showTooltip(el, content) {
+        if(!content) return;
+        tooltip.innerHTML = content;
+        
+        // 위치 계산
+        const rect = el.getBoundingClientRect();
+        const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+        const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
+
+        tooltip.style.display = 'block';
+        
+        let top = rect.bottom + scrollTop + 8;
+        let left = rect.left + scrollLeft;
+        
+        // 화면 오른쪽 넘어감 방지
+        const ttWidth = tooltip.offsetWidth;
+        if(left + ttWidth > window.innerWidth) {
+            left = window.innerWidth - ttWidth - 20;
+        }
+
+        tooltip.style.top = top + 'px';
+        tooltip.style.left = left + 'px';
+        tooltip.classList.add('is-open');
+    }
+
+    function hideTooltip() {
+        tooltip.classList.remove('is-open');
+    }
+
+    // -----------------------------------------------------------
+    // A. 주석(*1) 처리
+    // -----------------------------------------------------------
     refs.forEach(function (ref) {
-      var id   = ref.getAttribute('data-footnote-id');
-      var note = document.getElementById(id);
-      if (!note) return;
-
-      /* 터치 환경에서는 href를 제거해서 자동 스크롤 자체를 막기 */
-        if (touchMode) {
-          var anchorHref = ref.getAttribute('href');   // 예: "#fn1"
-          if (anchorHref) {
-            ref.setAttribute('data-anchor', anchorHref); // 필요하면 나중에 쓸 수 있게 저장만
-            ref.removeAttribute('href');                // ← 이게 핵심! 스크롤 앵커 제거
-          }
-        }
-
-      // ----- PC : hover 툴팁 -----
-      if (enableTooltip) {
-        var tooltip = document.createElement('div');
-        tooltip.className = 'cheese-footnote-tooltip';
-        tooltip.innerHTML = note.innerHTML;
-        document.body.appendChild(tooltip);
-
-        function positionTooltip() {
-          var rect    = ref.getBoundingClientRect();
-          var scrollY = window.pageYOffset || document.documentElement.scrollTop;
-          var scrollX = window.pageXOffset || document.documentElement.scrollLeft;
-
-          tooltip.style.display = 'block';  // 크기 계산용
-          var ttWidth  = tooltip.offsetWidth;
-          var ttHeight = tooltip.offsetHeight;
-          tooltip.style.display = '';
-
-          var top  = rect.top + scrollY - ttHeight - 8;
-          var left = rect.left + scrollX;
-
-          var maxLeft = scrollX + document.documentElement.clientWidth - ttWidth - 10;
-          if (left > maxLeft) left = maxLeft;
-          if (left < scrollX + 10) left = scrollX + 10;
-          if (top < scrollY + 10) top = rect.bottom + scrollY + 8;
-
-          tooltip.style.top  = top + 'px';
-          tooltip.style.left = left + 'px';
-        }
-
-        function showTooltip() {
-          positionTooltip();
-          tooltip.classList.add('is-open');
-        }
-
-        function hideTooltip() {
-          tooltip.classList.remove('is-open');
-        }
-
-        // ref 위에 올리면 보이기
-        ref.addEventListener('mouseenter', showTooltip);
-
-        // ref에서 나갈 때: 진짜로 tooltip 영역이 아닌 곳으로 나간 경우에만 닫기
-        ref.addEventListener('mouseleave', function (e) {
-          var to = e.relatedTarget;
-          if (!to || (!tooltip.contains(to) && to !== tooltip)) {
-            hideTooltip();
-          }
-        });
-
-        // 툴팁 안에 마우스를 올리면 계속 유지
-        tooltip.addEventListener('mouseenter', function () {
-          tooltip.classList.add('is-open');
-        });
-
-        // 툴팁에서 나갈 때:
-        //   - ref로 돌아가는 경우 → 유지
-        //   - ref/툴팁 둘 다 아닌 곳으로 나가는 경우 → 닫기
-        tooltip.addEventListener('mouseleave', function (e) {
-          var to = e.relatedTarget;
-          if (!to || (!ref.contains(to) && to !== ref && !tooltip.contains(to))) {
-            hideTooltip();
-          }
-        });
+      var id = ref.getAttribute('data-footnote-id');
+      if (!id) {
+        var href = ref.getAttribute('href');
+        if (href && href.startsWith('#')) id = href.substring(1);
       }
+      var note = id ? document.getElementById(id) : null;
+      var content = "";
 
-      // ----- 공통: 클릭 처리 -----
-      ref.addEventListener('click', function (e) {
-        if (touchMode) {
-          // 모바일/터치 환경 → 아래로 점프 막고 모달 오픈
-          e.preventDefault();
-          e.stopPropagation();
-          openModal(note.innerHTML);
-        }
-        // PC에서는 기본 동작 유지: href="#fn1" → 아래 주석으로 점프
-      });
+      if (note) content = note.innerHTML;
+      else {
+        var raw = ref.getAttribute('data-note');
+        if (raw) { try { content = decodeURIComponent(raw); } catch(e) { content = raw; } }
+      }
+      if (!content) return;
+
+      // 모바일: 터치 시 모달
+      if (touchMode) {
+        ref.addEventListener('click', function(e) {
+            e.preventDefault();
+            mBody.innerHTML = content;
+            modal.classList.add('is-open');
+        });
+      } 
+      // PC: 호버 시 툴팁
+      else if (enableTooltip) {
+        ref.addEventListener('mouseenter', function() { showTooltip(ref, content); });
+        ref.addEventListener('mouseleave', hideTooltip);
+      }
     });
+
+    // -----------------------------------------------------------
+    // B. 내부 링크(파란글씨) 처리
+    // -----------------------------------------------------------
+    if(enableTooltip) {
+        internalLinks.forEach(function(link) {
+            link.addEventListener('mouseenter', function() {
+                // 링크의 title 속성이나 data-tooltip-text를 가져옴
+                let title = link.getAttribute('title') || link.getAttribute('data-tooltip-text');
+                if(title) {
+                    // 나무위키 스타일: 제목을 박스에 보여줌
+                    let html = '<span class="cheese-tooltip-title">📄 ' + title + '</span>';
+                    showTooltip(link, html);
+                }
+            });
+            link.addEventListener('mouseleave', hideTooltip);
+        });
+    }
+
   });
