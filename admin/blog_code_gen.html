@@ -9,7 +9,7 @@
 
   <style>
     /* ===== page local styles ===== */
-    .bcg-wrap{ padding:14px; padding-bottom: 40px; }
+    .bcg-wrap{ padding:14px; padding-bottom: 60px; /* 하단 바 공간 */ }
 
     .bcg-hero{
       display:flex; align-items:flex-start; justify-content:space-between; gap:12px;
@@ -95,8 +95,7 @@
       line-height:1.55;
       white-space:pre;
     }
-
-    /* 주석 전용 작은 텍스트 영역 */
+    
     .bcg-output-mini {
       width: 100%;
       min-height: 80px;
@@ -202,7 +201,7 @@
     .bcg-toast{
       position:fixed;
       right:16px;
-      bottom:20px;
+      bottom:80px;
       z-index:9999;
       max-width:min(420px, calc(100vw - 32px));
       background:rgba(15,23,42,0.92);
@@ -238,6 +237,37 @@
     .bcg-swatches{ display:inline-flex; align-items:center; gap:6px; margin-left:8px; vertical-align:middle; flex-wrap:wrap; }
     .bcg-swatch{ width:18px; height:18px; border-radius:7px; border:1px solid rgba(15,23,42,0.18); cursor:pointer; box-shadow:0 6px 14px rgba(15,23,42,0.10); padding:0; }
     .bcg-swatch:active{ transform:translateY(1px); }
+
+    /* Global Footnote Bar */
+    .bcg-global-foot {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: #fff;
+        border-top: 1px solid rgba(15,23,42,0.14);
+        padding: 12px 20px;
+        box-shadow: 0 -4px 20px rgba(0,0,0,0.05);
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        z-index: 1000;
+        flex-wrap: wrap;
+    }
+    .bcg-global-foot-info {
+        font-weight: 800;
+        color: #334155;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .bcg-global-foot-controls {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        margin-left: auto;
+    }
   </style>
 </head>
 
@@ -268,13 +298,26 @@
             <div class="bcg-sep"></div>
             <div class="bcg-row">
               <span class="bcg-muted">
-                ※ 주석 사용법: 각 본문의 시작 번호를 직접 설정할 수 있어. 
-                본문은 '본문 복사'로 가져가고, 주석 목록은 '주석(li) 복사'로 따로 모아서 마지막 Body에 한 번에 붙여넣으면 돼.
+                ※ 주석 시스템: 작성한 주석은 <b>브라우저에 자동 저장</b>되어 다음 Body 작성 시에도 번호가 이어집니다.
+                글 작성이 끝나면 하단의 <b>[새 글 쓰기]</b>를 눌러 주석을 초기화해주세요.
               </span>
             </div>
           </div>
         </div>
       </main>
+    </div>
+  </div>
+
+  <div class="bcg-global-foot">
+    <div class="bcg-global-foot-info">
+        <span>📝 전체 주석(저장됨): <span id="globalFnCount" style="color:#2563eb;">0</span>개</span>
+        <button class="bcg-btn bcg-mini" id="viewAllFnBtn" type="button" style="margin-left:8px;">관리/편집</button>
+    </div>
+    <div class="bcg-global-foot-controls">
+        <button class="bcg-btn bcg-mini bcg-btn--dark" id="copyAllFnBtn" type="button">주석 목록(li) 복사</button>
+        <button class="bcg-btn bcg-mini bcg-btn--primary" id="copyWrapperBtn" type="button">주석 틀(&lt;ol&gt;) 복사</button>
+        <div style="width:1px; height:16px; background:#cbd5e1; margin:0 4px;"></div>
+        <button class="bcg-btn bcg-mini bcg-btn--danger" id="resetGlobalFnBtn" type="button">새 글 쓰기(주석 초기화)</button>
     </div>
   </div>
 
@@ -340,6 +383,13 @@
       const pill = document.getElementById("blockCountPill");
       const toast = document.getElementById("toast");
 
+      // Global Footnote Controls
+      const globalFnCountEl = document.getElementById("globalFnCount");
+      const copyAllFnBtn = document.getElementById("copyAllFnBtn");
+      const copyWrapperBtn = document.getElementById("copyWrapperBtn");
+      const resetGlobalFnBtn = document.getElementById("resetGlobalFnBtn");
+      const viewAllFnBtn = document.getElementById("viewAllFnBtn");
+
       // Table Builder Elements
       const tableModal = document.getElementById("tableModal");
       const tableModalCloseBtn = document.getElementById("tableModalCloseBtn");
@@ -352,7 +402,7 @@
       const tblInsertBtn = document.getElementById("tblInsertBtn");
 
       let seq = 0;
-      let tableCtx = null;
+      const STORAGE_KEY = "bcg_global_footnotes";
 
       function showToast(msg){
         toast.textContent = msg;
@@ -465,11 +515,178 @@
       }
 
       /* ==========================
-         Block Logic
+         Table Builder Logic
       ========================== */
-      function updatePill(){
-        const n = elBlocks.querySelectorAll("[data-bcg-block]").length;
-        pill.textContent = `블록 ${n}개`;
+      function openTableModal_(ctx){
+        tableCtx = ctx || null;
+        if (!tableModal) return;
+        tableModal.hidden = false;
+        tableModal.style.display = 'flex';
+        tableModal.setAttribute('aria-hidden','false');
+        const r = clampInt_(tblRowsEl?.value, 1, 30, 3);
+        const c = clampInt_(tblColsEl?.value, 1, 12, 3);
+        buildTableGrid_(r, c);
+        const first = tblCellsEl?.querySelector(".bcg-cell");
+        if (first) setTimeout(()=>first.focus(), 0);
+      }
+
+      function closeTableModal_(){
+        if (!tableModal) return;
+        tableModal.hidden = true;
+        tableModal.style.display = 'none';
+        tableModal.setAttribute('aria-hidden','true');
+        tableCtx = null;
+      }
+
+      function handleSafeClose_() {
+        const cells = tblCellsEl?.querySelectorAll(".bcg-cell");
+        const hasContent = Array.from(cells || []).some(cell => cell.value.trim().length > 0);
+        if (hasContent) {
+          if (confirm("작성 중인 표 데이터가 사라집니다. 정말 닫으시겠어요?")) closeTableModal_();
+        } else {
+          closeTableModal_();
+        }
+      }
+
+      function buildTableGrid_(rows, cols){
+        if (!tblCellsEl) return;
+        tblCellsEl.innerHTML = "";
+        tblCellsEl.style.gridTemplateColumns = `repeat(${cols}, minmax(140px, 1fr))`;
+
+        for (let r=0; r<rows; r++){
+          for (let c=0; c<cols; c++){
+            const inp = document.createElement("textarea");
+            inp.className = "bcg-cell";
+            inp.style.height = "60px";
+            inp.placeholder = (r === 0 && (tblHeaderEl?.checked)) ? `헤더 ${c+1}` : `R${r+1}C${c+1}`;
+            inp.setAttribute("data-r", String(r));
+            inp.setAttribute("data-c", String(c));
+            
+            inp.addEventListener("keydown", (e)=>{
+              if (e.key === "Enter" && e.ctrlKey) {
+                e.preventDefault();
+                const target = tblCellsEl.querySelector(`.bcg-cell[data-r="${r+1}"][data-c="${c}"]`);
+                if (target) target.focus();
+              }
+            });
+            tblCellsEl.appendChild(inp);
+          }
+        }
+      }
+
+      function readTableCells_(rows, cols){
+        const out = [];
+        for (let r=0; r<rows; r++){
+          const row = [];
+          for (let c=0; c<cols; c++){
+            const el = tblCellsEl?.querySelector(`.bcg-cell[data-r="${r}"][data-c="${c}"]`);
+            let val = el ? String(el.value ?? "") : "";
+            row.push(val.replace(/\n/g, "<br>"));
+          }
+          out.push(row);
+        }
+        return out;
+      }
+
+      function makeTableHtml_(rows, cols, useHeader, caption, cells){
+        const cap = String(caption ?? "").trim();
+        const lines = [];
+        lines.push('<table class="cheese-table">');
+        if (cap) lines.push(`  <caption>${cap}</caption>`);
+        if (useHeader && rows >= 1){
+          lines.push("  <thead>");
+          lines.push("    <tr>");
+          for (let c=0; c<cols; c++){
+            const v = (cells?.[0]?.[c] ?? "");
+            lines.push(`      <th>${v}</th>`);
+          }
+          lines.push("    </tr>");
+          lines.push("  </thead>");
+        }
+        lines.push("  <tbody>");
+        const start = (useHeader ? 1 : 0);
+        for (let r=start; r<rows; r++){
+          lines.push("    <tr>");
+          for (let c=0; c<cols; c++){
+            const v = (cells?.[r]?.[c] ?? "");
+            lines.push(`      <td>${v}</td>`);
+          }
+          lines.push("    </tr>");
+        }
+        lines.push("  </tbody>");
+        lines.push("</table>");
+        return lines.join("\n");
+      }
+
+      if (tableModalCloseBtn) {
+        tableModalCloseBtn.onclick = (e) => { e.preventDefault(); handleSafeClose_(); };
+      }
+      if (tableModal) {
+        tableModal.onclick = (e) => {
+          if (e.target === tableModal) e.stopPropagation();
+        };
+      }
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && !tableModal.hidden) handleSafeClose_();
+      });
+      if (tblRebuildBtn) {
+        tblRebuildBtn.onclick = () => {
+          const cells = tblCellsEl?.querySelectorAll(".bcg-cell");
+          const hasContent = Array.from(cells || []).some(cell => cell.value.trim().length > 0);
+          if (hasContent && !confirm("현재 입력된 표 데이터가 초기화됩니다. 계속할까요?")) return;
+          const r = clampInt_(tblRowsEl?.value, 1, 30, 3);
+          const c = clampInt_(tblColsEl?.value, 1, 12, 3);
+          buildTableGrid_(r, c);
+        };
+      }
+      if (tblInsertBtn) {
+        tblInsertBtn.onclick = () => {
+          if (!tableCtx || !tableCtx.bodyEl) return closeTableModal_();
+          if (typeof tableCtx.ensureAllowTagsOn_ === "function") tableCtx.ensureAllowTagsOn_();
+          const rows = clampInt_(tblRowsEl?.value, 1, 30, 3);
+          const cols = clampInt_(tblColsEl?.value, 1, 12, 3);
+          const cells = readTableCells_(rows, cols);
+          const caption = tblCaptionEl ? tblCaptionEl.value : "";
+          const useHeader = !!(tblHeaderEl && tblHeaderEl.checked);
+          const tableHtml = makeTableHtml_(rows, cols, useHeader, caption, cells);
+          const insertText = `\n\n${tableHtml}\n\n`;
+          insertAtSelection(tableCtx.bodyEl, insertText);
+          if (typeof tableCtx.schedule === "function") tableCtx.schedule();
+          if (typeof tableCtx.showToast === "function") tableCtx.showToast("표를 삽입했어.");
+          closeTableModal_();
+        };
+      }
+
+
+      /* ==========================
+         Global Footnote Logic (LocalStorage)
+      ========================== */
+      function loadGlobalFootnotes() {
+        try {
+          const s = localStorage.getItem(STORAGE_KEY);
+          return s ? JSON.parse(s) : [];
+        } catch(e) { return []; }
+      }
+
+      function saveGlobalFootnotes(list) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+        updateGlobalFnUI();
+      }
+
+      function appendGlobalFootnote(note) {
+        const list = loadGlobalFootnotes();
+        list.push(note);
+        saveGlobalFootnotes(list);
+        return list.length; // return new index
+      }
+
+      function updateGlobalFnUI() {
+        const list = loadGlobalFootnotes();
+        globalFnCountEl.textContent = list.length;
+        // 열려있는 모든 블록에게 시작 번호 재설정 신호
+        document.querySelectorAll("[data-bcg-block]").forEach(b => {
+           if(b.bcgCheckStartIdx) b.bcgCheckStartIdx();
+        });
       }
 
       function generateFootnoteListHtml(footnotes, startIdx=1) {
@@ -482,6 +699,58 @@
         return html;
       }
 
+      // 1. Copy All
+      copyAllFnBtn.addEventListener("click", async () => {
+        const list = loadGlobalFootnotes();
+        if (list.length === 0) return showToast("저장된 주석이 없어.");
+        const html = generateFootnoteListHtml(list, 1);
+        await copyToClipboard(html);
+        showToast("전체 주석 목록(li) 복사 완료!");
+      });
+
+      // 2. Copy Wrapper
+      copyWrapperBtn.addEventListener("click", async () => {
+        const tpl = `\n<hr>\n<ol class="cheese-footnotes">\n  \n</ol>`;
+        await copyToClipboard(tpl);
+        showToast("주석 틀(<ol>) 복사 완료!");
+      });
+
+      // 3. Reset All
+      resetGlobalFnBtn.addEventListener("click", () => {
+        if(confirm("정말 초기화할까?\n(새 글을 쓰기 위해 저장된 모든 주석을 지웁니다.)")) {
+          localStorage.removeItem(STORAGE_KEY);
+          updateGlobalFnUI();
+          showToast("전체 주석이 초기화되었어. 새 글 작성 시작!");
+          
+          // 열려있는 블록도 리셋
+          document.querySelectorAll("[data-bcg-block]").forEach(b => {
+            if (b.bcgData) b.bcgData.footnotes = [];
+            if (b.bcgRegenerate) b.bcgRegenerate();
+          });
+        }
+      });
+      
+      // 4. View/Manage
+      viewAllFnBtn.addEventListener("click", () => {
+        const list = loadGlobalFootnotes();
+        if(list.length === 0) return showToast("데이터가 없어.");
+        
+        const preview = list.map((n, i) => `[${i+1}] ${n}`).join("\n");
+        const newRaw = prompt("현재 저장된 주석 목록이야. (수정 불가, 확인용)\n\n" + preview + "\n\n편집 기능을 넣으려면 코드를 더 짜야 해... 😅");
+      });
+
+      // 초기 로드 시 UI 업데이트
+      updateGlobalFnUI();
+
+
+      /* ==========================
+         Block Logic
+      ========================== */
+      function updatePill(){
+        const n = elBlocks.querySelectorAll("[data-bcg-block]").length;
+        pill.textContent = `블록 ${n}개`;
+      }
+
       function buildHtml({level, heading, body, allowTags, includeList, myFootnotes, myStartIndex}){
         const tag = (level === "h1" || level === "h2" || level === "h3") ? level : "h2";
         const headText = escapeHtmlLite(String(heading ?? "").trim());
@@ -490,7 +759,7 @@
         
         const parts = [headPart, bodyHtml].filter(Boolean);
 
-        // 만약 체크박스가 켜져 있다면, 리스트도 본문에 포함시킴
+        // 로컬 블록의 리스트 포함 (옵션)
         if (includeList && myFootnotes && myFootnotes.length > 0) {
             const listHtml = generateFootnoteListHtml(myFootnotes, myStartIndex);
             parts.push(`\n<hr>\n<ol class="cheese-footnotes">\n${listHtml}</ol>`);
@@ -506,6 +775,7 @@
         wrap.className = "bcg-card";
         wrap.setAttribute("data-bcg-block", id);
         
+        // 데이터 저장소
         wrap.bcgData = { footnotes: [] };
 
         wrap.innerHTML = `
@@ -516,10 +786,6 @@
                 <span class="bcg-label" style="margin-bottom:0;">시작 번호:</span>
                 <input type="number" data-start-idx class="bcg-input bcg-num" value="1" min="1" style="width:60px; height:32px; padding:4px;">
               </div>
-              <label class="bcg-check" title="본문 HTML 끝에 주석 목록(<ol>)을 자동으로 붙여줍니다. 마지막 Body에서만 체크하세요.">
-                <input type="checkbox" data-include-list />
-                본문에 목록 포함
-              </label>
               <label class="bcg-check">
                 <input type="checkbox" data-keep-raw />
                 서식/태그 허용
@@ -544,9 +810,9 @@
               </div>
               
               <div class="bcg-row" style="background:rgba(15,23,42,0.02); padding:8px 10px; border-radius:8px;">
-                <span class="bcg-label">주석 관리:</span>
-                <span class="bcg-muted" data-fn-status>0개</span>
-                <button class="bcg-btn bcg-mini bcg-btn--danger" type="button" data-fn-reset style="padding:2px 8px; font-size:11px; margin-left:auto;">초기화</button>
+                <span class="bcg-label">주석 추가:</span>
+                <span class="bcg-muted" data-fn-status>이 블록 0개</span>
+                <button class="bcg-btn bcg-mini bcg-btn--danger" type="button" data-fn-reset style="padding:2px 8px; font-size:11px; margin-left:auto;">로컬 초기화</button>
               </div>
 
               <div class="bcg-row">
@@ -599,15 +865,6 @@
                   </div>
                   <textarea class="bcg-output" data-output readonly placeholder="본문용 HTML"></textarea>
                   
-                  <div style="display:flex; align-items:center; justify-content:space-between; margin-top:10px;">
-                     <span class="bcg-label">2. 주석 목록 코드 (모아서 마지막에 넣기)</span>
-                     <div style="display:flex; gap:4px;">
-                       <button class="bcg-btn bcg-mini" type="button" data-copy-li title="<li>...</li> 태그만 복사합니다">주석(li) 복사</button>
-                       <button class="bcg-btn bcg-mini" type="button" data-copy-wrapper title="<ol> 틀 코드를 복사합니다">주석 틀(<ol>) 복사</button>
-                     </div>
-                  </div>
-                  <textarea class="bcg-output-mini" data-output-li readonly placeholder="주석을 추가하면 여기에 <li>...</li> 코드가 생성됩니다."></textarea>
-
                   <div class="bcg-row" style="margin-top:10px;">
                     <span class="bcg-label">미리보기</span>
                   </div>
@@ -622,24 +879,42 @@
         const headingEl = wrap.querySelector("[data-heading]");
         const bodyEl = wrap.querySelector("[data-body]");
         const outEl = wrap.querySelector("[data-output]");
-        const outLiEl = wrap.querySelector("[data-output-li]");
         const prevEl = wrap.querySelector("[data-preview]");
         const keepRawEl = wrap.querySelector("[data-keep-raw]");
-        const includeListEl = wrap.querySelector("[data-include-list]");
         
         const fnStatusEl = wrap.querySelector("[data-fn-status]");
         const fnResetBtn = wrap.querySelector("[data-fn-reset]");
         const startIdxEl = wrap.querySelector("[data-start-idx]");
 
         const btnCopy = wrap.querySelector("[data-copy]");
-        const btnCopyLi = wrap.querySelector("[data-copy-li]");
-        const btnCopyWrapper = wrap.querySelector("[data-copy-wrapper]");
         const btnRemove = wrap.querySelector("[data-remove]");
         const btnSend = wrap.querySelector("[data-send]");
         
         // 색상 관련 엘리먼트
         const colorEl = wrap.querySelector("[data-color]");
         const bgEl = wrap.querySelector("[data-bg]");
+
+        // 시작 번호 자동 설정
+        function checkStartIdx() {
+           // 현재 글로벌 총 개수 + 1로 설정 (블록이 1개일 때를 가정)
+           // 만약 이 블록이 이미 생성된 후라면, 사용자가 수동으로 바꾼 값은 유지해야 할 수도 있음.
+           // 여기서는 단순하게 "로드 시점의 전체 개수 + 1"을 기본값으로 둠.
+           if (!wrap.bcgData.hasManualIdx) {
+              const globalList = loadGlobalFootnotes();
+              // 이 블록이 로컬에 가지고 있는 주석 수만큼은 빼줘야 '시작점'이 됨? 
+              // 아니, 이 블록은 '다음' 블록이라고 가정. 
+              // 가장 안전한 건: 로드 시점의 전체 개수 + 1
+              startIdxEl.value = globalList.length + 1;
+           }
+        }
+        wrap.bcgCheckStartIdx = checkStartIdx;
+        // 초기 1회 실행
+        setTimeout(checkStartIdx, 0);
+
+        startIdxEl.addEventListener("input", () => {
+           wrap.bcgData.hasManualIdx = true; // 수동 조작 플래그
+           regenerate();
+        });
 
         function regenerate(){
             const myStartIdx = parseInt(startIdxEl.value) || 1;
@@ -650,19 +925,11 @@
                 heading: headingEl.value,
                 body: bodyEl.value,
                 allowTags: keepRawEl.checked,
-                includeList: includeListEl.checked,
+                includeList: false, // 로컬 미리보기엔 리스트 제외 (하단 바에서 통합 복사하므로)
                 myFootnotes: wrap.bcgData.footnotes,
                 myStartIndex: myStartIdx
             });
             outEl.value = html;
-            
-            // 주석 목록만 따로 생성
-            if (wrap.bcgData.footnotes.length > 0) {
-                outLiEl.value = generateFootnoteListHtml(wrap.bcgData.footnotes, myStartIdx);
-            } else {
-                outLiEl.value = "";
-            }
-
             if (prevEl) prevEl.innerHTML = html.trim() ? html : '<div class="bcg-preview-empty">미리보기</div>';
         }
         
@@ -674,18 +941,6 @@
           showToast("본문 코드 복사 완료!");
         });
 
-        btnCopyLi.addEventListener("click", async () => {
-          if (!outLiEl.value.trim()) return showToast("복사할 주석이 없어.");
-          await copyToClipboard(outLiEl.value);
-          showToast("주석 목록(li) 복사 완료!");
-        });
-
-        btnCopyWrapper.addEventListener("click", async () => {
-          const tpl = `\n<hr>\n<ol class="cheese-footnotes">\n  \n</ol>`;
-          await copyToClipboard(tpl);
-          showToast("주석 틀(<ol>) 복사 완료!");
-        });
-        
         btnSend.addEventListener("click", () => {
           if (!outEl.value.trim()) regenerate(); 
           if (window.opener && !window.opener.closed) {
@@ -702,19 +957,18 @@
         });
 
         fnResetBtn.addEventListener("click", () => {
-          if(confirm("이 블록의 주석을 모두 비울까?")) {
+          if(confirm("이 블록에서 작성한 주석만 비울까?")) {
             wrap.bcgData.footnotes = [];
             regenerate();
-            showToast("초기화됨");
+            showToast("로컬 주석 초기화됨");
           }
         });
 
         let t = null;
         function schedule(){ clearTimeout(t); t = setTimeout(regenerate, 180); }
-        [levelEl, headingEl, bodyEl, keepRawEl, includeListEl, startIdxEl].forEach(el => el.addEventListener("input", schedule));
+        [levelEl, headingEl, bodyEl, keepRawEl, startIdxEl].forEach(el => el.addEventListener("input", schedule));
         levelEl.addEventListener("change", schedule);
         keepRawEl.addEventListener("change", schedule);
-        includeListEl.addEventListener("change", schedule);
 
         // 서식 버튼 로직
         let lastSel = { s:0, e:0 };
@@ -771,17 +1025,21 @@
             if (fmt === "footnote") {
               const noteContent = prompt("주석 내용을 입력해 주세요.");
               if (noteContent) {
+                // 1. 로컬 저장
                 wrap.bcgData.footnotes.push(noteContent);
-                // 현재 시작 번호 + 추가된 주석 개수 - 1
-                const myStart = parseInt(startIdxEl.value) || 1;
-                const currentIdx = myStart + wrap.bcgData.footnotes.length - 1;
+                // 2. 글로벌 저장 (LocalStorage)
+                const newTotalCount = appendGlobalFootnote(noteContent);
                 
+                // 3. 현재 주석의 번호는? 
+                //    (방금 추가된 것이 전체의 newTotalCount 번째임)
+                const currentIdx = newTotalCount;
+
                 restoreSel_();
                 const linkTag = `<a id="fn${currentIdx}-ref" href="#fn${currentIdx}" class="cheese-footnote-ref" data-footnote-id="fn${currentIdx}">*${currentIdx}</a>`;
                 insertAtSelection(bodyEl, linkTag);
                 
                 schedule();
-                showToast(`주석 *${currentIdx} 추가됨`);
+                showToast(`주석 *${currentIdx} 추가됨 (자동 저장)`);
               }
               return;
             }
