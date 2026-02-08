@@ -755,7 +755,7 @@
 
           <div class="form-group" id="field-parent">
             <label class="input-label" id="label-parent">연결된 목표</label>
-            <select id="input-parent" class="styled-input">
+            <select id="input-connected-id" class="styled-input">
               <option value="">(선택 없음)</option>
             </select>
             <div style="font-size:0.8rem; color:#94a3b8; margin-top:4px;">* 상위 목표를 선택하면 구조화되어 관리됩니다.</div>
@@ -790,12 +790,12 @@
           
           <div id="related-history-section" style="display:none; margin-top:20px; padding-top:20px; border-top:1px dashed #cbd5e1;">
              <label class="input-label">📋 작업 히스토리</label>
-             <div id="history-list" style="font-size:0.9rem; color:#64748b;"></div>
+             <div id="history-list-root" style="font-size:0.9rem; color:#64748b;"></div>
           </div>
 
           <div id="related-idea-section" style="display:none; margin-top:20px; padding:15px; background:#f0f9ff; border-radius:12px; border:1px solid #bae6fd;">
              <label class="input-label" style="color:#0369a1;">💡 연결된 아이디어</label>
-             <div id="related-idea-content" style="font-size:0.9rem; color:#0c4a6e;"></div>
+             <div id="related-idea-root" style="font-size:0.9rem; color:#0c4a6e;"></div>
           </div>
 
         </div> </div> <div class="modal-footer-custom">
@@ -1397,27 +1397,35 @@ function renderIdeaView() {
 
   function toggleEditMode(isEdit) {
     const form = document.getElementById('todo-form');
-    const inputs = form.querySelectorAll('input, select');
+    // Select all inputs to disable/enable
+    const inputs = form.querySelectorAll('input, select, textarea');
     
     if (isEdit) {
+      // Enable inputs
       inputs.forEach(el => el.disabled = false);
-      document.getElementById('edit-actions').style.display = 'flex';
-      document.getElementById('view-actions').style.display = 'none';
-      document.getElementById('btn-enable-edit').style.display = 'none';
-      document.getElementById('detail-view-box').style.display = 'none';
-      document.getElementById('detail-edit-wrapper').style.display = 'block';
+      
+      // Show 'edit actions' which contains the Delete button
+      const editActions = document.getElementById('edit-actions');
+      if(editActions) editActions.style.display = 'flex';
+      
+      // Initialize or Enable Summernote
       if (!$('#input-detail').summernote('exists')) {
         $('#input-detail').summernote({ height: 250, toolbar: [['style', ['bold', 'italic', 'underline', 'clear']], ['font', ['strikethrough']], ['para', ['ul', 'ol']], ['insert', ['link', 'picture']], ['view', ['fullscreen', 'codeview']]] });
+      } else {
+        $('#input-detail').summernote('enable');
       }
     } else {
+      // Disable inputs (View Mode)
       inputs.forEach(el => el.disabled = true);
-      document.getElementById('edit-actions').style.display = 'none';
-      document.getElementById('view-actions').style.display = 'flex';
-      document.getElementById('btn-enable-edit').style.display = 'block';
-      const content = $('#input-detail').summernote('code');
-      document.getElementById('detail-view-box').innerHTML = content;
-      document.getElementById('detail-view-box').style.display = 'block';
-      document.getElementById('detail-edit-wrapper').style.display = 'none';
+      
+      // Hide delete button container
+      const editActions = document.getElementById('edit-actions');
+      if(editActions) editActions.style.display = 'none';
+      
+      // Disable Summernote
+      if ($('#input-detail').summernote('exists')) {
+        $('#input-detail').summernote('disable');
+      }
     }
   }
 
@@ -1425,7 +1433,10 @@ function openModal(type) {
   document.getElementById('input-modal').classList.add('open'); 
   document.getElementById('todo-modal-title').textContent = "새 항목 등록"; 
   document.getElementById('edit-mode').value = "false";
-  document.getElementById('btn-delete-modal').style.display = "none"; 
+  // 숨겨진 요소 초기화
+  const delBtn = document.getElementById('btn-delete-modal');
+  if(delBtn) delBtn.style.display = "none";
+   
   document.getElementById('related-history-section').style.display = "none";
   document.getElementById('related-idea-section').style.display = "none";
   
@@ -1516,7 +1527,6 @@ function toggleFormFields() {
     document.getElementById('input-title').value = item['제목'];
     const safeContent = item['상세내용'] || "";
     $('#input-detail').summernote('code', safeContent);
-    document.getElementById('detail-view-box').innerHTML = safeContent || "<span style='color:#ccc'>(내용 없음)</span>";
 
     if (item['색상']) { const radio = document.querySelector(`input[name="color"][value="${item['색상']}"]`); if(radio) radio.checked = true; }
     const typeRadios = document.querySelectorAll('input[name="type"]');
@@ -1532,11 +1542,16 @@ function toggleFormFields() {
         document.getElementById('input-due').value = (item['기한']||"").split('T')[0];
         document.getElementById('input-priority').value = item['우선순위'] || "보통";
     }
-    toggleEditMode(false);
+    
+    // [중요 수정] 기존에는 toggleEditMode(false)로 호출하여 비활성화/삭제버튼 숨김 상태였음.
+    // 바로 수정 및 삭제가 가능하도록 true로 호출합니다.
+    toggleEditMode(true);
     
     const delBtn = document.getElementById('btn-delete-modal'); 
-    delBtn.style.display = "block"; 
-    delBtn.onclick = () => deleteFromModal();
+    if(delBtn) {
+        delBtn.style.display = "block"; 
+        delBtn.onclick = () => deleteFromModal();
+    }
 
     renderHistoryInModal(id);
     renderRelatedIdeasInModal(id);
@@ -1657,8 +1672,10 @@ function toggleFormFields() {
 
   document.getElementById('todo-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    // [추가] 저장 버튼 찾기
-    const saveBtn = document.querySelector('#edit-actions button[type="submit"]');
+    // [추가] 저장 버튼 찾기 (중요: 선택자 수정)
+    // 기존 '#edit-actions button'은 존재하지 않으므로 올바른 클래스 선택자 사용
+    const saveBtn = document.querySelector('.btn-save-custom');
+    
     // [추가] 로딩 시작 (버튼 비활성화)
     toggleBtnLoading(saveBtn, true);
     
