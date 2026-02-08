@@ -765,8 +765,8 @@
             <label class="input-label">상세 내용</label>
             <div id="view-detail-content" class="view-content-box" style="display:none; overflow-y:auto; max-height:400px;"></div>
             <textarea id="input-detail"></textarea>
-          </div>
-
+          </div>  
+          
           <div class="form-row">
             <div class="form-group" id="field-start-date" style="display:none;">
               <label class="input-label">시작일</label>
@@ -1385,15 +1385,14 @@ async function realizeIdea(ideaId) {
     document.getElementById('log-form').reset(); document.getElementById('log-idea-section').style.display='block'; updateLogTaskOptions();
   }
 
-// [수정] 읽기/수정 모드 토글 (썸머노트 제어 강화)
+// [수정] 읽기/수정 모드 토글 (텍스트 박스 중복 표시 버그 수정됨)
 function toggleEditMode(isEdit) {
     const form = document.getElementById('todo-form');
-    const inputs = form.querySelectorAll('input, select'); // textarea는 별도 제어
+    const inputs = form.querySelectorAll('input, select'); // textarea 제외
     const btnSave = document.getElementById('btn-save-submit');
     const btnSwitch = document.getElementById('btn-switch-edit');
     const editActions = document.getElementById('edit-actions'); 
     
-    // 보기용 박스와 입력용 텍스트아레아
     const viewBox = document.getElementById('view-detail-content');
     const inputBox = document.getElementById('input-detail');
 
@@ -1408,17 +1407,17 @@ function toggleEditMode(isEdit) {
 
       // 1. 보기 박스 숨김
       if(viewBox) viewBox.style.display = 'none';
-      
-      // 2. 텍스트아레아 보이기 (썸머노트가 붙을 곳)
-      inputBox.style.display = 'block';
 
-      // 3. 썸머노트 활성화
+      // 2. 썸머노트 활성화
       if (!$('#input-detail').summernote('exists')) {
-        $('#input-detail').summernote({ height: 250, toolbar: [['style', ['bold', 'italic', 'underline', 'clear']], ['font', ['strikethrough']], ['para', ['ul', 'ol']], ['insert', ['link', 'picture']], ['view', ['fullscreen', 'codeview']]] });
+        // 처음 켤 때만 textarea를 보여줘서 썸머노트가 잡을 수 있게 함
+        inputBox.style.display = 'block';
+        $('#input-detail').summernote({ height: 250 });
       } else {
+        // 이미 켜져 있다면, textarea를 건드리지 않음 (썸머노트가 알아서 숨기고 있음)
+        // **중요: 여기서 inputBox.style.display = 'block'을 하면 안 됨!**
         $('#input-detail').summernote('enable');
       }
-
     } else {
       // === [읽기 모드] ===
       inputs.forEach(el => el.disabled = true);
@@ -1426,19 +1425,18 @@ function toggleEditMode(isEdit) {
       if(btnSwitch) btnSwitch.style.display = 'block';
       if(editActions) editActions.style.display = 'none'; 
       
-      // 1. 썸머노트가 있다면 파괴 (툴바 제거)
+      // 1. 썸머노트 제거 (툴바 없앰)
       if ($('#input-detail').summernote('exists')) {
         $('#input-detail').summernote('destroy');
       }
       
-      // 2. 텍스트아레아(입력창) 자체를 숨김 -> 클릭 불가
+      // 2. 원본 텍스트 박스 숨김 (보기 박스만 남김)
       inputBox.style.display = 'none';
       
-      // 3. 보기 박스 보이기
+      // 3. 보기 박스 표시
       if(viewBox) viewBox.style.display = 'block';
     }
 }
-
 function openModal(type) {
   document.getElementById('input-modal').classList.add('open'); 
   document.getElementById('todo-modal-title').textContent = "새 항목 등록"; 
@@ -1525,8 +1523,9 @@ function toggleFormFields() {
     opts.forEach(o => { const op = document.createElement('option'); op.value = o.ID; op.textContent = o['제목']; select.appendChild(op); });
   }
 
-  function openEditModal(typeHint, id) {
-let item = g_goals.find(x => x.ID === id) || g_tasks.find(x => x.ID === id);
+// [수정] 모달 열기 (기본 읽기 모드 + 데이터 주입 수정)
+function openEditModal(typeHint, id) {
+    let item = g_goals.find(x => x.ID === id) || g_tasks.find(x => x.ID === id);
     if (!item) return;
     document.getElementById('input-modal').classList.add('open');
     document.getElementById('todo-modal-title').textContent = "항목 상세";
@@ -1537,9 +1536,10 @@ let item = g_goals.find(x => x.ID === id) || g_tasks.find(x => x.ID === id);
     document.getElementById('input-title').value = item['제목'];
     const safeContent = item['상세내용'] || "";
     
-    // [수정] 에디터 실행 없이 값만 주입
-    document.getElementById('input-detail').value = safeContent;         // 수정용 값
-    document.getElementById('view-detail-content').innerHTML = safeContent; // 보기용 값
+    // [중요] 수정용 textarea와 보기용 div에 모두 값 주입
+    document.getElementById('input-detail').value = safeContent;
+    const viewBox = document.getElementById('view-detail-content');
+    if(viewBox) viewBox.innerHTML = safeContent;
 
     if (item['색상']) { 
         let radioName = "color"; 
@@ -1563,7 +1563,7 @@ let item = g_goals.find(x => x.ID === id) || g_tasks.find(x => x.ID === id);
         document.getElementById('input-priority').value = item['우선순위'] || "보통";
     }
 
-    // [중요] 기본을 '읽기 전용'으로 설정
+    // [중요] 읽기 전용으로 열기 (false)
     toggleEditMode(false);
     
     const delBtn = document.getElementById('btn-delete-modal'); 
