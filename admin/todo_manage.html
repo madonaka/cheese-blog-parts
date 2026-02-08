@@ -1570,78 +1570,60 @@ function openModal(type) {
 
 // [수정] 모달 열기 (기존 항목)
 function openEditModal(typeHint, id) {
-    let item = g_goals.find(x => x.ID === id) || g_tasks.find(x => x.ID === id);
-    if (!item) return;
-    
-    document.getElementById('input-modal').classList.add('open');
-    document.getElementById('todo-modal-title').textContent = "항목 상세";
-    document.getElementById('edit-mode').value = "true"; // 수정 모드
-    document.getElementById('edit-id').value = id;
-    document.getElementById('origin-idea-id').value = ""; 
+  let item = g_goals.find(x => x.ID === id) || g_tasks.find(x => x.ID === id);
+  if (!item) return;
 
-    document.getElementById('input-title').value = item['제목'];
-    const safeContent = item['상세내용'] || "";
-    
-    // 데이터 주입
-    document.getElementById('input-detail').value = safeContent;
-    const viewBox = document.getElementById('view-detail-content');
-    if(viewBox) viewBox.innerHTML = safeContent;
+  document.getElementById('input-modal').classList.add('open');
+  document.getElementById('todo-modal-title').textContent = "항목 상세";
+  document.getElementById('edit-id').value = id;
+  document.getElementById('origin-idea-id').value = "";
 
-    // [추가] 버튼 텍스트를 '저장하기'로 복구
-    const btnSave = document.getElementById('btn-save-submit');
-    if(btnSave) btnSave.innerHTML = "💾 저장하기";
+  document.getElementById('input-title').value = item['제목'] || "";
 
-    // ✅ [추가] 새 항목 등록에서는 '등록하기'만 보이게 강제
-    const btnSwitch = document.getElementById('btn-switch-edit');
-    if (btnSave) btnSave.style.display = "inline-block";   // 등록하기 버튼 표시
-    if (btnSwitch) btnSwitch.style.display = "none";       // 수정하기 버튼 숨김
+  const safeContent = item['상세내용'] || "";
+  document.getElementById('input-detail').value = safeContent;
 
-    // 색상 선택 로직
-    if (item['색상']) { 
-        let radioName = "color"; 
-        if(item['유형'] === "큰 목표") radioName = "color_goal";
-        else if(item['유형'] === "아이디어") radioName = "color_idea";
-        const radio = document.querySelector(`input[name="${radioName}"][value="${item['색상']}"]`); 
-        if(radio) radio.checked = true; 
-    }
-    
-    const typeRadios = document.querySelectorAll('input[name="type"]');
-    typeRadios.forEach(r => { if(r.value === item['유형']) r.checked = true; });
-    toggleFormFields();
+  // 읽기용 텍스트박스에 보여줄 값(plain text)
+  const viewTa = document.getElementById('detail-readonly');
+  if (viewTa) viewTa.value = htmlToPlainText_(safeContent);
 
-    // 날짜 및 상위목표 설정
-    if (item['유형'].includes("목표")) {
-        document.getElementById('input-start').value = (item['시작일']||"").split('T')[0];
-        document.getElementById('input-due').value = (item['마감일']||"").split('T')[0];
-        if(item['유형'] === '중간 목표') document.getElementById('input-connected-id').value = item['상위ID'];
-    } else {
-        document.getElementById('input-connected-id').value = item['연결_중간목표ID'];
-        document.getElementById('input-due').value = (item['기한']||"").split('T')[0];
-        document.getElementById('input-priority').value = item['우선순위'] || "보통";
-    }
+  // 타입/필드 세팅
+  const typeRadios = document.querySelectorAll('input[name="type"]');
+  typeRadios.forEach(r => { if (r.value === item['유형']) r.checked = true; });
+  toggleFormFields();
 
-    // [중요] 기본을 '읽기 전용'으로 설정
-    toggleEditMode(false);
+  if ((item['유형'] || "").includes("목표")) {
+    document.getElementById('input-start').value = (item['시작일'] || "").split('T')[0];
+    document.getElementById('input-due').value   = (item['마감일'] || "").split('T')[0];
+    if (item['유형'] === '중간 목표') document.getElementById('input-connected-id').value = item['상위ID'];
+  } else {
+    document.getElementById('input-connected-id').value = item['연결_중간목표ID'];
+    document.getElementById('input-due').value          = (item['기한'] || "").split('T')[0];
+    document.getElementById('input-priority').value     = item['우선순위'] || "보통";
+  }
 
-    // ✅ [추가] 항목 상세에서는 '수정하기'만 보이게 강제
-    const btnSave = document.getElementById('btn-save-submit');
-    const btnSwitch = document.getElementById('btn-switch-edit');
-    
-    if (btnSave) {
-      btnSave.innerHTML = "💾 저장하기";   // 기존 항목이므로 저장하기(등록하기 X)
-      btnSave.style.display = "none";      // 읽기모드라 숨김
-    }
-    if (btnSwitch) btnSwitch.style.display = "inline-block";
-  
-    const delBtn = document.getElementById('btn-delete-modal'); 
-    if(delBtn) {
-        delBtn.onclick = () => deleteFromModal();
-    }
+  // ✅ 기본은 "읽기 모드"
+  toggleEditMode(false);
 
-    renderHistoryInModal(id);
-    renderRelatedIdeasInModal(id);
+  // ✅ 버튼 상태: 항목 상세에서는 '수정하기'만 보이게
+  const btnSaveEl   = document.getElementById('btn-save-submit');
+  const btnSwitchEl = document.getElementById('btn-switch-edit');
+
+  if (btnSaveEl) {
+    btnSaveEl.innerHTML = "💾 저장하기";
+    btnSaveEl.style.display = "none";           // 읽기모드니까 숨김
+  }
+  if (btnSwitchEl) {
+    btnSwitchEl.style.display = "inline-block"; // 수정하기 표시
+  }
+
+  const delBtn = document.getElementById('btn-delete-modal');
+  if (delBtn) delBtn.onclick = () => deleteFromModal();
+
+  renderHistoryInModal(id);
+  renderRelatedIdeasInModal(id);
 }
-
+  
 // 🚀 [수정] 히스토리 렌더링 (날짜 밀림 해결 + 접기/펼치기)
   function renderHistoryInModal(targetId) {
     const container = document.getElementById('related-history-section');
