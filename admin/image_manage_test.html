@@ -520,6 +520,44 @@
     // ====== DOM Elements ======
     const $baseName = document.getElementById("baseName");    
     const $file   = document.getElementById("imgFile");
+    // [추가/수정] '원본만 저장' 체크박스 이벤트 핸들러
+    const $chkOnlyOrig = document.getElementById("onlyOrigOn");
+    
+    function updateFlowUI() {
+      const isOrig = $chkOnlyOrig ? $chkOnlyOrig.checked : false;
+      const $panel2 = document.getElementById("panel-2"); // Step 2 (편집 설정) 영역 ID
+      
+      // 1. Step 2 (편집 설정) 제어
+      if ($panel2) {
+        if (isOrig) {
+          // 원본 모드: Step 2를 아예 안 보이게 숨김 (흐름상 건너뛰기)
+          $panel2.style.display = "none"; 
+        } else {
+          // 일반 모드: Step 2 다시 표시
+          $panel2.style.display = "block";
+        }
+      }
+      
+      // 2. Step 3 (업로드 버튼) 상태 갱신
+      if (window.renderJobQueueUI) window.renderJobQueueUI();
+    }
+
+    // 이벤트 연결
+    if ($chkOnlyOrig) {
+      $chkOnlyOrig.addEventListener("change", updateFlowUI);
+    }
+    
+    // 파일 선택 시에도 UI 상태 동기화
+    if ($file) {
+      $file.addEventListener("change", () => {
+         // 파일이 선택되면 잠시 후 UI 갱신 (이미지 로딩 시간 고려)
+         setTimeout(updateFlowUI, 100);
+      });
+    }
+    
+    // 초기 로딩 시 한 번 실행
+    updateFlowUI();
+    
     const $wmFile = document.getElementById("wmFile");
     const $wmOn   = document.getElementById("wmOn");
 
@@ -1330,49 +1368,59 @@
       }
     };
     
-// ✅ [수정] 작업 목록 그리기 (원본만 저장 모드 지원)
+// ✅ [수정] 작업 목록 및 Step 3 표시 제어
     window.renderJobQueueUI = function() {
-      const area = document.getElementById("jobQueueArea");
+      const area = document.getElementById("jobQueueArea"); // Step 3 영역
       const list = document.getElementById("jobList");
       const cnt = document.getElementById("jobCount");
-      const btnGo = document.getElementById("btnGoStep3");
+      const btnGo = document.getElementById("btnGoStep3"); // 실제 업로드 버튼($btnUpload)과 같은지 확인 필요
+      // (만약 btnGoStep3가 별도 버튼이라면, $btnUpload의 display도 함께 제어해야 함. 
+      //  보통 $btnUpload를 제어하는 것이 맞습니다.)
       
-      // [핵심] 원본만 저장 체크 여부 확인
       const isOnlyOrig = document.getElementById("onlyOrigOn")?.checked;
-
-      // 조건: 대기열에 작업이 있거나 OR 원본만 저장 모드일 때 표시
+      
+      // [핵심] 대기열이 있거나(OR) 원본만 저장 모드라면 Step 3 표시
       if (jobQueue.length > 0 || isOnlyOrig) {
-        area.style.display = "block";
-        btnGo.disabled = false;
+        if(area) area.style.display = "block";
         
-        // 텍스트를 상황에 맞게 변경
-        if (isOnlyOrig && jobQueue.length === 0) {
-           btnGo.textContent = "원본만 저장하러 가기 →";
-        } else {
-           btnGo.textContent = `총 ${jobQueue.length}개 작업 확정 및 생성 →`;
+        // 버튼 텍스트 및 상태 변경
+        if (btnGo) {
+          btnGo.disabled = false;
+          if (isOnlyOrig && jobQueue.length === 0) {
+             btnGo.textContent = "🚀 원본 파일 바로 업로드 (설정 건너뜀)";
+             // 원본 모드일 때 강조 스타일 (선택)
+             btnGo.style.background = "#2563eb"; 
+             btnGo.style.color = "#fff";
+          } else {
+             btnGo.textContent = `총 ${jobQueue.length}개 작업 업로드 시작 →`;
+             btnGo.style.background = ""; // 원래 스타일 복구
+             btnGo.style.color = "";
+          }
         }
       } else {
-        area.style.display = "none";
-        btnGo.disabled = true;
+        // 작업도 없고 원본모드도 아니면 숨김
+        if(area) area.style.display = "none";
       }
 
-      cnt.textContent = jobQueue.length;
-      list.innerHTML = "";
-      
-      jobQueue.forEach((job, idx) => {
-        const div = document.createElement("div");
-        div.className = "im-clean-item";
-        div.innerHTML = `
-          <div class="im-clean-info">
-            <div class="im-clean-title">Job #${idx+1}</div>
-            <div class="im-clean-meta">
-              블러 ${job.blurPx} · 품질 ${job.jpegQ} · ${job.noteOn ? "텍스트ON" : "OFF"}
+      // 대기열 목록 그리기 (원본 모드일 땐 리스트가 비어있어도 됨)
+      if(cnt) cnt.textContent = jobQueue.length;
+      if(list) {
+        list.innerHTML = "";
+        jobQueue.forEach((job, idx) => {
+          const div = document.createElement("div");
+          div.className = "im-clean-item";
+          div.innerHTML = `
+            <div class="im-clean-info">
+              <div class="im-clean-title">Job #${idx+1} <small>(${job.userTag||"태그없음"})</small></div>
+              <div class="im-clean-meta">
+                ${job.scale*100}% · 블러 ${job.blurPx}px
+              </div>
             </div>
-          </div>
-          <button type="button" onclick="removeJob(${job.id})" class="im-smallbtn" style="color:red;">삭제</button>
-        `;
-        list.appendChild(div);
-      });
+            <button type="button" onclick="removeJob(${job.id})" class="im-smallbtn" style="color:red;">삭제</button>
+          `;
+          list.appendChild(div);
+        });
+      }
     };
 
     // ✅ [추가] 작업 삭제
