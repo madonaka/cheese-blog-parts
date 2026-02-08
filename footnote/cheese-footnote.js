@@ -18,15 +18,14 @@ document.addEventListener('DOMContentLoaded', function () {
         const href = a.getAttribute('href');
         if(!href || href.startsWith('#') || href.startsWith('javascript')) return;
 
-        // 외부 링크 판별 (http로 시작하고, 내 도메인이 아님)
+        // 외부 링크 판별
         if(href.startsWith('http') && !href.includes(myHost)) {
             a.classList.add('namu-external');
-            a.target = "_blank"; // 새 창 열기
+            a.target = "_blank"; 
         } 
         // 내부 링크 판별
         else {
             a.classList.add('namu-internal');
-            // title 속성이 없으면 텍스트를 title로 설정 (툴팁용)
             if(!a.getAttribute('title') && a.textContent.trim()) {
                 a.setAttribute('data-tooltip-text', a.textContent.trim());
             }
@@ -37,7 +36,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // 2. 주석 및 툴팁 시스템 시작
     // -----------------------------------------------------------
     var refs = document.querySelectorAll('.cheese-footnote-ref');
-    var internalLinks = document.querySelectorAll('.namu-internal'); // 내부 링크도 툴팁 대상
+    var internalLinks = document.querySelectorAll('.namu-internal'); 
     
     function isTouchLike() {
       return (
@@ -75,7 +74,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // [공통 함수] 툴팁 표시 로직 (PC용)
     // -----------------------------------------------------------
     function showTooltip(el, content) {
-        // 숨김 타이머가 돌고 있다면 취소 (박스로 이동 중 꺼짐 방지)
+        // 이미 끄려고 대기 중이었다면 취소! (마우스가 다시 돌아왔거나, 새로 진입함)
         if (tooltipTimeout) {
             clearTimeout(tooltipTimeout);
             tooltipTimeout = null;
@@ -106,20 +105,21 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function hideTooltip() {
-        // 바로 끄지 않고 0.3초 딜레이를 줌
+        // [수정됨] 0.5초(500ms) 딜레이를 주어 틈을 건너갈 시간을 확보합니다.
         tooltipTimeout = setTimeout(function() {
             tooltip.classList.remove('is-open');
-        }, 300); 
+        }, 500); 
     }
 
-    // ★ [PC Fix 핵심] 툴팁 박스 자체에 마우스를 올렸을 때 꺼짐 방지
+    // ★ [핵심] 툴팁 박스 자체에 마우스를 올렸을 때 "끄기 예약"을 취소
     tooltip.addEventListener('mouseenter', function() {
         if(tooltipTimeout) {
             clearTimeout(tooltipTimeout);
             tooltipTimeout = null;
         }
     });
-    // 툴팁 박스에서 마우스가 나가면 끄기
+
+    // 툴팁 박스에서 마우스가 나가면 다시 끄기 예약
     tooltip.addEventListener('mouseleave', function() {
         hideTooltip(); 
     });
@@ -146,7 +146,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
       // [모바일] 터치 환경: 클릭 시 모달 (점프 방지)
       if (touchMode) {
-        // 핵심: href 속성을 제거하여 브라우저의 기본 앵커 이동 차단
         if(ref.hasAttribute('href')) {
             ref.setAttribute('data-anchor', ref.getAttribute('href'));
             ref.removeAttribute('href');
@@ -160,7 +159,7 @@ document.addEventListener('DOMContentLoaded', function () {
             return false;
         });
       } 
-      // [PC] 호버 시 툴팁 (딜레이 적용)
+      // [PC] 호버 시 툴팁
       else if (enableTooltip) {
         ref.addEventListener('mouseenter', function() { showTooltip(ref, content); });
         ref.addEventListener('mouseleave', hideTooltip);
@@ -173,10 +172,8 @@ document.addEventListener('DOMContentLoaded', function () {
     if(enableTooltip) {
         internalLinks.forEach(function(link) {
             link.addEventListener('mouseenter', function() {
-                // 링크의 title 속성이나 data-tooltip-text를 가져옴
                 let title = link.getAttribute('title') || link.getAttribute('data-tooltip-text');
                 if(title) {
-                    // 나무위키 스타일: 제목을 박스에 보여줌
                     let html = '<span class="cheese-tooltip-title">📄 ' + title + '</span>';
                     showTooltip(link, html);
                 }
