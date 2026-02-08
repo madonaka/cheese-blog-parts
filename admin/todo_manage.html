@@ -1385,87 +1385,84 @@ async function realizeIdea(ideaId) {
     document.getElementById('log-form').reset(); document.getElementById('log-idea-section').style.display='block'; updateLogTaskOptions();
   }
 
-// [수정] 읽기/수정 모드 토글 (textarea 중복 표시 완벽 해결)
 function toggleEditMode(isEdit) {
-    const form = document.getElementById('todo-form');
-    // [중요] textarea는 별도로 제어하기 위해 여기서 제외합니다.
-    const inputs = form.querySelectorAll('input, select'); 
-    
-    const btnSave = document.getElementById('btn-save-submit');
-    const btnSwitch = document.getElementById('btn-switch-edit');
-    const editActions = document.getElementById('edit-actions'); 
-    
-    const viewBox = document.getElementById('view-detail-content');
-    const inputBox = document.getElementById('input-detail');
+  const form = document.getElementById('todo-form');
+  const inputs = form.querySelectorAll('input, select');
 
-    document.getElementById('edit-mode').value = isEdit ? "true" : "false";
-    
-    if (isEdit) {
-      // === [수정 모드] ===
-      inputs.forEach(el => el.disabled = false);
-      if(btnSave) btnSave.style.display = 'block';
-      if(btnSwitch) btnSwitch.style.display = 'none';
-      if(editActions) editActions.style.display = 'flex'; 
+  const btnSave = document.getElementById('btn-save-submit');
+  const btnSwitch = document.getElementById('btn-switch-edit');
+  const editActions = document.getElementById('edit-actions');
 
-      // 1. 보기 박스 숨김
-      if(viewBox) viewBox.style.display = 'none';
+  const viewBox = document.getElementById('view-detail-content');
+  const inputBox = document.getElementById('input-detail');
 
-     // 2. 썸머노트 활성화 로직
-      const html = inputBox.value || ""; // textarea에 들어있는 내용(=원본)을 기준으로 동기화
-      
-      if (!$('#input-detail').summernote('exists')) {
-        // 처음 켤 때: 초기화가 가능하도록 textarea를 잠깐만 보여줌
-        inputBox.style.display = 'block';
-      
-        $('#input-detail').summernote({
-          height: 250,
-          toolbar: [
-            ['style', ['bold', 'italic', 'underline', 'clear']],
-            ['font', ['strikethrough']],
-            ['para', ['ul', 'ol']],
-            ['insert', ['link', 'picture']],
-            ['view', ['fullscreen', 'codeview']]
-          ]
-        });
-      
-        // ✅ 초기화 직후: 에디터에 내용 넣고, textarea는 숨김 (중복 표시 방지)
-        $('#input-detail').summernote('code', html);
-        inputBox.style.display = 'none';
-      
-      } else {
-        // 이미 켜져 있을 때: enable + 내용 동기화 + textarea 숨김 보장
-        $('#input-detail').summernote('enable');
-        $('#input-detail').summernote('code', html);
-        inputBox.style.display = 'none';
-      }
-      
-      // ✅ 혹시 남아있을 수 있는 에디터 UI는 확실히 표시
-      $('#input-detail').next('.note-editor').show();
+  document.getElementById('edit-mode').value = isEdit ? "true" : "false";
 
+  const $detail = $('#input-detail');
 
-    } else {
-      // === [읽기 모드] ===
-      inputs.forEach(el => el.disabled = true);
-      if(btnSave) btnSave.style.display = 'none';
-      if(btnSwitch) btnSwitch.style.display = 'block';
-      if(editActions) editActions.style.display = 'none'; 
-      
-      // 1. 썸머노트가 있다면 파괴 (에디터 UI 제거)
-      if ($('#input-detail').summernote('exists')) {
-        $('#input-detail').summernote('destroy');
-      }
+  // ✅ summernote 로딩 실패 대비 (이 경우 textarea라도 보여줌)
+  const hasSummernote = !!($.fn && $.fn.summernote);
 
-      /* ✅ 추가: 잔존 note-editor 강제 제거 (중복표시 방지) */
-      $(inputBox).next('.note-editor').remove();
-      $(inputBox).siblings('.note-editor').remove();
-      
-      // 2. [핵심] 원본 텍스트 박스 강제 숨김
-      // destroy 후에는 textarea가 다시 드러나므로 반드시 숨겨야 합니다.
-      inputBox.style.display = 'none';
-      
-      // 3. 보기 박스 표시
-      if(viewBox) viewBox.style.display = 'block';
+  if (isEdit) {
+    // === [수정 모드] ===
+    inputs.forEach(el => el.disabled = false);
+    if (btnSave) btnSave.style.display = 'block';
+    if (btnSwitch) btnSwitch.style.display = 'none';
+    if (editActions) editActions.style.display = 'flex';
+
+    if (viewBox) viewBox.style.display = 'none';
+
+    // textarea 원본 내용 → 에디터에 동기화
+    const html = inputBox.value || "";
+
+    if (!hasSummernote) {
+      // 썸머노트가 없으면 textarea로라도 편집 가능하게
+      inputBox.style.display = 'block';
+      return;
     }
+
+    // ✅ 1회만 초기화
+    if (!$detail.summernote('exists')) {
+      inputBox.style.display = 'block'; // 초기화 순간만 필요
+      $detail.summernote({
+        height: 250,
+        toolbar: [
+          ['style', ['bold', 'italic', 'underline', 'clear']],
+          ['font', ['strikethrough']],
+          ['para', ['ul', 'ol']],
+          ['insert', ['link', 'picture']],
+          ['view', ['fullscreen', 'codeview']]
+        ]
+      });
+    }
+
+    // ✅ 수정모드에서는 에디터 표시 + 활성화 + 내용 주입
+    $detail.summernote('enable');
+    $detail.summernote('code', html);
+
+    // textarea는 숨기고 에디터 UI는 강제 표시
+    inputBox.style.display = 'none';
+    $detail.next('.note-editor').show();
+
+  } else {
+    // === [읽기 모드] ===
+    inputs.forEach(el => el.disabled = true);
+    if (btnSave) btnSave.style.display = 'none';
+    if (btnSwitch) btnSwitch.style.display = 'block';
+    if (editActions) editActions.style.display = 'none';
+
+    // 보기 박스 표시
+    if (viewBox) viewBox.style.display = 'block';
+
+    if (hasSummernote && $detail.summernote('exists')) {
+      // ✅ destroy 하지 말고: 비활성화 + UI 숨김
+      $detail.summernote('disable');
+      $detail.next('.note-editor').hide();
+    }
+
+    // ✅ 읽기모드에는 textarea(원본)는 안 보이게 유지
+    inputBox.style.display = 'none';
+  }
 }
   
 function openModal(type) {
