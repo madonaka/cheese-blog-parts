@@ -409,8 +409,8 @@
             <div class="bcg-sep"></div>
             <div class="bcg-row">
               <span class="bcg-muted">
-                ※ 주석 시스템: <b>자동 재정렬</b> 기능이 켜져 있어. 
-                주석을 중간에 삽입하면, 전체 내용을 스캔해서 위에서부터 1, 2, 3 순서로 번호를 다시 매겨줘.
+                ※ 주석 시스템: <b>자동 번호 매기기</b> 기능이 켜져 있어. 
+                주석을 추가하면 전체 저장 순서에 따라 자동으로 번호(1, 2, 3...)가 부여돼.
               </span>
             </div>
           </div>
@@ -486,7 +486,7 @@
       </div>
       <div class="bcg-modal-body">
          <div style="display:flex; flex-direction:column; gap:8px;">
-            <span class="bcg-muted">본문에 주석 태그가 삽입되고, 번호는 <b>문서 내 위치 순서대로</b> 자동 정리됩니다.</span>
+            <span class="bcg-muted">본문에 주석 태그가 삽입되고, 번호는 <b>저장 순서대로</b> 자동 부여됩니다.</span>
             <textarea id="fnInput" class="bcg-textarea" style="min-height:120px;" placeholder="주석 내용을 입력하세요..."></textarea>
          </div>
       </div>
@@ -1058,27 +1058,42 @@
       function buildHtmlAndList(bodyVal, allowTags){
         let bodyHtml = textToParagraphHtml(bodyVal, !!allowTags);
         const map = loadGlobalFootnotes();
+        const globalKeys = Object.keys(map); // Global Order Keys
+        
+        // 본문 내 주석 ID 스캔
         const foundIds = [];
         const re = /<a [^>]*data-(?:fn-idx|footnote-id)="([^"]+)"[^>]*>.*?<\/a>/g;
-        
         let m;
         while ((m = re.exec(bodyHtml)) !== null) {
             foundIds.push(m[1]);
         }
-        
         const uniqueIds = [...new Set(foundIds)];
+        
         let finalBody = bodyHtml;
         let listHtml = "";
         
         if (uniqueIds.length > 0) {
-            uniqueIds.forEach((uid, i) => {
-                const num = i + 1;
+            // ✅ [핵심 수정] 로컬 순서(i+1)가 아니라, 전역 저장소 순서(globalIndex+1)를 사용
+            uniqueIds.forEach((uid) => {
+                const gIdx = globalKeys.indexOf(uid);
+                // 만약 전역 저장소에 있다면 그 순서를 따름
+                // 없다면(삭제됨?) 일단 로컬 순서라도? 아니면 무시? -> 일단 전역 순서 우선
+                let num;
+                if(gIdx !== -1) {
+                    num = gIdx + 1;
+                } else {
+                    // Fallback: 전역에 없는데 본문에 태그가 남은 경우 -> ? 표시
+                    num = "?";
+                }
+                
                 const content = map[uid] || "(삭제된 주석)";
-                listHtml += `<li id="fn${num}">\n  <a href="#fn${num}-ref" class="cheese-footnote-index">*${num}</a>\n  ${escapeHtmlLite(content)}\n</li>\n`;
-            });
+                
+                // 리스트 생성 (이 블록에 포함된 것만)
+                if(num !== "?") {
+                    listHtml += `<li id="fn${num}">\n  <a href="#fn${num}-ref" class="cheese-footnote-index">*${num}</a>\n  ${escapeHtmlLite(content)}\n</li>\n`;
+                }
 
-            uniqueIds.forEach((uid, i) => {
-                const num = i + 1;
+                // 본문 치환
                 const targetRe = new RegExp(`<a [^>]*data-(?:fn-idx|footnote-id)="${escapeRegExp(uid)}"[^>]*>.*?<\/a>`, "g");
                 finalBody = finalBody.replace(targetRe, 
                     `<a id="fn${num}-ref" href="#fn${num}" class="cheese-footnote-index" data-footnote-id="fn${num}">*${num}</a>`
@@ -1232,7 +1247,8 @@
         function checkStartIdx() {
            if (!wrap.bcgData.hasManualIdx) {
               const globalList = loadGlobalFootnotes();
-              startIdxEl.value = globalList.length + 1;
+              // ✅ [수정] 이 줄을 주석 처리하거나 제거해서 1번으로 초기화되는 것을 막음
+              // startIdxEl.value = globalList.length + 1; 
            }
         }
         wrap.bcgCheckStartIdx = checkStartIdx;
@@ -1247,7 +1263,8 @@
             const result = buildHtmlAndList(bodyEl.value, keepRawEl.checked);
             
             fnStatusEl.textContent = `${result.count}개 (자동정렬)`;
-            startIdxEl.value = 1; 
+            // ✅ [수정] 아래 줄 제거 (리셋 방지)
+            // startIdxEl.value = 1; 
 
             const tag = (levelEl.value === "h1" || levelEl.value === "h2" || levelEl.value === "h3") ? levelEl.value : "h2";
             const headText = escapeHtmlLite(String(headingEl.value ?? "").trim());
@@ -1261,7 +1278,7 @@
             if (prevEl) {
                prevEl.innerHTML = finalHtml + (result.list ? `<hr><ol class="cheese-footnotes">${result.list}</ol>` : "");
             }
-            // ✅ [중요] 여기서 updateGlobalFnUI() 호출을 제거하여 무한 루프 방지
+            // updateGlobalFnUI(); // 루프 방지 위해 제거 유지
         }
         
         wrap.bcgRegenerate = regenerate;
@@ -1299,6 +1316,14 @@
             updatePill(); 
         });
 
+        fnResetBtn.addEventListener("click", () => {
+          if(confirm("이 블록에서 작성한 주석만 비울까?")) {
+            wrap.bcgData.footnotes = [];
+            regenerate();
+            showToast("로컬 주석 초기화됨");
+          }
+        });
+
         let t = null;
         function schedule(){ clearTimeout(t); t = setTimeout(regenerate, 180); }
         [levelEl, headingEl, bodyEl, keepRawEl].forEach(el => el.addEventListener("input", schedule));
@@ -1309,7 +1334,7 @@
         let lastSel = { s:0, e:0 };
         function saveSel_(){ try{ lastSel.s = bodyEl.selectionStart; lastSel.e = bodyEl.selectionEnd; }catch(e){} }
         function restoreSel_(){ try{ bodyEl.focus(); bodyEl.setSelectionRange(lastSel.s, lastSel.e); }catch(e){} }
-        // bodyEl.addEventListener("blur", saveSel_); // [삭제] 버튼 클릭 시 포커스 잃는 문제 방지
+        // bodyEl.addEventListener("blur", saveSel_); // 삭제: 버튼 클릭 시 포커스 잃는 문제 방지
         bodyEl.addEventListener("mouseup", saveSel_);
         bodyEl.addEventListener("keyup", saveSel_);
         bodyEl.addEventListener("select", saveSel_);
@@ -1363,7 +1388,7 @@
                     const uid = "fn_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5);
                     
                     const map = loadGlobalFootnotes();
-                    map[uid] = noteContent;
+                    map[uid] = noteContent; // 순서 유지(Map)
                     saveGlobalFootnotes(map);
 
                     restoreSel_();
