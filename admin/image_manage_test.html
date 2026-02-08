@@ -867,21 +867,25 @@
       });
       renderList(lastListItems);
     };
-// [수정] 목록 렌더링 함수 (원본 폴더의 파일만 원본 탭에 표시)
+    
+    // [수정] 목록 렌더링 함수 (링크 연결 로직 완벽 수정)
     function renderList(items){
       const q = String($listFilter.value || "").trim().toLowerCase();
       const filtered = (items || []).filter(it => {
         const searchMatch = !q || String(it.id||"").toLowerCase().includes(q) || String(it.base_name||"").toLowerCase().includes(q);
         if (!searchMatch) return false;
         
-        // ✅ [핵심] 100%여도 리사이징이면 제외. "파일명에 _ORIG가 있거나", "타입이 ORIG"인 것만 진짜 원본.
-        const isTrueOrig = String(it.base_name).includes("_ORIG") || it.scale_pct === "ORIG";
+        // 1. 이 파일 자체가 독립된 원본인가? (이름에 _ORIG 포함 or 타입이 ORIG)
+        const isStandaloneOrig = String(it.base_name).includes("_ORIG") || it.scale_pct === "ORIG";
         
-        // 원본 탭: 진짜 원본(_ORIG)이거나, (구버전 데이터 호환용) 백업본이 있는 경우
-        if (currentFilterType === 'orig') return isTrueOrig || (!!it.orig_drive_view_url);
-        
-        // 리사이징 탭: 진짜 원본이 아닌 것들
-        if (currentFilterType === 'resized') return !isTrueOrig;
+        // 2. 이 파일에 원본 백업이 붙어 있는가? (구버전 데이터 등)
+        const hasBackup = !!it.orig_drive_view_url;
+
+        // [탭 필터링]
+        // 원본 탭: 독립 원본이거나, 백업이 있는 경우 표시
+        if (currentFilterType === 'orig') return isStandaloneOrig || hasBackup;
+        // 리사이징 탭: 독립 원본이 아닌 경우 표시
+        if (currentFilterType === 'resized') return !isStandaloneOrig;
         
         return true;
       });
@@ -894,26 +898,48 @@
       }
 
       for (const it of filtered) {
-        // 원본 여부 재확인
-        const isTrueOrig = String(it.base_name).includes("_ORIG") || it.scale_pct === "ORIG";
-        const showAsOrig = (currentFilterType === 'orig') || isTrueOrig;
+        // 상태 판단
+        const isStandaloneOrig = String(it.base_name).includes("_ORIG") || it.scale_pct === "ORIG";
+        const hasBackup = !!it.orig_drive_view_url;
         
-        const title = (showAsOrig && !isTrueOrig && it.orig_drive_name) 
-          ? it.orig_drive_name 
-          : (it.base_name || it.id);
+        // 원본 탭에서 보여지는 상황인가?
+        const showAsOrig = (currentFilterType === 'orig');
 
-        // ✅ [링크] 원본 탭에 있는 '_ORIG' 파일은 자기 자신이 원본 폴더에 있는 파일입니다.
-        const driveLink = it.drive_view_url || "#";
+        // [타이틀 결정] 
+        // 원본 탭에서 '백업본'을 보여주는 상황이라면 백업 파일명을 표시
+        let title = (it.base_name || it.id);
+        if (showAsOrig && !isStandaloneOrig && it.orig_drive_name) {
+            title = it.orig_drive_name;
+        }
+
+        // ✅ [링크 결정 - 여기가 핵심!]
+        let driveLink = "#";
+        if (isStandaloneOrig) {
+            // 1. 나 자체가 원본이면 내 링크를 연다.
+            driveLink = it.drive_view_url;
+        } else if (showAsOrig && hasBackup) {
+            // 2. 나는 리사이징 파일이지만, 원본 탭에서 '백업'으로서 클릭됐다면 -> 백업 링크를 연다.
+            driveLink = it.orig_drive_view_url;
+        } else {
+            // 3. 그 외(리사이징 탭 등) -> 내 링크(리사이징된 이미지)를 연다.
+            driveLink = it.drive_view_url;
+        }
+        
         const thumbSrc = it.img_src || "https://ssl.gstatic.com/images/branding/product/1x/drive_2020q4_48dp.png";
 
         const card = document.createElement("div");
         card.className = "im-clean-item";
         
-        // 배지: 진짜 원본만 빨간색 ORIGINAL
+        // [배지 결정]
         let badgeHtml = "";
-        if (isTrueOrig) {
+        if (isStandaloneOrig) {
+           // 독립 원본
            badgeHtml = `<span class="im-badge orig">ORIGINAL</span>`;
+        } else if (showAsOrig && hasBackup) {
+           // 백업본으로서 표시될 때
+           badgeHtml = `<span class="im-badge orig">ORIG (Backup)</span>`;
         } else {
+           // 리사이징 파일
            badgeHtml = `<span class="im-badge resized">${it.scale_pct}%</span>`;
         }
 
@@ -924,7 +950,7 @@
             <div class="im-clean-meta">${badgeHtml} <span>${it.id}</span></div>
           </div>
           <div class="im-clean-actions">
-            <a href="${driveLink}" target="_blank" class="im-btn-icon">📂</a>
+            <a href="${driveLink || '#'}" target="_blank" class="im-btn-icon">📂</a>
             <button type="button" class="im-btn-icon btnCopy">📋</button>
             <button type="button" class="im-btn-icon btnDel" style="color:#e11d48; border-color:#fecdd3; background:#fff1f2;">🗑️</button>
           </div>
