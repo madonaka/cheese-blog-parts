@@ -268,6 +268,79 @@
         align-items: center;
         margin-left: auto;
     }
+    
+    /* ===== Common Modal Styles ===== */
+    .bcg-modal-backdrop{
+      position:fixed;
+      inset:0;
+      background:rgba(15,23,42,0.55);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:16px;
+      z-index:10000;
+      backdrop-filter: blur(2px); /* 살짝 블러 효과 */
+    }
+    .bcg-modal-backdrop[hidden]{display:none !important;}
+    
+    .bcg-modal{
+      width:min(920px, 100%);
+      max-height:min(86vh, 900px);
+      background:#fff;
+      border-radius:18px;
+      border:1px solid rgba(15,23,42,0.14);
+      box-shadow:0 20px 60px rgba(15,23,42,0.35);
+      overflow:hidden;
+      display:flex;
+      flex-direction:column;
+      animation: modalPop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes modalPop {
+        from { transform: scale(0.95) translateY(10px); opacity: 0; }
+        to { transform: scale(1) translateY(0); opacity: 1; }
+    }
+    
+    .bcg-modal-head{
+      padding:16px 20px;
+      display:flex;
+      align-items:center;
+      gap:10px;
+      border-bottom:1px solid rgba(15,23,42,0.08);
+      background: #fff;
+    }
+    .bcg-modal-title{
+      font-weight:900;
+      margin:0;
+      font-size:16px;
+      color: #1e293b;
+    }
+    .bcg-modal-body{
+      padding:20px;
+      overflow:auto;
+      background: #f8fafc;
+    }
+    .bcg-modal-foot{
+      padding:16px 20px;
+      display:flex;
+      gap:10px;
+      justify-content:flex-end;
+      border-top:1px solid rgba(15,23,42,0.08);
+      background:#fff;
+    }
+    .bcg-modal-grid{
+      display:grid;
+      grid-template-columns:1fr;
+      gap:10px;
+    }
+    
+    /* Table Editor Styles */
+    .bcg-table-controls{ display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
+    .bcg-table-controls .bcg-field{ display:flex; flex-direction:column; gap:6px; }
+    .bcg-num{ width:90px; }
+    .bcg-table-editor{ border:1px solid rgba(15,23,42,0.14); border-radius:14px; overflow:auto; background:#fff; }
+    .bcg-table-cells{ display:grid; gap:6px; padding:10px; }
+    .bcg-cell{ border:1px solid rgba(15,23,42,0.14); border-radius:10px; padding:8px 10px; min-height:40px; font-size:13px; outline:none; }
+    .bcg-cell:focus{ border-color:rgba(37,99,235,0.55); box-shadow:0 0 0 3px rgba(37,99,235,0.14); }
   </style>
 </head>
 
@@ -346,6 +419,26 @@
     </div>
   </div>
 
+  <div class="bcg-modal-backdrop" id="fnModal" hidden style="display:none" aria-hidden="true">
+    <div class="bcg-modal" style="width:500px;" role="dialog" aria-modal="true" aria-labelledby="fnModalTitle">
+      <div class="bcg-modal-head">
+        <h3 class="bcg-modal-title" id="fnModalTitle">주석 추가</h3>
+        <span class="bcg-right"></span>
+        <button class="bcg-btn bcg-mini" type="button" id="fnModalCloseBtn">닫기</button>
+      </div>
+      <div class="bcg-modal-body">
+         <div style="display:flex; flex-direction:column; gap:8px;">
+            <span class="bcg-muted">본문에 번호(ex: *1)가 붙고, 주석 내용은 하단 목록에 추가됩니다.</span>
+            <textarea id="fnInput" class="bcg-textarea" style="min-height:120px;" placeholder="주석 내용을 입력하세요..."></textarea>
+         </div>
+      </div>
+      <div class="bcg-modal-foot">
+        <button class="bcg-btn bcg-mini" type="button" id="fnCancelBtn">취소</button>
+        <button class="bcg-btn bcg-mini bcg-btn--primary" type="button" id="fnConfirmBtn">추가</button>
+      </div>
+    </div>
+  </div>
+
   <div class="bcg-toast" id="toast"></div>
   <script src="./admin-common.js"></script>
 
@@ -401,7 +494,15 @@
       const tblCellsEl = document.getElementById("tblCells");
       const tblInsertBtn = document.getElementById("tblInsertBtn");
 
+      // Footnote Modal Elements
+      const fnModal = document.getElementById("fnModal");
+      const fnInput = document.getElementById("fnInput");
+      const fnConfirmBtn = document.getElementById("fnConfirmBtn");
+      const fnCancelBtn = document.getElementById("fnCancelBtn");
+      const fnModalCloseBtn = document.getElementById("fnModalCloseBtn");
+
       let seq = 0;
+      let activeFnContext = null; // Stores callback for the active footnote action
       const STORAGE_KEY = "bcg_global_footnotes";
 
       function showToast(msg){
@@ -421,11 +522,9 @@
         return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
       }
 
-      // ✅ [중요] 허용 태그 정규식에 목록(ol, ul, li) 및 hr, a, div 추가
       function protectAllowedTags_(s){
         const src = String(s ?? "");
         const map = [];
-        // hr, ol, ul, li, a, div 등을 포함하여 보호
         const re = /<\/?(?:strong|em|u|s)\s*>|<br\s*\/?>|<mark\s+style="background:\s*#[0-9a-fA-F]{3,8}\s*"\s*>|<\/mark>|<span\s+style="color:\s*#[0-9a-fA-F]{3,8}\s*"\s*>|<\/span>|<table\s+class="cheese-table"\s*>|<\/table>|<thead\s*>|<\/thead>|<tbody\s*>|<\/tbody>|<tr\s*>|<\/tr>|<th\s*>|<\/th>|<td\s*>|<\/td>|<caption\s*>|<\/caption>|<a\s+[^>]*cheese-footnote-ref[^>]*>.*?<\/a>|<hr\s*\/?>|<\/?ol[^>]*>|<\/?ul[^>]*>|<\/?li[^>]*>|<\/?a[^>]*>|<\/?div[^>]*>/gi;
         const out = src.replace(re, (m)=>{
           const key = `@@ALLOWED_TAG_${map.length}@@`;
@@ -454,13 +553,9 @@
         if (chunks.length === 0) return "";
         return chunks.map(chunk => {
           const trimmedChunk = chunk.trim();
-          
-          // ✅ [중요] 블록 레벨 태그로 시작하면 <p> 감싸기 건너뛰기
-          // (Table, OL, UL, HR, DIV, BLOCKQUOTE 등)
           if (allowTags && /^(<table|<ol|<ul|<div|<hr|<blockquote|<pre)/i.test(trimmedChunk)) {
              return escapeText_(trimmedChunk, allowTags);
           }
-
           const brOnlyRegex = /^(<br\s*\/?>)+$/i;
           if (brOnlyRegex.test(trimmedChunk.replace(/\s/g, ''))) return trimmedChunk; 
           
@@ -521,8 +616,54 @@
       }
 
       /* ==========================
+         Footnote Modal Logic
+      ========================== */
+      function openFnModal(context) {
+        if (!fnModal) return;
+        activeFnContext = context;
+        fnInput.value = "";
+        fnModal.hidden = false;
+        fnModal.style.display = 'flex';
+        setTimeout(() => fnInput.focus(), 50);
+      }
+      
+      function closeFnModal() {
+        if (!fnModal) return;
+        fnModal.hidden = true;
+        fnModal.style.display = 'none';
+        
+        // Restore focus to body if possible
+        if (activeFnContext && activeFnContext.restoreFocus) {
+             activeFnContext.restoreFocus();
+        }
+        activeFnContext = null;
+      }
+      
+      function confirmFnModal() {
+        const text = fnInput.value.trim();
+        if (!text) {
+             alert("내용을 입력해주세요.");
+             return;
+        }
+        if (activeFnContext && activeFnContext.onConfirm) {
+            activeFnContext.onConfirm(text);
+        }
+        closeFnModal();
+      }
+
+      fnConfirmBtn.onclick = confirmFnModal;
+      fnCancelBtn.onclick = closeFnModal;
+      fnModalCloseBtn.onclick = closeFnModal;
+      fnModal.onclick = (e) => { if (e.target === fnModal) closeFnModal(); };
+      fnInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && e.ctrlKey) confirmFnModal(); // Ctrl+Enter to submit
+        if (e.key === "Escape") closeFnModal();
+      });
+
+      /* ==========================
          Table Builder Logic
       ========================== */
+      let tableCtx = null;
       function openTableModal_(ctx){
         tableCtx = ctx || null;
         if (!tableModal) return;
@@ -633,7 +774,10 @@
         };
       }
       document.addEventListener("keydown", (e) => {
-        if (e.key === "Escape" && !tableModal.hidden) handleSafeClose_();
+        if (e.key === "Escape") {
+             if(!tableModal.hidden) handleSafeClose_();
+             if(!fnModal.hidden) closeFnModal();
+        }
       });
       if (tblRebuildBtn) {
         tblRebuildBtn.onclick = () => {
@@ -1023,24 +1167,27 @@
             ensureAllowTagsOn_();
             
             if (fmt === "footnote") {
-              const noteContent = prompt("주석 내용을 입력해 주세요.");
-              if (noteContent) {
-                // 1. 로컬 저장
-                wrap.bcgData.footnotes.push(noteContent);
-                // 2. 글로벌 저장 (LocalStorage)
-                const newTotalCount = appendGlobalFootnote(noteContent);
-                
-                // 3. 현재 주석의 번호는? 
-                const currentIdx = newTotalCount;
+               // 모달 오픈!
+               openFnModal({
+                 onConfirm: (noteContent) => {
+                    // 1. 로컬 저장
+                    wrap.bcgData.footnotes.push(noteContent);
+                    // 2. 글로벌 저장 (LocalStorage)
+                    const newTotalCount = appendGlobalFootnote(noteContent);
+                    
+                    // 3. 현재 주석의 번호는? 
+                    const currentIdx = newTotalCount;
 
-                restoreSel_();
-                const linkTag = `<a id="fn${currentIdx}-ref" href="#fn${currentIdx}" class="cheese-footnote-ref" data-footnote-id="fn${currentIdx}">*${currentIdx}</a>`;
-                insertAtSelection(bodyEl, linkTag);
-                
-                schedule();
-                showToast(`주석 *${currentIdx} 추가됨 (자동 저장)`);
-              }
-              return;
+                    restoreSel_();
+                    const linkTag = `<a id="fn${currentIdx}-ref" href="#fn${currentIdx}" class="cheese-footnote-ref" data-footnote-id="fn${currentIdx}">*${currentIdx}</a>`;
+                    insertAtSelection(bodyEl, linkTag);
+                    
+                    schedule();
+                    showToast(`주석 *${currentIdx} 추가됨 (자동 저장)`);
+                 },
+                 restoreFocus: () => bodyEl.focus()
+               });
+               return;
             }
 
             if (fmt === "table"){
