@@ -27,6 +27,19 @@
       line-height:1.45;
       font-size:13px;
     }
+    
+    /* ✅ [추가] 버전 표시 스타일 (글자 크게) */
+    .bcg-version {
+      margin-top: 8px;
+      font-size: 16px; /* 13px -> 16px로 확대 */
+      font-weight: 800; /* 굵게 */
+      color: #334155;
+      background: rgba(15,23,42,0.03);
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(15,23,42,0.06);
+    }
 
     .bcg-actions{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:flex-end; }
 
@@ -104,7 +117,7 @@
       font-size:12px;
     }
 
-    /* Footnote Preview Style (Simple) */
+    /* Footnote Preview Style */
     .bcg-preview .cheese-footnotes {
       margin-top: 20px;
       border-top: 1px solid #eee;
@@ -414,6 +427,7 @@
                   소제목(H1/H2/H3) + 본문을 넣으면, <b>바로 포스트 관리(BODY_1/2/3 등)에 붙여넣을 수 있는 HTML</b>로 변환해줘.
                   본문 블록은 원하는 만큼 추가할 수 있고, <b>각 블록마다 결과를 따로 복사</b>할 수 있어.
                 </p>
+                <div id="sysVersion" class="bcg-version"></div>
               </div>
 
               <div class="bcg-actions">
@@ -603,7 +617,6 @@
         if (chunks.length === 0) return "";
         return chunks.map(chunk => {
           const trimmedChunk = chunk.trim();
-          // 테이블이나 주석 리스트 등 블록 요소가 있으면 문단 감싸기 제외 가능 (여기선 간단히 처리)
           if (allowTags && /^<table\b/i.test(trimmedChunk) && /<\/table>\s*$/i.test(trimmedChunk)) {
             return escapeText_(trimmedChunk, allowTags);
           }
@@ -829,24 +842,20 @@
         pill.textContent = `블록 ${n}개`;
       }
 
-      // ✅ 주석(footnotes) 배열을 받아서 최종 HTML 생성
       function buildHtml({level, heading, body, allowTags, footnotes, fnStartIndex}){
         const tag = (level === "h1" || level === "h2" || level === "h3") ? level : "h2";
         const headText = escapeHtmlLite(String(heading ?? "").trim());
         const bodyHtml = textToParagraphHtml(body, !!allowTags);
         const headPart = headText ? `<${tag}>${headText}</${tag}>` : "";
         
-        // 본문 생성
         const parts = [headPart, bodyHtml].filter(Boolean);
 
-        // ✅ 주석 목록 생성 및 추가
         if (footnotes && footnotes.length > 0) {
           const startIdx = parseInt(fnStartIndex) || 1;
           let fnHtml = '\n\n<hr>\n<ol class="cheese-footnotes">';
           
           footnotes.forEach((note, i) => {
             const idx = startIdx + i;
-            // 주석 텍스트도 HTML 이스케이프 (안전)
             const safeNote = escapeHtmlLite(note);
             fnHtml += `\n  <li id="fn${idx}">\n    <a href="#fn${idx}-ref" class="cheese-footnote-index">*${idx}</a>\n    ${safeNote}\n  </li>`;
           });
@@ -865,7 +874,6 @@
         wrap.className = "bcg-card";
         wrap.setAttribute("data-bcg-block", id);
 
-        // ✅ 주석 데이터 저장을 위한 배열
         let blockFootnotes = [];
 
         wrap.innerHTML = `
@@ -984,7 +992,6 @@
         const prevEl = wrap.querySelector("[data-preview]");
         const keepRawEl = wrap.querySelector("[data-keep-raw]");
         
-        // ✅ 주석 관련 엘리먼트
         const fnStartEl = wrap.querySelector("[data-fn-start]");
         const fnResetBtn = wrap.querySelector("[data-fn-reset]");
         const fnStatusEl = wrap.querySelector("[data-fn-status]");
@@ -1014,7 +1021,7 @@
             heading: headingEl.value,
             body: bodyEl.value,
             allowTags: keepRawEl.checked,
-            footnotes: blockFootnotes, // 주석 리스트 전달
+            footnotes: blockFootnotes,
             fnStartIndex: fnStartEl.value
           });
           outEl.value = html;
@@ -1028,7 +1035,6 @@
           fnStatusEl.textContent = `${blockFootnotes.length}개 저장됨`;
         }
 
-        // ✅ 주석 초기화 버튼
         fnResetBtn.addEventListener("click", () => {
           if(confirm("저장된 주석 내용을 모두 지울까? (본문의 *1 태그는 직접 지워야 해)")) {
             blockFootnotes = [];
@@ -1038,7 +1044,6 @@
           }
         });
 
-        // ✅ 주석 시작 번호 변경 시 재생성
         fnStartEl.addEventListener("change", regenerate);
         fnStartEl.addEventListener("input", regenerate);
 
@@ -1122,19 +1127,15 @@
               return;
             }
             
-            // ✅ [추가] 주석 입력 로직
             if (fmt === "footnote") {
               const noteContent = prompt("주석 내용을 입력해 주세요.\n(본문에는 번호가 붙고, 설명은 맨 아래 목록에 추가돼)");
               if (noteContent) {
-                // 1. 저장소에 추가
                 blockFootnotes.push(noteContent);
                 updateFnStatus();
 
-                // 2. 현재 번호 계산 (시작번호 + 인덱스)
                 const startIdx = parseInt(fnStartEl.value) || 1;
                 const currentIdx = startIdx + blockFootnotes.length - 1;
 
-                // 3. 본문에 링크 태그 삽입
                 restoreSel_();
                 const linkTag = `<a id="fn${currentIdx}-ref" href="#fn${currentIdx}" class="cheese-footnote-ref" data-footnote-id="fn${currentIdx}">*${currentIdx}</a>`;
                 insertAtSelection(bodyEl, linkTag);
@@ -1202,6 +1203,23 @@
              window.opener.postMessage({ type: 'CH_CODE_GEN_READY' }, '*');
         }, 100);
       }
+      
+      // ✅ [추가] 버전 표시 함수 (2026-02-08 Updated)
+      const pad2 = n => String(n).padStart(2, '0');
+      (function showVersion(){
+        const el = document.getElementById("sysVersion");
+        if(!el) return;
+        
+        // document.lastModified : 브라우저가 인식한 파일의 마지막 수정 시각
+        const d = new Date(document.lastModified);
+        
+        // 날짜 포맷팅 (YYYYMMDD_HHMM)
+        const dateStr = `${d.getFullYear()}${pad2(d.getMonth()+1)}${pad2(d.getDate())}`;
+        const timeStr = `${pad2(d.getHours())}${pad2(d.getMinutes())}`;
+        
+        // 화면에 표시 (Updated: 날짜_시간)
+        el.textContent = `Updated: ${dateStr}_${timeStr}`;
+      })();
     })();
   </script>
 </body>
