@@ -1678,21 +1678,16 @@ function toggleFormFields() {
     loadAllData(); 
   }  async function deleteItem(id) { if(!confirm("정말 삭제하시겠습니까?")) return; if(typeof showAdminLoading==='function') showAdminLoading("삭제 중..."); await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify({ mode: "deleteItem", id: id }) }); loadAllData(); if(typeof hideAdminLoading==='function') hideAdminLoading(); }
 
-  document.getElementById('todo-form').addEventListener('submit', async (e) => {
+document.getElementById('todo-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    // [추가] 저장 버튼 찾기 (중요: 선택자 수정)
-    // 기존 '#edit-actions button'은 존재하지 않으므로 올바른 클래스 선택자 사용
     const saveBtn = document.querySelector('.btn-save-custom');
-    
-    // [추가] 로딩 시작 (버튼 비활성화)
     toggleBtnLoading(saveBtn, true);
     
     const isEdit = document.getElementById('edit-mode').value === "true";
     const type = document.querySelector('input[name="type"]:checked').value;
     
-    // [수정됨] 타입에 따라 각각 다른 name에서 값을 가져옵니다.
-    let color = "#64748b"; // 기본값 (회색)
-    
+    // [색상 가져오기 로직]
+    let color = "#64748b"; 
     if(type === "큰 목표") {
         const el = document.querySelector('input[name="color_goal"]:checked');
         if(el) color = el.value;
@@ -1700,6 +1695,7 @@ function toggleFormFields() {
         const el = document.querySelector('input[name="color_idea"]:checked');
         if(el) color = el.value;
     }
+
     const detailContent = $('#input-detail').summernote('code');
     const originIdeaId = document.getElementById('origin-idea-id').value;
 
@@ -1718,28 +1714,26 @@ function toggleFormFields() {
         const response = await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify(payload) });
         const result = await response.json();
 
-        // 🚀 [수정] 아이디어 실현 연결 로직 + 자동 로그 추가
+        // [중요] 여기가 있어야 실현하기가 작동합니다!
+        // 🚀 아이디어 실현 연결 로직
         if (!isEdit && result.id && originIdeaId) {
-            // 1. 기존 아이디어와 새 작업 연결 (서버 요청)
+            // 1. 기존 아이디어(originIdeaId)의 '연결_중간목표ID'를 새 할일(result.id)로 업데이트
             await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify({ mode: "editItem", id: originIdeaId, connectedId: result.id }) });
             
-            // 2. [NEW] 실현 로그 자동 생성! (여기에 추가하세요)
+            // 2. 실현 로그 자동 생성
             const taskTitle = document.getElementById('input-title').value;
             await createAutoLog("realize_idea", taskTitle, result.id);
         }
-        // 🚀 [추가] 여기가 핵심! 신규 등록 시 자동 로그 생성 로직
+
+        // [추가] 신규 등록 시 자동 로그 생성 로직
         if (!isEdit && result.result === "success") {
-            const newId = result.id; // 서버에서 발급받은 새 ID
+            const newId = result.id;
             const title = document.getElementById('input-title').value;
-            
-            if (type === "버그") {
-                await createAutoLog("create_bug", title, newId);
-            } else if (type === "아이디어") {
-                await createAutoLog("create_idea", title, newId);
-            } else if (type.includes("목표")) { // 큰 목표, 중간 목표
-                await createAutoLog("create_goal", title, newId);
-            }
+            if (type === "버그") await createAutoLog("create_bug", title, newId);
+            else if (type === "아이디어") await createAutoLog("create_idea", title, newId);
+            else if (type.includes("목표")) await createAutoLog("create_goal", title, newId);
         }
+        
         closeModal('input-modal'); loadAllData();
     } catch(err) { console.error(err); alert("저장 중 오류 발생"); } 
     finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); toggleBtnLoading(saveBtn, false);}
