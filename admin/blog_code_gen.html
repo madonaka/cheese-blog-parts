@@ -344,6 +344,33 @@
       gap:10px;
     }
     
+    /* Manage Footnote List Styles */
+    .bcg-manage-list {
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .bcg-manage-item {
+      display: flex; align-items: flex-start; gap: 10px;
+      background: #fff;
+      padding: 10px 12px;
+      border: 1px solid rgba(15,23,42,0.12);
+      border-radius: 8px;
+    }
+    .bcg-manage-content {
+      flex: 1; font-size: 13px; line-height: 1.45; color: #334155;
+      word-break: break-all;
+    }
+    .bcg-manage-del {
+      flex: none;
+      padding: 6px 10px;
+      font-size: 12px;
+      color: #b91c1c;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .bcg-manage-del:hover { background: #fee2e2; }
+    
     /* Table Editor Styles */
     .bcg-table-controls{ display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
     .bcg-table-controls .bcg-field{ display:flex; flex-direction:column; gap:6px; }
@@ -394,7 +421,7 @@
 
   <div class="bcg-global-foot">
     <div class="bcg-global-foot-info">
-        <span>📝 전체 주석: <span id="globalFnCount" style="color:#2563eb;">0</span>개</span>
+        <span>📝 전체 주석(저장됨): <span id="globalFnCount" style="color:#2563eb;">0</span>개</span>
         <button class="bcg-btn bcg-mini" id="viewAllFnBtn" type="button" style="margin-left:8px;">관리/편집</button>
     </div>
     <div class="bcg-global-foot-controls">
@@ -403,6 +430,25 @@
         <button class="bcg-btn bcg-mini bcg-btn--primary" id="copyWrapperBtn" type="button">주석 틀(&lt;ol&gt;) 복사</button>
         <div style="width:1px; height:16px; background:#cbd5e1; margin:0 4px;"></div>
         <button class="bcg-btn bcg-mini bcg-btn--danger" id="resetGlobalFnBtn" type="button">초기화</button>
+    </div>
+  </div>
+
+  <div class="bcg-modal-backdrop" id="manageFnModal" hidden style="display:none" aria-hidden="true">
+    <div class="bcg-modal" style="width:600px;" role="dialog" aria-modal="true" aria-labelledby="manageFnModalTitle">
+      <div class="bcg-modal-head">
+        <h3 class="bcg-modal-title" id="manageFnModalTitle">전체 주석 관리</h3>
+        <span class="bcg-right"></span>
+        <button class="bcg-btn bcg-mini" type="button" id="manageFnModalCloseBtn">닫기</button>
+      </div>
+      <div class="bcg-modal-body">
+         <div class="bcg-muted" style="margin-bottom:10px;">
+            여기서 주석을 삭제하면, <b>본문 내의 주석 태그도 자동으로 제거</b>됩니다.
+         </div>
+         <div id="manageFnList" class="bcg-manage-list"></div>
+      </div>
+      <div class="bcg-modal-foot">
+        <button class="bcg-btn bcg-mini" type="button" id="manageFnDoneBtn">확인</button>
+      </div>
     </div>
   </div>
 
@@ -514,6 +560,12 @@
       const fnCancelBtn = document.getElementById("fnCancelBtn");
       const fnModalCloseBtn = document.getElementById("fnModalCloseBtn");
 
+      // Manage Modal Elements
+      const manageFnModal = document.getElementById("manageFnModal");
+      const manageFnList = document.getElementById("manageFnList");
+      const manageFnCloseBtn = document.getElementById("manageFnModalCloseBtn");
+      const manageFnDoneBtn = document.getElementById("manageFnDoneBtn");
+
       let seq = 0;
       let activeFnContext = null;
       const STORAGE_KEY = "bcg_global_footnotes";
@@ -528,8 +580,6 @@
             toast.appendChild(btn);
         }
         toast.classList.add("show");
-        
-        // 액션 버튼이 있으면 좀 더 오래 표시
         const delay = actionText ? 5000 : 1600;
         clearTimeout(showToast._t);
         showToast._t = setTimeout(()=>toast.classList.remove("show"), delay);
@@ -543,6 +593,10 @@
 
       function escapeHtmlLite(s){
         return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      }
+      
+      function escapeRegExp(string) {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       }
 
       function protectAllowedTags_(s){
@@ -682,6 +736,76 @@
       });
 
       /* ==========================
+         Manage Modal Logic
+      ========================== */
+      function openManageFnModal() {
+        const map = loadGlobalFootnotes();
+        const keys = Object.keys(map);
+        
+        manageFnList.innerHTML = "";
+        if (keys.length === 0) {
+            manageFnList.innerHTML = '<div class="bcg-muted" style="text-align:center;">저장된 주석이 없습니다.</div>';
+        } else {
+            keys.forEach(uid => {
+                const div = document.createElement("div");
+                div.className = "bcg-manage-item";
+                div.innerHTML = `
+                  <div class="bcg-manage-content">
+                    <b>ID: ${uid.slice(-4)}</b><br>
+                    ${escapeHtmlLite(map[uid])}
+                  </div>
+                  <button class="bcg-manage-del" type="button">삭제</button>
+                `;
+                div.querySelector(".bcg-manage-del").onclick = () => deleteFootnote(uid);
+                manageFnList.appendChild(div);
+            });
+        }
+        
+        manageFnModal.hidden = false;
+        manageFnModal.style.display = 'flex';
+      }
+      
+      function closeManageFnModal() {
+        manageFnModal.hidden = true;
+        manageFnModal.style.display = 'none';
+      }
+      
+      // ✅ [핵심] 주석 삭제 시, 본문에서 태그 제거
+      function deleteFootnote(uid) {
+        if (!confirm("이 주석을 삭제할까요?\n본문에 삽입된 태그도 자동으로 지워집니다.")) return;
+        
+        const map = loadGlobalFootnotes();
+        delete map[uid];
+        saveGlobalFootnotes(map);
+        
+        // 모든 블록을 순회하며 해당 ID 태그 제거
+        let removedCount = 0;
+        document.querySelectorAll("[data-bcg-block]").forEach(block => {
+            const bodyEl = block.querySelector("[data-body]");
+            if(bodyEl) {
+               // <a ... data-fn-idx="uid" ...>...</a> 제거 (태그만 제거? 텍스트도 제거? 보통 태그 전체를 제거함)
+               const re = new RegExp(`<a [^>]*data-(?:fn-idx|footnote-id)="${escapeRegExp(uid)}"[^>]*>.*?<\/a>`, "g");
+               if(re.test(bodyEl.value)) {
+                  bodyEl.value = bodyEl.value.replace(re, "");
+                  bodyEl.dispatchEvent(new Event("input"));
+                  removedCount++;
+               }
+            }
+        });
+        
+        // UI 갱신
+        openManageFnModal(); // 리스트 다시 그리기
+        updateGlobalFnUI();
+        showToast(`주석 삭제 완료 (${removedCount}개 태그 제거됨)`);
+      }
+
+      viewAllFnBtn.onclick = openManageFnModal;
+      manageFnCloseBtn.onclick = closeManageFnModal;
+      manageFnDoneBtn.onclick = closeManageFnModal;
+      manageFnModal.onclick = (e) => { if (e.target === manageFnModal) closeManageFnModal(); };
+
+
+      /* ==========================
          Table Builder Logic
       ========================== */
       let tableCtx = null;
@@ -798,6 +922,7 @@
         if (e.key === "Escape") {
              if(!tableModal.hidden) handleSafeClose_();
              if(!fnModal.hidden) closeFnModal();
+             if(!manageFnModal.hidden) closeManageFnModal();
         }
       });
       if (tblRebuildBtn) {
@@ -856,7 +981,7 @@
         const keys = Object.keys(map);
         globalFnCountEl.textContent = keys.length;
         
-        // 미사용 주석 감지 (현재 블록 기준)
+        // 미사용 주석 감지
         const currentBodyText = document.querySelector("[data-body]")?.value || "";
         let usedCount = 0;
         keys.forEach(uid => {
@@ -907,33 +1032,16 @@
         }
       });
       
-      // Cleanup Unused (Manually)
       cleanupFnBtn.addEventListener("click", () => {
         if(!confirm("현재 본문에 없는 주석들을 삭제할까?")) return;
-        
         const map = loadGlobalFootnotes();
         const currentBodyText = document.querySelector("[data-body]")?.value || "";
         const newMap = {};
-        
         Object.keys(map).forEach(uid => {
-            if(currentBodyText.includes(uid)) {
-                newMap[uid] = map[uid];
-            }
+            if(currentBodyText.includes(uid)) newMap[uid] = map[uid];
         });
-        
         saveGlobalFootnotes(newMap);
         showToast("미사용 주석 정리 완료!");
-      });
-      
-      viewAllFnBtn.addEventListener("click", () => {
-        const map = loadGlobalFootnotes();
-        const keys = Object.keys(map);
-        if(keys.length === 0) return showToast("데이터가 없어.");
-        let msg = `총 ${keys.length}개의 주석이 저장되어 있어.\n\n`;
-        keys.forEach((k, i) => {
-           msg += `[${i+1}] ${map[k].substring(0, 30)}...\n`;
-        });
-        alert(msg);
       });
 
       updateGlobalFnUI();
@@ -1120,6 +1228,20 @@
         const colorEl = wrap.querySelector("[data-color]");
         const bgEl = wrap.querySelector("[data-bg]");
 
+        function checkStartIdx() {
+           if (!wrap.bcgData.hasManualIdx) {
+              const globalList = loadGlobalFootnotes();
+              startIdxEl.value = globalList.length + 1;
+           }
+        }
+        wrap.bcgCheckStartIdx = checkStartIdx;
+        setTimeout(checkStartIdx, 0);
+
+        startIdxEl.addEventListener("input", () => {
+           wrap.bcgData.hasManualIdx = true; 
+           regenerate();
+        });
+
         function regenerate(){
             const result = buildHtmlAndList(bodyEl.value, keepRawEl.checked);
             
@@ -1138,7 +1260,7 @@
             if (prevEl) {
                prevEl.innerHTML = finalHtml + (result.list ? `<hr><ol class="cheese-footnotes">${result.list}</ol>` : "");
             }
-            updateGlobalFnUI(); // 내용 변경될 때마다 하단 상태 업데이트
+            updateGlobalFnUI(); 
         }
         
         wrap.bcgRegenerate = regenerate;
