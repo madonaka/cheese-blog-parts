@@ -575,18 +575,6 @@
         </div>
         
         <div id="viewEdit" class="pm-pane-body">
-          <div class="pm-editor-block">
-            <span class="pm-editor-label">Body 1</span>
-            <textarea id="edit_body_1" class="pm-editor-textarea" oninput="detectFootnotes()" onfocus="setLastFocus(this)"></textarea>
-          </div>
-          <div class="pm-editor-block">
-            <span class="pm-editor-label">Body 2</span>
-            <textarea id="edit_body_2" class="pm-editor-textarea" oninput="detectFootnotes()" onfocus="setLastFocus(this)"></textarea>
-          </div>
-          <div class="pm-editor-block">
-            <span class="pm-editor-label">Body 3</span>
-            <textarea id="edit_body_3" class="pm-editor-textarea" oninput="detectFootnotes()" onfocus="setLastFocus(this)"></textarea>
-          </div>
         </div>
   
         <div id="viewPreview" class="pm-pane-body blog-preview-content" style="display:none; background:#fff;"></div>
@@ -2792,336 +2780,297 @@ function clearEditor(){
             }
           };
         }
-
-      /* =========================================
-         [수정됨] 통합 관리자 핵심 로직 (3.0 버전)
-         ========================================= */
-      let g_footnotes = []; // 주석 데이터 메모리
-      let lastFocusedInput = null; // 커서 위치 기억용
-      
-      // 1. 모달 열기: 메인 화면의 내용을 모달로 가져옴
-      window.openIntegratedManager = function() {
-        // [수정] ID가 아니라 data-slot 속성으로 값을 가져오도록 변경
-        const getVal = (slotName) => {
-          const el = document.querySelector(`textarea[data-slot="${slotName}"]`);
-          return el ? el.value : "";
-        };
-      
-        // 메인 화면 값 -> 모달(edit_body_*)로 복사
-        // BODY_1이 없으면 BODY(기본)를 가져오도록 처리 (Fallback)
-        document.getElementById('edit_body_1').value = getVal('BODY_1') || getVal('BODY');
-        document.getElementById('edit_body_2').value = getVal('BODY_2');
-        document.getElementById('edit_body_3').value = getVal('BODY_3');
-        
-        // 초기화
-        window.switchView('edit');
-        window.detectFootnotes();
-        // 기본 포커스
-        lastFocusedInput = document.getElementById('edit_body_1');
-        
-        document.getElementById('integratedModal').style.display = 'flex';
-      };
-      
-      window.closeIntegratedManager = function() {
-        document.getElementById('integratedModal').style.display = 'none';
-      };
-      
-      // 포커스 추적 (주석 삽입 위치용)
-      window.setLastFocus = function(el) {
-        lastFocusedInput = el;
-      };
-      
-      // 2. 탭 전환 (편집 <-> 미리보기)
-      window.switchView = function(mode) {
-        const vEdit = document.getElementById('viewEdit');
-        const vPrev = document.getElementById('viewPreview');
-        const tabs = document.querySelectorAll('.pm-tab');
-        
-        if(mode === 'edit') {
-          vEdit.style.display = 'block';
-          vPrev.style.display = 'none';
-          tabs[0].classList.add('active');
-          tabs[1].classList.remove('active');
-        } else {
-          renderFullPreview(); // 미리보기 생성
-          vEdit.style.display = 'none';
-          vPrev.style.display = 'block';
-          tabs[0].classList.remove('active');
-          tabs[1].classList.add('active');
-        }
-      };
-      
-      // 3. 실시간 주석 감지 (Left -> Right)
-      window.detectFootnotes = function() {
-        const bodies = [
-          document.getElementById('edit_body_1').value,
-          document.getElementById('edit_body_2').value,
-          document.getElementById('edit_body_3').value
-        ];
-        
-        g_footnotes = [];
-        let globalIdx = 1;
-        // data-note 속성이 있는 태그 찾기
-        const regex = /<a [^>]*data-note="([^"]+)"[^>]*>.*?<\/a>/g;
-      
-        bodies.forEach((html, bIdx) => {
-          let match;
-          while ((match = regex.exec(html)) !== null) {
-            const encoded = match[1];
-            let content = "Error";
-            try { content = decodeURIComponent(encoded); } catch(e){}
-            
-            g_footnotes.push({
-              idx: globalIdx++,
-              content: content,
-              bodyNum: bIdx + 1,
-              fullTag: match[0] // 교체용 원본 태그
-            });
-          }
-        });
-      
-        renderFnList();
-      };
-      
-      // 4. 우측 리스트 렌더링
-      function renderFnList() {
-        const listEl = document.getElementById('fnListArea');
-        document.getElementById('fnTotalCount').textContent = g_footnotes.length;
-        listEl.innerHTML = "";
-      
-        if(g_footnotes.length === 0) {
-          listEl.innerHTML = "<div style='text-align:center; color:#999; margin-top:40px;'>본문에 주석이 없습니다.<br>왼쪽 에디터에서 추가해보세요.</div>";
-          return;
-        }
-      
-        g_footnotes.forEach((fn, i) => {
-          const item = document.createElement('div');
-          item.className = 'fn-live-item';
-          item.innerHTML = `
-            <div class="fn-live-head">
-              <span>#${fn.idx} (Body ${fn.bodyNum})</span>
-              <span style="color:#ef4444; cursor:pointer;" onclick="deleteFootnoteTag(${i})">삭제</span>
-            </div>
-            
-            <div style="display:flex; gap:5px; margin-bottom:5px;">
-              <button class="pm-btn small ghost" style="padding:2px 6px; font-size:11px;" onclick="addLinkToFootnote(${i}, 'external')">🔗 외부링크</button>
-              <button class="pm-btn small ghost" style="padding:2px 6px; font-size:11px;" onclick="addLinkToFootnote(${i}, 'internal')">📄 내부링크</button>
-            </div>
-      
-            <textarea id="fn_input_${i}" class="fn-live-text" oninput="updateFootnoteText(${i}, this.value)">${fn.content}</textarea>
-          `;
-          listEl.appendChild(item);
-        });
-      }
-      
-      // 5. 커서 위치에 주석 태그 추가
-      window.insertFootnoteAtCursor = function() {
-        if (!lastFocusedInput) {
-          alert("왼쪽 에디터를 클릭해서 입력 위치를 선택해주세요.");
-          return;
-        }
-        
-        const content = prompt("주석 내용을 입력하세요:");
-        if (!content) return;
-      
-        const encoded = encodeURIComponent(content);
-        const tempId = Math.random().toString(36).substr(2, 5);
-        // 화면엔 *? 로 표시 (자동정렬 대기)
-        const tag = `<a id="ref_${tempId}" href="#note_${tempId}" class="cheese-footnote-ref" data-note="${encoded}">*?</a>`;
-      
-        const start = lastFocusedInput.selectionStart;
-        const end = lastFocusedInput.selectionEnd;
-        const text = lastFocusedInput.value;
-      
-        lastFocusedInput.value = text.substring(0, start) + tag + text.substring(end);
-        lastFocusedInput.focus();
-        
-        // 리스트 즉시 갱신
-        detectFootnotes();
-      };
-      
-      // 6. 주석 내용 수정 (Right -> Left Sync)
-      window.updateFootnoteText = function(index, newText) {
-        const fn = g_footnotes[index];
-        const targetId = 'edit_body_' + fn.bodyNum;
-        const targetEl = document.getElementById(targetId);
-        
-        const newEncoded = encodeURIComponent(newText);
-        // 원본 태그의 data-note 부분만 교체
-        const newTag = fn.fullTag.replace(/data-note="([^"]+)"/, `data-note="${newEncoded}"`);
-        
-        targetEl.value = targetEl.value.replace(fn.fullTag, newTag);
-        
-        // 메모리 동기화를 위해 재파싱 (단, 입력 중 끊김 방지 위해 리스트는 다시 그리지 않음이 좋지만 여기선 단순하게 처리)
-        // detectFootnotes(); // 여기선 호출 생략하고 적용 시점에 재확인해도 됨
-        
-        // *중요*: g_footnotes 배열 자체도 업데이트해줘야 함 (삭제 시 참조 위해)
-        fn.content = newText;
-        fn.fullTag = newTag; 
-      };
-
-    // [추가] 주석에 링크 태그 삽입 헬퍼
-    window.addLinkToFootnote = function(index, type) {
-      const textarea = document.getElementById(`fn_input_${index}`);
-      if (!textarea) return;
     
-      let url = "";
-      let text = "";
-      let tag = "";
+    /* =========================================
+       [수정됨] 통합 관리자 핵심 로직 (완전 동적 버전)
+       ========================================= */
+    let g_footnotes = [];
+    let lastFocusedInput = null;
     
-      if (type === 'external') {
-        url = prompt("외부 링크 주소를 입력하세요 (예: https://namu.wiki...)", "https://");
-        if (!url) return;
-        text = prompt("표시할 텍스트를 입력하세요:", "출처");
-        if (!text) return;
-        
-        // 외부 링크: target="_blank" 추가
-        tag = `<a href="${url}" target="_blank">${text}</a>`;
-        
-      } else {
-        url = prompt("내부 링크 주소를 입력하세요 (예: /post/123)", "/");
-        if (!url) return;
-        text = prompt("표시할 텍스트(제목)를 입력하세요:", "관련 문서");
-        if (!text) return;
+    // 1. 모달 열기: 현재 메인 화면의 BODY 슬롯들을 스캔하여 생성
+    window.openIntegratedManager = function() {
+      const container = document.getElementById('viewEdit');
+      container.innerHTML = ""; // 기존 내용 초기화
     
-        // 내부 링크: title 속성 추가 (툴팁용)
-        tag = `<a href="${url}" title="${text}">${text}</a>`;
+      // 메인 화면의 모든 동적 슬롯 중 'BODY'로 시작하는 것만 찾음 (화면 순서대로)
+      const mainSlots = Array.from(document.querySelectorAll('textarea[data-slot]'))
+        .filter(el => el.getAttribute('data-slot').toUpperCase().startsWith('BODY'));
+    
+      if (mainSlots.length === 0) {
+        container.innerHTML = "<div style='padding:20px; color:#999; text-align:center;'>편집할 본문(BODY) 섹션이 없습니다.</div>";
       }
     
-      // 커서 위치에 삽입
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-      const original = textarea.value;
+      // 동적 생성
+      mainSlots.forEach((slotEl, idx) => {
+        const slotName = slotEl.getAttribute('data-slot');
+        const val = slotEl.value;
     
-      const newVal = original.substring(0, start) + tag + original.substring(end);
+        const block = document.createElement('div');
+        block.className = "pm-editor-block";
+        block.innerHTML = `
+          <span class="pm-editor-label">${escapeHtml(slotName)}</span>
+          <textarea class="pm-editor-textarea modal-body-input" 
+                    data-target-slot="${slotName}"
+                    placeholder="${escapeHtml(slotName)} 내용을 입력하세요..."
+                    style="min-height: 200px;">${escapeHtml(val).replace(/&amp;/g, '&')}</textarea> `;
+        
+        // textarea 요소 찾아서 값 직접 주입 (HTML 태그 깨짐 방지) 및 이벤트 연결
+        const ta = block.querySelector('textarea');
+        ta.value = val; 
+        ta.oninput = window.detectFootnotes;
+        ta.onfocus = function() { window.setLastFocus(this); };
+    
+        container.appendChild(block);
+        
+        // 첫 번째 칸에 포커스
+        if(idx === 0) lastFocusedInput = ta;
+      });
       
-      // 값 반영 및 저장
-      textarea.value = newVal;
-      window.updateFootnoteText(index, newVal);
-      textarea.focus();
+      // 초기화
+      window.switchView('edit');
+      window.detectFootnotes();
+      
+      document.getElementById('integratedModal').style.display = 'flex';
     };
-
     
-      // 7. 주석 삭제
-      window.deleteFootnoteTag = function(index) {
-        if(!confirm("본문에서 이 주석 태그를 삭제할까요?")) return;
-        const fn = g_footnotes[index];
-        const targetEl = document.getElementById('edit_body_' + fn.bodyNum);
+    window.closeIntegratedManager = function() {
+      document.getElementById('integratedModal').style.display = 'none';
+    };
+    
+    window.setLastFocus = function(el) {
+      lastFocusedInput = el;
+    };
+    
+    // 2. 탭 전환
+    window.switchView = function(mode) {
+      const vEdit = document.getElementById('viewEdit');
+      const vPrev = document.getElementById('viewPreview');
+      const tabs = document.querySelectorAll('.pm-tab');
+      
+      if(mode === 'edit') {
+        vEdit.style.display = 'block';
+        vPrev.style.display = 'none';
+        tabs[0].classList.add('active');
+        tabs[1].classList.remove('active');
+      } else {
+        renderFullPreview();
+        vEdit.style.display = 'none';
+        vPrev.style.display = 'block';
+        tabs[0].classList.remove('active');
+        tabs[1].classList.add('active');
+      }
+    };
+    
+    // 3. 실시간 주석 감지 (모달 내 모든 textarea 스캔)
+    window.detectFootnotes = function() {
+      const inputs = document.querySelectorAll('#viewEdit .modal-body-input');
+      
+      g_footnotes = [];
+      let globalIdx = 1;
+      const regex = /<a [^>]*data-note="([^"]+)"[^>]*>.*?<\/a>/g;
+    
+      inputs.forEach((ta, i) => {
+        let match;
+        const html = ta.value;
+        while ((match = regex.exec(html)) !== null) {
+          const encoded = match[1];
+          let content = "Error";
+          try { content = decodeURIComponent(encoded); } catch(e){}
+          
+          g_footnotes.push({
+            idx: globalIdx++,
+            content: content,
+            inputIndex: i, // 몇 번째 입력창인지 저장
+            fullTag: match[0]
+          });
+        }
+      });
+    
+      renderFnList();
+    };
+    
+    // 4. 우측 리스트 렌더링 (기존 로직 유지 + data-target 식별)
+    function renderFnList() {
+      const listEl = document.getElementById('fnListArea');
+      document.getElementById('fnTotalCount').textContent = g_footnotes.length;
+      listEl.innerHTML = "";
+    
+      if(g_footnotes.length === 0) {
+        listEl.innerHTML = "<div style='text-align:center; color:#999; margin-top:40px;'>본문에 주석이 없습니다.<br>왼쪽 에디터에서 추가해보세요.</div>";
+        return;
+      }
+    
+      g_footnotes.forEach((fn, i) => {
+        const item = document.createElement('div');
+        item.className = 'fn-live-item';
+        
+        // 어떤 슬롯에 있는 주석인지 표시
+        const inputs = document.querySelectorAll('#viewEdit .modal-body-input');
+        const slotName = inputs[fn.inputIndex] ? inputs[fn.inputIndex].getAttribute('data-target-slot') : '?';
+    
+        item.innerHTML = `
+          <div class="fn-live-head">
+            <span>#${fn.idx} (${slotName})</span>
+            <span style="color:#ef4444; cursor:pointer;" onclick="deleteFootnoteTag(${i})">삭제</span>
+          </div>
+          
+          <div style="display:flex; gap:5px; margin-bottom:5px;">
+            <button class="pm-btn small ghost" style="padding:2px 6px; font-size:11px;" onclick="addLinkToFootnote(${i}, 'external')">🔗 외부링크</button>
+            <button class="pm-btn small ghost" style="padding:2px 6px; font-size:11px;" onclick="addLinkToFootnote(${i}, 'internal')">📄 내부링크</button>
+          </div>
+    
+          <textarea id="fn_input_${i}" class="fn-live-text" oninput="updateFootnoteText(${i}, this.value)">${fn.content}</textarea>
+        `;
+        listEl.appendChild(item);
+      });
+    }
+    
+    // 5. 커서 위치에 주석 태그 추가
+    window.insertFootnoteAtCursor = function() {
+      if (!lastFocusedInput) {
+        alert("왼쪽 에디터를 클릭해서 입력 위치를 선택해주세요.");
+        return;
+      }
+      
+      const content = prompt("주석 내용을 입력하세요:");
+      if (!content) return;
+    
+      const encoded = encodeURIComponent(content);
+      const tempId = Math.random().toString(36).substr(2, 5);
+      const tag = `<a id="ref_${tempId}" href="#note_${tempId}" class="cheese-footnote-ref" data-note="${encoded}">*?</a>`;
+    
+      const start = lastFocusedInput.selectionStart;
+      const end = lastFocusedInput.selectionEnd;
+      const text = lastFocusedInput.value;
+    
+      lastFocusedInput.value = text.substring(0, start) + tag + text.substring(end);
+      lastFocusedInput.focus();
+      
+      detectFootnotes();
+    };
+    
+    // 6. 주석 내용 수정
+    window.updateFootnoteText = function(index, newText) {
+      const fn = g_footnotes[index];
+      const inputs = document.querySelectorAll('#viewEdit .modal-body-input');
+      const targetEl = inputs[fn.inputIndex];
+      
+      if (!targetEl) return;
+    
+      const newEncoded = encodeURIComponent(newText);
+      const newTag = fn.fullTag.replace(/data-note="([^"]+)"/, `data-note="${newEncoded}"`);
+      
+      targetEl.value = targetEl.value.replace(fn.fullTag, newTag);
+      
+      fn.content = newText;
+      fn.fullTag = newTag; 
+    };
+    
+    // 7. 주석 삭제
+    window.deleteFootnoteTag = function(index) {
+      if(!confirm("본문에서 이 주석 태그를 삭제할까요?")) return;
+      const fn = g_footnotes[index];
+      const inputs = document.querySelectorAll('#viewEdit .modal-body-input');
+      const targetEl = inputs[fn.inputIndex];
+    
+      if(targetEl) {
         targetEl.value = targetEl.value.replace(fn.fullTag, '');
         detectFootnotes();
-      };
-      
-      // 8. 미리보기 (HTML 변환)
-      function renderFullPreview() {
-        const previewEl = document.getElementById('viewPreview');
-        let combinedHtml = "";
-        let currentFnIdx = 1;
-        const noteList = [];
-      
-        ['edit_body_1', 'edit_body_2', 'edit_body_3'].forEach((id, i) => {
-          let html = document.getElementById(id).value;
-          // 기존 목록 제거
-          html = html.replace(/(\n\n)?<hr>\s*<ol class="cheese-footnotes">[\s\S]*?<\/ol>/gi, '');
-          
-          // 미리보기용 태그 변환 (*? -> *1)
-          html = html.replace(/<a [^>]*data-note="([^"]+)"[^>]*>.*?<\/a>/g, (m, enc) => {
-            const num = currentFnIdx++;
-            let txt = "";
-            try { txt = decodeURIComponent(enc); } catch(e){}
-            noteList.push({ num, txt });
-            return `<sup style="color:#2563eb; font-weight:bold;">*${num}</sup>`;
-          });
-          
-          // 줄바꿈 처리
-          html = html.replace(/\n/g, '<br>');
-          
-          combinedHtml += `<div style="margin-bottom:30px;">${html}</div>`;
-        });
-      
-        // 하단 목록 생성
-        if(noteList.length > 0) {
-          combinedHtml += `<hr><ol class="cheese-footnotes" style="padding-left:20px; font-size:0.9em; color:#555;">`;
-          noteList.forEach(n => {
-            combinedHtml += `<li style="margin-bottom:5px;">${n.txt}</li>`;
-          });
-          combinedHtml += `</ol>`;
-        }
+      }
+    };
+    
+    // 8. 미리보기 (HTML 변환)
+    function renderFullPreview() {
+      const previewEl = document.getElementById('viewPreview');
+      let combinedHtml = "";
+      let currentFnIdx = 1;
+      const noteList = [];
+      const inputs = document.querySelectorAll('#viewEdit .modal-body-input');
+    
+      inputs.forEach((ta) => {
+        let html = ta.value;
+        // 기존 목록 제거
+        html = html.replace(/(\n\n)?<hr>\s*<ol class="cheese-footnotes">[\s\S]*?<\/ol>/gi, '');
         
-        previewEl.innerHTML = combinedHtml;
+        // 미리보기용 태그 변환
+        html = html.replace(/<a [^>]*data-note="([^"]+)"[^>]*>.*?<\/a>/g, (m, enc) => {
+          const num = currentFnIdx++;
+          let txt = "";
+          try { txt = decodeURIComponent(enc); } catch(e){}
+          noteList.push({ num, txt });
+          return `<sup style="color:#2563eb; font-weight:bold;">*${num}</sup>`;
+        });
+        
+        // 줄바꿈 처리
+        html = html.replace(/\n/g, '<br>');
+        combinedHtml += `<div style="margin-bottom:30px;">${html}</div>`;
+      });
+    
+      // 하단 목록 생성
+      if(noteList.length > 0) {
+        combinedHtml += `<hr><ol class="cheese-footnotes" style="padding-left:20px; font-size:0.9em; color:#555;">`;
+        noteList.forEach(n => {
+          combinedHtml += `<li style="margin-bottom:5px;">${n.txt}</li>`;
+        });
+        combinedHtml += `</ol>`;
       }
       
-      // 9. 최종 적용 (모달 -> 메인화면)
-      window.applyIntegratedChanges = function() {
-        let globalIdx = 1;
-        const notesForList = [];
+      previewEl.innerHTML = combinedHtml;
+    }
+    
+    // 9. 최종 적용 (동적 슬롯 매핑)
+    window.applyIntegratedChanges = function() {
+      let globalIdx = 1;
+      const notesForList = [];
+      const inputs = document.querySelectorAll('#viewEdit .modal-body-input');
+      
+      // 마지막 주석 리스트를 붙일 타겟 찾기 (가장 마지막 슬롯)
+      let lastSlotEl = null;
+    
+      // 각 모달 입력창을 순회하며 원본 슬롯에 반영
+      inputs.forEach(modalTa => {
+        const slotName = modalTa.getAttribute('data-target-slot');
+        // 메인 화면의 해당 슬롯 찾기
+        const mainTa = document.querySelector(`textarea[data-slot="${slotName}"]`);
         
-        // [수정] 모달 ID와 메인 화면 슬롯 매핑 정보
-        // modalId: 모달 안의 textarea ID
-        // slot: 메인 화면의 data-slot 값
-        const map = [
-          { modalId: 'edit_body_1', slot: 'BODY_1', fallback: 'BODY' },
-          { modalId: 'edit_body_2', slot: 'BODY_2' },
-          { modalId: 'edit_body_3', slot: 'BODY_3' }
-        ];
-      
-        // 각 본문 업데이트
-        map.forEach(item => {
-          const modalEl = document.getElementById(item.modalId);
-          if (!modalEl) return;
-      
-          let html = modalEl.value;
+        if (!mainTa) return;
+        lastSlotEl = mainTa; // 마지막 슬롯 갱신
+    
+        let html = modalTa.value;
+        
+        // 기존 목록 제거 (중복 방지)
+        html = html.replace(/(\n\n)?<hr>\s*<ol class="cheese-footnotes">[\s\S]*?<\/ol>/gi, '');
+    
+        // 태그 확정 (*? -> *1, *2...)
+        const regex = /<a [^>]*data-note="([^"]+)"[^>]*>.*?<\/a>/g;
+        html = html.replace(regex, (match, encoded) => {
+          const num = globalIdx++;
+          let content = "";
+          try { content = decodeURIComponent(encoded); } catch(e){}
+          notesForList.push({ num, content });
           
-          // 기존 목록 제거
-          html = html.replace(/(\n\n)?<hr>\s*<ol class="cheese-footnotes">[\s\S]*?<\/ol>/gi, '');
-      
-          // 태그 확정 (*? -> *1, *2...)
-          const regex = /<a [^>]*data-note="([^"]+)"[^>]*>.*?<\/a>/g;
-          html = html.replace(regex, (match, encoded) => {
-            const num = globalIdx++;
-            let content = "";
-            try { content = decodeURIComponent(encoded); } catch(e){}
-            notesForList.push({ num, content });
-            
-            // 최종 태그 포맷
-            return `<a id="fn${num}-ref" href="#fn${num}" class="cheese-footnote-ref" data-note="${encoded}">*${num}</a>`;
-          });
-      
-          // [수정] 메인 화면에 반영 (data-slot 기준 검색)
-          let targetEl = document.querySelector(`textarea[data-slot="${item.slot}"]`);
-          // BODY_1이 없으면 fallback인 BODY를 찾음
-          if (!targetEl && item.fallback) {
-              targetEl = document.querySelector(`textarea[data-slot="${item.fallback}"]`);
-          }
-          
-          if (targetEl) {
-              targetEl.value = html;
-              // 변경 이벤트 발생 (메인 화면 프리뷰 자동 갱신용)
-              targetEl.dispatchEvent(new Event("input", { bubbles:true }));
-          }
+          return `<a id="fn${num}-ref" href="#fn${num}" class="cheese-footnote-ref" data-note="${encoded}">*${num}</a>`;
         });
-      
-        // 마지막 본문에 리스트 붙이기
-        if(notesForList.length > 0) {
-          let listHtml = '\n\n<hr>\n<ol class="cheese-footnotes">';
-          notesForList.forEach(n => {
-            listHtml += `\n  <li id="fn${n.num}">\n    <a href="#fn${n.num}-ref" class="cheese-footnote-index">*${n.num}</a>\n    ${n.content}\n  </li>`;
-          });
-          listHtml += '\n</ol>';
-      
-          // BODY_3 -> BODY_2 -> BODY_1 -> BODY 순으로 존재하는 곳 끝에 붙임
-          const slotsToCheck = ['BODY_3', 'BODY_2', 'BODY_1', 'BODY'];
-          for (const s of slotsToCheck) {
-              const el = document.querySelector(`textarea[data-slot="${s}"]`);
-              if (el) {
-                  el.value = el.value + listHtml;
-                  el.dispatchEvent(new Event("input", { bubbles:true }));
-                  break;
-              }
-          }
-        }
-      
-        closeIntegratedManager();
-      };
+    
+        // 메인 화면 반영
+        mainTa.value = html;
+        mainTa.dispatchEvent(new Event("input", { bubbles:true }));
+      });
+    
+      // 마지막에 주석 리스트 붙이기
+      if(notesForList.length > 0 && lastSlotEl) {
+        let listHtml = '\n\n<hr>\n<ol class="cheese-footnotes">';
+        notesForList.forEach(n => {
+          listHtml += `\n  <li id="fn${n.num}">\n    <a href="#fn${n.num}-ref" class="cheese-footnote-index">*${n.num}</a>\n    ${n.content}\n  </li>`;
+        });
+        listHtml += '\n</ol>';
+    
+        lastSlotEl.value = lastSlotEl.value + listHtml;
+        lastSlotEl.dispatchEvent(new Event("input", { bubbles:true }));
+      }
+    
+      closeIntegratedManager();
+    };
     
     /* ===========================================================
        ✅ [NEW] 섹션 라이브러리 모달 & 추가 로직
