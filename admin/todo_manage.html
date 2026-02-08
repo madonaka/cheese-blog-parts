@@ -1385,10 +1385,12 @@ async function realizeIdea(ideaId) {
     document.getElementById('log-form').reset(); document.getElementById('log-idea-section').style.display='block'; updateLogTaskOptions();
   }
 
-// [수정] 읽기/수정 모드 토글 (텍스트 박스 중복 표시 버그 수정됨)
+// [수정] 읽기/수정 모드 토글 (textarea 중복 표시 완벽 해결)
 function toggleEditMode(isEdit) {
     const form = document.getElementById('todo-form');
-    const inputs = form.querySelectorAll('input, select'); // textarea 제외
+    // [중요] textarea는 별도로 제어하기 위해 여기서 제외합니다.
+    const inputs = form.querySelectorAll('input, select'); 
+    
     const btnSave = document.getElementById('btn-save-submit');
     const btnSwitch = document.getElementById('btn-switch-edit');
     const editActions = document.getElementById('edit-actions'); 
@@ -1408,16 +1410,25 @@ function toggleEditMode(isEdit) {
       // 1. 보기 박스 숨김
       if(viewBox) viewBox.style.display = 'none';
 
-      // 2. 썸머노트 활성화
+      // 2. 썸머노트 활성화 로직
       if (!$('#input-detail').summernote('exists')) {
-        // 처음 켤 때만 textarea를 보여줘서 썸머노트가 잡을 수 있게 함
-        inputBox.style.display = 'block';
-        $('#input-detail').summernote({ height: 250 });
+        // 처음 켤 때: 썸머노트가 붙을 수 있도록 textarea를 잠깐 보여줌
+        inputBox.style.display = 'block'; 
+        $('#input-detail').summernote({ 
+            height: 250,
+            toolbar: [
+              ['style', ['bold', 'italic', 'underline', 'clear']],
+              ['font', ['strikethrough']],
+              ['para', ['ul', 'ol']],
+              ['insert', ['link', 'picture']],
+              ['view', ['fullscreen', 'codeview']]
+            ]
+        });
       } else {
-        // 이미 켜져 있다면, textarea를 건드리지 않음 (썸머노트가 알아서 숨기고 있음)
-        // **중요: 여기서 inputBox.style.display = 'block'을 하면 안 됨!**
+        // 이미 켜져 있을 때: 활성화만 함 (textarea를 건드리지 않음)
         $('#input-detail').summernote('enable');
       }
+
     } else {
       // === [읽기 모드] ===
       inputs.forEach(el => el.disabled = true);
@@ -1425,18 +1436,20 @@ function toggleEditMode(isEdit) {
       if(btnSwitch) btnSwitch.style.display = 'block';
       if(editActions) editActions.style.display = 'none'; 
       
-      // 1. 썸머노트 제거 (툴바 없앰)
+      // 1. 썸머노트가 있다면 파괴 (에디터 UI 제거)
       if ($('#input-detail').summernote('exists')) {
         $('#input-detail').summernote('destroy');
       }
       
-      // 2. 원본 텍스트 박스 숨김 (보기 박스만 남김)
+      // 2. [핵심] 원본 텍스트 박스 강제 숨김
+      // destroy 후에는 textarea가 다시 드러나므로 반드시 숨겨야 합니다.
       inputBox.style.display = 'none';
       
       // 3. 보기 박스 표시
       if(viewBox) viewBox.style.display = 'block';
     }
 }
+  
 function openModal(type) {
   document.getElementById('input-modal').classList.add('open'); 
   document.getElementById('todo-modal-title').textContent = "새 항목 등록"; 
