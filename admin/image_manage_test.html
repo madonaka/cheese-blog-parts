@@ -1510,24 +1510,69 @@
     location.reload(); // 가장 깔끔한 초기화
   };
 
-  // 탭 이동 (외부 호출용)
+// [수정] 탭 이동 및 원본 모드 플로우 제어
   window.moveTab = function(tabNum) {
     const fileInput = document.getElementById("imgFile");
-    if (tabNum == 2 && (!fileInput || !fileInput.files.length)) {
+    
+    // 1. 파일 선택 확인 (Step 1 -> 2/3 이동 시)
+    if (tabNum > 1 && (!fileInput || !fileInput.files.length)) {
        window.showAlert_("파일을 먼저 선택하세요."); return;
     }
     
+    // 2. [핵심] '원본만 저장' 모드면 Step 2(편집) 건너뛰고 Step 3로 직행
+    const isOnlyOrig = document.getElementById("onlyOrigOn")?.checked;
+    if (String(tabNum) === "2" && isOnlyOrig) {
+        tabNum = 3; 
+    }
+    
+    // 3. 탭 및 패널 활성화 UI 처리
     document.querySelectorAll('.im-tab').forEach(b => b.classList.remove('on'));
     document.querySelectorAll('.im-panel').forEach(p => p.classList.remove('on'));
     
     document.querySelector(`.im-tab[data-tab="${tabNum}"]`)?.classList.add('on');
     document.getElementById(`panel-${tabNum}`)?.classList.add('on');
 
-    if(tabNum === 3) {
-       // Step 3 진입 시 UI 정리
-       const isOrig = document.getElementById("onlyOrigOn").checked;
-       document.getElementById("onlyOrigConfirmArea").style.display = isOrig ? "block" : "none";
-       document.getElementById("btnMakePreviews").style.display = isOrig ? "none" : "inline-flex";
+    // 4. Step 3 진입 시 모드에 따른 UI 정리
+    if(String(tabNum) === "3") {
+       const confirmArea = document.getElementById("onlyOrigConfirmArea");
+       const btnPreview = document.getElementById("btnMakePreviews");
+       const btnUpload = document.getElementById("btnUploadSelected");
+       const origNameDisp = document.getElementById("origFileNameDisplay");
+       const scalePick = document.getElementById("scalePick"); // 칩 선택 영역
+       
+       if (isOnlyOrig) {
+           // ✅ [원본 모드]
+           if(confirmArea) confirmArea.style.display = "block";
+           if(btnPreview) btnPreview.style.display = "none"; // 미리보기 생성 버튼 숨김
+           if(scalePick) scalePick.style.display = "none";   // 리사이징 칩 숨김
+           
+           // 파일명 표시
+           if(origNameDisp && fileInput.files[0]) {
+               origNameDisp.textContent = fileInput.files[0].name;
+           }
+           
+           // ✅ [중요] 업로드 버튼 즉시 활성화 & 텍스트 변경
+           if(btnUpload) {
+               btnUpload.disabled = false;
+               btnUpload.textContent = "🚀 원본 파일 바로 업로드";
+               btnUpload.style.backgroundColor = "#2563eb"; // 파란색 강조
+           }
+       } else {
+           // ✅ [일반 모드] (리사이징)
+           if(confirmArea) confirmArea.style.display = "none";
+           if(btnPreview) btnPreview.style.display = "inline-flex";
+           if(scalePick) scalePick.style.display = "flex";
+           
+           // 업로드 버튼 초기화 (미리보기 생성 전까지 비활성)
+           if(btnUpload) {
+               // 이미 생성된 작업이 없다면 비활성화
+               if (typeof jobResults === 'undefined' || jobResults.length === 0) {
+                   btnUpload.disabled = true;
+                   btnUpload.textContent = "선택한 버전 업로드(저장)";
+               }
+               btnUpload.style.backgroundColor = ""; // 원래 색상 복구
+           }
+       }
     }
   };
 
