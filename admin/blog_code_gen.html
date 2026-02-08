@@ -185,6 +185,13 @@
         border-color: #0f172a;
     }
     .bcg-btn--dark:hover { background: #334155; }
+    
+    .bcg-btn--warning {
+        background: #fffbeb;
+        color: #b45309;
+        border-color: #fcd34d;
+    }
+    .bcg-btn--warning:hover { background: #fef3c7; }
 
     .bcg-pill{
       display:inline-flex;
@@ -215,8 +222,12 @@
       opacity:0;
       pointer-events:none;
       transition:opacity .18s ease, transform .18s ease;
+      display:flex; align-items:center; gap:10px;
     }
-    .bcg-toast.show{ opacity:1; transform:translateY(0); }
+    .bcg-toast.show{ opacity:1; transform:translateY(0); pointer-events:auto; }
+    .bcg-toast-btn {
+      background: #fff; color: #0f172a; border: 0; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: bold; cursor: pointer;
+    }
 
     .bcg-grid{ display:grid; grid-template-columns:1fr; gap:10px; }
     .bcg-split{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
@@ -383,14 +394,15 @@
 
   <div class="bcg-global-foot">
     <div class="bcg-global-foot-info">
-        <span>📝 전체 주석(저장됨): <span id="globalFnCount" style="color:#2563eb;">0</span>개</span>
+        <span>📝 전체 주석: <span id="globalFnCount" style="color:#2563eb;">0</span>개</span>
         <button class="bcg-btn bcg-mini" id="viewAllFnBtn" type="button" style="margin-left:8px;">관리/편집</button>
     </div>
     <div class="bcg-global-foot-controls">
+        <button class="bcg-btn bcg-mini bcg-btn--warning" id="cleanupFnBtn" type="button" style="display:none;">🧹 미사용 정리</button>
         <button class="bcg-btn bcg-mini bcg-btn--dark" id="copyAllFnBtn" type="button">주석 목록(li) 복사</button>
         <button class="bcg-btn bcg-mini bcg-btn--primary" id="copyWrapperBtn" type="button">주석 틀(&lt;ol&gt;) 복사</button>
         <div style="width:1px; height:16px; background:#cbd5e1; margin:0 4px;"></div>
-        <button class="bcg-btn bcg-mini bcg-btn--danger" id="resetGlobalFnBtn" type="button">새 글 쓰기(주석 초기화)</button>
+        <button class="bcg-btn bcg-mini bcg-btn--danger" id="resetGlobalFnBtn" type="button">초기화</button>
     </div>
   </div>
 
@@ -481,6 +493,7 @@
       const copyAllFnBtn = document.getElementById("copyAllFnBtn");
       const copyWrapperBtn = document.getElementById("copyWrapperBtn");
       const resetGlobalFnBtn = document.getElementById("resetGlobalFnBtn");
+      const cleanupFnBtn = document.getElementById("cleanupFnBtn");
       const viewAllFnBtn = document.getElementById("viewAllFnBtn");
 
       // Table Builder Elements
@@ -505,11 +518,21 @@
       let activeFnContext = null;
       const STORAGE_KEY = "bcg_global_footnotes";
 
-      function showToast(msg){
-        toast.textContent = msg;
+      function showToast(msg, actionText, actionCallback){
+        toast.innerHTML = `<span>${msg}</span>`;
+        if(actionText && actionCallback) {
+            const btn = document.createElement("button");
+            btn.className = "bcg-toast-btn";
+            btn.textContent = actionText;
+            btn.onclick = () => { actionCallback(); toast.classList.remove("show"); };
+            toast.appendChild(btn);
+        }
         toast.classList.add("show");
+        
+        // 액션 버튼이 있으면 좀 더 오래 표시
+        const delay = actionText ? 5000 : 1600;
         clearTimeout(showToast._t);
-        showToast._t = setTimeout(()=>toast.classList.remove("show"), 1600);
+        showToast._t = setTimeout(()=>toast.classList.remove("show"), delay);
       }
 
       function clampInt_(v, min, max, fallback){
@@ -807,7 +830,7 @@
 
 
       /* ==========================
-         Global Footnote Logic (LocalStorage + Map)
+         Global Footnote Logic
       ========================== */
       function loadGlobalFootnotes() {
         try {
@@ -821,58 +844,94 @@
         updateGlobalFnUI();
       }
 
+      function appendGlobalFootnote(note) {
+        const list = loadGlobalFootnotes();
+        list.push(note);
+        saveGlobalFootnotes(list);
+        return list.length; // return new index
+      }
+
       function updateGlobalFnUI() {
         const map = loadGlobalFootnotes();
-        globalFnCountEl.textContent = Object.keys(map).length;
+        const keys = Object.keys(map);
+        globalFnCountEl.textContent = keys.length;
+        
+        // 미사용 주석 감지 (현재 블록 기준)
+        const currentBodyText = document.querySelector("[data-body]")?.value || "";
+        let usedCount = 0;
+        keys.forEach(uid => {
+            if(currentBodyText.includes(uid)) usedCount++;
+        });
+        
+        if (keys.length > 0 && usedCount < keys.length) {
+            cleanupFnBtn.style.display = "inline-flex";
+            cleanupFnBtn.textContent = `🧹 미사용 ${keys.length - usedCount}개 정리`;
+        } else {
+            cleanupFnBtn.style.display = "none";
+        }
+
         document.querySelectorAll("[data-bcg-block]").forEach(b => {
            if(b.bcgRegenerate) b.bcgRegenerate();
         });
       }
 
-      // 1. Copy All
+      function generateFootnoteListHtml(footnotes, startIdx=1) {
+        if (!footnotes || footnotes.length === 0) return "";
+        let html = "";
+        footnotes.forEach((note, i) => {
+            const idx = startIdx + i;
+            html += `<li id="fn${idx}">\n  <a href="#fn${idx}-ref" class="cheese-footnote-index">*${idx}</a>\n  ${escapeHtmlLite(note)}\n</li>\n`;
+        });
+        return html;
+      }
+
+      // Buttons
       copyAllFnBtn.addEventListener("click", async () => {
-        // 복사는 '현재 활성화된(마지막) 블록'의 regenerate 결과물에 의존하거나, 
-        // 혹은 모든 블록을 순회해서 순서를 계산해야 하는데, 
-        // 여기서는 가장 최근에 계산된 '전체 순서'를 알기 어려움. 
-        // -> 단순히 '저장된 모든 주석'을 복사하는 건 의미가 없음(순서가 중요).
-        // 따라서 각 블록의 regenerate가 돌면서 생성한 list HTML을 사용하는게 맞음.
-        // 편의상 '현재 화면의 첫번째 블록'에서 전체 리스트를 생성하도록 유도해볼 수 있음.
-        // 하지만 사용자가 '마지막 블록'에서 복사 버튼을 누르는게 정석.
-        
-        // 여기선 "저장된 개수"만 알려주고 실제 복사는 블록 내부 버튼을 이용하라고 가이드하거나,
-        // 단순 덤프만 제공.
         showToast("각 블록의 [주석 목록 복사] 버튼을 이용해주세요 (순서 자동 정렬됨)");
       });
 
-      // 2. Copy Wrapper
       copyWrapperBtn.addEventListener("click", async () => {
         const tpl = `\n<hr>\n<ol class="cheese-footnotes">\n  \n</ol>`;
         await copyToClipboard(tpl);
         showToast("주석 틀(<ol>) 복사 완료!");
       });
 
-      // 3. Reset All
       resetGlobalFnBtn.addEventListener("click", () => {
-        if(confirm("정말 초기화할까?\n(새 글을 쓰기 위해 저장된 모든 주석을 지웁니다.)")) {
+        if(confirm("정말 초기화할까?\n(저장된 모든 주석을 지웁니다.)")) {
           localStorage.removeItem(STORAGE_KEY);
           updateGlobalFnUI();
-          showToast("전체 주석이 초기화되었어. 새 글 작성 시작!");
-          
+          showToast("전체 주석 초기화 완료!");
           document.querySelectorAll("[data-bcg-block]").forEach(b => {
             if (b.bcgRegenerate) b.bcgRegenerate();
           });
         }
       });
       
-      // 4. View/Manage
+      // Cleanup Unused (Manually)
+      cleanupFnBtn.addEventListener("click", () => {
+        if(!confirm("현재 본문에 없는 주석들을 삭제할까?")) return;
+        
+        const map = loadGlobalFootnotes();
+        const currentBodyText = document.querySelector("[data-body]")?.value || "";
+        const newMap = {};
+        
+        Object.keys(map).forEach(uid => {
+            if(currentBodyText.includes(uid)) {
+                newMap[uid] = map[uid];
+            }
+        });
+        
+        saveGlobalFootnotes(newMap);
+        showToast("미사용 주석 정리 완료!");
+      });
+      
       viewAllFnBtn.addEventListener("click", () => {
         const map = loadGlobalFootnotes();
         const keys = Object.keys(map);
         if(keys.length === 0) return showToast("데이터가 없어.");
-        
-        let msg = `총 ${keys.length}개의 주석이 저장되어 있어.\n(순서는 본문 배치에 따라 자동 결정됨)\n\n`;
+        let msg = `총 ${keys.length}개의 주석이 저장되어 있어.\n\n`;
         keys.forEach((k, i) => {
-           msg += `[ID: ${k.slice(-4)}] ${map[k].substring(0, 30)}...\n`;
+           msg += `[${i+1}] ${map[k].substring(0, 30)}...\n`;
         });
         alert(msg);
       });
@@ -889,49 +948,30 @@
       }
 
       function buildHtmlAndList(bodyVal, allowTags){
-        // 1. 본문 HTML 변환 (P 태그 감싸기 등)
         let bodyHtml = textToParagraphHtml(bodyVal, !!allowTags);
-
-        // 2. 본문 내의 모든 주석 태그(data-fn-idx 또는 old data-footnote-id) 스캔
-        //    정규식으로 태그 전체와 ID를 캡처
-        //    <a ... data-fn-idx="uniqueID">...</a>
-        //    Legacy: <a ... data-footnote-id="fn1">...</a> (이 경우 fn1을 ID로 취급)
-        
         const map = loadGlobalFootnotes();
         const foundIds = [];
-        
-        // 정규식: data-fn-idx="..." OR data-footnote-id="..."
         const re = /<a [^>]*data-(?:fn-idx|footnote-id)="([^"]+)"[^>]*>.*?<\/a>/g;
         
-        // 순서대로 ID 수집
         let m;
         while ((m = re.exec(bodyHtml)) !== null) {
             foundIds.push(m[1]);
         }
         
-        // 중복 제거 (같은 주석을 여러번 쓸 수도 있으니 순서 유지하며 첫 등장 기준? 아니면 등장할 때마다 번호 매김? 보통은 전자)
         const uniqueIds = [...new Set(foundIds)];
-        
-        // 3. 재번호 매기기 (Replacing)
-        //    본문 HTML 내의 태그를 순서에 맞는 번호(*1, *2...)로 교체
         let finalBody = bodyHtml;
         let listHtml = "";
         
         if (uniqueIds.length > 0) {
-            // 리스트 생성
             uniqueIds.forEach((uid, i) => {
                 const num = i + 1;
                 const content = map[uid] || "(삭제된 주석)";
                 listHtml += `<li id="fn${num}">\n  <a href="#fn${num}-ref" class="cheese-footnote-index">*${num}</a>\n  ${escapeHtmlLite(content)}\n</li>\n`;
             });
 
-            // 본문 치환 (주의: 문자열 replaceAll은 글로벌 치환이므로, ID별로 찾아서 교체)
             uniqueIds.forEach((uid, i) => {
                 const num = i + 1;
-                // 해당 ID를 가진 모든 태그를 찾아서 교체
-                // 검색 패턴: data-fn-idx="uid" 혹은 data-footnote-id="uid"
                 const targetRe = new RegExp(`<a [^>]*data-(?:fn-idx|footnote-id)="${escapeRegExp(uid)}"[^>]*>.*?<\/a>`, "g");
-                
                 finalBody = finalBody.replace(targetRe, 
                     `<a id="fn${num}-ref" href="#fn${num}" class="cheese-footnote-index" data-footnote-id="fn${num}">*${num}</a>`
                 );
@@ -952,8 +992,8 @@
         wrap.className = "bcg-card";
         wrap.setAttribute("data-bcg-block", id);
         
-        // 데이터 저장소 (로컬 인메모리 - 필요없음, 전역 Map 사용)
-        
+        wrap.bcgData = { footnotes: [] };
+
         wrap.innerHTML = `
           <div class="bcg-row">
             <span class="bcg-badge">블록 #${seq}</span>
@@ -1081,14 +1121,11 @@
         const bgEl = wrap.querySelector("[data-bg]");
 
         function regenerate(){
-            // 본문 재조립 및 주석 재번호 부여 (핵심 로직)
             const result = buildHtmlAndList(bodyEl.value, keepRawEl.checked);
             
-            // 상태 업데이트
             fnStatusEl.textContent = `${result.count}개 (자동정렬)`;
-            startIdxEl.value = 1; // 항상 1번부터 (자동정렬이므로)
+            startIdxEl.value = 1; 
 
-            // 제목 + 본문 조립
             const tag = (levelEl.value === "h1" || levelEl.value === "h2" || levelEl.value === "h3") ? levelEl.value : "h2";
             const headText = escapeHtmlLite(String(headingEl.value ?? "").trim());
             const headPart = headText ? `<${tag}>${headText}</${tag}>` : "";
@@ -1098,10 +1135,10 @@
             outEl.value = finalHtml;
             outLiEl.value = result.list;
             
-            // 미리보기 업데이트
             if (prevEl) {
                prevEl.innerHTML = finalHtml + (result.list ? `<hr><ol class="cheese-footnotes">${result.list}</ol>` : "");
             }
+            updateGlobalFnUI(); // 내용 변경될 때마다 하단 상태 업데이트
         }
         
         wrap.bcgRegenerate = regenerate;
@@ -1200,16 +1237,12 @@
             if (fmt === "footnote") {
                openFnModal({
                  onConfirm: (noteContent) => {
-                    // 고유 ID 생성 (타임스탬프 + 랜덤)
                     const uid = "fn_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5);
                     
-                    // 전역 저장소에 내용 저장
                     const map = loadGlobalFootnotes();
                     map[uid] = noteContent;
                     saveGlobalFootnotes(map);
 
-                    // 본문에 삽입 (번호는 *? 로 표시해두고 regenerate 시 자동계산)
-                    // 핵심: data-fn-idx 속성에 고유 ID를 저장
                     restoreSel_();
                     const linkTag = `<a id="${uid}-ref" href="#${uid}" class="cheese-footnote-ref" data-fn-idx="${uid}">*?</a>`;
                     insertAtSelection(bodyEl, linkTag);
@@ -1257,15 +1290,27 @@
       window.addEventListener("message", (e) => {
         if (e.data && e.data.type === 'CH_LOAD_DATA') {
           const content = e.data.content || "";
+          
+          // 기존 주석 데이터가 있는데 불러온 본문이 비어있다면, 초기화 제안
+          const map = loadGlobalFootnotes();
+          if (!content.trim() && Object.keys(map).length > 0) {
+             showToast("새 글 쓰기 위해 주석을 초기화할까?", "초기화", () => {
+                 localStorage.removeItem(STORAGE_KEY);
+                 updateGlobalFnUI();
+             });
+          }
+
           const firstBlock = elBlocks.querySelector("[data-bcg-block]");
-          if (firstBlock && content.trim()) {
+          if (firstBlock) {
             const bodyEl = firstBlock.querySelector("[data-body]");
             const keepRawEl = firstBlock.querySelector("[data-keep-raw]");
             if (bodyEl) {
                 bodyEl.value = content;
-                if (keepRawEl) keepRawEl.checked = true;
+                if (content.trim()) {
+                    if (keepRawEl) keepRawEl.checked = true;
+                    showToast("내용 불러오기 완료!");
+                }
                 bodyEl.dispatchEvent(new Event("input"));
-                showToast("불러오기 완료!");
             }
           }
         }
