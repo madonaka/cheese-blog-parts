@@ -868,18 +868,19 @@
       renderList(lastListItems);
     };
 
-function renderList(items){
+// [수정] 목록 렌더링 함수 (원본/리사이징 명확히 구분)
+    function renderList(items){
       const q = String($listFilter.value || "").trim().toLowerCase();
       const filtered = (items || []).filter(it => {
         const searchMatch = !q || String(it.id||"").toLowerCase().includes(q) || String(it.base_name||"").toLowerCase().includes(q);
         if (!searchMatch) return false;
         
-        // ✅ [수정 1] "ORIG" 문자열 또는 숫자 100일 경우 모두 원본으로 인식
-        const isPureOrig = (it.scale_pct === "ORIG" || it.scale_pct == 100);
+        // ✅ [판별 기준 변경] 100%라고 원본 아님. 파일명에 "_ORIG"가 있어야 진짜 원본.
+        const isTrueOrig = String(it.base_name).includes("_ORIG") || it.scale_pct === "ORIG";
         
         const hasBackup = !!it.orig_drive_view_url;
-        if (currentFilterType === 'orig') return isPureOrig || hasBackup;
-        if (currentFilterType === 'resized') return !isPureOrig;
+        if (currentFilterType === 'orig') return isTrueOrig || hasBackup;
+        if (currentFilterType === 'resized') return !isTrueOrig;
         return true;
       });
 
@@ -891,24 +892,29 @@ function renderList(items){
       }
 
       for (const it of filtered) {
-        // ✅ [수정 2] 여기서도 100을 원본으로 인식하도록 동일하게 수정
-        const isPureOrig = (it.scale_pct === "ORIG" || it.scale_pct == 100);
+        // ✅ 파일명에 _ORIG 가 포함되어 있어야만 빨간 배지(원본) 적용
+        const isTrueOrig = String(it.base_name).includes("_ORIG") || it.scale_pct === "ORIG";
+        const showAsOrig = (currentFilterType === 'orig') || isTrueOrig;
         
-        const showAsOrig = (currentFilterType === 'orig') || isPureOrig;
-        const title = (showAsOrig && it.orig_drive_name) ? it.orig_drive_name : (it.base_name || it.id);
-        const driveLink = showAsOrig ? (it.orig_drive_view_url || "#") : (it.drive_view_url || "#");
+        const title = (showAsOrig && !isTrueOrig && it.orig_drive_name) 
+          ? it.orig_drive_name 
+          : (it.base_name || it.id);
+
+        // ✅ [링크 수정] 엉뚱한 백업 경로가 아니라, 현재 행의 파일 경로를 엽니다.
+        // 독립 업로드 방식이므로 본인 파일 링크(drive_view_url)가 맞습니다.
+        const driveLink = it.drive_view_url || "#";
         const thumbSrc = it.img_src || "https://ssl.gstatic.com/images/branding/product/1x/drive_2020q4_48dp.png";
 
         const card = document.createElement("div");
         card.className = "im-clean-item";
         
-        // 배지 표시 로직
+        // 배지 HTML
         let badgeHtml = "";
-        if (showAsOrig) {
-           badgeHtml = isPureOrig 
-             ? `<span class="im-badge orig">ORIGINAL</span>` 
-             : `<span class="im-badge orig">ORIG (Backup)</span>`;
+        if (isTrueOrig) {
+           // 진짜 원본인 경우
+           badgeHtml = `<span class="im-badge orig">ORIGINAL</span>`;
         } else {
+           // 100%여도 원본이 아니면 파란색 배지
            badgeHtml = `<span class="im-badge resized">${it.scale_pct}%</span>`;
         }
 
@@ -1056,16 +1062,14 @@ function renderList(items){
       }
     });
 
-// ====== [핵심] 일괄 업로드 버튼 (최종 수정판) ======
+// ====== [핵심] 일괄 업로드 버튼 (원본 경로 준수 & 리사이징 구분) ======
     $btnUpload.addEventListener("click", async () => {
       const origFile = $file.files?.[0];
       if (!origFile) { window.showAlert_("파일이 선택되지 않았습니다."); return; }
 
-      // 1. 파일명 결정
+      // 1. 기본 파일명 정리
       const userBaseName = safeTrim($baseName.value);
       const origNameOnly = origFile.name.substring(0, origFile.name.lastIndexOf('.')) || origFile.name;
-      
-      // ✅ [수정 3] 파일명 단순화: 입력값이 있으면 그것만, 없으면 원본명만 (중복 결합 금지)
       const finalBaseName = userBaseName || origNameOnly;
 
       const isOnlyOrig = document.getElementById("onlyOrigOn")?.checked || false;
@@ -1080,38 +1084,37 @@ function renderList(items){
 
       try {
         // ------------------------------------------------------------
-        // [1] 원본 파일 저장 (독립 전송)
+        // [1] 진짜 원본 파일 저장 (서버의 별도 URL 경로에 저장)
         // ------------------------------------------------------------
         if (isOnlyOrig || shouldSaveOrig) {
-          window.setBusy_(true, "원본 파일 저장 중...");
+          window.setBusy_(true, "원본 파일 백업 중...");
           const b64 = await blobToBase64(origFile);
           
           const payload = {
             mode: "upload",
             mime: origFile.type,
             base64: b64, 
-            save_orig: true,
-            only_orig: true, 
+            save_orig: true, // 서버 원본 폴더 저장 트리거
+            only_orig: true, // 리사이징 처리 건너뛰기
             orig_base64: b64, 
             orig_mime: origFile.type,
             
             meta: {
-              base_name: finalBaseName, // ✅ 깔끔한 이름 전달
+              // ✅ [핵심] 원본임을 식별하기 위해 이름 끝에 _ORIG 추가
+              base_name: finalBaseName + "_ORIG", 
               version: version,
               scale: 1.0, 
-              
-              // ✅ [수정 4] #NUM! 오류 방지: 숫자 100 전송
-              // (아래 2단계에서 renderList를 수정해야 'ORIGINAL' 배지가 뜸)
-              scale_pct: 100, 
-              
+              scale_pct: 100, // #NUM! 방지용 숫자
               orig_w: origW, orig_h: origH, bytes: origFile.size
             }
           };
 
           const res = await window.apiPost(payload);
+          // only_orig=true일 때 서버는 orig_drive_url 등을 반환함
           const savedName = res.orig_drive_name || res.drive_name || "Original";
           successLogs.push(`\n${res.snippet || ""}`);
           
+          // '원본만 저장' 모드면 여기서 끝
           if (isOnlyOrig) {
             finishUpload(successLogs);
             return;
@@ -1119,7 +1122,7 @@ function renderList(items){
         }
 
         // ------------------------------------------------------------
-        // [2] 가공 이미지(리사이징) 저장
+        // [2] 리사이징/가공 이미지 저장 (100% 포함)
         // ------------------------------------------------------------
         if (jobResults.length === 0) {
            if(shouldSaveOrig) { finishUpload(successLogs); return; }
@@ -1134,30 +1137,26 @@ function renderList(items){
           window.setBusy_(true, `가공본 업로드 중 (${i+1}/${jobResults.length})...`);
           
           const res = jobResults[i];
-          const cfg = res.config; // 작업 생성 당시 저장된 설정값
+          const cfg = res.config;
           const b64 = await blobToBase64(res.blob);
           const pct = Math.round(cfg.scale * 100);
 
-          // ✅ [수정 5] 가공본 파일명 생성 (태그 적용 확인)
+          // ✅ 리사이징 파일명 생성 (괄호, blur 제거)
           let nameForJob = finalBaseName;
           
-          // 태그가 있으면 붙이기 (예: _(태그))
+          // 태그가 있으면 깔끔하게 '_태그' 붙이기
           if (cfg.userTag) {
-             nameForJob += `_(${cfg.userTag})`; 
+             nameForJob += `_${cfg.userTag}`; 
           }
           
-          // 블러가 있으면 붙이기
-          if (cfg.blurPx > 0) {
-             nameForJob += `_blur`;
-          }
-          
-          // 최종: "입력명_(태그)_blur" -> 서버가 ID, 날짜 등을 붙여서 저장함
+          // 100% 리사이징인 경우 원본과 이름 겹치지 않게 (선택사항)
+          // 원본은 _ORIG가 붙으므로 겹치지 않음. 그대로 진행.
 
           const payload = {
             mode: "upload",
             mime: "image/jpeg",
             base64: b64,
-            save_orig: false,
+            save_orig: false, // 여기서는 원본 저장 안 함
             orig_base64: "",
             
             meta: {
