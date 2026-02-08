@@ -9,7 +9,7 @@
 
   <style>
     /* ===== page local styles ===== */
-    .bcg-wrap{ padding:14px; padding-bottom: 60px; /* 하단 바 공간 */ }
+    .bcg-wrap{ padding:14px; padding-bottom: 60px; }
 
     .bcg-hero{
       display:flex; align-items:flex-start; justify-content:space-between; gap:12px;
@@ -421,10 +421,12 @@
         return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
       }
 
+      // ✅ [중요] 허용 태그 정규식에 목록(ol, ul, li) 및 hr, a, div 추가
       function protectAllowedTags_(s){
         const src = String(s ?? "");
         const map = [];
-        const re = /<\/?(?:strong|em|u|s)\s*>|<br\s*\/?>|<mark\s+style="background:\s*#[0-9a-fA-F]{3,8}\s*"\s*>|<\/mark>|<span\s+style="color:\s*#[0-9a-fA-F]{3,8}\s*"\s*>|<\/span>|<table\s+class="cheese-table"\s*>|<\/table>|<thead\s*>|<\/thead>|<tbody\s*>|<\/tbody>|<tr\s*>|<\/tr>|<th\s*>|<\/th>|<td\s*>|<\/td>|<caption\s*>|<\/caption>|<a\s+[^>]*cheese-footnote-ref[^>]*>.*?<\/a>/gi;
+        // hr, ol, ul, li, a, div 등을 포함하여 보호
+        const re = /<\/?(?:strong|em|u|s)\s*>|<br\s*\/?>|<mark\s+style="background:\s*#[0-9a-fA-F]{3,8}\s*"\s*>|<\/mark>|<span\s+style="color:\s*#[0-9a-fA-F]{3,8}\s*"\s*>|<\/span>|<table\s+class="cheese-table"\s*>|<\/table>|<thead\s*>|<\/thead>|<tbody\s*>|<\/tbody>|<tr\s*>|<\/tr>|<th\s*>|<\/th>|<td\s*>|<\/td>|<caption\s*>|<\/caption>|<a\s+[^>]*cheese-footnote-ref[^>]*>.*?<\/a>|<hr\s*\/?>|<\/?ol[^>]*>|<\/?ul[^>]*>|<\/?li[^>]*>|<\/?a[^>]*>|<\/?div[^>]*>/gi;
         const out = src.replace(re, (m)=>{
           const key = `@@ALLOWED_TAG_${map.length}@@`;
           map.push(m);
@@ -452,9 +454,13 @@
         if (chunks.length === 0) return "";
         return chunks.map(chunk => {
           const trimmedChunk = chunk.trim();
-          if (allowTags && /^<table\b/i.test(trimmedChunk) && /<\/table>\s*$/i.test(trimmedChunk)) {
-            return escapeText_(trimmedChunk, allowTags);
+          
+          // ✅ [중요] 블록 레벨 태그로 시작하면 <p> 감싸기 건너뛰기
+          // (Table, OL, UL, HR, DIV, BLOCKQUOTE 등)
+          if (allowTags && /^(<table|<ol|<ul|<div|<hr|<blockquote|<pre)/i.test(trimmedChunk)) {
+             return escapeText_(trimmedChunk, allowTags);
           }
+
           const brOnlyRegex = /^(<br\s*\/?>)+$/i;
           if (brOnlyRegex.test(trimmedChunk.replace(/\s/g, ''))) return trimmedChunk; 
           
@@ -896,14 +902,8 @@
 
         // 시작 번호 자동 설정
         function checkStartIdx() {
-           // 현재 글로벌 총 개수 + 1로 설정 (블록이 1개일 때를 가정)
-           // 만약 이 블록이 이미 생성된 후라면, 사용자가 수동으로 바꾼 값은 유지해야 할 수도 있음.
-           // 여기서는 단순하게 "로드 시점의 전체 개수 + 1"을 기본값으로 둠.
            if (!wrap.bcgData.hasManualIdx) {
               const globalList = loadGlobalFootnotes();
-              // 이 블록이 로컬에 가지고 있는 주석 수만큼은 빼줘야 '시작점'이 됨? 
-              // 아니, 이 블록은 '다음' 블록이라고 가정. 
-              // 가장 안전한 건: 로드 시점의 전체 개수 + 1
               startIdxEl.value = globalList.length + 1;
            }
         }
@@ -1031,7 +1031,6 @@
                 const newTotalCount = appendGlobalFootnote(noteContent);
                 
                 // 3. 현재 주석의 번호는? 
-                //    (방금 추가된 것이 전체의 newTotalCount 번째임)
                 const currentIdx = newTotalCount;
 
                 restoreSel_();
