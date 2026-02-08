@@ -279,7 +279,7 @@
       justify-content:center;
       padding:16px;
       z-index:10000;
-      backdrop-filter: blur(2px); /* 살짝 블러 효과 */
+      backdrop-filter: blur(2px);
     }
     .bcg-modal-backdrop[hidden]{display:none !important;}
     
@@ -371,8 +371,8 @@
             <div class="bcg-sep"></div>
             <div class="bcg-row">
               <span class="bcg-muted">
-                ※ 주석 시스템: 작성한 주석은 <b>브라우저에 자동 저장</b>되어 다음 Body 작성 시에도 번호가 이어집니다.
-                글 작성이 끝나면 하단의 <b>[새 글 쓰기]</b>를 눌러 주석을 초기화해주세요.
+                ※ 주석 시스템: <b>자동 재정렬</b> 기능이 켜져 있어. 
+                주석을 중간에 삽입하면, 전체 내용을 스캔해서 위에서부터 1, 2, 3 순서로 번호를 다시 매겨줘.
               </span>
             </div>
           </div>
@@ -428,7 +428,7 @@
       </div>
       <div class="bcg-modal-body">
          <div style="display:flex; flex-direction:column; gap:8px;">
-            <span class="bcg-muted">본문에 번호(ex: *1)가 붙고, 주석 내용은 하단 목록에 추가됩니다.</span>
+            <span class="bcg-muted">본문에 주석 태그가 삽입되고, 번호는 <b>문서 내 위치 순서대로</b> 자동 정리됩니다.</span>
             <textarea id="fnInput" class="bcg-textarea" style="min-height:120px;" placeholder="주석 내용을 입력하세요..."></textarea>
          </div>
       </div>
@@ -522,11 +522,9 @@
         return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
       }
 
-      // ✅ [핵심 수정] P 태그를 포함하여 이스케이프 금지 목록 강화
       function protectAllowedTags_(s){
         const src = String(s ?? "");
         const map = [];
-        // 기본 서식 + 블록 요소(p, hr, ol, ul, li 등) + 주석(a) 보호
         const re = /<\/?(?:strong|em|u|s)\s*>|<br\s*\/?>|<mark\s+style="background:\s*#[0-9a-fA-F]{3,8}\s*"\s*>|<\/mark>|<span\s+style="color:\s*#[0-9a-fA-F]{3,8}\s*"\s*>|<\/span>|<table\s+class="cheese-table"\s*>|<\/table>|<thead\s*>|<\/thead>|<tbody\s*>|<\/tbody>|<tr\s*>|<\/tr>|<th\s*>|<\/th>|<td\s*>|<\/td>|<caption\s*>|<\/caption>|<a\s+[^>]*cheese-footnote-ref[^>]*>.*?<\/a>|<hr\s*\/?>|<\/?ol[^>]*>|<\/?ul[^>]*>|<\/?li[^>]*>|<\/?a[^>]*>|<\/?div[^>]*>|<\/?blockquote[^>]*>|<\/?pre[^>]*>|<\/?p[^>]*>/gi;
         const out = src.replace(re, (m)=>{
           const key = `@@ALLOWED_TAG_${map.length}@@`;
@@ -555,11 +553,9 @@
         if (chunks.length === 0) return "";
         return chunks.map(chunk => {
           const trimmedChunk = chunk.trim();
-          // ✅ [핵심 수정] 문단 태그(<p>)로 시작하면 자동 P 래핑 건너뛰기
           if (allowTags && /^(<p\b|<table|<ol|<ul|<div|<hr|<blockquote|<pre)/i.test(trimmedChunk)) {
              return escapeText_(trimmedChunk, allowTags);
           }
-          
           const brOnlyRegex = /^(<br\s*\/?>)+$/i;
           if (brOnlyRegex.test(trimmedChunk.replace(/\s/g, ''))) return trimmedChunk; 
           
@@ -811,52 +807,41 @@
 
 
       /* ==========================
-         Global Footnote Logic (LocalStorage)
+         Global Footnote Logic (LocalStorage + Map)
       ========================== */
       function loadGlobalFootnotes() {
         try {
           const s = localStorage.getItem(STORAGE_KEY);
-          return s ? JSON.parse(s) : [];
-        } catch(e) { return []; }
+          return s ? JSON.parse(s) : {};
+        } catch(e) { return {}; }
       }
 
-      function saveGlobalFootnotes(list) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+      function saveGlobalFootnotes(map) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
         updateGlobalFnUI();
       }
 
-      function appendGlobalFootnote(note) {
-        const list = loadGlobalFootnotes();
-        list.push(note);
-        saveGlobalFootnotes(list);
-        return list.length; // return new index
-      }
-
       function updateGlobalFnUI() {
-        const list = loadGlobalFootnotes();
-        globalFnCountEl.textContent = list.length;
+        const map = loadGlobalFootnotes();
+        globalFnCountEl.textContent = Object.keys(map).length;
         document.querySelectorAll("[data-bcg-block]").forEach(b => {
-           if(b.bcgCheckStartIdx) b.bcgCheckStartIdx();
+           if(b.bcgRegenerate) b.bcgRegenerate();
         });
-      }
-
-      function generateFootnoteListHtml(footnotes, startIdx=1) {
-        if (!footnotes || footnotes.length === 0) return "";
-        let html = "";
-        footnotes.forEach((note, i) => {
-            const idx = startIdx + i;
-            html += `<li id="fn${idx}">\n  <a href="#fn${idx}-ref" class="cheese-footnote-index">*${idx}</a>\n  ${escapeHtmlLite(note)}\n</li>\n`;
-        });
-        return html;
       }
 
       // 1. Copy All
       copyAllFnBtn.addEventListener("click", async () => {
-        const list = loadGlobalFootnotes();
-        if (list.length === 0) return showToast("저장된 주석이 없어.");
-        const html = generateFootnoteListHtml(list, 1);
-        await copyToClipboard(html);
-        showToast("전체 주석 목록(li) 복사 완료!");
+        // 복사는 '현재 활성화된(마지막) 블록'의 regenerate 결과물에 의존하거나, 
+        // 혹은 모든 블록을 순회해서 순서를 계산해야 하는데, 
+        // 여기서는 가장 최근에 계산된 '전체 순서'를 알기 어려움. 
+        // -> 단순히 '저장된 모든 주석'을 복사하는 건 의미가 없음(순서가 중요).
+        // 따라서 각 블록의 regenerate가 돌면서 생성한 list HTML을 사용하는게 맞음.
+        // 편의상 '현재 화면의 첫번째 블록'에서 전체 리스트를 생성하도록 유도해볼 수 있음.
+        // 하지만 사용자가 '마지막 블록'에서 복사 버튼을 누르는게 정석.
+        
+        // 여기선 "저장된 개수"만 알려주고 실제 복사는 블록 내부 버튼을 이용하라고 가이드하거나,
+        // 단순 덤프만 제공.
+        showToast("각 블록의 [주석 목록 복사] 버튼을 이용해주세요 (순서 자동 정렬됨)");
       });
 
       // 2. Copy Wrapper
@@ -874,7 +859,6 @@
           showToast("전체 주석이 초기화되었어. 새 글 작성 시작!");
           
           document.querySelectorAll("[data-bcg-block]").forEach(b => {
-            if (b.bcgData) b.bcgData.footnotes = [];
             if (b.bcgRegenerate) b.bcgRegenerate();
           });
         }
@@ -882,11 +866,15 @@
       
       // 4. View/Manage
       viewAllFnBtn.addEventListener("click", () => {
-        const list = loadGlobalFootnotes();
-        if(list.length === 0) return showToast("데이터가 없어.");
+        const map = loadGlobalFootnotes();
+        const keys = Object.keys(map);
+        if(keys.length === 0) return showToast("데이터가 없어.");
         
-        const preview = list.map((n, i) => `[${i+1}] ${n}`).join("\n");
-        const newRaw = prompt("현재 저장된 주석 목록이야. (수정 불가, 확인용)\n\n" + preview + "\n\n편집 기능을 넣으려면 코드를 더 짜야 해... 😅");
+        let msg = `총 ${keys.length}개의 주석이 저장되어 있어.\n(순서는 본문 배치에 따라 자동 결정됨)\n\n`;
+        keys.forEach((k, i) => {
+           msg += `[ID: ${k.slice(-4)}] ${map[k].substring(0, 30)}...\n`;
+        });
+        alert(msg);
       });
 
       updateGlobalFnUI();
@@ -900,20 +888,61 @@
         pill.textContent = `블록 ${n}개`;
       }
 
-      function buildHtml({level, heading, body, allowTags, includeList, myFootnotes, myStartIndex}){
-        const tag = (level === "h1" || level === "h2" || level === "h3") ? level : "h2";
-        const headText = escapeHtmlLite(String(heading ?? "").trim());
-        const bodyHtml = textToParagraphHtml(body, !!allowTags);
-        const headPart = headText ? `<${tag}>${headText}</${tag}>` : "";
-        
-        const parts = [headPart, bodyHtml].filter(Boolean);
+      function buildHtmlAndList(bodyVal, allowTags){
+        // 1. 본문 HTML 변환 (P 태그 감싸기 등)
+        let bodyHtml = textToParagraphHtml(bodyVal, !!allowTags);
 
-        if (includeList && myFootnotes && myFootnotes.length > 0) {
-            const listHtml = generateFootnoteListHtml(myFootnotes, myStartIndex);
-            parts.push(`\n<hr>\n<ol class="cheese-footnotes">\n${listHtml}</ol>`);
+        // 2. 본문 내의 모든 주석 태그(data-fn-idx 또는 old data-footnote-id) 스캔
+        //    정규식으로 태그 전체와 ID를 캡처
+        //    <a ... data-fn-idx="uniqueID">...</a>
+        //    Legacy: <a ... data-footnote-id="fn1">...</a> (이 경우 fn1을 ID로 취급)
+        
+        const map = loadGlobalFootnotes();
+        const foundIds = [];
+        
+        // 정규식: data-fn-idx="..." OR data-footnote-id="..."
+        const re = /<a [^>]*data-(?:fn-idx|footnote-id)="([^"]+)"[^>]*>.*?<\/a>/g;
+        
+        // 순서대로 ID 수집
+        let m;
+        while ((m = re.exec(bodyHtml)) !== null) {
+            foundIds.push(m[1]);
+        }
+        
+        // 중복 제거 (같은 주석을 여러번 쓸 수도 있으니 순서 유지하며 첫 등장 기준? 아니면 등장할 때마다 번호 매김? 보통은 전자)
+        const uniqueIds = [...new Set(foundIds)];
+        
+        // 3. 재번호 매기기 (Replacing)
+        //    본문 HTML 내의 태그를 순서에 맞는 번호(*1, *2...)로 교체
+        let finalBody = bodyHtml;
+        let listHtml = "";
+        
+        if (uniqueIds.length > 0) {
+            // 리스트 생성
+            uniqueIds.forEach((uid, i) => {
+                const num = i + 1;
+                const content = map[uid] || "(삭제된 주석)";
+                listHtml += `<li id="fn${num}">\n  <a href="#fn${num}-ref" class="cheese-footnote-index">*${num}</a>\n  ${escapeHtmlLite(content)}\n</li>\n`;
+            });
+
+            // 본문 치환 (주의: 문자열 replaceAll은 글로벌 치환이므로, ID별로 찾아서 교체)
+            uniqueIds.forEach((uid, i) => {
+                const num = i + 1;
+                // 해당 ID를 가진 모든 태그를 찾아서 교체
+                // 검색 패턴: data-fn-idx="uid" 혹은 data-footnote-id="uid"
+                const targetRe = new RegExp(`<a [^>]*data-(?:fn-idx|footnote-id)="${escapeRegExp(uid)}"[^>]*>.*?<\/a>`, "g");
+                
+                finalBody = finalBody.replace(targetRe, 
+                    `<a id="fn${num}-ref" href="#fn${num}" class="cheese-footnote-index" data-footnote-id="fn${num}">*${num}</a>`
+                );
+            });
         }
 
-        return parts.join("\n");
+        return { body: finalBody, list: listHtml, count: uniqueIds.length };
+      }
+      
+      function escapeRegExp(string) {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       }
 
       function createBlock(){
@@ -923,15 +952,15 @@
         wrap.className = "bcg-card";
         wrap.setAttribute("data-bcg-block", id);
         
-        wrap.bcgData = { footnotes: [] };
-
+        // 데이터 저장소 (로컬 인메모리 - 필요없음, 전역 Map 사용)
+        
         wrap.innerHTML = `
           <div class="bcg-row">
             <span class="bcg-badge">블록 #${seq}</span>
             <div class="bcg-right bcg-row" style="margin-top:0;">
               <div style="display:flex; align-items:center; gap:6px; margin-right:10px;">
                 <span class="bcg-label" style="margin-bottom:0;">시작 번호:</span>
-                <input type="number" data-start-idx class="bcg-input bcg-num" value="1" min="1" style="width:60px; height:32px; padding:4px;">
+                <input type="number" data-start-idx class="bcg-input bcg-num" value="1" min="1" style="width:60px; height:32px; padding:4px;" disabled title="자동 정렬 모드에서는 1번부터 시작합니다.">
               </div>
               <label class="bcg-check">
                 <input type="checkbox" data-keep-raw />
@@ -958,8 +987,7 @@
               
               <div class="bcg-row" style="background:rgba(15,23,42,0.02); padding:8px 10px; border-radius:8px;">
                 <span class="bcg-label">주석 추가:</span>
-                <span class="bcg-muted" data-fn-status>이 블록 0개</span>
-                <button class="bcg-btn bcg-mini bcg-btn--danger" type="button" data-fn-reset style="padding:2px 8px; font-size:11px; margin-left:auto;">로컬 초기화</button>
+                <span class="bcg-muted" data-fn-status>0개 (자동정렬)</span>
               </div>
 
               <div class="bcg-row">
@@ -1007,11 +1035,20 @@
               <div class="bcg-row">
                 <div style="display:flex; flex-direction:column; gap:6px; width:100%;">
                   <div style="display:flex; align-items:center; justify-content:space-between;">
-                    <span class="bcg-label">1. 본문 코드 (Body에 넣기)</span>
+                    <span class="bcg-label">1. 본문 코드 (자동 재정렬됨)</span>
                     <button class="bcg-btn bcg-mini bcg-btn--primary" type="button" data-copy>본문 복사</button>
                   </div>
                   <textarea class="bcg-output" data-output readonly placeholder="본문용 HTML"></textarea>
                   
+                  <div style="display:flex; align-items:center; justify-content:space-between; margin-top:10px;">
+                     <span class="bcg-label">2. 주석 목록 코드 (자동 순서)</span>
+                     <div style="display:flex; gap:4px;">
+                       <button class="bcg-btn bcg-mini" type="button" data-copy-li title="<li>...</li> 태그만 복사합니다">주석(li) 복사</button>
+                       <button class="bcg-btn bcg-mini" type="button" data-copy-wrapper title="<ol> 틀 코드를 복사합니다">주석 틀(<ol>) 복사</button>
+                     </div>
+                  </div>
+                  <textarea class="bcg-output-mini" data-output-li readonly placeholder="주석을 추가하면 여기에 <li>...</li> 코드가 생성됩니다."></textarea>
+
                   <div class="bcg-row" style="margin-top:10px;">
                     <span class="bcg-label">미리보기</span>
                   </div>
@@ -1026,14 +1063,16 @@
         const headingEl = wrap.querySelector("[data-heading]");
         const bodyEl = wrap.querySelector("[data-body]");
         const outEl = wrap.querySelector("[data-output]");
+        const outLiEl = wrap.querySelector("[data-output-li]");
         const prevEl = wrap.querySelector("[data-preview]");
         const keepRawEl = wrap.querySelector("[data-keep-raw]");
         
         const fnStatusEl = wrap.querySelector("[data-fn-status]");
-        const fnResetBtn = wrap.querySelector("[data-fn-reset]");
         const startIdxEl = wrap.querySelector("[data-start-idx]");
 
         const btnCopy = wrap.querySelector("[data-copy]");
+        const btnCopyLi = wrap.querySelector("[data-copy-li]");
+        const btnCopyWrapper = wrap.querySelector("[data-copy-wrapper]");
         const btnRemove = wrap.querySelector("[data-remove]");
         const btnSend = wrap.querySelector("[data-send]");
         
@@ -1041,35 +1080,28 @@
         const colorEl = wrap.querySelector("[data-color]");
         const bgEl = wrap.querySelector("[data-bg]");
 
-        function checkStartIdx() {
-           if (!wrap.bcgData.hasManualIdx) {
-              const globalList = loadGlobalFootnotes();
-              startIdxEl.value = globalList.length + 1;
-           }
-        }
-        wrap.bcgCheckStartIdx = checkStartIdx;
-        setTimeout(checkStartIdx, 0);
-
-        startIdxEl.addEventListener("input", () => {
-           wrap.bcgData.hasManualIdx = true; 
-           regenerate();
-        });
-
         function regenerate(){
-            const myStartIdx = parseInt(startIdxEl.value) || 1;
-            fnStatusEl.textContent = `${wrap.bcgData.footnotes.length}개`;
+            // 본문 재조립 및 주석 재번호 부여 (핵심 로직)
+            const result = buildHtmlAndList(bodyEl.value, keepRawEl.checked);
             
-            const html = buildHtml({
-                level: levelEl.value,
-                heading: headingEl.value,
-                body: bodyEl.value,
-                allowTags: keepRawEl.checked,
-                includeList: false,
-                myFootnotes: wrap.bcgData.footnotes,
-                myStartIndex: myStartIdx
-            });
-            outEl.value = html;
-            if (prevEl) prevEl.innerHTML = html.trim() ? html : '<div class="bcg-preview-empty">미리보기</div>';
+            // 상태 업데이트
+            fnStatusEl.textContent = `${result.count}개 (자동정렬)`;
+            startIdxEl.value = 1; // 항상 1번부터 (자동정렬이므로)
+
+            // 제목 + 본문 조립
+            const tag = (levelEl.value === "h1" || levelEl.value === "h2" || levelEl.value === "h3") ? levelEl.value : "h2";
+            const headText = escapeHtmlLite(String(headingEl.value ?? "").trim());
+            const headPart = headText ? `<${tag}>${headText}</${tag}>` : "";
+            
+            const finalHtml = [headPart, result.body].filter(Boolean).join("\n");
+            
+            outEl.value = finalHtml;
+            outLiEl.value = result.list;
+            
+            // 미리보기 업데이트
+            if (prevEl) {
+               prevEl.innerHTML = finalHtml + (result.list ? `<hr><ol class="cheese-footnotes">${result.list}</ol>` : "");
+            }
         }
         
         wrap.bcgRegenerate = regenerate;
@@ -1080,6 +1112,18 @@
           showToast("본문 코드 복사 완료!");
         });
 
+        btnCopyLi.addEventListener("click", async () => {
+          if (!outLiEl.value.trim()) return showToast("복사할 주석이 없어.");
+          await copyToClipboard(outLiEl.value);
+          showToast("주석 목록(li) 복사 완료!");
+        });
+
+        btnCopyWrapper.addEventListener("click", async () => {
+          const tpl = `\n<hr>\n<ol class="cheese-footnotes">\n  \n</ol>`;
+          await copyToClipboard(tpl);
+          showToast("주석 틀(<ol>) 복사 완료!");
+        });
+        
         btnSend.addEventListener("click", () => {
           if (!outEl.value.trim()) regenerate(); 
           if (window.opener && !window.opener.closed) {
@@ -1095,17 +1139,9 @@
             updatePill(); 
         });
 
-        fnResetBtn.addEventListener("click", () => {
-          if(confirm("이 블록에서 작성한 주석만 비울까?")) {
-            wrap.bcgData.footnotes = [];
-            regenerate();
-            showToast("로컬 주석 초기화됨");
-          }
-        });
-
         let t = null;
         function schedule(){ clearTimeout(t); t = setTimeout(regenerate, 180); }
-        [levelEl, headingEl, bodyEl, keepRawEl, startIdxEl].forEach(el => el.addEventListener("input", schedule));
+        [levelEl, headingEl, bodyEl, keepRawEl].forEach(el => el.addEventListener("input", schedule));
         levelEl.addEventListener("change", schedule);
         keepRawEl.addEventListener("change", schedule);
 
@@ -1164,16 +1200,22 @@
             if (fmt === "footnote") {
                openFnModal({
                  onConfirm: (noteContent) => {
-                    wrap.bcgData.footnotes.push(noteContent);
-                    const newTotalCount = appendGlobalFootnote(noteContent);
-                    const currentIdx = newTotalCount;
+                    // 고유 ID 생성 (타임스탬프 + 랜덤)
+                    const uid = "fn_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5);
+                    
+                    // 전역 저장소에 내용 저장
+                    const map = loadGlobalFootnotes();
+                    map[uid] = noteContent;
+                    saveGlobalFootnotes(map);
 
+                    // 본문에 삽입 (번호는 *? 로 표시해두고 regenerate 시 자동계산)
+                    // 핵심: data-fn-idx 속성에 고유 ID를 저장
                     restoreSel_();
-                    const linkTag = `<a id="fn${currentIdx}-ref" href="#fn${currentIdx}" class="cheese-footnote-ref" data-footnote-id="fn${currentIdx}">*${currentIdx}</a>`;
+                    const linkTag = `<a id="${uid}-ref" href="#${uid}" class="cheese-footnote-ref" data-fn-idx="${uid}">*?</a>`;
                     insertAtSelection(bodyEl, linkTag);
                     
                     schedule();
-                    showToast(`주석 *${currentIdx} 추가됨 (자동 저장)`);
+                    showToast(`주석 추가됨 (번호 자동생성)`);
                  },
                  restoreFocus: () => bodyEl.focus()
                });
