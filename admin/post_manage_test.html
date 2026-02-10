@@ -2886,7 +2886,10 @@ function clearEditor(){
         while ((match = regex.exec(html)) !== null) {
           const encoded = match[1];
           let content = "Error";
-          try { content = decodeURIComponent(encoded); } catch(e){}
+          try { 
+            // ✅ 디코딩할 때 <br> 태그를 실제 줄바꿈(\n)으로 변환해서 텍스트창에 예쁘게 표시
+            content = decodeURIComponent(encoded).replace(/<br\s*\/?>/gi, '\n'); 
+          } catch(e){}
           
           g_footnotes.push({
             idx: globalIdx++,
@@ -2926,6 +2929,8 @@ function clearEditor(){
           </div>
           
           <div style="display:flex; gap:5px; margin-bottom:5px;">
+            <button class="pm-btn small ghost" style="padding:2px 6px; font-size:11px; font-weight:800; color:#0f172a;" onclick="formatFootnoteText(${i}, 'bold')">B 볼드</button>
+            
             <button class="pm-btn small ghost" style="padding:2px 6px; font-size:11px;" onclick="addLinkToFootnote(${i}, 'external')">🔗 외부링크</button>
             <button class="pm-btn small ghost" style="padding:2px 6px; font-size:11px;" onclick="addLinkToFootnote(${i}, 'internal')">📄 내부링크</button>
           </div>
@@ -2968,13 +2973,44 @@ function clearEditor(){
       
       if (!targetEl) return;
     
-      const newEncoded = encodeURIComponent(newText);
+      // ✅ 텍스트창에서 친 엔터(\n)를 실제 HTML 줄바꿈(<br>) 태그로 변환해서 저장
+      const htmlText = newText.replace(/\n/g, '<br>');
+      const newEncoded = encodeURIComponent(htmlText);
       const newTag = fn.fullTag.replace(/data-note="([^"]+)"/, `data-note="${newEncoded}"`);
       
       targetEl.value = targetEl.value.replace(fn.fullTag, newTag);
       
-      fn.content = newText;
+      fn.content = newText; // 화면 표시용은 엔터 상태 유지
       fn.fullTag = newTag; 
+    };
+
+    // ✅ 6-1. 주석 서식 적용 함수 (볼드 추가)
+    window.formatFootnoteText = function(index, type) {
+      const textarea = document.getElementById(`fn_input_${index}`);
+      if (!textarea) return;
+
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const text = textarea.value;
+
+      let newText = text;
+      
+      if (type === 'bold') {
+        // 드래그한 텍스트가 있으면 <b>태그로 감싸고, 없으면 <b></b> 빈 태그만 삽입
+        const selected = text.substring(start, end);
+        const wrapped = `<b>${selected}</b>`;
+        newText = text.substring(0, start) + wrapped + text.substring(end);
+      }
+
+      // 텍스트창 화면 업데이트
+      textarea.value = newText;
+      
+      // 실제 데이터(HTML 본문)에 즉시 반영
+      window.updateFootnoteText(index, newText);
+      
+      // 포커스 복귀 및 커서 위치를 <b> 태그 바로 안쪽으로 자연스럽게 이동
+      textarea.focus();
+      textarea.selectionStart = textarea.selectionEnd = start + 3; 
     };
     
     // 7. 주석 삭제
