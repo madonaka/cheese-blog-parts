@@ -55,7 +55,11 @@ document.addEventListener('DOMContentLoaded', function () {
     var mBody = modal.querySelector('.cheese-footnote-modal-body');
     var mClose = modal.querySelector('.cheese-footnote-modal-close');
     
-    const closeModal = () => modal.classList.remove('is-open');
+    // ✅ 스크롤 잠금 해제 코드 추가
+    const closeModal = () => {
+        modal.classList.remove('is-open');
+        document.body.classList.remove('footnote-no-scroll'); 
+    };
     mClose.onclick = closeModal;
     modal.onclick = (e) => { if(e.target === modal) closeModal(); };
 
@@ -151,6 +155,7 @@ document.addEventListener('DOMContentLoaded', function () {
             e.stopPropagation();
             mBody.innerHTML = content;
             modal.classList.add('is-open');
+            document.body.classList.add('footnote-no-scroll'); // ✅ 배경 스크롤 잠금
         });
       } 
       // PC: 호버 시 툴팁
