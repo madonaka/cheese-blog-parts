@@ -424,46 +424,67 @@ document.addEventListener('DOMContentLoaded', () => {
         const d = new Date(log['날짜']); return d >= startDate && d <= targetEndDate;
     });
 
-    // 🚀 [핵심 수정] ID가 아닌 '이름'을 기준으로 그룹화하여 중복 쪼개짐 방지
-    const groupedLogsByName = {}; 
+// 🚀 [수정 반영] 로그 분류 및 목표/아이디어/버그 그룹화 로직
+    const goalTaskCounts = {}; // 목표별 할 일 건수 (병합용)
+    let ideaCount = 0;         // 아이디어 생성 총 건수
+    let bugCount = 0;          // 버그 생성 총 건수
+    const groupedLogsByName = {}; // 상세 내역(Q3) 출력용 그룹
     let totalLogs = 0;
 
     targetLogs.forEach(log => {
-        let categoryName = "기타 (미분류 업무)";
+        totalLogs++;
+        let categoryName = "기타 일반 업무";
         const gId = log['관련_목표ID'];
 
-        // ID가 존재할 경우 실제 목표의 제목을 찾아옴
-        if (gId && String(gId).trim() !== "") {
-            const goalObj = g_goals.find(g => g.ID === gId) || g_tasks.find(t => t.ID === gId);
-            // 시트 에러(#ERROR!)가 아니고 정상적인 제목이 있을 때만 반영
-            if (goalObj && goalObj['제목'] && !String(goalObj['제목']).includes('#ERROR!')) {
-                categoryName = goalObj['제목']; 
+        // 1. 아이디어/버그 여부 먼저 판단 (태그나 제목 아이콘 기준)
+        const isIdea = log['태그'] === '아이디어' || (log['제목'] && log['제목'].includes('💡'));
+        const isBug = log['태그'] === '버그' || (log['제목'] && log['제목'].includes('🐞'));
+
+        if (isIdea) {
+            ideaCount++;
+            categoryName = "💡 신규 아이디어 제안";
+        } else if (isBug) {
+            bugCount++;
+            categoryName = "🐞 버그 발견 및 리포트";
+        } else {
+            // 2. 일반 할 일인 경우 목표 이름 찾아오기
+            if (gId && String(gId).trim() !== "") {
+                const goalObj = g_goals.find(g => g.ID === gId) || g_tasks.find(t => t.ID === gId);
+                if (goalObj && goalObj['제목'] && !String(goalObj['제목']).includes('#ERROR!')) {
+                    categoryName = goalObj['제목']; 
+                }
             }
+            // 목표별 할 일 건수 카운트
+            if (!goalTaskCounts[categoryName]) goalTaskCounts[categoryName] = 0;
+            goalTaskCounts[categoryName]++;
         }
 
-        // 이름 기준으로 배열 생성 및 푸시 (동일한 이름은 하나로 완벽히 합쳐짐)
-        if (!groupedLogsByName[categoryName]) {
-            groupedLogsByName[categoryName] = [];
-        }
+        // 3. 상세 내역(Q3) 구성을 위해 이름별로 로그 모으기
+        if (!groupedLogsByName[categoryName]) groupedLogsByName[categoryName] = [];
         groupedLogsByName[categoryName].push(log);
-        totalLogs++;
     });
 
-    // 화면에 보여줄 때 '기타' 항목을 항상 맨 밑으로 보내기 위한 정렬 배열
+    // 화면 정렬 (기타/아이디어/버그를 아래쪽으로)
     const sortedCategories = Object.keys(groupedLogsByName).sort((a, b) => {
-        if (a === "기타 (미분류 업무)") return 1;
-        if (b === "기타 (미분류 업무)") return -1;
+        const priority = { "💡 신규 아이디어 제안": 10, "🐞 버그 발견 및 리포트": 11, "기타 일반 업무": 12 };
+        const valA = priority[a] || 0;
+        const valB = priority[b] || 0;
+        if (valA !== valB) return valA - valB;
         return a.localeCompare(b);
     });
 
-    // ✅ [Q1] 핵심 요약: 병합된 건수 출력
-    let breakdownHtml = `<li><b>총 작업 건수:</b> 총 ${totalLogs}건 완료</li>`;
-    if (totalLogs > 0) {
-        breakdownHtml += `<ul style="margin: 6px 0 12px 0; padding-left: 20px; font-size: 0.9em; color: #475569; list-style-type: circle;">`;
-        sortedCategories.forEach(catName => {
-            breakdownHtml += `<li style="margin-bottom:2px;">${catName}: <b>${groupedLogsByName[catName].length}</b>건</li>`;
-        });
-        breakdownHtml += `</ul>`;
+    // ✅ [Q1] 핵심 요약 HTML 조립 (이후 breakdownHtml 변수 사용 부분과 연결됨)
+    let breakdownHtml = `<li><b>전체 활동 건수:</b> 총 ${totalLogs}건</li>`;
+    breakdownHtml += `<ul style="margin: 6px 0 12px 0; padding-left: 20px; font-size: 0.9em; color: #475569; list-style-type: circle;">`;
+    
+    // 목표별 할 일 건수만 먼저 출력
+    for (const [name, count] of Object.entries(goalTaskCounts)) {
+        breakdownHtml += `<li style="margin-bottom:2px;">${name} (할 일): <b>${count}</b>건</li>`;
+    }
+    // 아이디어/버그는 별도 강조 출력
+    if (ideaCount > 0) breakdownHtml += `<li style="margin-bottom:2px; color: #16a34a;">💡 신규 아이디어 제안: <b>${ideaCount}</b>건</li>`;
+    if (bugCount > 0) breakdownHtml += `<li style="margin-bottom:2px; color: #ef4444;">🐞 버그 발견 및 리포트: <b>${bugCount}</b>건</li>`;
+    breakdownHtml += `</ul>`;
     }
 
     // ✅ [Q2] 프로젝트 현황: 목표 달성률 + D-Day 시각화
