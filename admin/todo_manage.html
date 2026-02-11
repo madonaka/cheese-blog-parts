@@ -723,6 +723,14 @@
         <div id="view-card-container"><div id="goal-tree-root"><div class="goal-card" style="padding:40px; text-align:center; color:#94a3b8; background:#f1f5f9;">데이터 로딩 중...</div></div></div>
         
         <div id="view-board-container" style="display:none;">
+
+          <div class="board-toolbar" style="margin-bottom: 16px; display: flex; align-items: center; gap: 12px; background: #f8fafc; padding: 12px 16px; border-radius: 12px; border: 1px solid #e2e8f0;">
+             <span style="font-weight: 700; color: #475569;">🎯 목표 필터:</span>
+             <select id="board-goal-filter" class="styled-input" style="max-width: 300px; padding: 8px 12px; font-weight: 600;" onchange="renderBoardView()">
+                <option value="all">전체 보기 (모든 할 일)</option>
+             </select>
+          </div>
+          
           <div class="board-wrapper">
             <div class="board-column">
               <div class="column-header header-high">🔥 높음 (High)</div>
@@ -1037,6 +1045,10 @@
       const json = await res.json();
       if(json.result === "success") {
         g_goals = json.goals; g_tasks = json.tasks; g_logs = json.logs||[];
+
+        // ✅ [여기에 추가!] 데이터를 다 가져오면 필터 드롭다운 업데이트
+        updateBoardFilterOptions();
+        
         renderGoalTree(); renderBoardView(); renderBugView(); renderIdeaView(); renderLogs(); updateParentOptions();
       }
     } catch(e) { console.error(e); }
@@ -1183,7 +1195,7 @@
     container.appendChild(row); return container;
   }
 
-// 🚀 [수정] 보드 뷰 (3단 카드형 + 드래그 앤 드롭 연결)
+// 🚀 [수정] 보드 뷰 (필터링 로직 추가)
   function renderBoardView() {
     const cols = {
       'high': { active: document.getElementById('board-col-high'), done: document.getElementById('board-col-high-done'), doneCount: 0 },
@@ -1197,7 +1209,33 @@
         if(c.done) c.done.innerHTML = ""; 
     });
 
-    const tasks = g_tasks.filter(t => t['유형'] !== '아이디어' && t['유형'] !== '버그');
+    // ✅ [추가] 필터값 읽어오기
+    const filterEl = document.getElementById('board-goal-filter');
+    const filterVal = filterEl ? filterEl.value : 'all';
+
+    // ✅ [추가] 필터링에 허용할 목표 ID 목록 만들기
+    let validTargetIds = [];
+    if (filterVal !== 'all') {
+        const targetGoal = g_goals.find(g => g.ID === filterVal);
+        if (targetGoal) {
+            validTargetIds.push(targetGoal.ID); // 선택한 목표 자체
+            if (targetGoal['유형'] === '큰 목표') {
+                // 큰 목표를 선택했으면, 그 아래에 있는 하위 중간 목표들 ID도 싹 다 포함
+                g_goals.filter(g => g['상위ID'] === targetGoal.ID).forEach(m => validTargetIds.push(m.ID));
+            }
+        }
+    }
+
+    // 할 일 필터링
+    const tasks = g_tasks.filter(t => {
+        if (t['유형'] === '아이디어' || t['유형'] === '버그') return false;
+        
+        // ✅ [추가] 목표 필터 적용 (연결된 중간/큰 목표 ID가 validTargetIds에 속해있는지 검사)
+        if (filterVal !== 'all') {
+            if (!validTargetIds.includes(t['연결_중간목표ID'])) return false;
+        }
+        return true;
+    });
     
     tasks.sort((a, b) => {
         const dateA = a['기한'] ? new Date(a['기한']) : new Date('9999-12-31');
@@ -2290,6 +2328,41 @@ document.getElementById('todo-form').addEventListener('submit', async (e) => {
           loadAllData(); // 실패 시 원래 데이터로 원상복구
       } finally {
           if(typeof hideAdminLoading==='function') hideAdminLoading();
+      }
+  }
+
+  // ✅ [신규] 보드 뷰 상단 필터 옵션 생성
+  function updateBoardFilterOptions() {
+      const select = document.getElementById('board-goal-filter');
+      if (!select) return;
+
+      const currentVal = select.value;
+      select.innerHTML = '<option value="all">전체 보기 (모든 할 일)</option>';
+
+      const bigGoals = g_goals.filter(g => g['유형'] === '큰 목표');
+      
+      bigGoals.forEach(bg => {
+          // 1. 큰 목표 추가
+          const bgOpt = document.createElement('option');
+          bgOpt.value = bg.ID;
+          bgOpt.textContent = `🏆 [큰 목표] ${bg['제목']}`;
+          bgOpt.style.fontWeight = 'bold';
+          bgOpt.style.color = '#1e293b';
+          select.appendChild(bgOpt);
+
+          // 2. 해당 큰 목표에 속한 중간 목표들을 들여쓰기해서 추가
+          const midGoals = g_goals.filter(mg => mg['상위ID'] === bg.ID);
+          midGoals.forEach(mg => {
+              const mgOpt = document.createElement('option');
+              mgOpt.value = mg.ID;
+              mgOpt.innerHTML = `&nbsp;&nbsp;&nbsp;&nbsp; 🚩 [중간] ${mg['제목']}`;
+              select.appendChild(mgOpt);
+          });
+      });
+
+      // 기존 선택값 유지
+      if (Array.from(select.options).some(opt => opt.value === currentVal)) {
+          select.value = currentVal;
       }
   }
 </script>
