@@ -1592,6 +1592,8 @@ function openEditModal(typeHint, id) {
   document.getElementById('edit-id').value = id;
   document.getElementById('origin-idea-id').value = "";
 
+  document.getElementById('edit-mode').value = "true";
+
   document.getElementById('input-title').value = item['제목'] || "";
 
   const safeContent = item['상세내용'] || "";
@@ -1756,49 +1758,55 @@ document.getElementById('todo-form').addEventListener('submit', async (e) => {
     const saveBtn = document.querySelector('.btn-save-custom');
     toggleBtnLoading(saveBtn, true);
     
-    const isEdit = document.getElementById('edit-mode').value === "true";
-    const type = document.querySelector('input[name="type"]:checked').value;
-    
-    // [색상 가져오기 로직]
-    let color = "#64748b"; 
-    if(type === "큰 목표") {
-        const el = document.querySelector('input[name="color_goal"]:checked');
-        if(el) color = el.value;
-    } else if (type === "아이디어") {
-        const el = document.querySelector('input[name="color_idea"]:checked');
-        if(el) color = el.value;
-    }
-
-    const detailContent = $('#input-detail').summernote('code');
-    const originIdeaId = document.getElementById('origin-idea-id').value;
-
-    const payload = { 
-        mode: isEdit ? "editItem" : "addItem", id: document.getElementById('edit-id').value, type: type, 
-        title: document.getElementById('input-title').value, parentId: document.getElementById('input-connected-id').value, 
-        connectedId: document.getElementById('input-connected-id').value, 
-        detail: detailContent, 
-        startDate: document.getElementById('input-start').value, dueDate: document.getElementById('input-due').value, 
-        priority: document.getElementById('input-priority').value, color: color 
-    };
-    
-    if(typeof showAdminLoading==='function') showAdminLoading("저장 중..."); 
-    
     try {
+        const isEdit = document.getElementById('edit-mode').value === "true";
+        const type = document.querySelector('input[name="type"]:checked').value;
+        
+        // [색상 가져오기 로직]
+        let color = "#64748b"; 
+        if(type === "큰 목표") {
+            const el = document.querySelector('input[name="color_goal"]:checked');
+            if(el) color = el.value;
+        } else if (type === "아이디어") {
+            const el = document.querySelector('input[name="color_idea"]:checked');
+            if(el) color = el.value;
+        }
+
+        // ✅ [수정됨] 에디터 콘텐츠를 안전하게 가져오기 (try 블록 안으로 이동)
+        const $detail = $('#input-detail');
+        const detailContent = ($.fn.summernote && $detail.summernote('exists')) 
+            ? $detail.summernote('code') 
+            : $detail.val();
+            
+        const originIdeaId = document.getElementById('origin-idea-id').value;
+
+        const payload = { 
+            mode: isEdit ? "editItem" : "addItem", 
+            id: document.getElementById('edit-id').value, 
+            type: type, 
+            title: document.getElementById('input-title').value, 
+            parentId: document.getElementById('input-connected-id').value, 
+            connectedId: document.getElementById('input-connected-id').value, 
+            detail: detailContent, 
+            startDate: document.getElementById('input-start').value, 
+            dueDate: document.getElementById('input-due').value, 
+            priority: document.getElementById('input-priority').value, 
+            color: color 
+        };
+        
+        if(typeof showAdminLoading==='function') showAdminLoading("저장 중..."); 
+        
         const response = await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify(payload) });
         const result = await response.json();
 
-        // [중요] 여기가 있어야 실현하기가 작동합니다!
         // 🚀 아이디어 실현 연결 로직
         if (!isEdit && result.id && originIdeaId) {
-            // 1. 기존 아이디어(originIdeaId)의 '연결_중간목표ID'를 새 할일(result.id)로 업데이트
             await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify({ mode: "editItem", id: originIdeaId, connectedId: result.id }) });
-            
-            // 2. 실현 로그 자동 생성
             const taskTitle = document.getElementById('input-title').value;
             await createAutoLog("realize_idea", taskTitle, result.id);
         }
 
-        // [추가] 신규 등록 시 자동 로그 생성 로직
+        // 신규 등록 시 자동 로그 생성 로직
         if (!isEdit && result.result === "success") {
             const newId = result.id;
             const title = document.getElementById('input-title').value;
@@ -1807,11 +1815,18 @@ document.getElementById('todo-form').addEventListener('submit', async (e) => {
             else if (type.includes("목표")) await createAutoLog("create_goal", title, newId);
         }
         
-        closeModal('input-modal'); loadAllData();
-    } catch(err) { console.error(err); alert("저장 중 오류 발생"); } 
-    finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); toggleBtnLoading(saveBtn, false);}
-  });
+        closeModal('input-modal'); 
+        loadAllData();
 
+    } catch(err) { 
+        console.error(err); 
+        alert("저장 중 오류 발생"); 
+    } finally { 
+        if(typeof hideAdminLoading==='function') hideAdminLoading(); 
+        toggleBtnLoading(saveBtn, false); // 무조건 버튼을 원상복구 하도록 보장
+    }
+});
+  
 // 🚀 [수정] 로그 저장 로직 (목표 연결 허용, 작업 연결 시 자동실현 방지)
   document.getElementById('log-form').addEventListener('submit', async (e) => {
     e.preventDefault();
