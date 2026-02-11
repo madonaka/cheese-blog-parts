@@ -836,11 +836,21 @@
         
         <div id="view-log-container" style="display:none;">
           <div class="log-container">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
               <h3 style="margin: 0; font-size: 1.3rem; font-weight: 700;">📝 전체 작업 타임라인</h3>
               <button class="btn btn-primary" style="padding: 10px 16px; font-size: 0.95rem;" onclick="openLogModal()">+ 새 기록 작성</button>
             </div>
+            
+           <div class="log-filter-toolbar" style="margin-bottom: 30px; display: flex; align-items: center; gap: 10px; background: #f8fafc; padding: 12px 16px; border-radius: 12px; border: 1px solid #e2e8f0; flex-wrap: wrap;">
+              <span style="font-weight: 700; color: #475569;">📅 기간 필터:</span>
+              <input type="date" id="log-filter-start" class="styled-input" style="max-width: 150px; padding: 6px 10px;" onchange="renderLogs()">
+              <span style="color: #94a3b8; font-weight: bold;">~</span>
+              <input type="date" id="log-filter-end" class="styled-input" style="max-width: 150px; padding: 6px 10px;" onchange="renderLogs()">
+              <button class="btn" style="background: #e2e8f0; color: #475569; padding: 8px 14px; border: none; border-radius: 8px; cursor: pointer; font-weight: 700; transition: 0.2s;" onclick="clearLogFilter()" onmouseover="this.style.background='#cbd5e1'" onmouseout="this.style.background='#e2e8f0'">초기화</button>
+            </div>
+            
             <div id="log-timeline-root"></div>
+            
           </div>
         </div>
       </div>
@@ -1595,75 +1605,129 @@ async function realizeIdea(ideaId) {
     }
 }
 
-// 🚀 [수정] 로그 렌더링 (날짜 밀림 해결 + 최신순 정렬 추가)
+  // 🚀 [수정] 로그 렌더링 (날짜 필터링 + 기본 접힘/펼침 토글 추가)
   function renderLogs() {
-    const root = document.getElementById('log-timeline-root'); root.innerHTML = "";
-    if(g_logs.length === 0) { root.innerHTML = `<div style="color:#cbd5e1; font-size:0.9rem; text-align:center; padding:20px;">작업 로그가 없습니다.</div>`; return; }
-
-    // [추가] 로그를 날짜 내림차순(최신순) -> ID 내림차순(최신순)으로 미리 정렬
-    // 이렇게 하면 그룹핑할 때 내부 아이템들도 최신순으로 정렬됨
-    g_logs.sort((a, b) => {
-        const da = new Date(a['날짜']);
-        const db = new Date(b['날짜']);
-        return db - da || b.ID - a.ID; 
-    });
-    
-    const groupedLogs = {};
-    g_logs.forEach(log => {
-        let dateKey = '날짜 없음';
-        if (log['날짜']) {
-            // [수정] 단순 substring은 UTC 기준으로 잘라서 하루 전으로 밀릴 수 있음.
-            // new Date로 전체 시간을 파싱한 뒤 로컬 연/월/일을 가져와야 함.
-            const d = new Date(log['날짜']);
-            if (!isNaN(d.getTime())) {
-                const year = d.getFullYear();
-                const month = String(d.getMonth() + 1).padStart(2, '0');
-                const day = String(d.getDate()).padStart(2, '0');
-                dateKey = `${year}-${month}-${day}`;
-            } else {
-                 // 파싱 실패 시 fallback
-                 dateKey = log['날짜'].substring(0, 10);
-            }
-        }
-        if (!groupedLogs[dateKey]) groupedLogs[dateKey] = [];
-        groupedLogs[dateKey].push(log);
-    });
-
-    const sortedDates = Object.keys(groupedLogs).sort().reverse();
-    sortedDates.forEach(date => {
-        const divider = document.createElement('div'); divider.className = "log-date-divider";
-        let dayOfWeek = ""; try { dayOfWeek = new Date(date.replace(/-/g,'/')).toLocaleDateString('ko-KR', { weekday: 'short' }); } catch(e){}
-        divider.innerHTML = `<span class="log-date-badge">📅 ${date} (${dayOfWeek})</span>`;
-        root.appendChild(divider);
-
-        // 이미 g_logs를 정렬했으므로 여기서는 순서대로 뿌리면 됨 (최신 = 위)
-        groupedLogs[date].forEach(log => {
-            const item = document.createElement('div'); item.className = "log-item";
-            const title = log['제목'] ? `<div class="log-title" style="font-weight:700; font-size:0.95rem; margin-bottom:4px;">${log['제목']}</div>` : '';
-            let relatedHtml = "";
-            if(log['관련_목표ID']) {
-                const relTask = g_tasks.find(t => t.ID === log['관련_목표ID']) || g_goals.find(g => g.ID === log['관련_목표ID']);
-                if(relTask) {
-                    if (relTask['유형'] === '버그') relatedHtml = `<div class="log-related" style="background:#fecaca; color:#b91c1c; border:1px solid #f87171; padding:2px 8px; border-radius:4px; font-size:0.75rem; margin-bottom:6px; display:inline-block;">🐞 버그 Fix: ${relTask['제목']}</div>`; 
-                    else relatedHtml = `<div class="log-related" style="background:#ecfdf5; color:#059669; padding:2px 8px; border-radius:4px; font-size:0.75rem; margin-bottom:6px; display:inline-block;">📌 관련: ${relTask['제목']}</div>`; 
-                }
-            }
-            const content = (log['내용'] || "").replace(/\n/g, '<br>');
-            item.innerHTML = `
-                <div class="log-dot"></div>
-                <div class="log-card">
-                    <div class="log-header" style="margin-bottom: 4px;">
-                        <div class="log-time">${log['소요시간'] ? `⏱ ${log['소요시간']}` : ''}</div>
-                        <div class="log-actions"><button class="row-btn" onclick="openEditLog('${log.ID}')">✏️</button><button class="row-btn delete" onclick="deleteItem('${log.ID}')">🗑️</button></div>
-                    </div>
-                    ${relatedHtml}${title}<div class="log-body" style="font-size:0.9rem; color:#475569; line-height:1.6;">${content}</div>
-                    ${log['태그'] ? `<div style="margin-top:8px;"><span class="log-tag" style="font-size:0.75rem; color:#3b82f6; background:#eff6ff; padding:2px 8px; border-radius:4px;">#${log['태그']}</span></div>` : ''}
-                </div>`;
-            root.appendChild(item);
-        });
-    });
+      const root = document.getElementById('log-timeline-root'); root.innerHTML = "";
+      if(g_logs.length === 0) { root.innerHTML = `<div style="color:#cbd5e1; font-size:0.9rem; text-align:center; padding:20px;">작업 로그가 없습니다.</div>`; return; }
+  
+      // ✅ 1. 날짜 필터값 읽어오기
+      const filterStart = document.getElementById('log-filter-start')?.value;
+      const filterEnd = document.getElementById('log-filter-end')?.value;
+  
+      let filteredLogs = g_logs;
+  
+      // ✅ 2. 지정된 기간 내의 로그만 필터링
+      if (filterStart || filterEnd) {
+          const sDate = filterStart ? new Date(filterStart) : new Date('2000-01-01');
+          const eDate = filterEnd ? new Date(filterEnd) : new Date('2999-12-31');
+          sDate.setHours(0,0,0,0);
+          eDate.setHours(23,59,59,999);
+          
+          filteredLogs = g_logs.filter(log => {
+              if (!log['날짜']) return false;
+              const d = new Date(log['날짜']);
+              if (isNaN(d.getTime())) {
+                  const raw = new Date(log['날짜'].substring(0,10));
+                  return raw >= sDate && raw <= eDate;
+              }
+              return d >= sDate && d <= eDate;
+          });
+      }
+  
+      if(filteredLogs.length === 0) {
+          root.innerHTML = `<div style="color:#cbd5e1; font-size:0.9rem; text-align:center; padding:40px;">해당 기간에 작성된 로그가 없습니다. 텅~ 🍃</div>`; 
+          return;
+      }
+  
+      // 최신순 정렬
+      filteredLogs.sort((a, b) => {
+          const da = new Date(a['날짜']);
+          const db = new Date(b['날짜']);
+          return db - da || b.ID - a.ID; 
+      });
+      
+      // 날짜별로 그룹화
+      const groupedLogs = {};
+      filteredLogs.forEach(log => {
+          let dateKey = '날짜 없음';
+          if (log['날짜']) {
+              const d = new Date(log['날짜']);
+              if (!isNaN(d.getTime())) {
+                  const year = d.getFullYear();
+                  const month = String(d.getMonth() + 1).padStart(2, '0');
+                  const day = String(d.getDate()).padStart(2, '0');
+                  dateKey = `${year}-${month}-${day}`;
+              } else {
+                   dateKey = log['날짜'].substring(0, 10);
+              }
+          }
+          if (!groupedLogs[dateKey]) groupedLogs[dateKey] = [];
+          groupedLogs[dateKey].push(log);
+      });
+  
+      const sortedDates = Object.keys(groupedLogs).sort().reverse();
+      sortedDates.forEach(date => {
+          // ✅ 3. 클릭 가능한 날짜 구분선(헤더) 생성
+          const divider = document.createElement('div'); 
+          divider.className = "log-date-divider";
+          divider.style.cursor = "pointer"; // 마우스 포인터 변경
+          divider.style.transition = "color 0.2s";
+  
+          let dayOfWeek = ""; 
+          try { dayOfWeek = new Date(date.replace(/-/g,'/')).toLocaleDateString('ko-KR', { weekday: 'short' }); } catch(e){}
+          
+          const logCount = groupedLogs[date].length;
+          // 제목 앞에 ▶ 아이콘과 건수 표시
+          divider.innerHTML = `<span class="log-date-badge"><span class="log-toggle-icon" style="display:inline-block; width:16px;">▶</span> 📅 ${date} (${dayOfWeek}) <span style="font-size:0.75rem; color:#94a3b8; font-weight:normal; margin-left:6px;">${logCount}건</span></span>`;
+          
+          root.appendChild(divider);
+  
+          // ✅ 4. 해당 날짜의 로그들을 묶어주는 컨테이너 (기본 상태: 숨김)
+          const groupContainer = document.createElement('div');
+          groupContainer.style.display = "none"; // 기본적으로 접혀있음
+          groupContainer.style.paddingLeft = "8px"; 
+          
+          // 헤더 클릭 시 접기/펼치기 애니메이션 토글
+          divider.onclick = () => {
+              const icon = divider.querySelector('.log-toggle-icon');
+              if (groupContainer.style.display === "none") {
+                  groupContainer.style.display = "block";
+                  if(icon) icon.textContent = "▼";
+              } else {
+                  groupContainer.style.display = "none";
+                  if(icon) icon.textContent = "▶";
+              }
+          };
+  
+          // 로그 아이템 렌더링
+          groupedLogs[date].forEach(log => {
+              const item = document.createElement('div'); item.className = "log-item";
+              const title = log['제목'] ? `<div class="log-title" style="font-weight:700; font-size:0.95rem; margin-bottom:4px;">${log['제목']}</div>` : '';
+              let relatedHtml = "";
+              if(log['관련_목표ID']) {
+                  const relTask = g_tasks.find(t => t.ID === log['관련_목표ID']) || g_goals.find(g => g.ID === log['관련_목표ID']);
+                  if(relTask) {
+                      if (relTask['유형'] === '버그') relatedHtml = `<div class="log-related" style="background:#fecaca; color:#b91c1c; border:1px solid #f87171; padding:2px 8px; border-radius:4px; font-size:0.75rem; margin-bottom:6px; display:inline-block;">🐞 버그 Fix: ${relTask['제목']}</div>`; 
+                      else relatedHtml = `<div class="log-related" style="background:#ecfdf5; color:#059669; padding:2px 8px; border-radius:4px; font-size:0.75rem; margin-bottom:6px; display:inline-block;">📌 관련: ${relTask['제목']}</div>`; 
+                  }
+              }
+              const content = (log['내용'] || "").replace(/\n/g, '<br>');
+              item.innerHTML = `
+                  <div class="log-dot"></div>
+                  <div class="log-card">
+                      <div class="log-header" style="margin-bottom: 4px;">
+                          <div class="log-time">${log['소요시간'] ? `⏱ ${log['소요시간']}` : ''}</div>
+                          <div class="log-actions"><button class="row-btn" onclick="openEditLog('${log.ID}')">✏️</button><button class="row-btn delete" onclick="deleteItem('${log.ID}')">🗑️</button></div>
+                      </div>
+                      ${relatedHtml}${title}<div class="log-body" style="font-size:0.9rem; color:#475569; line-height:1.6;">${content}</div>
+                      ${log['태그'] ? `<div style="margin-top:8px;"><span class="log-tag" style="font-size:0.75rem; color:#3b82f6; background:#eff6ff; padding:2px 8px; border-radius:4px;">#${log['태그']}</span></div>` : ''}
+                  </div>`;
+              groupContainer.appendChild(item); // 묶음 컨테이너 안에 넣기
+          });
+          
+          root.appendChild(groupContainer);
+      });
   }
-
   function adjustColor(color, amount) { return color; } 
   function toggleDisplay(el) { const next = el.nextElementSibling; if(next) next.style.display = next.style.display==="none"?"block":"none"; }
   function closeModal(id) { document.getElementById(id).classList.remove('open'); }
@@ -2506,6 +2570,15 @@ document.getElementById('todo-form').addEventListener('submit', async (e) => {
       if (tasks.length === 0) return 0; // 할 일이 없으면 0%
       const doneCount = tasks.filter(t => t['상태'] === '완료').length;
       return Math.round((doneCount / tasks.length) * 100);
+  }
+
+  // ✅ [신규] 로그 날짜 필터 초기화
+  function clearLogFilter() {
+      const startEl = document.getElementById('log-filter-start');
+      const endEl = document.getElementById('log-filter-end');
+      if (startEl) startEl.value = "";
+      if (endEl) endEl.value = "";
+      renderLogs();
   }
 </script>
 </body>
