@@ -388,8 +388,8 @@ document.addEventListener('DOMContentLoaded', () => {
       return `<span style="color:#ef4444; font-size:0.85em; font-weight:900; margin-left:6px; background:#fee2e2; padding:2px 6px; border-radius:4px;">D+${Math.abs(diffDays)} 지연</span>`;
   }
 
-  // ==========================================
-  // 5. 1 Page 4분할 자동 보고서 생성 로직 (유니클로 스타일 심화)
+// ==========================================
+  // 5. 1 Page 4분할 자동 보고서 생성 로직 (분류 병합 최적화)
   // ==========================================
   function generateAutoReport(rangeType) {
     const baseDateStr = document.getElementById('report-base-date').value;
@@ -414,26 +414,45 @@ document.addEventListener('DOMContentLoaded', () => {
         const d = new Date(log['날짜']); return d >= startDate && d <= targetEndDate;
     });
 
-    // 로그 분류
-    const grouped = {}; let totalLogs = 0;
+    // 🚀 [핵심 수정] ID가 아닌 '이름'을 기준으로 그룹화하여 중복 쪼개짐 방지
+    const groupedLogsByName = {}; 
+    let totalLogs = 0;
+
     targetLogs.forEach(log => {
-        const goalId = log['관련_목표ID'] || '기타 업무';
-        if (!grouped[goalId]) grouped[goalId] = [];
-        grouped[goalId].push(log); totalLogs++;
+        let categoryName = "기타 (미분류 업무)";
+        const gId = log['관련_목표ID'];
+
+        // ID가 존재할 경우 실제 목표의 제목을 찾아옴
+        if (gId && String(gId).trim() !== "") {
+            const goalObj = g_goals.find(g => g.ID === gId) || g_tasks.find(t => t.ID === gId);
+            // 시트 에러(#ERROR!)가 아니고 정상적인 제목이 있을 때만 반영
+            if (goalObj && goalObj['제목'] && !String(goalObj['제목']).includes('#ERROR!')) {
+                categoryName = goalObj['제목']; 
+            }
+        }
+
+        // 이름 기준으로 배열 생성 및 푸시 (동일한 이름은 하나로 완벽히 합쳐짐)
+        if (!groupedLogsByName[categoryName]) {
+            groupedLogsByName[categoryName] = [];
+        }
+        groupedLogsByName[categoryName].push(log);
+        totalLogs++;
     });
 
-    // ✅ [Q1] 핵심 요약: 작업 건수 세분화
+    // 화면에 보여줄 때 '기타' 항목을 항상 맨 밑으로 보내기 위한 정렬 배열
+    const sortedCategories = Object.keys(groupedLogsByName).sort((a, b) => {
+        if (a === "기타 (미분류 업무)") return 1;
+        if (b === "기타 (미분류 업무)") return -1;
+        return a.localeCompare(b);
+    });
+
+    // ✅ [Q1] 핵심 요약: 병합된 건수 출력
     let breakdownHtml = `<li><b>총 작업 건수:</b> 총 ${totalLogs}건 완료</li>`;
     if (totalLogs > 0) {
         breakdownHtml += `<ul style="margin: 6px 0 12px 0; padding-left: 20px; font-size: 0.9em; color: #475569; list-style-type: circle;">`;
-        for (const [gId, logs] of Object.entries(grouped)) {
-            let goalName = "기타 (미분류 업무)";
-            if (gId !== '기타 업무') {
-                const goalObj = g_goals.find(g => g.ID === gId) || g_tasks.find(t => t.ID === gId);
-                if (goalObj) goalName = goalObj['제목'];
-            }
-            breakdownHtml += `<li style="margin-bottom:2px;">${goalName}: <b>${logs.length}</b>건</li>`;
-        }
+        sortedCategories.forEach(catName => {
+            breakdownHtml += `<li style="margin-bottom:2px;">${catName}: <b>${groupedLogsByName[catName].length}</b>건</li>`;
+        });
         breakdownHtml += `</ul>`;
     }
 
@@ -457,31 +476,25 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     progressHtml += `</ul>`;
 
-    // ✅ [Q3] 상세 진행 내역: 텍스트 줄이고 '제목' 위주로 심플하게
+    // ✅ [Q3] 상세 진행 내역: 병합된 카테고리 이름 사용
     let logHtml = `<div style="font-size: 0.95rem; padding-bottom: 10px;">`;
     if (totalLogs === 0) {
         logHtml += `<p style="color:#94a3b8; margin:0;">해당 기간에 작성된 작업 기록이 없습니다.</p>`;
     } else {
-        for (const [gId, logs] of Object.entries(grouped)) {
-            let goalName = "기타 업무";
-            if (gId !== '기타 업무') {
-                const goalObj = g_goals.find(g => g.ID === gId) || g_tasks.find(t => t.ID === gId);
-                if (goalObj) goalName = `[${goalObj['유형']}] ${goalObj['제목']}`;
-            }
-            logHtml += `<h4 style="margin: 14px 0 6px 0; color: #1e293b; font-size: 0.95rem;">📌 ${goalName}</h4>`;
+        sortedCategories.forEach(catName => {
+            logHtml += `<h4 style="margin: 14px 0 6px 0; color: #1e293b; font-size: 0.95rem;">📌 ${catName}</h4>`;
             logHtml += `<ul style="padding-left: 16px; margin: 0; color: #475569; line-height: 1.6; list-style-type: square;">`;
-            logs.forEach(l => {
+            groupedLogsByName[catName].forEach(l => {
                 const dateStr = l['날짜'] ? l['날짜'].substring(5,10) : '';
-                // 제목이 있으면 제목을, 없으면 내용을 짧게 잘라서 표시
                 const logTitle = l['제목'] || (l['내용'] ? l['내용'].substring(0, 20) + "..." : "(내용 없음)");
                 logHtml += `<li style="margin-bottom: 4px;">[${dateStr}] <b>${logTitle}</b></li>`;
             });
             logHtml += `</ul>`;
-        }
+        });
     }
     logHtml += `</div>`;
 
-    // HTML 템플릿 조립
+    // HTML 템플릿 조립 (4분할)
     let htmlTemplate = `
       <div style="font-family: 'Pretendard', 'Malgun Gothic', sans-serif; max-width: 900px; margin: 0 auto; color: #1e293b;">
         <h2 style="text-align: center; color: #0f172a; margin-bottom: 24px; font-size: 1.6rem; letter-spacing: -0.5px;">${titlePrefix}</h2>
