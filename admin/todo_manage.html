@@ -849,8 +849,12 @@
 </div>
 
 <div class="fab-menu">
-  <div style="position:relative;"><button class="fab-btn fab-sub" onclick="openLogModal()">📝</button></div>
-  <div style="position:relative;"><button class="fab-btn fab-main" onclick="openModal('할 일')">+</button></div>
+  <div style="position:relative;">
+    <button type="button" class="fab-btn fab-sub" onclick="event.stopPropagation(); openLogModal();" title="새 작업 기록">📝</button>
+  </div>
+  <div style="position:relative;">
+    <button type="button" class="fab-btn fab-main" onclick="event.stopPropagation(); openModal('할 일');" title="새 항목 등록">+</button>
+  </div>
 </div>
 
 <div id="input-modal" class="modal-overlay">
@@ -1665,25 +1669,60 @@ async function realizeIdea(ideaId) {
   function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
   function updateLogTaskOptions(selectedId = "") {
-    const select = document.getElementById('log-related-id'); select.innerHTML = '<option value="">(없음)</option>';
-    const tasks = g_tasks.filter(t => (t['유형'] === '할일' || t['유형'] === '버그') && t['상태'] !== '완료');
-    if(tasks.length > 0) { const group = document.createElement('optgroup'); group.label = "진행 중인 작업 (할일/버그)"; tasks.forEach(t => { const op = document.createElement('option'); op.value = t.ID; const prefix = t['유형'] === '버그' ? '[🐞버그] ' : ''; op.textContent = prefix + t['제목']; group.appendChild(op); }); select.appendChild(group); }
+    const select = document.getElementById('log-related-id'); 
+    select.innerHTML = '<option value="">(없음)</option>';
+    
+    // 🚀 '할일' 오타를 '할 일'로 수정하여 연동할 작업 목록이 정상적으로 뜨게 개선
+    const tasks = g_tasks.filter(t => (t['유형'] === '할 일' || t['유형'] === '버그') && t['상태'] !== '완료');
+    
+    if(tasks.length > 0) { 
+        const group = document.createElement('optgroup'); 
+        group.label = "진행 중인 작업 (할 일/버그)"; 
+        tasks.forEach(t => { 
+            const op = document.createElement('option'); 
+            op.value = t.ID; 
+            const prefix = t['유형'] === '버그' ? '[🐞버그] ' : ''; 
+            op.textContent = prefix + t['제목']; 
+            group.appendChild(op); 
+        }); 
+        select.appendChild(group); 
+    }
+    
     const mids = g_goals.filter(g => g['유형'] === '중간 목표');
-    if(mids.length > 0) { const group2 = document.createElement('optgroup'); group2.label = "중간 목표"; mids.forEach(m => { const op = document.createElement('option'); op.value = m.ID; op.textContent = m['제목']; group2.appendChild(op); }); select.appendChild(group2); }
+    if(mids.length > 0) { 
+        const group2 = document.createElement('optgroup'); 
+        group2.label = "중간 목표"; 
+        mids.forEach(m => { 
+            const op = document.createElement('option'); 
+            op.value = m.ID; 
+            op.textContent = m['제목']; 
+            group2.appendChild(op); 
+        }); 
+        select.appendChild(group2); 
+    }
+    
     if(selectedId) select.value = selectedId;
   }
 
   function openLogModal() {
-    document.getElementById('log-modal').classList.add('open'); 
+    // 1. 폼 초기화를 가장 먼저 실행 (날짜가 세팅되자마자 지워지는 버그 방지)
+    document.getElementById('log-form').reset(); 
+
+    const modal = document.getElementById('log-modal');
+    modal.classList.add('open'); 
     
-    // [수정] valueAsDate = new Date()는 UTC 기준이라 새벽에 작성 시 날짜가 어제로 밀림
-    // 로컬 시간대 기준 오늘 날짜 문자열(YYYY-MM-DD)을 직접 주입
+    // 🚀 2. 모바일/사파리 브라우저의 화면 멈춤(리페인트 지연) 강제 해결
+    void modal.offsetWidth; 
+    
+    // 3. 오늘 날짜 다시 정확히 세팅
     const now = new Date();
     const localDate = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
     document.getElementById('log-date').value = localDate;
     
-    document.getElementById('log-edit-mode').value="false";
-    document.getElementById('log-form').reset(); document.getElementById('log-idea-section').style.display='block'; updateLogTaskOptions();
+    document.getElementById('log-edit-mode').value = "false";
+    document.getElementById('log-idea-section').style.display = 'block'; 
+    
+    updateLogTaskOptions();
   }
 
 function toggleEditMode(isEdit) {
