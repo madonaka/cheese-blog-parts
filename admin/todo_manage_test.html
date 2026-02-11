@@ -1,0 +1,1932 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Cheese Lab Project</title>
+  
+  <link rel="stylesheet" href="./admin.css">
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.js"></script>
+
+  <script>
+    window.CHEESE_ADMIN_API_BASE = "https://script.google.com/macros/s/AKfycbwn1TrLeSIAe570LRWMJxRzx88u3LQYF38Kme9WhMd-YQsrMsSggrNy3I_2SGKGXTpS/exec";
+  </script>
+  <script src="./admin-common.js" defer></script>
+
+<style>
+    /* ... 기존 CSS 변수 ... */
+    :root { --bg-soft: #f8fafc; --border-color: #e2e8f0; --text-main: #1e293b; --text-sub: #64748b; --primary: #3b82f6; }
+    
+    .dashboard-layout { display: block; max-width: 1200px; margin: 0 auto; }
+    .dashboard-layout > div { min-width: 0; }
+
+    /* 모바일 대응 */
+    @media (max-width: 1000px) { 
+      .admin-main { 
+        padding: 12px; 
+        padding-top: calc(var(--admin-header-h, 64px) + 20px) !important; 
+      } 
+    }
+
+    /* 탭 메뉴 */
+    .view-tabs { 
+      display: flex; gap: 6px; margin-bottom: 20px; 
+      background: #f1f5f9; padding: 4px; border-radius: 12px; 
+      width: 100%; max-width: 100%; overflow-x: auto; white-space: nowrap; 
+      -webkit-overflow-scrolling: touch; scrollbar-width: none; 
+    }
+    .view-tabs::-webkit-scrollbar { display: none; }
+
+    .view-tab-btn { 
+      padding: 8px 16px; border-radius: 8px; font-weight: 600; font-size: 0.9rem; 
+      border: none; background: transparent; color: var(--text-sub); 
+      cursor: pointer; transition: all 0.2s; white-space: nowrap; 
+      flex-shrink: 0; 
+    }
+    .view-tab-btn:hover { color: var(--text-main); }
+    .view-tab-btn.active { background: #fff; color: var(--primary); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+
+    /* Goal Card */
+    .goal-card { background: #fff; border-radius: 16px; margin-bottom: 24px; overflow: hidden; box-shadow: 0 4px 20px -5px rgba(0,0,0,0.05); border: 1px solid var(--border-color); transition: transform 0.2s; position: relative; }
+    .goal-card-header { padding: 18px 24px; color: white; display: flex; justify-content: space-between; align-items: flex-start; cursor: pointer; }
+    .goal-card-header:hover { opacity: 0.95; }
+    .goal-card-title { font-size: 1.25rem; font-weight: 800; line-height: 1.3; max-width: 85%; display: flex; align-items: center; gap: 8px; }
+    .goal-card-desc { font-size: 0.9rem; opacity: 0.95; margin-top: 6px; font-weight: 400; line-height: 1.4; }
+    .goal-date-badge { display: inline-block; background: rgba(0,0,0,0.2); border-radius: 4px; padding: 2px 8px; font-size: 0.75rem; margin-top: 6px; font-weight: 500; }
+    .header-actions .action-btn { background: rgba(255,255,255,0.25); border: none; color: white; border-radius: 6px; padding: 6px 10px; cursor: pointer; margin-left: 4px; }
+
+    /* Mid/Task */
+    .mid-goal-group { padding: 20px; border-top: 1px solid #f1f5f9; }
+    .mid-goal-item { margin-top: 16px; background: #fff; border-radius: 12px; border: 1px solid var(--border-color); overflow: hidden; }
+    .mid-goal-item:first-child { margin-top: 0; }
+    .mid-goal-header { padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; background: #f8fafc; cursor: pointer; font-weight: 600; color: var(--text-main); }
+    .task-list { border-top: 1px solid var(--border-color); }
+    .task-row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border-color); cursor: pointer; transition: background 0.1s; }
+    .task-row:hover { background: #fdfdfd; }
+    .row-actions { display: flex; gap: 8px; opacity: 0; transition: opacity 0.2s; }
+    .mid-goal-header:hover .row-actions, .task-row:hover .row-actions { opacity: 1; }
+    @media(max-width:600px){ .row-actions { opacity: 1; } }
+    .row-btn { background: transparent; border: none; cursor: pointer; font-size: 1.1rem; padding: 4px; color: #94a3b8; }
+    .row-btn:hover { color: var(--primary); } .row-btn.delete:hover { color: #ef4444; }
+
+    /* 🚀 [NEW] 보드 뷰 (Planner 스타일) */
+    .board-wrapper { display: flex; gap: 16px; overflow-x: auto; padding-bottom: 20px; height: calc(100vh - 220px); }
+    .board-column { flex: 1; min-width: 280px; max-width: 400px; background: #f1f5f9; border-radius: 12px; display: flex; flex-direction: column; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+    
+    .column-header { padding: 14px; font-weight: 800; font-size: 1rem; border-radius: 12px 12px 0 0; color: white; text-align: center; }
+    .header-high { background: linear-gradient(135deg, #ef4444, #dc2626); }
+    .header-normal { background: linear-gradient(135deg, #3b82f6, #2563eb); }
+    .header-low { background: linear-gradient(135deg, #10b981, #059669); }
+
+    .column-content { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+    .column-done-content { padding: 12px; display: flex; flex-direction: column; gap: 10px; background: #e2e8f0; border-radius: 0 0 12px 12px; border-top: 1px solid #cbd5e1; }
+
+    .board-card { background: #fff; border-radius: 8px; padding: 12px 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid #e2e8f0; cursor: pointer; transition: transform 0.2s; position: relative; }
+    .board-card:hover { transform: translateY(-2px); box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    .board-card.done { opacity: 0.7; background: #f8fafc; color: #94a3b8; }
+    .board-card.done .board-card-title { text-decoration: line-through; }
+
+    .board-card-title { font-weight: 700; margin-bottom: 6px; font-size: 0.95rem; color: #1e293b; line-height: 1.4; }
+    .board-card-meta { display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; color: #64748b; }
+    .board-date-badge { background: #eff6ff; color: #3b82f6; padding: 2px 6px; border-radius: 4px; font-weight: 600; }
+    .board-overdue { background: #fef2f2; color: #ef4444; }
+
+    .completed-toggle-btn { width: 100%; border: none; background: #cbd5e1; color: #475569; padding: 10px; font-weight: 700; cursor: pointer; text-align: center; transition: background 0.2s; font-size: 0.85rem; }
+    .completed-toggle-btn:hover { background: #94a3b8; color: #fff; }
+    
+    /* 버그 트래커 스타일 */
+    .bug-container { border-top: 4px solid #ef4444; }
+    .bug-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 20px; transition: all 0.2s; position: relative; box-shadow: 0 2px 8px rgba(0,0,0,0.04); display: flex; flex-direction: column; height: 100%; border-top: 5px solid #ef4444; }
+    .bug-card:hover { transform: translateY(-3px); box-shadow: 0 10px 20px -5px rgba(239, 68, 68, 0.15); }
+    .bug-card.working { border: 2px solid #f87171; background: #fef2f2; }
+    .bug-status-badge { position: absolute; top: -10px; right: 12px; background: #ef4444; color: white; font-size: 0.75rem; padding: 4px 10px; border-radius: 20px; font-weight: 800; box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.4); z-index: 2; }
+    .bug-parent-info { font-size: 0.75rem; color: #94a3b8; margin-bottom: 4px; display:flex; align-items:center; gap:4px; }
+    .bug-title { font-weight: 800; font-size: 1.05rem; margin-bottom: 8px; color: #7f1d1d; line-height: 1.3; }
+    .bug-body { font-size: 0.9rem; color: #7f1d1d; opacity:0.8; line-height: 1.5; flex-grow: 1; margin-bottom: 16px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+    .bug-footer { display: flex; gap: 8px; margin-top: auto; border-top: 1px solid #fee2e2; padding-top: 12px; }
+    .bug-btn { flex: 1; border: none; padding: 8px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 600; transition: 0.2s; }
+    .bug-btn.check { background: #fff1f2; color: #e11d48; } .bug-btn.check:hover { background: #ffe4e6; }
+    .bug-btn.solve { background: #f0fdf4; color: #16a34a; } .bug-btn.solve:hover { background: #dcfce7; }
+    .bug-btn.restore { background: #f1f5f9; color: #64748b; } .bug-btn.restore:hover { background: #e2e8f0; }
+
+    /* Idea */
+    .idea-container { padding: 0 4px; }
+    .idea-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .idea-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+    .idea-card { background: #fff; border: 1px solid var(--border-color); border-radius: 16px; padding: 20px; transition: all 0.2s; position: relative; box-shadow: 0 2px 8px rgba(0,0,0,0.04); display: flex; flex-direction: column; height: 100%; border-top: 5px solid #d8b4fe; }
+    .idea-card:hover { transform: translateY(-3px); box-shadow: 0 10px 20px -5px rgba(0,0,0,0.1); }
+    .idea-card.realized { border: 2px solid #60a5fa; background: #f8fbff; }
+    .realized-badge { position: absolute; top: -10px; right: 12px; background: #3b82f6; color: white; font-size: 0.75rem; padding: 4px 10px; border-radius: 20px; font-weight: 800; box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.4); z-index: 2; }
+    .idea-header { display: flex; justify-content: flex-start; margin-bottom: 8px; }
+    .idea-date { font-size: 0.75rem; color: #64748b; background: #f1f5f9; padding: 4px 8px; border-radius: 6px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
+    .idea-title { font-weight: 800; font-size: 1.1rem; margin-bottom: 8px; color: #1e293b; line-height: 1.3; }
+    .idea-body { font-size: 0.9rem; color: #64748b; line-height: 1.5; flex-grow: 1; margin-bottom: 16px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+    .idea-footer { display: flex; gap: 8px; margin-top: auto; border-top: 1px solid #f1f5f9; padding-top: 12px; }
+    .idea-btn { flex: 1; border: none; background: #f1f5f9; color: #64748b; padding: 8px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 600; transition: 0.2s; }
+    .idea-btn:hover { background: #e2e8f0; color: #334155; }
+    .idea-btn.plan { background: #eff6ff; color: #3b82f6; } .idea-btn.plan:hover { background: #dbeafe; }
+    .idea-btn.done { background: #f0fdf4; color: #16a34a; } .idea-btn.done:hover { background: #dcfce7; }
+
+    /* Log */
+    .log-container { background: #fff; border-radius: 16px; padding: 32px; border: 1px solid var(--border-color); min-height: 600px; }
+    .log-item { position: relative; padding-left: 24px; margin-bottom: 28px; max-width: 800px; }
+    .log-item::before { content: ''; position: absolute; left: 7px; top: 24px; bottom: -30px; width: 2px; background: #e2e8f0; }
+    .log-item:last-child::before { display: block; background: linear-gradient(to bottom, #e2e8f0 50%, transparent 100%); }
+    .log-dot { position: absolute; left: 0; top: 6px; width: 16px; height: 16px; background: #fff; border: 4px solid var(--primary); border-radius: 50%; }
+    .log-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; transition: box-shadow 0.2s; position: relative; box-shadow: 0 1px 3px rgba(0,0,0,0.03); }
+    .log-header { display: flex; justify-content: space-between; margin-bottom: 8px; align-items: center; }
+    .log-time { font-size: 0.75rem; color: #94a3b8; font-weight: 600; display:flex; align-items:center; gap:4px; }
+    .log-related { display: inline-block; font-size: 0.75rem; color: #059669; background: #ecfdf5; padding: 2px 8px; border-radius: 4px; font-weight: 600; margin-bottom: 6px; }
+    .log-actions { position: absolute; top: 12px; right: 12px; display: flex; gap: 8px; opacity: 0; transition: opacity 0.2s; }
+    .log-card:hover .log-actions { opacity: 1; }
+    .log-count-badge { font-size: 0.75rem; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; margin-left: 6px; display: inline-flex; align-items: center; gap: 3px; }
+    .log-date-divider { display: flex; align-items: center; margin: 30px 0 15px; font-weight: 700; color: #475569; font-size: 0.9rem; }
+    .log-date-divider::before, .log-date-divider::after { content: ''; flex: 1; height: 1px; background: #e2e8f0; }
+    .log-date-divider::before { margin-right: 12px; } .log-date-divider::after { margin-left: 12px; }
+    @media (max-width: 600px) { .log-container { padding: 16px; } .log-actions { opacity: 1; position: relative; top:0; right:0; margin-left: auto; } .log-header { flex-wrap: wrap; gap: 8px; } }
+
+    /* Utils */
+    .color-options { display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+    .color-radio { display: none; }
+    .color-label { width: 32px; height: 32px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; transition: transform 0.2s; }
+    .color-radio:checked + .color-label { transform: scale(1.1); box-shadow: 0 0 0 2px #fff, 0 0 0 4px #94a3b8; }
+    .check-circle { width: 22px; height: 22px; border: 2px solid #cbd5e1; border-radius: 50%; cursor: pointer; position: relative; flex-shrink: 0; }
+    .check-circle.checked { background: #10b981; border-color: #10b981; }
+    .check-circle.checked::after { content: '✔'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 12px; }
+    .fab-menu { position: fixed; bottom: 30px; right: 30px; display: flex; flex-direction: column; gap: 12px; align-items: flex-end; z-index: 1000; }
+    .fab-btn { width: 56px; height: 56px; border-radius: 50%; border: none; color: white; font-size: 24px; box-shadow: 0 10px 25px rgba(37, 99, 235, 0.3); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: transform 0.2s; }
+    .fab-main { background: var(--primary); }
+    .fab-sub { width: 48px; height: 48px; background: #475569; font-size: 20px; display: none; }
+    .fab-menu:hover .fab-sub { display: flex; }
+
+    /* 모달 */
+    .custom-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 2000; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+    .custom-modal.open { display: flex; }
+    .modal-box { background: #fff; padding: 32px; border-radius: 20px; width: 90%; max-width: 800px; max-height: 90vh; overflow-y: auto; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); }
+    @media (max-width: 600px) { .date-group { flex-direction: column !important; gap: 10px !important; } .modal-box { width: 95% !important; padding: 20px !important; max-width: 100%; border-radius: 16px; } }
+    /* [수정] 보기 전용 박스 디자인 (Modern Document Style) */
+    .view-content-box { 
+      padding: 24px; /* 여백을 넉넉하게 */
+      background: #ffffff; /* 배경을 흰색으로 하여 가독성 확보 */
+      border: 1px solid #cbd5e1; /* 테두리를 부드러운 회색으로 */
+      border-radius: 12px; /* 모서리를 둥글게 */
+      min-height: 120px; 
+      line-height: 1.75; /* 줄 간격을 넓혀 읽기 편하게 */
+      color: #334155; 
+      margin-top: 8px;
+      
+      /* 은은한 그림자로 깊이감 추가 */
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.02);
+      
+      /* 텍스트 스타일 */
+      font-size: 0.95rem;
+      letter-spacing: -0.01em;
+      word-break: break-word; /* 긴 단어 줄바꿈 */
+    }
+
+    /* [추가] 내부 콘텐츠 스타일링 (에디터 작성 내용이 예쁘게 보이도록) */
+    .view-content-box img { max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin: 12px 0; }
+    .view-content-box h1, .view-content-box h2, .view-content-box h3 { color: #1e293b; margin-top: 1.5em; margin-bottom: 0.5em; font-weight: 800; line-height: 1.3; }
+    .view-content-box h1 { font-size: 1.4rem; border-bottom: 2px solid #f1f5f9; padding-bottom: 8px; }
+    .view-content-box h2 { font-size: 1.25rem; }
+    .view-content-box ul, .view-content-box ol { padding-left: 24px; margin: 12px 0; }
+    .view-content-box li { margin-bottom: 4px; }
+    .view-content-box p { margin-bottom: 12px; }
+    .view-content-box blockquote { border-left: 4px solid #3b82f6; background: #eff6ff; padding: 12px 16px; margin: 16px 0; border-radius: 0 8px 8px 0; color: #1e40af; font-style: italic; }
+    .view-content-box hr { border: 0; border-top: 1px solid #e2e8f0; margin: 24px 0; }
+    
+    .modal-section { margin-top: 24px; padding-top: 16px; border-top: 1px solid #e2e8f0; }
+    .section-title { font-size: 0.95rem; font-weight: 700; color: #475569; margin-bottom: 12px; display:flex; align-items:center; gap:6px; }
+    
+    /* 히스토리 스타일 (접기/펼치기) */
+    .history-list { display: flex; flex-direction: column; gap: 10px; }
+    .history-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; font-size: 0.9rem; position: relative; cursor: pointer; transition: background 0.2s; }
+    .history-item:hover { background: #f1f5f9; }
+    .history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .history-date { font-weight: 700; color: #64748b; font-size: 0.75rem; background: #fff; padding: 2px 8px; border-radius: 12px; border: 1px solid #e2e8f0; }
+    .history-time { font-size: 0.75rem; color: #94a3b8; font-weight: 600; }
+    .history-content { color: #334155; line-height: 1.5; font-size: 0.9rem; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; white-space: normal; }
+    .history-item.expanded .history-content { display: block; -webkit-line-clamp: unset; overflow: visible; }
+    .history-item::after { content: '▼ 더보기'; display: block; text-align: center; font-size: 0.7rem; color: #cbd5e1; margin-top: 6px; }
+    .history-item.expanded::after { content: '▲ 접기'; }
+
+    /* 관련 아이디어(미니 카드) */
+    .mini-idea-grid { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 8px; }
+    .mini-idea-card { min-width: 200px; max-width: 200px; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; border-top: 4px solid #d8b4fe; cursor: pointer; flex-shrink: 0; }
+    .mini-idea-card:hover { transform: translateY(-2px); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+    .mini-idea-title { font-weight: 700; font-size: 0.9rem; margin-bottom: 4px; color: #333; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .mini-idea-desc { font-size: 0.8rem; color: #64748b; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.4; }
+    
+    #log-bug-section { background: #fef2f2; padding: 12px; border-radius: 8px; border: 1px dashed #ef4444; margin-top: 10px; }
+    #log-bug-section label { color: #b91c1c; font-weight: 700; display:flex; align-items:center; gap:4px; }
+    #log-bug-section input { border-color: #fca5a5; }
+    
+    /* 중간 목표 내 아이디어 슬라이더 */
+    .mid-idea-slider { display: flex; gap: 10px; overflow-x: auto; padding: 12px 16px; background: #f1f5f9; border-bottom: 1px solid #e2e8f0; scrollbar-width: thin; }
+    .mid-idea-slider::-webkit-scrollbar { height: 6px; }
+    .mid-idea-slider::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    .mid-idea-card-mini { min-width: 180px; max-width: 180px; background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; cursor: pointer; flex-shrink: 0; border-top: 3px solid #d8b4fe; transition: transform 0.1s; display: flex; flex-direction: column; }
+    .mid-idea-card-mini:hover { transform: translateY(-2px); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+    .mic-date { font-size: 0.7rem; color: #94a3b8; margin-bottom: 4px; }
+    .mic-title { font-size: 0.85rem; font-weight: 700; color: #333; margin-bottom: 4px; line-height: 1.3; }
+    .mic-desc { font-size: 0.75rem; color: #64748b; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  
+    /* [수정] 아이디어 탭 & 리스트 스타일 */
+    .idea-nav {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 12px;
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+    
+    .idea-tab-btn {
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #64748b;
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .idea-tab-btn:hover { background: #f8fafc; color: #334155; }
+    .idea-tab-btn.active {
+      background: #3b82f6; 
+      color: #fff; 
+      border-color: #3b82f6; 
+      box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3);
+    }
+    
+    /* 탭별 포인트 컬러 (Active 상태일 때) */
+    .idea-tab-btn[data-cat="blog"].active { background: #db2777; border-color: #db2777; box-shadow: 0 4px 6px -1px rgba(219, 39, 119, 0.3); }
+    .idea-tab-btn[data-cat="system"].active { background: #2563eb; border-color: #2563eb; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.3); }
+    .idea-tab-btn[data-cat="biz"].active { background: #d97706; border-color: #d97706; box-shadow: 0 4px 6px -1px rgba(217, 119, 6, 0.3); }
+    .idea-tab-btn[data-cat="etc"].active { background: #64748b; border-color: #64748b; box-shadow: 0 4px 6px -1px rgba(100, 116, 139, 0.3); }
+    .idea-tab-btn[data-cat="realized"].active { background: #10b981; border-color: #10b981; box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.3); }
+    
+    /* 아이디어 그리드 (반응형 카드 배치) */
+    .idea-list-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+      min-height: 400px;
+    }
+    
+    .idea-card-item {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 16px;
+      position: relative;
+      transition: transform 0.2s, box-shadow 0.2s;
+      display: flex;
+      flex-direction: column;
+      border-top: 4px solid #cbd5e1; /* 기본색 */
+    }
+    .idea-card-item:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 10px 15px -3px rgba(0,0,0,0.08);
+    }
+    
+    /* 카테고리별 카드 탑 보더 색상 */
+    .idea-card-item.cat-blog { border-top-color: #db2777; }
+    .idea-card-item.cat-system { border-top-color: #2563eb; }
+    .idea-card-item.cat-biz { border-top-color: #d97706; }
+    .idea-card-item.cat-etc { border-top-color: #64748b; }
+    .idea-card-item.is-realized { background: #f0fdf4; border: 1px solid #bbf7d0; border-top-color: #10b981; }
+    
+    .ici-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .ici-date { font-size: 0.75rem; color: #94a3b8; font-weight: 500; display: flex; align-items: center; gap: 4px; }
+    .ici-badge { font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; font-weight: 700; color: #fff; }
+    .ici-title { font-size: 1.05rem; font-weight: 700; color: #1e293b; margin-bottom: 8px; line-height: 1.3; }
+    .ici-body { font-size: 0.9rem; color: #64748b; line-height: 1.5; flex: 1; margin-bottom: 12px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+    .ici-footer { display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px dashed #e2e8f0; margin-top: auto; }
+
+    /* [추가] 버튼 로딩 스피너 스타일 */
+    .btn-spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255,255,255,0.4);
+      border-radius: 50%;
+      border-top-color: #fff;
+      animation: spin 0.8s linear infinite;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    
+    /* 로딩 중일 때 버튼 스타일 */
+    .btn.loading {
+      position: relative;
+      pointer-events: none; /* 클릭 방지 */
+      opacity: 0.7;
+    }  
+  /* [NEW] 모달 디자인 개선 (Modern UI) */
+.modal-box {
+  background: #fff;
+  border-radius: 24px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  width: 700px; /* 너비를 좀 더 넓혀 시원하게 */
+  max-width: 95vw;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh; /* 화면 꽉 차지 않게 */
+}
+
+/* 헤더 */
+.modal-header-custom {
+  padding: 24px 32px;
+  background: #fff;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.modal-title-custom {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #1e293b;
+}
+
+/* 바디 (스크롤 영역) */
+.modal-body-custom {
+  padding: 32px;
+  background: #f8fafc;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* 폼 그리드 레이아웃 */
+.form-grid {
+  display: grid;
+  gap: 24px;
+}
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr; /* 2열 배치 */
+  gap: 20px;
+}
+
+/* 라벨 스타일 */
+.input-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #475569;
+}
+
+/* 입력 필드 공통 */
+.styled-input {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+  font-size: 1rem;
+  color: #334155;
+  transition: all 0.2s;
+}
+.styled-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* 유형 선택 (탭 스타일) */
+.type-selector-wrapper {
+  background: #e2e8f0;
+  padding: 4px;
+  border-radius: 14px;
+  display: flex;
+  gap: 4px;
+}
+.type-selector-wrapper label {
+  flex: 1;
+  text-align: center;
+  padding: 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #64748b;
+  transition: all 0.2s;
+}
+.type-selector-wrapper input { display: none; } /* 라디오 버튼 숨김 */
+.type-selector-wrapper input:checked + label {
+  background: #fff;
+  color: #3b82f6;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+/* 유형별 포인트 컬러 */
+.type-selector-wrapper input[value="버그"]:checked + label { color: #ef4444; }
+.type-selector-wrapper input[value="아이디어"]:checked + label { color: #db2777; }
+
+/* 아이디어/색상 분류 (칩 스타일) */
+.color-chip-wrapper { display: flex; gap: 8px; flex-wrap: wrap; }
+.color-chip-option {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 14px;
+  border-radius: 20px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  cursor: pointer;
+  font-weight: 600;
+  color: #64748b;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+}
+.color-radio { display: none; }
+.color-radio:checked + .color-chip-option {
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+}
+/* 선택 시 배경색 적용 (스크립트가 없어도 CSS로 처리) */
+.color-radio[value="#db2777"]:checked + .color-chip-option { background: #db2777; }
+.color-radio[value="#2563eb"]:checked + .color-chip-option { background: #2563eb; }
+.color-radio[value="#d97706"]:checked + .color-chip-option { background: #d97706; }
+.color-radio[value="#64748b"]:checked + .color-chip-option { background: #64748b; }
+.color-radio[value="#4f46e5"]:checked + .color-chip-option { background: #4f46e5; }
+.color-radio[value="#059669"]:checked + .color-chip-option { background: #059669; }
+
+/* 푸터 (버튼 영역) */
+.modal-footer-custom {
+  padding: 20px 32px;
+  background: #fff;
+  border-top: 1px solid #f1f5f9;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+.btn-close-custom {
+  padding: 12px 24px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #64748b;
+  font-weight: 700;
+  cursor: pointer;
+}
+.btn-save-custom {
+  padding: 12px 24px;
+  border-radius: 12px;
+  background: #10b981; /* 에메랄드 그린 */
+  color: #fff;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.3);
+}
+.btn-save-custom:hover { background: #059669; }
+
+  /* [필수] 모달 오버레이 (배경) 스타일 - 이게 없으면 버튼이 안 눌립니다! */
+.modal-overlay {
+  display: none; /* 기본적으로 숨김 */
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4); /* 반투명 배경 */
+  z-index: 2000; /* FAB(1000)보다 높은 우선순위 */
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px); /* 배경 흐림 효과 */
+}
+
+/* 모달이 열렸을 때 (JS에서 .open 클래스 추가 시 동작) */
+.modal-overlay.open {
+  display: flex;
+}
+  /* 기존 .fab-menu 스타일을 찾아서 z-index를 1000 -> 1500 정도로 상향 */
+.fab-menu {
+  /* ... 기존 스타일 ... */
+  z-index: 1500; 
+}
+  /* [수정] 모달 박스 레이아웃 (스크롤 버그 수정) */
+.modal-box {
+  background: #fff;
+  border-radius: 24px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  width: 700px;
+  max-width: 95vw;
+  
+  /* 화면 높이의 90%까지만 차지하도록 제한 */
+  height: auto;
+  max-height: 90vh; 
+  
+  display: flex;
+  flex-direction: column;
+  overflow: hidden; /* 박스 밖으로 나가는 내용 숨김 */
+}
+
+/* [추가] 폼 태그가 모달 박스를 가득 채우게 설정 */
+#todo-form {
+  display: flex;
+  flex-direction: column;
+  height: 100%; /* 부모(.modal-box) 높이를 꽉 채움 */
+  overflow: hidden;
+}
+
+/* 헤더는 고정 */
+.modal-header-custom {
+  flex-shrink: 0; /* 줄어들지 않음 */
+  padding: 20px 32px; /* 패딩 약간 조정 */
+  background: #fff;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* [수정] 바디 (여기가 스크롤 되어야 함) */
+.modal-body-custom {
+  flex: 1; /* 남은 공간을 모두 차지 */
+  overflow-y: auto; /* 세로 스크롤 활성화 */
+  padding: 32px;
+  background: #f8fafc;
+  min-height: 0; /* 플렉스 박스 스크롤 버그 방지용 필수 코드 */
+}
+
+/* 푸터도 고정 */
+.modal-footer-custom {
+  flex-shrink: 0; /* 줄어들지 않음 */
+  padding: 20px 32px;
+  background: #fff;
+  border-top: 1px solid #f1f5f9;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  z-index: 10;
+}
+  /* [추가] 커스텀 스크롤 바 디자인 (전체 적용) */
+
+/* 1. 스크롤 바의 너비 설정 */
+::-webkit-scrollbar {
+  width: 8px;  /* 세로 스크롤 두께 */
+  height: 8px; /* 가로 스크롤 두께 */
+}
+
+/* 2. 스크롤 트랙 (배경) - 투명하게 */
+::-webkit-scrollbar-track {
+  background: transparent; 
+}
+
+/* 3. 스크롤 막대 (손잡이) 디자인 */
+::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1; /* 부드러운 회색 */
+  border-radius: 4px;       /* 둥근 모서리 */
+  
+  /* 막대 주변에 투명 테두리를 줘서 공중에 뜬 느낌 연출 */
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+/* 4. 마우스 올렸을 때 진하게 */
+::-webkit-scrollbar-thumb:hover {
+  background-color: #94a3b8;
+}
+  /* [추가] 시스템 버전 표시 스타일 */
+.sys-version-large {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #ef4444; /* 붉은색 포인트 */
+  background: #fee2e2;
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+  </style>
+</head>
+<body>
+
+<div class="admin-shell">
+  <div id="admin-header-slot"></div>
+  <main class="admin-main">
+    <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+
+    <section class="admin-content">
+      <div style="margin-bottom: 24px;">
+        <h2 style="font-size: 1.8rem; font-weight: 800; color: var(--text-main); margin: 0;">Dashboard</h2>
+        <p style="color: var(--text-sub); margin-top: 4px;">프로젝트 현황 관리</p>
+        <div id="sysVersion" class="sys-version-large">Checking version...</div>
+      </div>
+
+      <div class="dashboard-layout">
+        
+        <div class="view-tabs">
+          <button class="view-tab-btn active" onclick="switchView('card')" id="btn-view-card">🗂 계층형</button>
+          <button class="view-tab-btn" onclick="switchView('board')" id="btn-view-board">📋 게시판</button>
+          <button class="view-tab-btn" onclick="switchView('bug')" id="btn-view-bug">🐞 버그 트래커</button> 
+          <button class="view-tab-btn" onclick="switchView('idea')" id="btn-view-idea">💡 아이디어 함</button>
+          <button class="view-tab-btn" onclick="switchView('log')" id="btn-view-log">📝 작업 로그</button>
+        </div>
+
+        <div id="view-card-container"><div id="goal-tree-root"><div class="goal-card" style="padding:40px; text-align:center; color:#94a3b8; background:#f1f5f9;">데이터 로딩 중...</div></div></div>
+        
+        <div id="view-board-container" style="display:none;">
+          <div class="board-wrapper">
+            <div class="board-column">
+              <div class="column-header header-high">🔥 높음 (High)</div>
+              <div id="board-col-high" class="column-content"></div>
+              <div class="column-footer">
+                 <button class="completed-toggle-btn" onclick="toggleBoardCompleted('high')">
+                   ✅ 완료됨 <span id="count-high-done">(0)</span> ▼
+                 </button>
+                 <div id="board-col-high-done" class="column-done-content" style="display:none;"></div>
+              </div>
+            </div>
+            <div class="board-column">
+              <div class="column-header header-normal">🔵 보통 (Normal)</div>
+              <div id="board-col-normal" class="column-content"></div>
+              <div class="column-footer">
+                 <button class="completed-toggle-btn" onclick="toggleBoardCompleted('normal')">
+                   ✅ 완료됨 <span id="count-normal-done">(0)</span> ▼
+                 </button>
+                 <div id="board-col-normal-done" class="column-done-content" style="display:none;"></div>
+              </div>
+            </div>
+            <div class="board-column">
+              <div class="column-header header-low">🌱 낮음 (Low)</div>
+              <div id="board-col-low" class="column-content"></div>
+              <div class="column-footer">
+                 <button class="completed-toggle-btn" onclick="toggleBoardCompleted('low')">
+                   ✅ 완료됨 <span id="count-low-done">(0)</span> ▼
+                 </button>
+                 <div id="board-col-low-done" class="column-done-content" style="display:none;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div id="view-bug-container" style="display:none;">
+          <div class="idea-container">
+            <div class="idea-toolbar">
+              <span style="font-size:0.9rem; color:#b91c1c; font-weight:600;">🚨 발견된 버그 및 이슈 트래커</span>
+              <label style="cursor:pointer; display:flex; align-items:center; gap:6px; font-size:0.9rem;">
+                <input type="checkbox" id="toggle-bug-archive" onchange="renderBugView()">
+                <span>✅ 해결된 버그 보기 (아카이브)</span>
+              </label>
+            </div>
+            <div id="bug-grid-root" class="idea-grid"></div>
+          </div>
+        </div>
+
+      <div id="view-idea-container" style="display:none;">
+        <div class="idea-container">
+          <div class="idea-toolbar" style="margin-bottom: 10px;">
+            <div style="display:flex; flex-direction:column;">
+              <span style="font-size:1.1rem; color:#1e293b; font-weight:800;">💡 아이디어 뱅크</span>
+              <span style="font-size:0.85rem; color:#64748b;">번뜩이는 영감을 기록하고 실현해보세요.</span>
+            </div>
+            <select id="idea-sort-select" class="sort-select" onchange="renderIdeaView()">
+              <option value="newest">📅 최신순</option>
+              <option value="oldest">⏳ 오래된순</option>
+            </select>
+          </div>
+      
+          <div class="idea-nav">
+            <button class="idea-tab-btn active" onclick="switchIdeaTab('all')" id="itab-all">📂 전체</button>
+            <button class="idea-tab-btn" onclick="switchIdeaTab('blog')" id="itab-blog" data-cat="blog">📝 블로그</button>
+            <button class="idea-tab-btn" onclick="switchIdeaTab('system')" id="itab-system" data-cat="system">⚙️ 시스템</button>
+            <button class="idea-tab-btn" onclick="switchIdeaTab('biz')" id="itab-biz" data-cat="biz">🧀 사업/구상</button>
+            <button class="idea-tab-btn" onclick="switchIdeaTab('etc')" id="itab-etc" data-cat="etc">💭 잡담/생각</button>
+            <div style="width:1px; background:#e2e8f0; margin:0 4px;"></div>
+            <button class="idea-tab-btn" onclick="switchIdeaTab('realized')" id="itab-realized" data-cat="realized">🚀 실현됨</button>
+          </div>
+      
+          <div id="idea-list-root" class="idea-list-grid"></div>
+        </div>
+      </div>
+
+
+
+        
+        <div id="view-log-container" style="display:none;">
+          <div class="log-container">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
+              <h3 style="margin: 0; font-size: 1.3rem; font-weight: 700;">📝 전체 작업 타임라인</h3>
+              <button class="btn btn-primary" style="padding: 10px 16px; font-size: 0.95rem;" onclick="openLogModal()">+ 새 기록 작성</button>
+            </div>
+            <div id="log-timeline-root"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="fab-menu">
+  <div style="position:relative;"><button class="fab-btn fab-sub" onclick="openLogModal()">📝</button></div>
+  <div style="position:relative;"><button class="fab-btn fab-main" onclick="openModal('할일')">+</button></div>
+</div>
+
+<div id="input-modal" class="modal-overlay">
+  <div class="modal-box">
+    <form id="todo-form">
+      <input type="hidden" id="edit-mode" value="false">
+      <input type="hidden" id="edit-id">
+      <input type="hidden" id="origin-idea-id"> <div class="modal-header-custom">
+        <span class="modal-title-custom" id="todo-modal-title">새 항목</span>
+        <div id="edit-actions" style="display:none;">
+          <button type="button" class="btn" id="btn-delete-modal" onclick="deleteItem()" style="color:#ef4444; background:#fee2e2; border:none; padding:8px 12px; border-radius:8px; font-weight:bold;">🗑️ 삭제</button>
+        </div>
+      </div>
+
+      <div class="modal-body-custom">
+        <div class="form-grid">
+          
+          <div class="form-group">
+            <label class="input-label">항목 유형</label>
+            <div class="type-selector-wrapper" onchange="toggleFormFields()">
+              <input type="radio" name="type" id="type-task" value="할 일" checked><label for="type-task">할 일</label>
+              <input type="radio" name="type" id="type-idea" value="아이디어"><label for="type-idea">💡 아이디어</label>
+              <input type="radio" name="type" id="type-bug" value="버그"><label for="type-bug">🔥 버그</label>
+              <input type="radio" name="type" id="type-mid" value="중간 목표"><label for="type-mid">🚩 중간 목표</label>
+              <input type="radio" name="type" id="type-big" value="큰 목표"><label for="type-big">🏆 큰 목표</label>
+            </div>
+          </div>
+
+          <div class="form-group" id="field-title">
+            <label class="input-label">제목</label>
+            <input type="text" id="input-title" class="styled-input" placeholder="무엇을 해야 하나요?" required autocomplete="off">
+          </div>
+
+          <div class="form-group" id="field-color" style="display:none;">
+            <label class="input-label" id="label-color-theme">분류 선택</label>
+            
+            <div id="color-picker-goal" class="color-chip-wrapper" style="display:none;">
+                <label><input type="radio" name="color_goal" value="#4f46e5" class="color-radio" checked><span class="color-chip-option">인디고</span></label>
+                <label><input type="radio" name="color_goal" value="#059669" class="color-radio"><span class="color-chip-option">에메랄드</span></label>
+                <label><input type="radio" name="color_goal" value="#db2777" class="color-radio"><span class="color-chip-option">핑크</span></label>
+                <label><input type="radio" name="color_goal" value="#d97706" class="color-radio"><span class="color-chip-option">엠버</span></label>
+            </div>
+            
+            <div id="color-picker-idea" class="color-chip-wrapper" style="display:none;">
+                <label><input type="radio" name="color_idea" value="#db2777" class="color-radio"><span class="color-chip-option">📝 블로그</span></label>
+                <label><input type="radio" name="color_idea" value="#2563eb" class="color-radio"><span class="color-chip-option">⚙️ 시스템</span></label>
+                <label><input type="radio" name="color_idea" value="#d97706" class="color-radio"><span class="color-chip-option">🧀 사업</span></label>
+                <label><input type="radio" name="color_idea" value="#64748b" class="color-radio" checked><span class="color-chip-option">💭 잡담</span></label>
+            </div>
+          </div>
+
+          <div class="form-group" id="field-parent">
+            <label class="input-label" id="label-parent">연결된 목표</label>
+            <select id="input-connected-id" class="styled-input">
+              <option value="">(선택 없음)</option>
+            </select>
+            <div style="font-size:0.8rem; color:#94a3b8; margin-top:4px;">* 상위 목표를 선택하면 구조화되어 관리됩니다.</div>
+          </div>
+
+          <div class="form-group" id="field-detail">
+            <label class="input-label">상세 내용</label>
+            <div id="view-detail-content" class="view-content-box" style="display:none; overflow-y:auto; max-height:400px;"></div>
+            <!-- ✅ 읽기모드 전용 텍스트박스 (readonly) -->
+            <textarea id="detail-readonly" readonly
+              style="width:100%; min-height:250px; display:none; resize:vertical;"></textarea>
+            
+            <!-- ✅ 수정모드 전용 (썸머노트가 붙는 원본 textarea) -->
+            <textarea id="input-detail" style="display:none;"></textarea>
+          </div>  
+          
+          <div class="form-row">
+            <div class="form-group" id="field-start-date" style="display:none;">
+              <label class="input-label">시작일</label>
+              <input type="date" id="input-start" class="styled-input">
+            </div>
+
+            <div class="form-group" id="field-due-date">
+              <label class="input-label">마감일 / 일자</label>
+              <input type="date" id="input-due" class="styled-input">
+            </div>
+
+            <div class="form-group" id="field-priority">
+              <label class="input-label">우선순위</label>
+              <select id="input-priority" class="styled-input">
+                <option value="낮음">🟢 낮음 (천천히)</option>
+                <option value="보통" selected>🔵 보통 (일반적)</option>
+                <option value="높음">🔴 높음 (급함!)</option>
+                <option value="긴급">🔥 긴급 (지금 당장)</option>
+              </select>
+            </div>
+          </div>
+          
+          <div id="related-history-section" style="display:none; margin-top:20px; padding-top:20px; border-top:1px dashed #cbd5e1;">
+             <label class="input-label">📋 작업 히스토리</label>
+             <div id="history-list-root" style="font-size:0.9rem; color:#64748b;"></div>
+          </div>
+
+          <div id="related-idea-section" style="display:none; margin-top:20px; padding:15px; background:#f0f9ff; border-radius:12px; border:1px solid #bae6fd;">
+             <label class="input-label" style="color:#0369a1;">💡 연결된 아이디어</label>
+             <div id="related-idea-root" style="font-size:0.9rem; color:#0c4a6e;"></div>
+          </div>
+
+        <div class="modal-footer-custom">
+          <button type="button" class="btn-close-custom" onclick="closeModal('input-modal')">닫기</button>
+          <button type="button" class="btn-edit-custom" id="btn-switch-edit" onclick="toggleEditMode(true)" style="padding:12px 24px; border-radius:12px; background:#3b82f6; color:#fff; border:none; font-weight:700; cursor:pointer;">✏️ 수정하기</button>
+          <button type="submit" class="btn-save-custom" id="btn-save-submit" style="display:none;">💾 저장하기</button>
+        </div>
+
+    </form>
+  </div>
+</div>
+
+<div id="log-modal" class="custom-modal">
+  <div class="modal-box">
+    <h3 class="modal-title" id="log-modal-title" style="margin-top:0;">작업 기록</h3>
+    <form id="log-form" class="admin-form-grid">
+      <input type="hidden" id="log-edit-id"><input type="hidden" id="log-edit-mode" value="false">
+      <div class="field admin-field-full"><label>날짜</label><input type="date" id="log-date" required></div>
+      <div class="field admin-field-full"><label>제목 (선택)</label><input type="text" id="log-title"></div>
+      <div class="field admin-field-full" style="background:#f0f9ff; padding:10px; border-radius:8px; border:1px solid #bae6fd;"><label style="color:#0284c7; font-weight:600;">🔗 관련 작업 연동 (선택)</label><select id="log-related-id" style="width:100%; border:1px solid #bae6fd;"><option value="">(없음)</option></select><p style="font-size:0.75rem; color:#0ea5e9; margin:4px 0 0;">* 이 로그를 특정 작업과 연결합니다.</p></div>
+      <div class="field admin-field-full"><label>내용</label><textarea id="log-content" required style="min-height:100px;"></textarea></div>
+      <div class="field admin-field-full" id="log-idea-section" style="background:#f0fdf4; padding:16px; border-radius:12px; border:1px dashed #16a34a;"><label style="color:#15803d; font-weight:700;">💡 아이디어 (선택)</label><input type="text" id="log-idea-input" placeholder="여기에 적으면 아이디어 함에 추가됨" style="background:#fff; border-color:#86efac;"></div>
+      
+      <div class="field admin-field-full" id="log-bug-section">
+        <label>🐞 버그 발견 (선택)</label>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+            <input type="text" id="log-bug-input" placeholder="버그 제목 (예: 로그인 시 404 에러)" style="background:#fff;">
+            <textarea id="log-bug-detail" placeholder="버그 상세 내용 (발생 경로, 증상 등)" style="background:#fff; min-height:60px;"></textarea>
+        </div>
+        <p style="font-size:0.75rem; color:#ef4444; margin:4px 0 0;">* 입력 시 '버그' 항목으로 자동 등록되며, 현재 로그와 연동됩니다.</p>
+      </div>
+
+      <div class="field"><label>시간</label><input type="text" id="log-duration"></div>
+      <div class="field"><label>태그</label><input type="text" id="log-tags"></div>
+      <div class="field admin-field-full" style="margin-top:20px; display:flex; gap:10px;"><button type="submit" class="btn btn-primary" style="flex:1; justify-content:center; padding:12px;">저장</button><button type="button" class="btn" onclick="closeModal('log-modal')" style="flex:1; justify-content:center; padding:12px;">취소</button></div>
+    </form>
+  </div>
+</div>
+
+<script>
+  window.CHEESE_ADMIN_ACTIVE_PAGE = "todo_manage";
+  let g_goals=[], g_tasks=[], g_logs=[];
+
+  document.addEventListener('DOMContentLoaded', loadAllData);
+
+  // [추가] 버튼 로딩 상태 토글 함수
+  function toggleBtnLoading(btn, isLoading) {
+    if (!btn) return;
+    
+    if (isLoading) {
+      // 로딩 시작: 원래 텍스트 저장 -> 스피너+저장중 텍스트로 변경 -> 비활성화
+      btn.dataset.originalText = btn.innerHTML; 
+      btn.style.width = getComputedStyle(btn).width; // 크기 고정 (덜컹거림 방지)
+      btn.classList.add('loading');
+      btn.disabled = true;
+      btn.innerHTML = `<span class="btn-spinner"></span> 저장 중...`;
+    } else {
+      // 로딩 끝: 원래 텍스트 복구 -> 활성화
+      btn.classList.remove('loading');
+      btn.disabled = false;
+      btn.innerHTML = btn.dataset.originalText;
+      btn.style.width = ''; // 크기 고정 해제
+    }
+  }
+  
+  async function loadAllData() {
+    if(typeof showAdminLoading==='function') showAdminLoading("데이터 동기화 중...");
+    try {
+      const res = await fetch(window.CHEESE_ADMIN_API_BASE + "?mode=getAllData");
+      const json = await res.json();
+      if(json.result === "success") {
+        g_goals = json.goals; g_tasks = json.tasks; g_logs = json.logs||[];
+        renderGoalTree(); renderBoardView(); renderBugView(); renderIdeaView(); renderLogs(); updateParentOptions();
+      }
+    } catch(e) { console.error(e); }
+    finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); }
+  }
+
+  // [추가] 현재 선택된 아이디어 탭 (기본값: 전체)
+  let g_currentIdeaTab = 'all';
+  
+  // [추가] 아이디어 탭 전환 함수
+  function switchIdeaTab(tabName) {
+    g_currentIdeaTab = tabName;
+    
+    // 탭 버튼 스타일 업데이트
+    document.querySelectorAll('.idea-tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.getElementById('itab-' + tabName).classList.add('active');
+    
+    // 뷰 다시 그리기
+    renderIdeaView();
+  }
+  
+  // 🚀 [수정] 탭 전환 함수
+  function switchView(mode) {
+    document.querySelectorAll('.view-tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.getElementById('btn-view-' + mode).classList.add('active');
+    
+    const containers = ['card', 'board', 'bug', 'idea', 'log'];
+    containers.forEach(c => {
+        document.getElementById('view-' + c + '-container').style.display = (c === mode) ? 'block' : 'none';
+    });
+    
+    // 탭 전환 시 뷰 리렌더링 (최신 상태 반영)
+    if(mode === 'board') renderBoardView();
+    if(mode === 'bug') renderBugView();
+    if(mode === 'idea') renderIdeaView();
+    if(mode === 'log') renderLogs();
+  }
+
+// 🚀 [수정] 계층형 뷰 (버그 숨김)
+  function renderGoalTree() {
+    const root = document.getElementById('goal-tree-root'); root.innerHTML = "";
+    const bigGoals = g_goals.filter(g => g['유형'] === '큰 목표');
+    if(bigGoals.length===0) { root.innerHTML = `<div style="padding:40px;text-align:center;color:#94a3b8;">데이터 없음</div>`; return; }
+    
+    bigGoals.forEach(bg => {
+      const themeColor = bg['색상'] || "#4f46e5";
+      const card = document.createElement('div'); card.className = "goal-card";
+      
+      const header = document.createElement('div'); 
+      header.className = "goal-card-header"; 
+      header.style.background = `linear-gradient(135deg, ${themeColor} 0%, ${adjustColor(themeColor,-20)} 100%)`;
+      
+      header.onclick = function() {
+        const body = card.querySelector('.mid-goal-group');
+        const icon = header.querySelector('.toggle-icon');
+        if (body.style.display === "none") { body.style.display = "block"; icon.textContent = "▼"; } 
+        else { body.style.display = "none"; icon.textContent = "▶"; }
+      };
+
+      let dateHtml = ""; if (bg['시작일'] || bg['마감일']) { const s = bg['시작일']?bg['시작일'].split('T')[0]:''; const e = bg['마감일']?bg['마감일'].split('T')[0]:''; dateHtml = `<div class="goal-date-badge">🗓 ${s} ~ ${e}</div>`; }
+      const descHtml = bg['상세내용'] ? `<div class="goal-card-desc">${bg['상세내용']}</div>` : '';
+      
+      header.innerHTML = `
+        <div style="flex:1;">
+          <div class="goal-card-title"><span class="toggle-icon">▶</span> ${bg['제목']}</div>
+          ${dateHtml}${descHtml}
+        </div>
+        <div class="header-actions" onclick="event.stopPropagation()">
+           <button class="action-btn" onclick="openEditModal('goal', '${bg.ID}')">✏️</button>
+           <button class="action-btn" onclick="deleteItem('${bg.ID}')">🗑️</button>
+        </div>
+      `;
+      card.appendChild(header);
+
+      const body = document.createElement('div'); 
+      body.className = "mid-goal-group";
+      body.style.display = "none"; 
+
+      const midGoals = g_goals.filter(m => m['상위ID'] === bg.ID);
+      midGoals.forEach(mg => {
+        const midItem = document.createElement('div'); 
+        midItem.className = "mid-goal-item"; 
+        midItem.style.borderLeftColor = themeColor;
+        
+        const midDesc = mg['상세내용'] ? `<span style="font-weight:400; font-size:0.85rem; color:#64748b; margin-left:8px;">${mg['상세내용']}</span>` : '';
+        
+        const midHeader = document.createElement('div');
+        midHeader.className = "mid-goal-header";
+        midHeader.onclick = function() { toggleDisplay(this); };
+        midHeader.innerHTML = `<span>🚩 ${mg['제목']} ${midDesc}</span><div onclick="event.stopPropagation()" class="row-actions"><button class="row-btn" onclick="openEditModal('goal', '${mg.ID}')">✏️</button><button class="row-btn delete" onclick="deleteItem('${mg.ID}')">🗑️</button></div>`;
+        midItem.appendChild(midHeader);
+
+        const contentWrapper = document.createElement('div');
+        contentWrapper.style.display = "block"; 
+
+        const relatedIdeas = g_tasks.filter(t => t['유형'] === '아이디어' && String(t['연결_중간목표ID']||"").includes(mg.ID));
+        if (relatedIdeas.length > 0) {
+          const slider = document.createElement('div');
+          slider.className = "mid-idea-slider"; 
+          
+          let sliderHtml = "";
+          relatedIdeas.forEach(idea => {
+             const iDate = idea['기한'] ? idea['기한'].split('T')[0] : '';
+             const iDesc = (idea['상세내용']||"").replace(/<[^>]*>?/gm, ''); 
+             sliderHtml += `
+               <div class="mid-idea-card-mini" onclick="openEditModal('idea', '${idea.ID}')">
+                 <div class="mic-date">💡 ${iDate}</div>
+                 <div class="mic-title">${idea['제목']}</div>
+                 <div class="mic-desc">${iDesc || '(내용 없음)'}</div>
+               </div>
+             `;
+          });
+          slider.innerHTML = sliderHtml;
+          contentWrapper.appendChild(slider);
+        }
+
+        const taskList = document.createElement('div'); 
+        taskList.className = "task-list";
+        // 🚀 버그 제외 필터 적용
+        const tasks = g_tasks.filter(t => 
+            String(t['연결_중간목표ID']||"").includes(mg.ID) 
+            && t['유형'] !== '아이디어' 
+            && t['유형'] !== '버그' 
+        );        
+        if(tasks.length > 0) tasks.forEach(t => taskList.appendChild(createTaskRow(t)));
+        else if(relatedIdeas.length === 0) taskList.innerHTML = `<div style="padding:15px;color:#cbd5e1;font-size:0.85rem;">할 일 없음</div>`;
+        
+        contentWrapper.appendChild(taskList);
+        midItem.appendChild(contentWrapper);
+        body.appendChild(midItem);
+      });
+      card.appendChild(body); root.appendChild(card);
+    });
+  }
+  
+  function createTaskRow(t) {
+    const container = document.createElement('div'); const row = document.createElement('div'); row.className = "task-row";
+    row.onclick = function() { openEditModal('task', t.ID); };
+    const isDone = t['상태'] === '완료';
+    const relatedCount = g_logs.filter(l => l['관련_목표ID'] === t.ID).length;
+    const badgeHtml = relatedCount > 0 ? `<span class="log-count-badge">📝 ${relatedCount}</span>` : '';
+    const prefix = t['유형'] === '버그' ? '<span style="color:#ef4444;font-weight:bold;margin-right:4px;">[BUG]</span> ' : '';
+    row.innerHTML = `<div class="check-circle ${isDone?'checked':''}" onclick="event.stopPropagation(); toggleStatus('${t.ID}','${isDone?'대기':'완료'}')"></div><div style="flex:1; text-decoration:${isDone?'line-through':''}; color:${isDone?'#cbd5e1':'#334155'}; font-weight:500;">${prefix}${t['제목']} ${t['상세내용']?'<span style="font-size:0.75rem;color:#94a3b8;margin-left:4px;">📝</span>':''} ${badgeHtml}</div>`;
+    container.appendChild(row); return container;
+  }
+
+  // 🚀 [수정] 보드 뷰 (3단 카드형)
+  function renderBoardView() {
+    const cols = {
+      'high': { active: document.getElementById('board-col-high'), done: document.getElementById('board-col-high-done'), doneCount: 0 },
+      'normal': { active: document.getElementById('board-col-normal'), done: document.getElementById('board-col-normal-done'), doneCount: 0 },
+      'low': { active: document.getElementById('board-col-low'), done: document.getElementById('board-col-low-done'), doneCount: 0 }
+    };
+
+    // 초기화
+    Object.values(cols).forEach(c => { 
+        if(c.active) c.active.innerHTML = ""; 
+        if(c.done) c.done.innerHTML = ""; 
+    });
+
+    // 버그 제외한 할 일만 표시
+    const tasks = g_tasks.filter(t => t['유형'] !== '아이디어' && t['유형'] !== '버그');
+    
+    // 날짜순 정렬
+    tasks.sort((a, b) => {
+        const dateA = a['기한'] ? new Date(a['기한']) : new Date('9999-12-31');
+        const dateB = b['기한'] ? new Date(b['기한']) : new Date('9999-12-31');
+        return dateA - dateB;
+    });
+
+    tasks.forEach(t => {
+        let pKey = 'low';
+        const priority = t['우선순위'] || '보통';
+        if (priority === '높음') pKey = 'high';
+        else if (priority === '보통') pKey = 'normal';
+        
+        const isDone = t['상태'] === '완료';
+        const card = createBoardCard(t);
+        
+        if (cols[pKey]) {
+            if (isDone) {
+                cols[pKey].done.appendChild(card);
+                cols[pKey].doneCount++;
+            } else {
+                cols[pKey].active.appendChild(card);
+            }
+        }
+    });
+
+    if(document.getElementById('count-high-done')) document.getElementById('count-high-done').innerText = `(${cols.high.doneCount})`;
+    if(document.getElementById('count-normal-done')) document.getElementById('count-normal-done').innerText = `(${cols.normal.doneCount})`;
+    if(document.getElementById('count-low-done')) document.getElementById('count-low-done').innerText = `(${cols.low.doneCount})`;
+  }
+
+  function createBoardCard(item) {
+      const el = document.createElement('div');
+      const isDone = item['상태'] === '완료';
+      el.className = `board-card ${isDone ? 'done' : ''}`;
+      el.onclick = () => openEditModal('task', item.ID);
+
+      let dateHtml = "";
+      if (item['기한']) {
+          const d = new Date(item['기한']);
+          const today = new Date(); today.setHours(0,0,0,0);
+          const isOverdue = !isDone && d < today;
+          const dateStr = `${d.getMonth()+1}/${d.getDate()}`;
+          dateHtml = `<span class="board-date-badge ${isOverdue ? 'board-overdue' : ''}">${isOverdue?'🚨 ':''}📅 ${dateStr}</span>`;
+      }
+
+      const title = item['제목'] || "(제목 없음)";
+      el.innerHTML = `<div class="board-card-title">${title}</div><div class="board-card-meta">${dateHtml}<span>${item['상태']}</span></div>`;
+      return el;
+  }
+
+  function toggleBoardCompleted(priority) {
+      const el = document.getElementById(`board-col-${priority}-done`);
+      if(el) el.style.display = (el.style.display === 'none') ? 'flex' : 'none';
+  }
+
+// 🚀 [수정] 버그 트래커
+  function renderBugView() {
+    const root = document.getElementById('bug-grid-root'); root.innerHTML = "";
+    const showArchive = document.getElementById('toggle-bug-archive') ? document.getElementById('toggle-bug-archive').checked : false;
+
+    const bugs = g_tasks.filter(t => {
+      if (t['유형'] !== '버그') return false;
+      if (showArchive) return t['상태'] === '완료'; 
+      else return t['상태'] !== '완료'; 
+    });
+    
+    bugs.sort((a,b) => (b['ID'] > a['ID'] ? 1 : -1));
+
+    if(bugs.length === 0) { 
+        root.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:60px; color:#cbd5e1;">${showArchive ? '해결된 버그 기록이 없습니다.' : '발견된 버그가 없습니다! 🎉'}</div>`; 
+        return; 
+    }
+
+    bugs.forEach(t => {
+      const card = document.createElement('div');
+      const isWorking = t['상태'] === '진행중';
+      const isDone = t['상태'] === '완료';
+      card.className = `bug-card ${isWorking ? 'working' : ''}`;
+      
+      let parentTitle = "";
+      if (t['연결_중간목표ID']) {
+        const parent = g_tasks.find(x => x.ID === t['연결_중간목표ID']) || g_goals.find(x => x.ID === t['연결_중간목표ID']);
+        if (parent) parentTitle = parent['제목'];
+      }
+      
+      const plainText = (t['상세내용'] || "내용 없음").replace(/<[^>]*>?/gm, '').slice(0, 100) + "...";
+      const deleteBtn = `<button class="bug-btn delete-bug" onclick="deleteItem('${t.ID}')" style="flex:0 0 auto; width:36px; background:#fff1f2; color:#ef4444; margin-left:4px;" title="삭제">🗑️</button>`;
+
+      let buttonsHtml = "";
+      if (isDone) {
+          buttonsHtml = `<button class="bug-btn restore" onclick="toggleStatus('${t.ID}', '대기')">↩️ 미해결/복구</button>${deleteBtn}`;
+      } else if (isWorking) {
+          buttonsHtml = `<button class="bug-btn restore" onclick="toggleStatus('${t.ID}', '대기')">↩️ 취소</button><button class="bug-btn solve" onclick="toggleStatus('${t.ID}', '완료')">✅ 해결 완료!</button>${deleteBtn}`;
+      } else {
+          buttonsHtml = `<button class="bug-btn check" onclick="toggleStatus('${t.ID}', '진행중')">🔍 확인 시작</button><button class="bug-btn solve" onclick="toggleStatus('${t.ID}', '완료')">바로 해결</button>${deleteBtn}`;
+      }
+
+      card.innerHTML = `
+        ${isWorking ? `<div class="bug-status-badge">🔥 확인중</div>` : ''} 
+        <div class="bug-content" onclick="openEditModal('task', '${t.ID}')" style="cursor:pointer; flex-grow:1;">
+          <div class="bug-parent-info">${parentTitle ? `<span>🔗 ${parentTitle}</span>` : '<span>(연동 작업 없음)</span>'}</div>
+          <div class="bug-title">${t['제목']}</div>
+          <div class="bug-body">${plainText}</div>
+        </div>
+        <div class="bug-footer">${buttonsHtml}</div>
+      `;
+      root.appendChild(card);
+    });
+  }
+
+// [수정] 아이디어 뷰 렌더링 (탭 필터 + 카드 리스트)
+// [수정] 아이디어 뷰 렌더링
+function renderIdeaView() {
+  const root = document.getElementById('idea-list-root');
+  root.innerHTML = "";
+
+  const sortMode = document.getElementById('idea-sort-select').value;
+  
+  // 1. 전체 아이디어 데이터 준비
+  let rawIdeas = g_tasks.filter(t => {
+    if (t['유형'] === '아이디어') return true;
+    if (t['유형'] === '할 일') {
+        const parentId = t['연결_중간목표ID'];
+        if (!parentId || parentId.trim() === "" || parentId.startsWith("G_")) return true;
+    }
+    return false;
+  });
+
+  // 2. 탭 필터링
+  let filteredIdeas = rawIdeas.filter(item => {
+    const realizedId = item['연결_중간목표ID']; 
+    // [수정] 실현 여부: 상태가 '완료'이거나, 다른 작업(T_, B_)과 연결된 경우
+    const isRealized = (item['상태'] === '완료') || (realizedId && (realizedId.startsWith('T_') || realizedId.startsWith('B_')));
+    
+    const color = item['색상'] || '#64748b';
+
+    if (g_currentIdeaTab === 'realized') return isRealized; 
+    if (isRealized) return false; 
+
+    if (g_currentIdeaTab === 'all') return true;
+    if (g_currentIdeaTab === 'blog') return color === '#db2777';
+    if (g_currentIdeaTab === 'system') return color === '#2563eb';
+    if (g_currentIdeaTab === 'biz') return color === '#d97706';
+    if (g_currentIdeaTab === 'etc') return (color === '#64748b' || !color);
+    
+    return true;
+  });
+
+  // 3. 정렬
+  filteredIdeas.sort((a, b) => {
+    const dateA = a['기한'] ? new Date(a['기한']).getTime() : 0;
+    const dateB = b['기한'] ? new Date(b['기한']).getTime() : 0;
+    if (sortMode === 'oldest') return (dateA - dateB) || (a.ID - b.ID);
+    return (dateB - dateA) || (b.ID - a.ID);
+  });
+
+  if (filteredIdeas.length === 0) {
+    let msg = "등록된 아이디어가 없습니다.";
+    if (g_currentIdeaTab === 'realized') msg = "아직 실현된 아이디어가 없습니다. 🚀";
+    root.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:60px; color:#cbd5e1;">${msg}</div>`;
+    return;
+  }
+
+  // 4. 카드 렌더링
+  filteredIdeas.forEach(item => {
+    const card = document.createElement('div');
+    
+    let catClass = 'cat-etc';
+    const c = item['색상'];
+    if (c === '#db2777') catClass = 'cat-blog';
+    else if (c === '#2563eb') catClass = 'cat-system';
+    else if (c === '#d97706') catClass = 'cat-biz';
+    
+    const realizedId = item['연결_중간목표ID'];
+    const isRealized = (item['상태'] === '완료') || (realizedId && (realizedId.startsWith('T_') || realizedId.startsWith('B_')));
+
+    card.className = `idea-card-item ${catClass} ${isRealized ? 'is-realized' : ''}`;
+    
+    const dateStr = item['기한'] ? item['기한'].split('T')[0] : '';
+    const plainText = (item['상세내용'] || "내용 없음").replace(/<[^>]*>?/gm, '').slice(0, 100) + "...";
+    
+    let badgeLabel = "💭 잡담";
+    let badgeColor = "#64748b";
+    if (catClass === 'cat-blog') { badgeLabel = "📝 블로그"; badgeColor = "#db2777"; }
+    else if (catClass === 'cat-system') { badgeLabel = "⚙️ 시스템"; badgeColor = "#2563eb"; }
+    else if (catClass === 'cat-biz') { badgeLabel = "🧀 사업"; badgeColor = "#d97706"; }
+    if (isRealized) { badgeLabel = "🚀 실현됨"; badgeColor = "#10b981"; }
+
+    let buttons = "";
+    if (isRealized) {
+      buttons = `<button class="btn" style="font-size:0.8rem; background:#fff; border:1px solid #cbd5e1;" onclick="event.stopPropagation(); cancelRealization('${item.ID}')">↩️ 실현 취소</button>`;
+    } else {
+      // [수정] realizeIdea 호출로 변경
+      buttons = `<button class="btn" style="font-size:0.8rem; background:#eff6ff; color:#3b82f6; border:1px solid #bfdbfe; font-weight:700;" onclick="event.stopPropagation(); realizeIdea('${item.ID}')">⚡ 실현하기</button>`;
+    }
+
+    // [추가] 삭제 버튼이 포함된 푸터
+    card.innerHTML = `
+      <div class="ici-header">
+        <span class="ici-badge" style="background:${badgeColor}">${badgeLabel}</span>
+        <div class="ici-date">📅 ${dateStr}</div>
+      </div>
+      <div class="ici-title">${item['제목']}</div>
+      <div class="ici-body">${plainText}</div>
+      <div class="ici-footer">
+        ${buttons}
+        <div style="display:flex; gap:4px;">
+            <button class="row-btn" style="font-size:1rem;" onclick="event.stopPropagation(); openEditModal('idea', '${item.ID}')">✏️</button>
+            <button class="row-btn" style="font-size:1rem; color:#ef4444;" onclick="event.stopPropagation(); deleteItem('${item.ID}')">🗑️</button>
+        </div>
+      </div>
+    `;
+    
+    card.onclick = () => openEditModal('idea', item.ID);
+    root.appendChild(card);
+  });
+}
+
+  // 아이디어 실현 취소
+  async function cancelRealization(ideaId) {
+      if(!confirm("실현 상태를 취소하시겠습니까?\n(연결된 작업과의 고리를 끊습니다.)")) return;
+      if(typeof showAdminLoading === 'function') showAdminLoading("취소 중...");
+      try {
+          await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify({ mode: "editItem", id: ideaId, connectedId: "" }) });
+          loadAllData(); 
+      } catch(e) { console.error(e); alert("오류가 발생했습니다."); } 
+      finally { if(typeof hideAdminLoading === 'function') hideAdminLoading(); }
+  }
+
+// [완전 수정] 아이디어 실현 (타입 변경 없이 '완료' 처리)
+async function realizeIdea(ideaId) {
+    if(!confirm("⚡ 이 아이디어를 '실현됨(완료)' 상태로 변경하시겠습니까?")) return;
+
+    if(typeof showAdminLoading === 'function') showAdminLoading("실현 처리 중...");
+
+    try {
+        // 상태를 '완료'로 변경하여 실현됨 탭으로 이동시킴
+        const response = await fetch(window.CHEESE_ADMIN_API_BASE, { 
+            method: "POST", 
+            body: JSON.stringify({ mode: "updateStatus", id: ideaId, status: "완료" }) 
+        });
+        
+        const idea = g_tasks.find(t => t.ID === ideaId);
+        if(idea) {
+             await createAutoLog("realize_idea", idea['제목'], ideaId);
+        }
+
+        await loadAllData();
+
+    } catch (e) {
+        console.error(e);
+        alert("오류가 발생했습니다.");
+    } finally {
+        if(typeof hideAdminLoading === 'function') hideAdminLoading();
+    }
+}
+
+// 🚀 [수정] 로그 렌더링 (날짜 밀림 해결 + 최신순 정렬 추가)
+  function renderLogs() {
+    const root = document.getElementById('log-timeline-root'); root.innerHTML = "";
+    if(g_logs.length === 0) { root.innerHTML = `<div style="color:#cbd5e1; font-size:0.9rem; text-align:center; padding:20px;">작업 로그가 없습니다.</div>`; return; }
+
+    // [추가] 로그를 날짜 내림차순(최신순) -> ID 내림차순(최신순)으로 미리 정렬
+    // 이렇게 하면 그룹핑할 때 내부 아이템들도 최신순으로 정렬됨
+    g_logs.sort((a, b) => {
+        const da = new Date(a['날짜']);
+        const db = new Date(b['날짜']);
+        return db - da || b.ID - a.ID; 
+    });
+    
+    const groupedLogs = {};
+    g_logs.forEach(log => {
+        let dateKey = '날짜 없음';
+        if (log['날짜']) {
+            // [수정] 단순 substring은 UTC 기준으로 잘라서 하루 전으로 밀릴 수 있음.
+            // new Date로 전체 시간을 파싱한 뒤 로컬 연/월/일을 가져와야 함.
+            const d = new Date(log['날짜']);
+            if (!isNaN(d.getTime())) {
+                const year = d.getFullYear();
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                dateKey = `${year}-${month}-${day}`;
+            } else {
+                 // 파싱 실패 시 fallback
+                 dateKey = log['날짜'].substring(0, 10);
+            }
+        }
+        if (!groupedLogs[dateKey]) groupedLogs[dateKey] = [];
+        groupedLogs[dateKey].push(log);
+    });
+
+    const sortedDates = Object.keys(groupedLogs).sort().reverse();
+    sortedDates.forEach(date => {
+        const divider = document.createElement('div'); divider.className = "log-date-divider";
+        let dayOfWeek = ""; try { dayOfWeek = new Date(date.replace(/-/g,'/')).toLocaleDateString('ko-KR', { weekday: 'short' }); } catch(e){}
+        divider.innerHTML = `<span class="log-date-badge">📅 ${date} (${dayOfWeek})</span>`;
+        root.appendChild(divider);
+
+        // 이미 g_logs를 정렬했으므로 여기서는 순서대로 뿌리면 됨 (최신 = 위)
+        groupedLogs[date].forEach(log => {
+            const item = document.createElement('div'); item.className = "log-item";
+            const title = log['제목'] ? `<div class="log-title" style="font-weight:700; font-size:0.95rem; margin-bottom:4px;">${log['제목']}</div>` : '';
+            let relatedHtml = "";
+            if(log['관련_목표ID']) {
+                const relTask = g_tasks.find(t => t.ID === log['관련_목표ID']) || g_goals.find(g => g.ID === log['관련_목표ID']);
+                if(relTask) {
+                    if (relTask['유형'] === '버그') relatedHtml = `<div class="log-related" style="background:#fecaca; color:#b91c1c; border:1px solid #f87171; padding:2px 8px; border-radius:4px; font-size:0.75rem; margin-bottom:6px; display:inline-block;">🐞 버그 Fix: ${relTask['제목']}</div>`; 
+                    else relatedHtml = `<div class="log-related" style="background:#ecfdf5; color:#059669; padding:2px 8px; border-radius:4px; font-size:0.75rem; margin-bottom:6px; display:inline-block;">📌 관련: ${relTask['제목']}</div>`; 
+                }
+            }
+            const content = (log['내용'] || "").replace(/\n/g, '<br>');
+            item.innerHTML = `
+                <div class="log-dot"></div>
+                <div class="log-card">
+                    <div class="log-header" style="margin-bottom: 4px;">
+                        <div class="log-time">${log['소요시간'] ? `⏱ ${log['소요시간']}` : ''}</div>
+                        <div class="log-actions"><button class="row-btn" onclick="openEditLog('${log.ID}')">✏️</button><button class="row-btn delete" onclick="deleteItem('${log.ID}')">🗑️</button></div>
+                    </div>
+                    ${relatedHtml}${title}<div class="log-body" style="font-size:0.9rem; color:#475569; line-height:1.6;">${content}</div>
+                    ${log['태그'] ? `<div style="margin-top:8px;"><span class="log-tag" style="font-size:0.75rem; color:#3b82f6; background:#eff6ff; padding:2px 8px; border-radius:4px;">#${log['태그']}</span></div>` : ''}
+                </div>`;
+            root.appendChild(item);
+        });
+    });
+  }
+
+  function adjustColor(color, amount) { return color; } 
+  function toggleDisplay(el) { const next = el.nextElementSibling; if(next) next.style.display = next.style.display==="none"?"block":"none"; }
+  function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+  function updateLogTaskOptions(selectedId = "") {
+    const select = document.getElementById('log-related-id'); select.innerHTML = '<option value="">(없음)</option>';
+    const tasks = g_tasks.filter(t => (t['유형'] === '할일' || t['유형'] === '버그') && t['상태'] !== '완료');
+    if(tasks.length > 0) { const group = document.createElement('optgroup'); group.label = "진행 중인 작업 (할일/버그)"; tasks.forEach(t => { const op = document.createElement('option'); op.value = t.ID; const prefix = t['유형'] === '버그' ? '[🐞버그] ' : ''; op.textContent = prefix + t['제목']; group.appendChild(op); }); select.appendChild(group); }
+    const mids = g_goals.filter(g => g['유형'] === '중간 목표');
+    if(mids.length > 0) { const group2 = document.createElement('optgroup'); group2.label = "중간 목표"; mids.forEach(m => { const op = document.createElement('option'); op.value = m.ID; op.textContent = m['제목']; group2.appendChild(op); }); select.appendChild(group2); }
+    if(selectedId) select.value = selectedId;
+  }
+
+  function openLogModal() {
+    document.getElementById('log-modal').classList.add('open'); 
+    
+    // [수정] valueAsDate = new Date()는 UTC 기준이라 새벽에 작성 시 날짜가 어제로 밀림
+    // 로컬 시간대 기준 오늘 날짜 문자열(YYYY-MM-DD)을 직접 주입
+    const now = new Date();
+    const localDate = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+    document.getElementById('log-date').value = localDate;
+    
+    document.getElementById('log-edit-mode').value="false";
+    document.getElementById('log-form').reset(); document.getElementById('log-idea-section').style.display='block'; updateLogTaskOptions();
+  }
+
+function toggleEditMode(isEdit) {
+  const viewTa = document.getElementById('detail-readonly'); // ✅ 읽기박스
+  const editTa = document.getElementById('input-detail');    // ✅ 썸머노트 원본 textarea
+  const $edit = $('#input-detail');
+
+  const hasSummernote = !!($.fn && $.fn.summernote);
+
+  // 현재 “내용”을 어디서 가져올지 결정
+  // - 수정모드 → 썸머노트가 있으면 썸머노트 내용이 최신
+  // - 아니면 textarea 값
+  const currentHtml = (hasSummernote && $edit.summernote('exists'))
+    ? $edit.summernote('code')
+    : (editTa.value || "");
+
+  if (!isEdit) {
+    // =====================
+    // ✅ 읽기모드: 텍스트박스만
+    // =====================
+
+    // 1) 썸머노트 UI는 무조건 숨김
+    if (hasSummernote && $edit.summernote('exists')) {
+      $edit.summernote('disable');
+      $edit.next('.note-editor').hide();
+    }
+    editTa.style.display = 'none';      // 원본 textarea도 숨김
+    // 혹시 남아있는 note-editor가 있으면 싹 숨김(안전장치)
+    $(editTa).siblings('.note-editor').hide();
+    $(editTa).next('.note-editor').hide();
+
+    // 2) 읽기 전용 텍스트박스만 표시
+    //    (썸머노트 html → 텍스트로 보이게 변환)
+    viewTa.value = htmlToPlainText_(currentHtml);
+    viewTa.style.display = 'block';
+
+    return;
+  }
+
+  // =====================
+  // ✅ 수정모드: 썸머노트만
+  // =====================
+
+  // 1) 읽기 텍스트박스는 무조건 숨김
+  viewTa.style.display = 'none';
+
+  if (!hasSummernote) {
+    // 썸머노트 로딩이 안 된 경우: 어쩔 수 없이 편집 textarea를 보여줌(최후 수단)
+    editTa.style.display = 'block';
+    editTa.readOnly = false;
+    return;
+  }
+
+  // 2) 썸머노트 1회 초기화
+  if (!$edit.summernote('exists')) {
+    editTa.style.display = 'block'; // 초기화 순간만 필요
+    $edit.summernote({
+      height: 250,
+      toolbar: [
+        ['style', ['bold', 'italic', 'underline', 'clear']],
+        ['font', ['strikethrough']],
+        ['para', ['ul', 'ol']],
+        ['insert', ['link', 'picture']],
+        ['view', ['fullscreen', 'codeview']]
+      ]
+    });
+  }
+
+  // 3) 썸머노트만 보이게 강제
+  $edit.summernote('enable');
+  $edit.summernote('code', currentHtml);
+
+  editTa.style.display = 'none';          // ✅ 원본 textarea는 숨김
+  $edit.next('.note-editor').show();      // ✅ 에디터 UI만 표시
+}
+
+// ✅ HTML → 텍스트로 바꿔서 “읽기용 텍스트박스”에 넣기
+function htmlToPlainText_(html) {
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html || "";
+  // 줄바꿈 감안해서 textContent로
+  return (tmp.textContent || tmp.innerText || "").trim();
+}
+
+  
+// [수정] 새 항목 등록 모달 열기
+function openModal(type) {
+  document.getElementById('input-modal').classList.add('open');
+  document.getElementById('todo-modal-title').textContent = "새 항목 등록";
+  document.getElementById('edit-mode').value = "false"; // 신규
+
+  document.getElementById('edit-id').value = "";
+  document.getElementById('origin-idea-id').value = "";
+
+  document.getElementById('todo-form').reset();
+
+  // 날짜 초기화(있으면 유지)
+  const today = new Date();
+  const localIso = new Date(today.getTime() - (today.getTimezoneOffset() * 60000))
+    .toISOString().split('T')[0];
+  document.getElementById('input-due').value = localIso;
+  document.getElementById('input-start').value = localIso;
+
+  // ✅ 1) 등록 모드는 "처음부터 편집 가능" 상태로 강제
+  toggleEditMode(true);
+
+  // ✅ 2) 썸머노트는 exists일 때만 내용 비우기(안전)
+  const $detail = $('#input-detail');
+  if ($.fn.summernote && $detail.summernote('exists')) {
+    $detail.summernote('code', '');
+  } else {
+    document.getElementById('input-detail').value = "";
+  }
+
+ // 3. [중요] 신규 등록 UI: "등록하기" 버튼만 보이게
+  const btnSave   = document.getElementById('btn-save-submit');
+  const btnSwitch = document.getElementById('btn-switch-edit');
+  
+  if (btnSave) {
+    btnSave.innerHTML = "💾 등록하기";
+    btnSave.style.display = "inline-block"; // 또는 "block"
+  }
+  
+  if (btnSwitch) {
+    btnSwitch.style.display = "none";
+  }
+  
+  // ✅ 4) 신규등록에서는 삭제/부가 edit action 숨김(있다면)
+  const editActions = document.getElementById('edit-actions');
+  if (editActions) editActions.style.display = 'none';
+
+  // 관련 섹션 숨김(있다면)
+  const h = document.getElementById('related-history-section');
+  if (h) h.style.display = "none";
+  const i = document.getElementById('related-idea-section');
+  if (i) i.style.display = "none";
+
+  // 타입 힌트가 있으면 라디오 선택
+  if (type) {
+    const radio = document.querySelector(`input[name="type"][value="${type}"]`);
+    if (radio) radio.click();
+  }
+}
+
+  function updateParentOptions(type) {
+    const select = document.getElementById('input-connected-id'); select.innerHTML = '<option value="">(선택 없음)</option>';
+    let opts = [];
+    if(!type || type==='할일' || type==='아이디어') opts = g_goals.filter(g => g['유형'] === '중간 목표');
+    else if(type==='중간 목표') opts = g_goals.filter(g => g['유형'] === '큰 목표');
+    opts.forEach(o => { const op = document.createElement('option'); op.value = o.ID; op.textContent = o['제목']; select.appendChild(op); });
+  }
+
+// [수정] 모달 열기 (기존 항목)
+function openEditModal(typeHint, id) {
+  let item = g_goals.find(x => x.ID === id) || g_tasks.find(x => x.ID === id);
+  if (!item) return;
+
+  document.getElementById('input-modal').classList.add('open');
+  document.getElementById('todo-modal-title').textContent = "항목 상세";
+  document.getElementById('edit-id').value = id;
+  document.getElementById('origin-idea-id').value = "";
+
+  document.getElementById('input-title').value = item['제목'] || "";
+
+  const safeContent = item['상세내용'] || "";
+  document.getElementById('input-detail').value = safeContent;
+
+  // 읽기용 텍스트박스에 보여줄 값(plain text)
+  const viewTa = document.getElementById('detail-readonly');
+  if (viewTa) viewTa.value = htmlToPlainText_(safeContent);
+
+  // 타입/필드 세팅
+  const typeRadios = document.querySelectorAll('input[name="type"]');
+  typeRadios.forEach(r => { if (r.value === item['유형']) r.checked = true; });
+  toggleFormFields();
+
+  if ((item['유형'] || "").includes("목표")) {
+    document.getElementById('input-start').value = (item['시작일'] || "").split('T')[0];
+    document.getElementById('input-due').value   = (item['마감일'] || "").split('T')[0];
+    if (item['유형'] === '중간 목표') document.getElementById('input-connected-id').value = item['상위ID'];
+  } else {
+    document.getElementById('input-connected-id').value = item['연결_중간목표ID'];
+    document.getElementById('input-due').value          = (item['기한'] || "").split('T')[0];
+    document.getElementById('input-priority').value     = item['우선순위'] || "보통";
+  }
+
+  // ✅ 기본은 "읽기 모드"
+  toggleEditMode(false);
+
+  // ✅ 버튼 상태: 항목 상세에서는 '수정하기'만 보이게
+  const btnSaveEl   = document.getElementById('btn-save-submit');
+  const btnSwitchEl = document.getElementById('btn-switch-edit');
+
+  if (btnSaveEl) {
+    btnSaveEl.innerHTML = "💾 저장하기";
+    btnSaveEl.style.display = "none";           // 읽기모드니까 숨김
+  }
+  if (btnSwitchEl) {
+    btnSwitchEl.style.display = "inline-block"; // 수정하기 표시
+  }
+
+  const delBtn = document.getElementById('btn-delete-modal');
+  if (delBtn) delBtn.onclick = () => deleteFromModal();
+
+  renderHistoryInModal(id);
+  renderRelatedIdeasInModal(id);
+}
+  
+// 🚀 [수정] 히스토리 렌더링 (날짜 밀림 해결 + 접기/펼치기)
+  function renderHistoryInModal(targetId) {
+    const container = document.getElementById('related-history-section');
+    const listRoot = document.getElementById('history-list-root');
+    const relatedLogs = g_logs.filter(l => String(l['관련_목표ID']) === String(targetId));
+
+    if (relatedLogs.length === 0) { container.style.display = 'none'; return; }
+
+    relatedLogs.sort((a, b) => new Date(b['날짜'].substring(0,10).replace(/-/g,'/')) - new Date(a['날짜'].substring(0,10).replace(/-/g,'/')));
+
+    container.style.display = 'block'; listRoot.innerHTML = "";
+
+    relatedLogs.forEach(log => {
+        const item = document.createElement('div');
+        item.className = 'history-item';
+        item.onclick = function() { this.classList.toggle('expanded'); };
+        
+        let dateStr = '';
+        if (log['날짜']) {
+            const rawDate = log['날짜'].substring(0, 10).replace(/-/g, '/');
+            const d = new Date(rawDate);
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            dateStr = `${year}-${month}-${day}`;
+        }
+        
+        const timeStr = log['소요시간'] ? `⏱ ${log['소요시간']}` : '';
+        const content = (log['내용'] || "").replace(/\n/g, '<br>');
+
+        item.innerHTML = `
+            <div class="history-header">
+                <span class="history-date">📅 ${dateStr}</span>
+                <span class="history-time">${timeStr}</span>
+            </div>
+            <div class="history-content">${content}</div>
+        `;
+        listRoot.appendChild(item);
+    });
+  }
+  
+  function renderRelatedIdeasInModal(targetId) {
+    const container = document.getElementById('related-idea-section');
+    const root = document.getElementById('related-idea-root');
+    const relatedIdeas = g_tasks.filter(t => t['유형'] === '아이디어' && t['연결_중간목표ID'] === targetId);
+
+    if (relatedIdeas.length > 0) {
+      container.style.display = 'block';
+      root.innerHTML = relatedIdeas.map(idea => `
+        <div class="mini-idea-card" onclick="openEditModal('idea', '${idea.ID}')">
+          <div class="mini-idea-title">💡 ${idea['제목']}</div>
+          <div class="mini-idea-desc">${(idea['상세내용'] || '').replace(/<[^>]*>?/gm, '')}</div>
+        </div>
+      `).join('');
+    } else {
+      container.style.display = 'none';
+    }
+  }
+
+  function createNewLogFromTask() {
+    const taskId = document.getElementById('edit-id').value;
+    const taskTitle = document.getElementById('input-title').value;
+    if (!taskId) return;
+    closeModal('input-modal');
+    openLogModal(); 
+    const relatedSelect = document.getElementById('log-related-id');
+    if (relatedSelect) relatedSelect.value = taskId;
+    document.getElementById('log-title').value = taskTitle + " 작업 기록";
+  }
+
+  function openEditLog(id) {
+    const log = g_logs.find(x => x.ID === id); if (!log) return;
+    document.getElementById('log-modal').classList.add('open'); document.getElementById('log-modal-title').textContent = "기록 수정"; document.getElementById('log-edit-mode').value = "true"; document.getElementById('log-edit-id').value = id;
+    
+    // [수정] 수정 모드에서도 날짜 파싱 오류 방지
+    const d = new Date(log['날짜']);
+    let localIso = "";
+    if(!isNaN(d.getTime())) {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        localIso = `${year}-${month}-${day}`;
+    } else {
+        localIso = (log['날짜']||"").split('T')[0];
+    }
+    document.getElementById('log-date').value = localIso;
+
+    document.getElementById('log-title').value = log['제목'] || ""; document.getElementById('log-content').value = log['내용'] || ""; document.getElementById('log-duration').value = log['소요시간'] || ""; document.getElementById('log-tags').value = log['태그'] || ""; document.getElementById('log-idea-section').style.display = 'none';
+    updateLogTaskOptions(log['관련_목표ID']);
+  }
+
+  function deleteFromModal() { const id = document.getElementById('edit-id').value; deleteItem(id); closeModal('input-modal'); }
+// 🚀 [수정] 상태 변경 + 완료 시 자동 로그
+  async function toggleStatus(id, newStatus) {
+    // 1. 상태 업데이트 요청
+    await fetch(window.CHEESE_ADMIN_API_BASE, { 
+        method: "POST", 
+        body: JSON.stringify({ mode: "updateStatus", id: id, status: newStatus }) 
+    });
+
+    // 2. '완료' 상태가 되면 자동으로 로그 남기기
+    if (newStatus === '완료') {
+        const item = g_goals.find(x => x.ID === id) || g_tasks.find(x => x.ID === id);
+        if (item) {
+            // 사용자에게 방해되지 않게 백그라운드에서 실행
+            await createAutoLog("complete", item['제목'], id);
+        }
+    }
+
+    // 3. 화면 갱신
+    loadAllData(); 
+  }  async function deleteItem(id) { if(!confirm("정말 삭제하시겠습니까?")) return; if(typeof showAdminLoading==='function') showAdminLoading("삭제 중..."); await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify({ mode: "deleteItem", id: id }) }); loadAllData(); if(typeof hideAdminLoading==='function') hideAdminLoading(); }
+
+document.getElementById('todo-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const saveBtn = document.querySelector('.btn-save-custom');
+    toggleBtnLoading(saveBtn, true);
+    
+    const isEdit = document.getElementById('edit-mode').value === "true";
+    const type = document.querySelector('input[name="type"]:checked').value;
+    
+    // [색상 가져오기 로직]
+    let color = "#64748b"; 
+    if(type === "큰 목표") {
+        const el = document.querySelector('input[name="color_goal"]:checked');
+        if(el) color = el.value;
+    } else if (type === "아이디어") {
+        const el = document.querySelector('input[name="color_idea"]:checked');
+        if(el) color = el.value;
+    }
+
+    const detailContent = $('#input-detail').summernote('code');
+    const originIdeaId = document.getElementById('origin-idea-id').value;
+
+    const payload = { 
+        mode: isEdit ? "editItem" : "addItem", id: document.getElementById('edit-id').value, type: type, 
+        title: document.getElementById('input-title').value, parentId: document.getElementById('input-connected-id').value, 
+        connectedId: document.getElementById('input-connected-id').value, 
+        detail: detailContent, 
+        startDate: document.getElementById('input-start').value, dueDate: document.getElementById('input-due').value, 
+        priority: document.getElementById('input-priority').value, color: color 
+    };
+    
+    if(typeof showAdminLoading==='function') showAdminLoading("저장 중..."); 
+    
+    try {
+        const response = await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify(payload) });
+        const result = await response.json();
+
+        // [중요] 여기가 있어야 실현하기가 작동합니다!
+        // 🚀 아이디어 실현 연결 로직
+        if (!isEdit && result.id && originIdeaId) {
+            // 1. 기존 아이디어(originIdeaId)의 '연결_중간목표ID'를 새 할일(result.id)로 업데이트
+            await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify({ mode: "editItem", id: originIdeaId, connectedId: result.id }) });
+            
+            // 2. 실현 로그 자동 생성
+            const taskTitle = document.getElementById('input-title').value;
+            await createAutoLog("realize_idea", taskTitle, result.id);
+        }
+
+        // [추가] 신규 등록 시 자동 로그 생성 로직
+        if (!isEdit && result.result === "success") {
+            const newId = result.id;
+            const title = document.getElementById('input-title').value;
+            if (type === "버그") await createAutoLog("create_bug", title, newId);
+            else if (type === "아이디어") await createAutoLog("create_idea", title, newId);
+            else if (type.includes("목표")) await createAutoLog("create_goal", title, newId);
+        }
+        
+        closeModal('input-modal'); loadAllData();
+    } catch(err) { console.error(err); alert("저장 중 오류 발생"); } 
+    finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); toggleBtnLoading(saveBtn, false);}
+  });
+
+// 🚀 [수정] 로그 저장 로직 (목표 연결 허용, 작업 연결 시 자동실현 방지)
+  document.getElementById('log-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    // [추가] 저장 버튼 찾기
+    const saveBtn = document.querySelector('#log-form button[type="submit"]');
+    
+    // [추가] 로딩 시작
+    toggleBtnLoading(saveBtn, true);
+    const isEdit = document.getElementById('log-edit-mode').value === "true";
+    const relatedId = document.getElementById('log-related-id').value; 
+    
+    const dateVal = document.getElementById('log-date').value;
+    const titleVal = document.getElementById('log-title').value;
+    let contentVal = document.getElementById('log-content').value;
+    const durationVal = document.getElementById('log-duration').value;
+    const tagsVal = document.getElementById('log-tags').value;
+    
+    const bugInput = document.getElementById('log-bug-input');
+    const bugTitle = bugInput ? bugInput.value.trim() : "";
+    const bugDetailVal = document.getElementById('log-bug-detail') ? document.getElementById('log-bug-detail').value.trim() : "";
+
+    const ideaInput = document.getElementById('log-idea-input');
+    const ideaTitle = ideaInput ? ideaInput.value.trim() : "";
+
+    if(typeof showAdminLoading === 'function') showAdminLoading("저장 중..."); 
+
+    try {
+      const requests = [];
+
+      // 1. 버그 등록
+      if (!isEdit && bugTitle !== "") {
+         contentVal += `\n\n[System] 🐞 버그 리포트 생성됨: ${bugTitle}`;
+         const bugFullDetail = `${bugDetailVal}\n\n---\n📌 발견된 작업 로그: ${titleVal || '제목 없는 로그'} (${dateVal})`;
+         requests.push(fetch(window.CHEESE_ADMIN_API_BASE, { 
+           method: "POST", body: JSON.stringify({ mode: "addItem", type: "버그", title: bugTitle, detail: bugFullDetail, priority: "높음", connectedId: relatedId }) 
+         }));
+      }
+
+      // 2. 아이디어 등록 (목표는 연결하고, 작업은 연결 안 함)
+      if (!isEdit && ideaTitle !== "") {
+        let connectionForIdea = "";
+        // ID가 G_ 또는 M_으로 시작하는 경우에만 연결 (작업/버그와 연결되면 실현됨으로 처리되므로 방지)
+        if (relatedId && (relatedId.startsWith('G_') || relatedId.startsWith('M_'))) {
+            connectionForIdea = relatedId;
+        }
+        requests.push(fetch(window.CHEESE_ADMIN_API_BASE, { 
+          method: "POST", body: JSON.stringify({ mode: "addItem", type: "아이디어", title: ideaTitle, detail: "작업 로그 작성 중 파생됨: " + titleVal, priority: "보통", connectedId: connectionForIdea }) 
+        }));
+      }
+
+      // 3. 로그 저장
+      const logPayload = { 
+        mode: isEdit ? "editItem" : "addLog", id: document.getElementById('log-edit-id').value, 
+        date: dateVal, title: titleVal, content: contentVal, duration: durationVal, tags: tagsVal, relatedId: relatedId
+      };
+      requests.push(fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify(logPayload) }));
+
+      await Promise.all(requests); 
+      closeModal('log-modal'); loadAllData(); 
+
+    } catch (err) { console.error("저장 실패:", err); alert("저장 중 오류가 발생했습니다."); } 
+    finally { if(typeof hideAdminLoading === 'function') hideAdminLoading(); toggleBtnLoading(saveBtn, false);}
+  });
+
+// 🚀 [수정] 자동 로그 생성 함수 (케이스 추가)
+  async function createAutoLog(actionType, itemTitle, itemId) {
+    const today = new Date().toISOString().split('T')[0];
+    let logTitle = "";
+    let logContent = "";
+    let tags = "System";
+
+    if (actionType === "create_bug") {
+        logTitle = "🚨 버그 리포트 등록";
+        logContent = `새로운 버그가 등록되었습니다.\n제목: ${itemTitle}`;
+        tags = "BugReport";
+    } else if (actionType === "create_idea") {
+        logTitle = "💡 새 아이디어";
+        logContent = `새로운 아이디어가 추가되었습니다.\n제목: ${itemTitle}`;
+        tags = "Idea";
+    } else if (actionType === "create_goal") {
+        logTitle = "🚩 목표 설정";
+        logContent = `새로운 목표가 수립되었습니다.\n목표명: ${itemTitle}`;
+        tags = "Goal";
+    } else if (actionType === "complete") {
+        logTitle = "✅ 달성/완료";
+        logContent = `작업이 완료되었습니다!\n작업명: ${itemTitle}`;
+        tags = "Done";
+    } 
+    // 👇 [여기] 아이디어 실현 케이스 추가!
+    else if (actionType === "realize_idea") {
+        logTitle = "🚀 아이디어 실현!";
+        logContent = `아이디어가 구체적인 작업으로 변환되었습니다.\n작업명: ${itemTitle}`;
+        tags = "Realization";
+    }
+
+    try {
+        await fetch(window.CHEESE_ADMIN_API_BASE, {
+            method: "POST",
+            body: JSON.stringify({
+                mode: "addLog",
+                date: today,
+                title: logTitle,
+                content: logContent,
+                relatedId: itemId || "",
+                tags: tags
+            })
+        });
+    } catch(e) {
+        console.error("자동 로그 생성 실패:", e);
+    }
+  }
+  // ==================================================
+  // [추가] 자동 버전 관리 표시 함수 (document.lastModified 활용)
+  // ==================================================
+    (function showVersion() {
+      const el = document.getElementById("sysVersion");
+      if (!el) return;
+      
+      // 파일의 마지막 수정 날짜(Last Modified)를 가져옵니다.
+      const d = new Date(document.lastModified);
+      
+      // 날짜 포맷팅 헬퍼
+      const pad = (n) => String(n).padStart(2, '0');
+      
+      // 포맷: YYYY.MM.DD_HH:MM [수정]
+      const versionTag = `${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())}_${pad(d.getHours())}:${pad(d.getMinutes())} [수정]`;
+      
+      el.textContent = `Version: ${versionTag}`;
+    })();
+</script>
+</body>
+</html>
