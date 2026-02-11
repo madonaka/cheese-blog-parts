@@ -638,6 +638,62 @@
   background: #2563eb !important;
   transform: translateY(-2px);
 }
+  /* [추가] 보드 뷰 드래그 앤 드롭 및 체크 버튼 디자인 */
+  .board-card {
+    cursor: grab;
+  }
+  .board-card:active {
+    cursor: grabbing;
+  }
+  .board-card.dragging {
+    opacity: 0.4;
+    border: 2px dashed #3b82f6;
+    transform: scale(0.98);
+  }
+  .board-column.drag-over {
+    background: #e2e8f0;
+    border: 2px dashed #94a3b8;
+  }
+  
+  .board-header-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 6px;
+  }
+  
+  .board-check-btn {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    border: 2px solid #cbd5e1;
+    background: #f8fafc;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    color: transparent;
+    font-size: 13px;
+    font-weight: 800;
+    transition: all 0.2s;
+  }
+  
+  .board-check-btn:hover {
+    border-color: #10b981;
+    color: #10b981;
+  }
+  
+  .board-card.done .board-check-btn {
+    background: #10b981;
+    border-color: #10b981;
+    color: white;
+  }
+  
+  .board-card-title-wrap {
+    flex: 1;
+    line-height: 1.3;
+  }
   </style>
 </head>
 <body>
@@ -1127,7 +1183,7 @@
     container.appendChild(row); return container;
   }
 
-  // 🚀 [수정] 보드 뷰 (3단 카드형)
+// 🚀 [수정] 보드 뷰 (3단 카드형 + 드래그 앤 드롭 연결)
   function renderBoardView() {
     const cols = {
       'high': { active: document.getElementById('board-col-high'), done: document.getElementById('board-col-high-done'), doneCount: 0 },
@@ -1141,10 +1197,8 @@
         if(c.done) c.done.innerHTML = ""; 
     });
 
-    // 버그 제외한 할 일만 표시
     const tasks = g_tasks.filter(t => t['유형'] !== '아이디어' && t['유형'] !== '버그');
     
-    // 날짜순 정렬
     tasks.sort((a, b) => {
         const dateA = a['기한'] ? new Date(a['기한']) : new Date('9999-12-31');
         const dateB = b['기한'] ? new Date(b['기한']) : new Date('9999-12-31');
@@ -1154,7 +1208,7 @@
     tasks.forEach(t => {
         let pKey = 'low';
         const priority = t['우선순위'] || '보통';
-        if (priority === '높음') pKey = 'high';
+        if (priority === '높음' || priority === '긴급') pKey = 'high';
         else if (priority === '보통') pKey = 'normal';
         
         const isDone = t['상태'] === '완료';
@@ -1173,13 +1227,28 @@
     if(document.getElementById('count-high-done')) document.getElementById('count-high-done').innerText = `(${cols.high.doneCount})`;
     if(document.getElementById('count-normal-done')) document.getElementById('count-normal-done').innerText = `(${cols.normal.doneCount})`;
     if(document.getElementById('count-low-done')) document.getElementById('count-low-done').innerText = `(${cols.low.doneCount})`;
+
+    // ✅ 드래그 앤 드롭 영역 활성화
+    setupBoardDragAndDrop();
   }
 
+// 🚀 [수정] 개별 카드 생성 (체크 버튼 및 드래그 기능 추가)
   function createBoardCard(item) {
       const el = document.createElement('div');
       const isDone = item['상태'] === '완료';
       el.className = `board-card ${isDone ? 'done' : ''}`;
-      el.onclick = () => openEditModal('task', item.ID);
+
+      // ✅ 진행 중인 항목만 드래그 가능하게 설정
+      if (!isDone) {
+          el.draggable = true;
+          el.addEventListener('dragstart', (e) => {
+              e.dataTransfer.setData('text/plain', item.ID);
+              setTimeout(() => el.classList.add('dragging'), 0); // 드래그 시 반투명 효과
+          });
+          el.addEventListener('dragend', () => {
+              el.classList.remove('dragging');
+          });
+      }
 
       let dateHtml = "";
       if (item['기한']) {
@@ -1191,7 +1260,24 @@
       }
 
       const title = item['제목'] || "(제목 없음)";
-      el.innerHTML = `<div class="board-card-title">${title}</div><div class="board-card-meta">${dateHtml}<span>${item['상태']}</span></div>`;
+      
+      // ✅ 체크 버튼 영역 추가
+      el.innerHTML = `
+          <div class="board-header-row">
+              <div class="board-check-btn" title="완료 처리" onclick="event.stopPropagation(); toggleStatus('${item.ID}', '${isDone ? '대기' : '완료'}')">✔</div>
+              <div class="board-card-title-wrap">
+                  <div class="board-card-title">${title}</div>
+              </div>
+          </div>
+          <div class="board-card-meta">${dateHtml}<span>${item['상태']}</span></div>
+      `;
+      
+      // ✅ 카드 여백을 클릭하면 모달 창이 열리도록 설정 (체크 버튼과 충돌 방지)
+      el.onclick = (e) => {
+          if (e.target.closest('.board-check-btn')) return;
+          openEditModal('task', item.ID);
+      };
+
       return el;
   }
 
@@ -2127,6 +2213,84 @@ document.getElementById('todo-form').addEventListener('submit', async (e) => {
     if (typeof updateParentOptions === 'function') {
       updateParentOptions(type);
     }
+  }
+
+  // ==================================================
+  // [신규] 보드 뷰 드래그 앤 드롭 제어 로직
+  // ==================================================
+  let isBoardDnDSetup = false;
+  
+  function setupBoardDragAndDrop() {
+      if (isBoardDnDSetup) return; // 이벤트가 여러 번 달리는 것 방지
+      isBoardDnDSetup = true;
+
+      const columns = [
+          { id: 'board-col-high', priority: '높음' },
+          { id: 'board-col-normal', priority: '보통' },
+          { id: 'board-col-low', priority: '낮음' }
+      ];
+
+      columns.forEach(col => {
+          // 컬럼 전체를 감싸는 영역(.board-column)을 드롭존으로 사용
+          const dropZone = document.getElementById(col.id).parentElement;
+          
+          dropZone.addEventListener('dragover', (e) => {
+              e.preventDefault(); // 드롭 허용
+              dropZone.classList.add('drag-over');
+          });
+
+          dropZone.addEventListener('dragleave', (e) => {
+              dropZone.classList.remove('drag-over');
+          });
+
+          dropZone.addEventListener('drop', async (e) => {
+              e.preventDefault();
+              dropZone.classList.remove('drag-over');
+              
+              const taskId = e.dataTransfer.getData('text/plain');
+              if (!taskId) return;
+
+              await updateTaskPriority(taskId, col.priority);
+          });
+      });
+  }
+
+  // ✅ 드래그 후 우선순위 데이터 업데이트
+  async function updateTaskPriority(id, newPriority) {
+      const task = g_tasks.find(t => t.ID === id);
+      if(!task || task['우선순위'] === newPriority) return; // 변동 없으면 무시
+
+      if(typeof showAdminLoading==='function') showAdminLoading("우선순위 변경 중...");
+      
+      try {
+          // 🚀 사용자 경험(UX)을 위해 화면(프론트)부터 즉시 이동!
+          task['우선순위'] = newPriority;
+          renderBoardView();
+
+          // 뒷단(서버)에 변경 사항 안전하게 전송 (데이터 유실 방지를 위해 전체 덮어쓰기)
+          const payload = {
+              mode: "editItem",
+              id: task.ID,
+              type: task['유형'],
+              title: task['제목'],
+              detail: task['상세내용'],
+              priority: newPriority,
+              dueDate: task['기한'] ? task['기한'].split('T')[0] : "",
+              connectedId: task['연결_중간목표ID'],
+              color: task['색상']
+          };
+
+          await fetch(window.CHEESE_ADMIN_API_BASE, { 
+              method: "POST", 
+              body: JSON.stringify(payload) 
+          });
+      } catch(e) {
+          console.error(e);
+          alert("우선순위 변경 통신에 실패했습니다.");
+          loadAllData(); // 실패 시 원래 데이터로 원상복구
+      } finally {
+          if(typeof hideAdminLoading==='function') hideAdminLoading();
+      }
   }
 </script>
 </body>
