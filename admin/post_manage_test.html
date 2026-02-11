@@ -2886,7 +2886,14 @@ function clearEditor(){
         const block = document.createElement('div');
         block.className = "pm-editor-block";
         block.innerHTML = `
-          <span class="pm-editor-label">${escapeHtml(slotName)}</span>
+          <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:5px;">
+            <span class="pm-editor-label" style="margin-bottom:0;">${escapeHtml(slotName)}</span>
+            <div style="display:flex; gap:5px;">
+              <button class="pm-btn small ghost" style="padding:2px 6px; font-size:11px; font-weight:800; color:#0f172a;" onclick="formatBodyText(this, 'bold')">B 볼드</button>
+              <button class="pm-btn small ghost" style="padding:2px 6px; font-size:11px;" onclick="addLinkToBody(this, 'external')">🔗 외부링크</button>
+              <button class="pm-btn small ghost" style="padding:2px 6px; font-size:11px;" onclick="addLinkToBody(this, 'internal')">📄 내부링크</button>
+            </div>
+          </div>
           <textarea class="pm-editor-textarea modal-body-input" 
                     data-target-slot="${slotName}"
                     placeholder="${escapeHtml(slotName)} 내용을 입력하세요..."
@@ -3078,6 +3085,91 @@ function clearEditor(){
       // 포커스 복귀 및 커서 위치를 <b> 태그 바로 안쪽으로 자연스럽게 이동
       textarea.focus();
       textarea.selectionStart = textarea.selectionEnd = start + 3; 
+    };
+    // ==========================================
+    // ✅ 본문(BODY) 에디터 서식 및 링크 추가 함수
+    // ==========================================
+    
+    window.formatBodyText = function(btnEl, type) {
+      const block = btnEl.closest('.pm-editor-block');
+      const textarea = block.querySelector('.modal-body-input');
+      if (!textarea) return;
+
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const text = textarea.value;
+      
+      if (type === 'bold') {
+        const selected = text.substring(start, end);
+        const wrapped = `<b>${selected}</b>`;
+        textarea.value = text.substring(0, start) + wrapped + text.substring(end);
+        
+        textarea.focus();
+        textarea.selectionStart = textarea.selectionEnd = start + 3; // <b> 안쪽으로 커서 이동
+      }
+      
+      textarea.dispatchEvent(new Event("input", { bubbles:true })); // 프리뷰 업데이트 트리거
+    };
+
+    window.addLinkToBody = function(btnEl, type) {
+      const block = btnEl.closest('.pm-editor-block');
+      const textarea = block.querySelector('.modal-body-input');
+      if (!textarea) return;
+
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const text = textarea.value;
+      const selected = text.substring(start, end);
+
+      const url = prompt((type === 'external' ? "외부" : "내부") + " 링크 URL을 입력하세요:\n(예: https://... 또는 /포스트ID)", "");
+      if (!url) return; // 취소했거나 빈 값인 경우 종료
+
+      let linkTag = "";
+      if (type === 'external') {
+        // 외부 링크는 새 창에서 열리도록 target="_blank" 추가
+        linkTag = `<a href="${url}" target="_blank" rel="noopener noreferrer">${selected || '링크 텍스트'}</a>`;
+      } else {
+        // 내부 링크
+        linkTag = `<a href="${url}">${selected || '링크 텍스트'}</a>`;
+      }
+
+      textarea.value = text.substring(0, start) + linkTag + text.substring(end);
+      
+      textarea.focus();
+      textarea.selectionStart = textarea.selectionEnd = start + linkTag.length;
+      textarea.dispatchEvent(new Event("input", { bubbles:true })); // 프리뷰 업데이트 트리거
+    };
+
+    // ==========================================
+    // ✅ (누락된 기능 보완) 주석 링크 추가 함수
+    // ==========================================
+    
+    window.addLinkToFootnote = function(index, type) {
+      const textarea = document.getElementById(`fn_input_${index}`);
+      if (!textarea) return;
+
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const text = textarea.value;
+      const selected = text.substring(start, end);
+
+      const url = prompt((type === 'external' ? "외부" : "내부") + " 링크 URL을 입력하세요:", "");
+      if (!url) return;
+
+      let linkTag = "";
+      if (type === 'external') {
+        linkTag = `<a href="${url}" target="_blank" rel="noopener noreferrer">${selected || '링크 텍스트'}</a>`;
+      } else {
+        linkTag = `<a href="${url}">${selected || '링크 텍스트'}</a>`;
+      }
+
+      const newText = text.substring(0, start) + linkTag + text.substring(end);
+      
+      textarea.value = newText;
+      window.updateFootnoteText(index, newText); // 메인 본문 주석 데이터에 즉시 반영
+      
+      textarea.focus();
+      textarea.selectionStart = textarea.selectionEnd = start + linkTag.length;
     };
     
     // 7. 주석 삭제
