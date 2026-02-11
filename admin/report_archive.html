@@ -100,13 +100,18 @@
     <section class="admin-content">
       <div class="dashboard-layout">
         
-        <div class="archive-header">
+       <div class="archive-header">
           <div class="archive-title">
             <h2>📂 보고서 & 기획서 아카이브</h2>
             <p>내용은 구글 드라이브로 안전하게, 관리는 가볍게!</p>
             <div id="sysVersion" class="sys-version-large">Checking version...</div>
           </div>
-          <div class="report-generator-group">
+          <div class="report-generator-group" style="align-items: center;">
+            <div style="display: flex; align-items: center; gap: 6px; margin-right: 8px; border-right: 2px solid #e2e8f0; padding-right: 14px;">
+              <span style="font-size: 0.9rem; font-weight: 700; color: #475569;">📅 기준일:</span>
+              <input type="date" id="report-base-date" class="styled-input" style="padding: 6px 10px; width: 140px; font-weight: 600; color: #1e293b;">
+            </div>
+            
             <button class="btn-gen" onclick="generateAutoReport('daily')">📝 일일 보고서</button>
             <button class="btn-gen" onclick="generateAutoReport('weekly')">📊 주간 보고서</button>
             <button class="btn-gen" onclick="generateAutoReport('monthly')">📅 월간 보고서</button>
@@ -171,17 +176,36 @@
   let g_goals = [];
   let g_tasks = [];
 
-  document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', () => {
     $('#doc-content').summernote({
-      height: 450, lang: 'ko-KR',
+      height: 600, lang: 'ko-KR', // 4분할 보고서를 위해 에디터 높이를 600으로 늘렸습니다
       toolbar: [
         ['style', ['style']], ['font', ['bold', 'underline', 'clear']],
         ['color', ['color']], ['para', ['ul', 'ol', 'paragraph']],
-        ['table', ['table']], ['insert', ['link']], ['view', ['codeview']]
+        ['table', ['table']], ['insert', ['link']], ['view', ['codeview', 'fullscreen']]
       ]
     });
+    
+    // ✅ [신규] 보고서 기준일을 '오늘'로 자동 세팅
+    const todayStr = new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+    document.getElementById('report-base-date').value = todayStr;
+
     loadAllData();
   });
+
+  // ✅ [신규] 보고서용 목표 진척률(%) 계산 유틸리티
+  function getReportGoalProgress(goalId, isBigGoal) {
+      let tasks = [];
+      if (isBigGoal) {
+          const midGoalIds = g_goals.filter(m => m['상위ID'] === goalId).map(m => m.ID);
+          tasks = g_tasks.filter(t => t['유형'] !== '아이디어' && t['유형'] !== '버그' && midGoalIds.includes(t['연결_중간목표ID']));
+      } else {
+          tasks = g_tasks.filter(t => t['유형'] !== '아이디어' && t['유형'] !== '버그' && t['연결_중간목표ID'] === goalId);
+      }
+      if (tasks.length === 0) return 0;
+      const doneCount = tasks.filter(t => t['상태'] === '완료').length;
+      return Math.round((doneCount / tasks.length) * 100);
+  }
 
   async function loadAllData() {
     if(typeof showAdminLoading==='function') showAdminLoading("문서 목록 불러오는 중...");
@@ -347,66 +371,136 @@
     }
   });
 
+// ==========================================
+  // 5. 1 Page 4분할 자동 보고서 생성 로직 (유니클로 스타일)
+  // ==========================================
   function generateAutoReport(rangeType) {
-    const today = new Date(); today.setHours(23,59,59,999);
-    let startDate = new Date(); startDate.setHours(0,0,0,0);
+    // 1. 기준일 가져오기
+    const baseDateStr = document.getElementById('report-base-date').value;
+    if (!baseDateStr) { alert("보고서 기준일을 선택해 주세요."); return; }
+    
+    const targetEndDate = new Date(baseDateStr);
+    targetEndDate.setHours(23,59,59,999);
+    
+    let startDate = new Date(baseDateStr); 
+    startDate.setHours(0,0,0,0);
+    
     let titlePrefix = "";
 
     if (rangeType === 'daily') {
-        titlePrefix = `[일일 보고서] ${today.getFullYear()}년 ${today.getMonth()+1}월 ${today.getDate()}일`;
+        titlePrefix = `[일일 보고서] ${targetEndDate.getFullYear()}년 ${targetEndDate.getMonth()+1}월 ${targetEndDate.getDate()}일`;
     } else if (rangeType === 'weekly') {
         const day = startDate.getDay() || 7; startDate.setDate(startDate.getDate() - day + 1);
-        titlePrefix = `[주간 보고서] ${today.getMonth()+1}월 ${Math.ceil(today.getDate()/7)}주차`;
+        titlePrefix = `[주간 보고서] ${targetEndDate.getMonth()+1}월 ${Math.ceil(targetEndDate.getDate()/7)}주차`;
     } else if (rangeType === 'monthly') {
         startDate.setDate(1); 
-        titlePrefix = `[월간 보고서] ${today.getFullYear()}년 ${today.getMonth()+1}월 결산`;
+        titlePrefix = `[월간 보고서] ${targetEndDate.getFullYear()}년 ${targetEndDate.getMonth()+1}월 결산`;
     }
 
+    // 2. 해당 기간의 로그 필터링
     const targetLogs = g_logs.filter(log => {
         if (!log['날짜']) return false;
-        const d = new Date(log['날짜']); return d >= startDate && d <= today;
+        const d = new Date(log['날짜']); return d >= startDate && d <= targetEndDate;
     });
 
-    if (targetLogs.length === 0) { alert("선택하신 기간 내에 작성된 작업 기록이 없습니다."); return; }
-
-    const grouped = {}; let totalLogs = 0;
+    // 3. 로그 분류
+    const grouped = {}; let totalLogs = 0; let totalTimeStr = "";
     targetLogs.forEach(log => {
         const goalId = log['관련_목표ID'] || '기타 업무';
         if (!grouped[goalId]) grouped[goalId] = [];
         grouped[goalId].push(log); totalLogs++;
     });
 
-    let htmlStr = `
-        <div style="font-family: 'Pretendard', sans-serif; color: #333; max-width:800px; margin:0 auto; padding:20px;">
-            <h2 style="color: #2563eb; border-bottom: 2px solid #bfdbfe; padding-bottom: 10px;">${titlePrefix}</h2>
-            <p style="background:#f8fafc; padding:14px; border-radius:8px; border:1px solid #e2e8f0;"><strong>🔹 요약:</strong> 설정된 기간 내 총 <strong>${totalLogs}건</strong>의 작업 로그가 기록되었습니다.</p>
-            <br/>
-            <h3 style="background: #f1f5f9; padding: 10px 14px; border-left: 4px solid #3b82f6; border-radius:4px;">상세 업무 내역</h3>
+    // 4. [Q2] 프로젝트 현황(진척률) 데이터 생성
+    let progressHtml = `<ul style="padding-left: 20px; margin: 0; font-size: 0.95rem; color: #333; line-height: 1.8;">`;
+    const activeBigGoals = g_goals.filter(g => g['유형'] === '큰 목표' && g['상태'] !== '완료');
+    
+    if (activeBigGoals.length > 0) {
+        activeBigGoals.forEach(bg => {
+            const percent = getReportGoalProgress(bg.ID, true);
+            let statusColor = percent === 100 ? "#10b981" : (percent > 0 ? "#3b82f6" : "#64748b");
+            progressHtml += `<li><b>${bg['제목']}</b>: <span style="color:${statusColor}; font-weight:800;">${percent}% 진행</span></li>`;
+        });
+    } else {
+        progressHtml += `<li>진행 중인 큰 목표가 없습니다.</li>`;
+    }
+    progressHtml += `</ul>`;
+
+    // 5. [Q3] 상세 내역 및 특이사항(로그) 데이터 생성
+    let logHtml = `<div style="max-height: 250px; overflow-y: auto; font-size: 0.9rem;">`;
+    if (totalLogs === 0) {
+        logHtml += `<p style="color:#94a3b8; margin:0;">해당 기간에 작성된 작업 기록이 없습니다.</p>`;
+    } else {
+        for (const [gId, logs] of Object.entries(grouped)) {
+            let goalName = "기타 업무";
+            if (gId !== '기타 업무') {
+                const goalObj = g_goals.find(g => g.ID === gId) || g_tasks.find(t => t.ID === gId);
+                if (goalObj) goalName = `[${goalObj['유형']}] ${goalObj['제목']}`;
+            }
+            logHtml += `<h4 style="margin: 10px 0 4px 0; color: #1e293b; font-size: 0.95rem;">📌 ${goalName}</h4>`;
+            logHtml += `<ul style="padding-left: 16px; margin: 0; color: #475569; line-height: 1.5;">`;
+            logs.forEach(l => {
+                const dateStr = l['날짜'] ? l['날짜'].substring(5,10) : '';
+                const title = l['제목'] ? `<b>${l['제목']}</b> - ` : '';
+                logHtml += `<li style="margin-bottom: 4px;">[${dateStr}] ${title}${l['내용'].replace(/\n/g, ' ')}</li>`;
+            });
+            logHtml += `</ul>`;
+        }
+    }
+    logHtml += `</div>`;
+
+    // 6. 1 Page 4분할 HTML 템플릿 조립 (테이블 구조로 견고하게)
+    let htmlTemplate = `
+      <div style="font-family: 'Pretendard', 'Malgun Gothic', sans-serif; max-width: 900px; margin: 0 auto; color: #1e293b;">
+        <h2 style="text-align: center; color: #0f172a; margin-bottom: 24px; font-size: 1.6rem; letter-spacing: -0.5px;">${titlePrefix}</h2>
+        
+        <table style="width: 100%; border-collapse: collapse; table-layout: fixed; border: 2px solid #cbd5e1;">
+          <tr>
+            <td style="width: 50%; vertical-align: top; border: 1px solid #cbd5e1; padding: 20px; background: #fff;">
+              <h3 style="margin: 0 0 12px 0; color: #2563eb; font-size: 1.1rem; border-bottom: 2px solid #bfdbfe; padding-bottom: 8px;">
+                1. 목표 및 핵심 요약
+              </h3>
+              <ul style="padding-left: 20px; margin: 0; font-size: 0.95rem; color: #333; line-height: 1.8;">
+                  <li><b>보고 기간:</b> ${startDate.toLocaleDateString()} ~ ${targetEndDate.toLocaleDateString()}</li>
+                  <li><b>총 작업 건수:</b> ${totalLogs}건 완료</li>
+                  <li><b>주요 이슈:</b> (특이사항을 요약해 주세요)</li>
+              </ul>
+            </td>
+            <td style="width: 50%; vertical-align: top; border: 1px solid #cbd5e1; padding: 20px; background: #f8fafc;">
+              <h3 style="margin: 0 0 12px 0; color: #2563eb; font-size: 1.1rem; border-bottom: 2px solid #bfdbfe; padding-bottom: 8px;">
+                2. 프로젝트 진행 현황 (목표 달성률)
+              </h3>
+              ${progressHtml}
+            </td>
+          </tr>
+          <tr>
+            <td style="width: 50%; vertical-align: top; border: 1px solid #cbd5e1; padding: 20px; background: #f8fafc;">
+              <h3 style="margin: 0 0 12px 0; color: #2563eb; font-size: 1.1rem; border-bottom: 2px solid #bfdbfe; padding-bottom: 8px;">
+                3. 상세 진행 내역 및 이슈
+              </h3>
+              ${logHtml}
+            </td>
+            <td style="width: 50%; vertical-align: top; border: 1px solid #cbd5e1; padding: 20px; background: #fff;">
+              <h3 style="margin: 0 0 12px 0; color: #2563eb; font-size: 1.1rem; border-bottom: 2px solid #bfdbfe; padding-bottom: 8px;">
+                4. 향후 계획 및 Action Item
+              </h3>
+              <ul style="padding-left: 20px; margin: 0; font-size: 0.95rem; color: #333; line-height: 1.8;">
+                  <li>내일/차주 진행할 핵심 목표 1...</li>
+                  <li>해결해야 할 액션 아이템 작성...</li>
+              </ul>
+            </td>
+          </tr>
+        </table>
+        
+        <p style="text-align: right; color: #94a3b8; font-size: 0.8rem; margin-top: 12px;">
+          ※ 본 보고서는 Cheese Lab 시스템에 의해 <b>${baseDateStr}</b> 기준으로 자동 추출되었습니다.
+        </p>
+      </div>
     `;
 
-    for (const [gId, logs] of Object.entries(grouped)) {
-        let goalName = "기타 (미분류 작업)";
-        if (gId !== '기타 업무') {
-            const goalObj = g_goals.find(g => g.ID === gId) || g_tasks.find(t => t.ID === gId);
-            if (goalObj) goalName = `[${goalObj['유형']}] ${goalObj['제목']}`;
-        }
-        
-        htmlStr += `<h4 style="color: #1e293b; margin-top: 24px; border-bottom:1px dashed #cbd5e1; padding-bottom:6px;">📌 ${goalName}</h4>`;
-        htmlStr += `<ul style="line-height: 1.6; color: #475569; padding-left:24px;">`;
-        logs.forEach(l => {
-            const dateStr = l['날짜'] ? l['날짜'].substring(5,10) : '';
-            const duration = l['소요시간'] ? `<span style="color:#059669; font-size:0.9em; background:#ecfdf5; padding:2px 6px; border-radius:4px; margin-left:4px; font-weight:600;">⏱${l['소요시간']}</span>` : '';
-            const logTitle = l['제목'] ? `<b>${l['제목']}</b> - ` : '';
-            const logContent = l['내용'].replace(/\n/g, '<br>');
-            htmlStr += `<li style="margin-bottom: 10px;">[${dateStr}] ${logTitle}${logContent} ${duration}</li>`;
-        });
-        htmlStr += `</ul>`;
-    }
-    htmlStr += `<br/><hr style="border:0; border-top:1px solid #e2e8f0;"/><p style="color:#94a3b8; font-size:0.85em; text-align:right;">※ Cheese Lab 시스템에 의해 자동 생성됨.</p></div>`;
-
-    openDocModal(null, titlePrefix, htmlStr, '보고서');
+    openDocModal(null, titlePrefix, htmlTemplate, '보고서');
   }
-
+  
   async function deleteDoc(id) {
     if(!confirm("목록에서 삭제하시겠습니까? (드라이브의 원본 HTML 파일은 보존됩니다)")) return;
     if(typeof showAdminLoading==='function') showAdminLoading("삭제 중...");
