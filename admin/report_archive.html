@@ -11,8 +11,11 @@
   <script src="https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.js"></script>
 
   <script>
-    // ✅ 서버 API 주소 (todo_manage와 동일)
+    // ✅ 서버 API 주소
     window.CHEESE_ADMIN_API_BASE = "https://script.google.com/macros/s/AKfycbwn1TrLeSIAe570LRWMJxRzx88u3LQYF38Kme9WhMd-YQsrMsSggrNy3I_2SGKGXTpS/exec";
+    
+    // 🚨 필수 설정: 생성된 문서(파일)가 저장될 구글 드라이브 폴더 ID
+    const ARCHIVE_FOLDER_ID = "1MpTCfw8B1Y-77QFr4k5SCPfVQgso8fKi"; 
   </script>
   <script src="./admin-common.js" defer></script>
 
@@ -37,9 +40,7 @@
     .btn-new:hover { background: #2563eb; }
 
     /* 문서 그리드 뷰 */
-    .doc-grid {
-      display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px;
-    }
+    .doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
     .doc-card {
       background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px;
       box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); transition: 0.2s; position: relative; cursor: pointer;
@@ -52,9 +53,8 @@
     }
     .doc-card-title { font-size: 1.15rem; font-weight: 800; color: #1e293b; margin: 0 0 10px 0; padding-right: 50px; line-height: 1.4; }
     .doc-card-date { font-size: 0.8rem; color: #94a3b8; margin-bottom: 12px; }
-    .doc-card-preview { font-size: 0.9rem; color: #64748b; line-height: 1.5; flex: 1; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
     
-    .doc-card-actions { margin-top: 16px; display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid #f1f5f9; padding-top: 12px; }
+    .doc-card-actions { margin-top: auto; display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid #f1f5f9; padding-top: 12px; }
     
     /* 에디터 모달 (넓게 쾌적하게) */
     .modal-box.large-modal { max-width: 900px; height: 90vh; display: flex; flex-direction: column; }
@@ -65,17 +65,15 @@
 
 <div class="admin-container">
   <div id="header-slot"></div>
-  
   <div class="admin-main">
     <div id="menu-slot"></div>
-    
     <div class="content-area">
       <div class="content-header"></div>
       
       <div class="archive-header">
         <div class="archive-title">
           <h2>📂 보고서 & 기획서 아카이브</h2>
-          <p>작업 로그를 바탕으로 보고서를 자동 생성하고 문서를 보관하세요.</p>
+          <p>내용은 드라이브 파일로 안전하게, 관리는 가볍게!</p>
         </div>
         <div class="report-generator-group">
           <button class="btn-gen" onclick="generateAutoReport('daily')">📝 일일 보고서</button>
@@ -102,6 +100,7 @@
     <form id="doc-form" style="display: flex; flex-direction: column; flex: 1; overflow: hidden; margin:0;">
       <div class="modal-body-custom" style="flex: 1; overflow-y: auto; padding-bottom: 20px;">
         <input type="hidden" id="doc-id" value="">
+        <input type="hidden" id="doc-drive-id" value="">
         
         <div class="field" style="display:flex; gap:12px; margin-bottom:16px;">
           <div style="flex: 1;">
@@ -125,7 +124,7 @@
       
       <div class="modal-footer-custom" style="justify-content: flex-end; padding-top: 16px;">
         <button type="button" class="btn-close-custom" onclick="closeModal('doc-modal')">취소</button>
-        <button type="submit" class="btn-save-custom" id="btn-save-doc" style="background:#3b82f6;">💾 문서 저장</button>
+        <button type="submit" class="btn-save-custom" id="btn-save-doc" style="background:#3b82f6;">💾 드라이브에 저장</button>
       </div>
     </form>
   </div>
@@ -142,39 +141,25 @@
   // ==========================================
   $(document).ready(async function() {
     await loadHeaderMenu();
-    
-    // 에디터 초기화
     $('#doc-content').summernote({
-      height: 450,
-      lang: 'ko-KR',
+      height: 450, lang: 'ko-KR',
       toolbar: [
-        ['style', ['style']],
-        ['font', ['bold', 'underline', 'clear']],
-        ['color', ['color']],
-        ['para', ['ul', 'ol', 'paragraph']],
-        ['table', ['table']],
-        ['insert', ['link']],
-        ['view', ['codeview']]
+        ['style', ['style']], ['font', ['bold', 'underline', 'clear']],
+        ['color', ['color']], ['para', ['ul', 'ol', 'paragraph']],
+        ['table', ['table']], ['insert', ['link']], ['view', ['codeview']]
       ]
     });
-
     loadAllData();
   });
 
   async function loadAllData() {
-    if(typeof showAdminLoading==='function') showAdminLoading("문서 불러오는 중...");
+    if(typeof showAdminLoading==='function') showAdminLoading("문서 목록 불러오는 중...");
     try {
       const res = await fetch(window.CHEESE_ADMIN_API_BASE + "?mode=getAllData");
       const json = await res.json();
       if(json.result === "success") {
-        g_logs = json.logs || [];
-        g_goals = json.goals || [];
-        g_tasks = json.tasks || [];
-        
-        // 기존 task_master에서 유형이 '보고서'나 '기획서'인 것만 걸러내어 문서로 취급
+        g_logs = json.logs || []; g_goals = json.goals || []; g_tasks = json.tasks || [];
         g_docs = g_tasks.filter(t => t['유형'] === '보고서' || t['유형'] === '기획서');
-        
-        // 최신순 정렬
         g_docs.sort((a, b) => b.ID.localeCompare(a.ID));
         renderDocs();
       }
@@ -183,100 +168,203 @@
   }
 
   // ==========================================
-  // 2. 아카이브 렌더링 (카드 UI)
+  // 2. 아카이브 렌더링 (그리드)
   // ==========================================
   function renderDocs() {
     const root = document.getElementById('doc-grid');
     root.innerHTML = "";
     
     if(g_docs.length === 0) {
-        root.innerHTML = `<div style="grid-column: 1/-1; text-align:center; padding: 60px; color:#94a3b8; background:#f8fafc; border-radius:12px; border:2px dashed #cbd5e1;">보관된 문서가 없습니다. 새 문서를 작성하거나 보고서를 생성해 보세요!</div>`;
+        root.innerHTML = `<div style="grid-column: 1/-1; text-align:center; padding: 60px; color:#94a3b8; background:#f8fafc; border-radius:12px; border:2px dashed #cbd5e1;">보관된 문서가 없습니다.</div>`;
         return;
     }
 
     g_docs.forEach(doc => {
-      const card = document.createElement('div');
-      card.className = "doc-card";
-      
+      const card = document.createElement('div'); card.className = "doc-card";
       const isReport = doc['유형'] === '보고서';
       const badgeColor = isReport ? '#eff6ff' : '#f0fdf4';
       const textColor = isReport ? '#2563eb' : '#16a34a';
-      
-      // HTML 태그 제거하여 텍스트만 추출 (미리보기 용도)
-      const plainText = (doc['상세내용'] || "").replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ');
-      
-      // 날짜 추출 (ID 기반 또는 오늘날짜)
-      const rawDate = doc['기한'] ? doc['기한'].split('T')[0] : (doc['시작일'] ? doc['시작일'].split('T')[0] : '날짜 없음');
+      const rawDate = doc['기한'] ? doc['기한'].split('T')[0] : '날짜 없음';
+
+      // 🚀 드라이브에 저장된 문서인지 체크 (상세내용에 DRIVE:ID 형식으로 저장됨)
+      let previewHtml = "";
+      if (doc['상세내용'] && doc['상세내용'].startsWith("DRIVE:")) {
+          previewHtml = `
+            <div style="flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center;">
+              <div style="background:#eff6ff; color:#3b82f6; padding:8px 16px; border-radius:8px; font-weight:bold; font-size:0.9rem;">
+                ☁️ 드라이브 파일 연결됨
+              </div>
+            </div>`;
+      } else {
+          previewHtml = `<div style="color:#ef4444; font-size:0.85rem; padding:10px;">(구형 데이터 형식입니다)</div>`;
+      }
 
       card.innerHTML = `
-        <div class="doc-type-badge" style="background:${badgeColor}; color:${textColor};">${isReport ? '📊 보고서' : '💡 기획서'}</div>
+        <div class="doc-type-badge" style="background:${badgeColor}; color:${textColor};">${doc['유형']}</div>
         <h3 class="doc-card-title">${doc['제목'] || '(제목 없음)'}</h3>
         <div class="doc-card-date">🗓 최종 수정: ${rawDate}</div>
-        <div class="doc-card-preview">${plainText || '내용이 없습니다.'}</div>
+        ${previewHtml}
         <div class="doc-card-actions">
-           <button class="btn" style="background:#f1f5f9; color:#475569; border:none; padding:6px 12px; border-radius:6px; cursor:pointer;" onclick="openDocModal('${doc.ID}'); event.stopPropagation();">수정</button>
-           <button class="btn" style="background:#fee2e2; color:#ef4444; border:none; padding:6px 12px; border-radius:6px; cursor:pointer;" onclick="deleteDoc('${doc.ID}'); event.stopPropagation();">삭제</button>
+           <button class="btn" style="background:#f1f5f9; color:#475569; border:none; padding:6px 12px; border-radius:6px; cursor:pointer;" onclick="openDocModal('${doc.ID}'); event.stopPropagation();">📝 열기 / 수정</button>
+           <button class="btn" style="background:#fee2e2; color:#ef4444; border:none; padding:6px 12px; border-radius:6px; cursor:pointer;" onclick="deleteDoc('${doc.ID}'); event.stopPropagation();">🗑️</button>
         </div>
       `;
-      
       card.onclick = () => openDocModal(doc.ID);
       root.appendChild(card);
     });
   }
 
   // ==========================================
-  // 3. 자동 보고서 생성 로직
+  // 3. 모달 제어 (드라이브에서 파일 불러오기)
+  // ==========================================
+  async function openDocModal(docId = null, defaultTitle = "", defaultHtml = "", defaultType = "보고서") {
+    const modal = document.getElementById('doc-modal');
+    modal.classList.add('open');
+    document.getElementById('doc-form').reset();
+    document.getElementById('doc-drive-id').value = ""; // 드라이브 ID 초기화
+    $('#doc-content').summernote('code', '');
+
+    if (docId) {
+        const doc = g_docs.find(d => d.ID === docId);
+        if (doc) {
+            document.getElementById('doc-modal-title').textContent = "문서 수정";
+            document.getElementById('doc-id').value = doc.ID;
+            document.getElementById('doc-title').value = doc['제목'];
+            document.getElementById('doc-type').value = doc['유형'];
+            
+            // 🚀 DB에 저장된 값이 DRIVE 파일 ID일 경우 서버에서 내용 긁어오기
+            if (doc['상세내용'] && doc['상세내용'].startsWith("DRIVE:")) {
+                const fileId = doc['상세내용'].split("DRIVE:")[1];
+                document.getElementById('doc-drive-id').value = fileId;
+                
+                if(typeof showAdminLoading==='function') showAdminLoading("드라이브에서 원본 파일 다운로드 중...");
+                try {
+                    const res = await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify({ mode: "getReportContent", fileId: fileId }) });
+                    const json = await res.json();
+                    if(json.result === "success") $('#doc-content').summernote('code', json.content);
+                    else throw new Error("파일 읽기 실패");
+                } catch(e) {
+                    alert("문서 불러오기 오류: 파일이 삭제되었거나 권한이 없습니다.");
+                } finally {
+                    if(typeof hideAdminLoading==='function') hideAdminLoading();
+                }
+            } else {
+                $('#doc-content').summernote('code', doc['상세내용'] || "");
+            }
+        }
+    } else {
+        document.getElementById('doc-modal-title').textContent = "새 문서 작성";
+        document.getElementById('doc-id').value = "";
+        document.getElementById('doc-title').value = defaultTitle;
+        document.getElementById('doc-type').value = defaultType;
+        if(defaultHtml) $('#doc-content').summernote('code', defaultHtml);
+    }
+  }
+
+  // ==========================================
+  // 4. 저장 (1:드라이브 파일 생성 -> 2:DB에는 ID만 기록)
+  // ==========================================
+  document.getElementById('doc-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('btn-save-doc');
+    const originalText = btn.textContent;
+    btn.textContent = "처리 중..."; btn.disabled = true;
+
+    try {
+        const docId = document.getElementById('doc-id').value;
+        const title = document.getElementById('doc-title').value;
+        const type = document.getElementById('doc-type').value;
+        const contentHtml = $('#doc-content').summernote('code');
+        const driveId = document.getElementById('doc-drive-id').value;
+        const now = new Date().toISOString().split('T')[0];
+
+        // 🚀 STEP 1: 드라이브에 HTML 파일 업로드
+        if(typeof showAdminLoading==='function') showAdminLoading("구글 드라이브에 파일 생성 중...");
+        let savedFileId = driveId;
+        
+        const drivePayload = {
+            mode: "uploadReportContent",
+            folderId: ARCHIVE_FOLDER_ID,
+            fileId: driveId,
+            title: title,
+            content: contentHtml
+        };
+        const driveRes = await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify(drivePayload) });
+        const driveJson = await driveRes.json();
+        
+        if (driveJson.result === "success") {
+            savedFileId = driveJson.fileId;
+        } else {
+            throw new Error("드라이브 업로드 실패");
+        }
+
+        // 🚀 STEP 2: DB에는 드라이브 ID만 가볍게 저장
+        if(typeof showAdminLoading==='function') showAdminLoading("데이터베이스 메타데이터 기록 중...");
+        const dbPayload = {
+            mode: docId ? "editItem" : "addItem",
+            id: docId,
+            type: type,
+            title: title,
+            detail: "DRIVE:" + savedFileId, // 본문 대신 "DRIVE:파일ID" 형태 저장
+            priority: "보통",
+            dueDate: now, 
+            connectedId: "",
+            color: ""
+        };
+        
+        const dbRes = await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify(dbPayload) });
+        const dbJson = await dbRes.json();
+        
+        if(dbJson.result === "success") {
+            closeModal('doc-modal');
+            await loadAllData(); 
+        } else {
+            alert("DB 저장 실패: " + dbJson.msg);
+        }
+    } catch(err) {
+        console.error(err); alert("오류 발생: " + err.message);
+    } finally {
+        btn.textContent = originalText; btn.disabled = false;
+        if(typeof hideAdminLoading==='function') hideAdminLoading();
+    }
+  });
+
+  // ==========================================
+  // 5. 자동 보고서 생성 로직 (기존과 동일)
   // ==========================================
   function generateAutoReport(rangeType) {
-    const today = new Date();
-    today.setHours(23,59,59,999);
-    
-    let startDate = new Date();
-    startDate.setHours(0,0,0,0);
+    const today = new Date(); today.setHours(23,59,59,999);
+    let startDate = new Date(); startDate.setHours(0,0,0,0);
     let titlePrefix = "";
 
     if (rangeType === 'daily') {
         titlePrefix = `[일일 보고서] ${today.getFullYear()}년 ${today.getMonth()+1}월 ${today.getDate()}일`;
-    } 
-    else if (rangeType === 'weekly') {
-        // 이번 주 월요일 계산
-        const day = startDate.getDay() || 7; 
-        startDate.setDate(startDate.getDate() - day + 1);
+    } else if (rangeType === 'weekly') {
+        const day = startDate.getDay() || 7; startDate.setDate(startDate.getDate() - day + 1);
         titlePrefix = `[주간 보고서] ${today.getMonth()+1}월 ${Math.ceil(today.getDate()/7)}주차`;
-    } 
-    else if (rangeType === 'monthly') {
-        startDate.setDate(1); // 이달 1일
+    } else if (rangeType === 'monthly') {
+        startDate.setDate(1); 
         titlePrefix = `[월간 보고서] ${today.getFullYear()}년 ${today.getMonth()+1}월 결산`;
     }
 
-    // 1. 해당 기간의 로그 추출
     const targetLogs = g_logs.filter(log => {
         if (!log['날짜']) return false;
-        const d = new Date(log['날짜']);
-        return d >= startDate && d <= today;
+        const d = new Date(log['날짜']); return d >= startDate && d <= today;
     });
 
-    if (targetLogs.length === 0) {
-        alert("선택하신 기간 내에 작성된 로그(작업 기록)가 없습니다.");
-        return;
-    }
+    if (targetLogs.length === 0) { alert("선택하신 기간 내에 작성된 작업 기록이 없습니다."); return; }
 
-    // 2. 목표별로 로그 묶기
-    const grouped = {};
-    let totalLogs = 0;
-    
+    const grouped = {}; let totalLogs = 0;
     targetLogs.forEach(log => {
         const goalId = log['관련_목표ID'] || '기타 업무';
         if (!grouped[goalId]) grouped[goalId] = [];
-        grouped[goalId].push(log);
-        totalLogs++;
+        grouped[goalId].push(log); totalLogs++;
     });
 
-    // 3. HTML 템플릿 작성
     let htmlStr = `
-        <div style="font-family: sans-serif; color: #333;">
+        <div style="font-family: sans-serif; color: #333; max-width:800px; margin:0 auto; padding:20px;">
             <h2 style="color: #2563eb; border-bottom: 2px solid #bfdbfe; padding-bottom: 10px;">${titlePrefix}</h2>
-            <p><strong>🔹 요약:</strong> 설정된 기간 내 총 <strong>${totalLogs}건</strong>의 작업 로그가 기록되었습니다.</p>
+            <p style="background:#f8fafc; padding:12px; border-radius:8px;"><strong>🔹 요약:</strong> 설정된 기간 내 총 <strong>${totalLogs}건</strong>의 작업 로그가 기록되었습니다.</p>
             <br/>
             <h3 style="background: #f1f5f9; padding: 8px 12px; border-left: 4px solid #3b82f6;">상세 업무 내역</h3>
     `;
@@ -288,108 +376,30 @@
             if (goalObj) goalName = `[${goalObj['유형']}] ${goalObj['제목']}`;
         }
         
-        htmlStr += `<h4 style="color: #1e293b; margin-top: 20px;">📌 ${goalName}</h4>`;
+        htmlStr += `<h4 style="color: #1e293b; margin-top: 20px; border-bottom:1px dashed #e2e8f0; padding-bottom:4px;">📌 ${goalName}</h4>`;
         htmlStr += `<ul style="line-height: 1.6; color: #475569;">`;
-        
         logs.forEach(l => {
             const dateStr = l['날짜'] ? l['날짜'].substring(5,10) : '';
-            const duration = l['소요시간'] ? `<span style="color:#059669; font-size:0.9em;">(⏱${l['소요시간']})</span>` : '';
+            const duration = l['소요시간'] ? `<span style="color:#059669; font-size:0.9em; background:#ecfdf5; padding:2px 6px; border-radius:4px; margin-left:4px;">⏱${l['소요시간']}</span>` : '';
             const logTitle = l['제목'] ? `<b>${l['제목']}</b> - ` : '';
-            const logContent = l['내용'].replace(/\\n/g, ' ');
-            htmlStr += `<li style="margin-bottom: 6px;">[${dateStr}] ${logTitle}${logContent} ${duration}</li>`;
+            const logContent = l['내용'].replace(/\n/g, '<br>');
+            htmlStr += `<li style="margin-bottom: 8px;">[${dateStr}] ${logTitle}${logContent} ${duration}</li>`;
         });
         htmlStr += `</ul>`;
     }
+    htmlStr += `<br/><hr style="border:0; border-top:1px solid #e2e8f0;"/><p style="color:#94a3b8; font-size:0.85em; text-align:right;">※ Cheese Lab 시스템에 의해 자동 생성됨.</p></div>`;
 
-    htmlStr += `<br/><p style="color:#94a3b8; font-size:0.85em;">※ 이 보고서는 작업 로그를 기반으로 자동 생성되었습니다.</p></div>`;
-
-    // 에디터 열고 내용 세팅
     openDocModal(null, titlePrefix, htmlStr, '보고서');
   }
 
-  // ==========================================
-  // 4. 모달 제어 및 저장 로직
-  // ==========================================
-  function openDocModal(docId = null, defaultTitle = "", defaultHtml = "", defaultType = "보고서") {
-    const modal = document.getElementById('doc-modal');
-    modal.classList.add('open');
-    document.getElementById('doc-form').reset();
-    $('#doc-content').summernote('code', '');
-
-    if (docId) {
-        // 기존 문서 열기
-        const doc = g_docs.find(d => d.ID === docId);
-        if (doc) {
-            document.getElementById('doc-modal-title').textContent = "문서 수정";
-            document.getElementById('doc-id').value = doc.ID;
-            document.getElementById('doc-title').value = doc['제목'];
-            document.getElementById('doc-type').value = doc['유형'];
-            $('#doc-content').summernote('code', doc['상세내용'] || "");
-        }
-    } else {
-        // 새 문서 (또는 자동 생성)
-        document.getElementById('doc-modal-title').textContent = "새 문서 작성";
-        document.getElementById('doc-id').value = "";
-        document.getElementById('doc-title').value = defaultTitle;
-        document.getElementById('doc-type').value = defaultType;
-        if(defaultHtml) $('#doc-content').summernote('code', defaultHtml);
-    }
-  }
-
-  // 저장 이벤트
-  document.getElementById('doc-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const btn = document.getElementById('btn-save-doc');
-    const originalText = btn.textContent;
-    btn.textContent = "저장 중..."; btn.disabled = true;
-
-    try {
-        const docId = document.getElementById('doc-id').value;
-        const title = document.getElementById('doc-title').value;
-        const type = document.getElementById('doc-type').value;
-        const content = $('#doc-content').summernote('code');
-        const now = new Date().toISOString().split('T')[0];
-
-        // todo_manage의 task_master 저장 구조를 그대로 재사용 (호환성 100%)
-        const payload = {
-            mode: docId ? "editItem" : "addItem",
-            id: docId,
-            type: type, // "보고서" 또는 "기획서"
-            title: title,
-            detail: content,
-            priority: "보통",
-            dueDate: now, // 최종 수정일 추적용으로 기한 컬럼 활용
-            connectedId: "",
-            color: ""
-        };
-
-        if(typeof showAdminLoading==='function') showAdminLoading("저장 중...");
-        
-        const res = await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify(payload) });
-        const json = await res.json();
-        
-        if(json.result === "success") {
-            closeModal('doc-modal');
-            await loadAllData(); // 데이터 다시 불러와서 화면 갱신
-        } else {
-            alert("저장 실패: " + json.msg);
-        }
-    } catch(err) {
-        console.error(err); alert("오류가 발생했습니다.");
-    } finally {
-        btn.textContent = originalText; btn.disabled = false;
-        if(typeof hideAdminLoading==='function') hideAdminLoading();
-    }
-  });
-
-  // 삭제 로직
+  // 삭제 로직 (DB 메타데이터만 삭제, 드라이브 파일은 보존됨)
   async function deleteDoc(id) {
-    if(!confirm("이 문서를 정말 삭제하시겠습니까?")) return;
+    if(!confirm("목록에서 삭제하시겠습니까? (드라이브의 원본 파일은 유지됩니다)")) return;
     if(typeof showAdminLoading==='function') showAdminLoading("삭제 중...");
     try {
       await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify({ mode: "deleteItem", id: id }) });
       await loadAllData();
-    } catch(e) { console.error(e); alert("삭제 오류"); }
+    } catch(e) { alert("삭제 오류"); }
     finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); }
   }
 
