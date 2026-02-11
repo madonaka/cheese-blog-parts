@@ -373,21 +373,32 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
 // ==========================================
-  // 5. 1 Page 4분할 자동 보고서 생성 로직 (유니클로 스타일)
+  // [신규] D-Day 계산 유틸리티 (보고서용)
+  // ==========================================
+  function getReportDday(dateStr) {
+      if (!dateStr) return `<span style="color:#94a3b8; font-size:0.85em; margin-left:6px; font-weight:normal;">(마감 미정)</span>`;
+      const targetDate = new Date(dateStr);
+      const today = new Date();
+      targetDate.setHours(0,0,0,0); today.setHours(0,0,0,0);
+      
+      const diffDays = Math.ceil((targetDate - today) / (1000 * 60 * 60 * 24));
+      
+      if (diffDays > 0) return `<span style="color:#ef4444; font-size:0.85em; font-weight:900; margin-left:6px; background:#fee2e2; padding:2px 6px; border-radius:4px;">D-${diffDays}</span>`;
+      if (diffDays === 0) return `<span style="color:#ef4444; font-size:0.85em; font-weight:900; margin-left:6px; background:#fee2e2; padding:2px 6px; border-radius:4px;">D-Day</span>`;
+      return `<span style="color:#ef4444; font-size:0.85em; font-weight:900; margin-left:6px; background:#fee2e2; padding:2px 6px; border-radius:4px;">D+${Math.abs(diffDays)} 지연</span>`;
+  }
+
+  // ==========================================
+  // 5. 1 Page 4분할 자동 보고서 생성 로직 (유니클로 스타일 심화)
   // ==========================================
   function generateAutoReport(rangeType) {
-    // 1. 기준일 가져오기
     const baseDateStr = document.getElementById('report-base-date').value;
     if (!baseDateStr) { alert("보고서 기준일을 선택해 주세요."); return; }
     
-    const targetEndDate = new Date(baseDateStr);
-    targetEndDate.setHours(23,59,59,999);
-    
-    let startDate = new Date(baseDateStr); 
-    startDate.setHours(0,0,0,0);
+    const targetEndDate = new Date(baseDateStr); targetEndDate.setHours(23,59,59,999);
+    let startDate = new Date(baseDateStr); startDate.setHours(0,0,0,0);
     
     let titlePrefix = "";
-
     if (rangeType === 'daily') {
         titlePrefix = `[일일 보고서] ${targetEndDate.getFullYear()}년 ${targetEndDate.getMonth()+1}월 ${targetEndDate.getDate()}일`;
     } else if (rangeType === 'weekly') {
@@ -398,36 +409,55 @@ document.addEventListener('DOMContentLoaded', () => {
         titlePrefix = `[월간 보고서] ${targetEndDate.getFullYear()}년 ${targetEndDate.getMonth()+1}월 결산`;
     }
 
-    // 2. 해당 기간의 로그 필터링
     const targetLogs = g_logs.filter(log => {
         if (!log['날짜']) return false;
         const d = new Date(log['날짜']); return d >= startDate && d <= targetEndDate;
     });
 
-    // 3. 로그 분류
-    const grouped = {}; let totalLogs = 0; let totalTimeStr = "";
+    // 로그 분류
+    const grouped = {}; let totalLogs = 0;
     targetLogs.forEach(log => {
         const goalId = log['관련_목표ID'] || '기타 업무';
         if (!grouped[goalId]) grouped[goalId] = [];
         grouped[goalId].push(log); totalLogs++;
     });
 
-    // 4. [Q2] 프로젝트 현황(진척률) 데이터 생성
-    let progressHtml = `<ul style="padding-left: 20px; margin: 0; font-size: 0.95rem; color: #333; line-height: 1.8;">`;
+    // ✅ [Q1] 핵심 요약: 작업 건수 세분화
+    let breakdownHtml = `<li><b>총 작업 건수:</b> 총 ${totalLogs}건 완료</li>`;
+    if (totalLogs > 0) {
+        breakdownHtml += `<ul style="margin: 6px 0 12px 0; padding-left: 20px; font-size: 0.9em; color: #475569; list-style-type: circle;">`;
+        for (const [gId, logs] of Object.entries(grouped)) {
+            let goalName = "기타 (미분류 업무)";
+            if (gId !== '기타 업무') {
+                const goalObj = g_goals.find(g => g.ID === gId) || g_tasks.find(t => t.ID === gId);
+                if (goalObj) goalName = goalObj['제목'];
+            }
+            breakdownHtml += `<li style="margin-bottom:2px;">${goalName}: <b>${logs.length}</b>건</li>`;
+        }
+        breakdownHtml += `</ul>`;
+    }
+
+    // ✅ [Q2] 프로젝트 현황: 목표 달성률 + D-Day 시각화
+    let progressHtml = `<ul style="padding-left: 20px; margin: 0; font-size: 0.95rem; color: #333; line-height: 1.6;">`;
     const activeBigGoals = g_goals.filter(g => g['유형'] === '큰 목표' && g['상태'] !== '완료');
     
     if (activeBigGoals.length > 0) {
         activeBigGoals.forEach(bg => {
             const percent = getReportGoalProgress(bg.ID, true);
+            const ddayBadge = getReportDday(bg['마감일']);
             let statusColor = percent === 100 ? "#10b981" : (percent > 0 ? "#3b82f6" : "#64748b");
-            progressHtml += `<li><b>${bg['제목']}</b>: <span style="color:${statusColor}; font-weight:800;">${percent}% 진행</span></li>`;
+            
+            progressHtml += `<li style="margin-bottom: 12px;">
+                <b>${bg['제목']}</b> ${ddayBadge}<br/>
+                <span style="color:${statusColor}; font-weight:800; font-size: 0.9em; display:inline-block; margin-top:2px;">↳ ${percent}% 진행</span>
+            </li>`;
         });
     } else {
         progressHtml += `<li>진행 중인 큰 목표가 없습니다.</li>`;
     }
     progressHtml += `</ul>`;
 
-    // 5. [Q3] 상세 내역 및 특이사항(로그) 데이터 생성
+    // ✅ [Q3] 상세 진행 내역: 텍스트 줄이고 '제목' 위주로 심플하게
     let logHtml = `<div style="font-size: 0.95rem; padding-bottom: 10px;">`;
     if (totalLogs === 0) {
         logHtml += `<p style="color:#94a3b8; margin:0;">해당 기간에 작성된 작업 기록이 없습니다.</p>`;
@@ -438,19 +468,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 const goalObj = g_goals.find(g => g.ID === gId) || g_tasks.find(t => t.ID === gId);
                 if (goalObj) goalName = `[${goalObj['유형']}] ${goalObj['제목']}`;
             }
-            logHtml += `<h4 style="margin: 10px 0 4px 0; color: #1e293b; font-size: 0.95rem;">📌 ${goalName}</h4>`;
-            logHtml += `<ul style="padding-left: 16px; margin: 0; color: #475569; line-height: 1.5;">`;
+            logHtml += `<h4 style="margin: 14px 0 6px 0; color: #1e293b; font-size: 0.95rem;">📌 ${goalName}</h4>`;
+            logHtml += `<ul style="padding-left: 16px; margin: 0; color: #475569; line-height: 1.6; list-style-type: square;">`;
             logs.forEach(l => {
                 const dateStr = l['날짜'] ? l['날짜'].substring(5,10) : '';
-                const title = l['제목'] ? `<b>${l['제목']}</b> - ` : '';
-                logHtml += `<li style="margin-bottom: 4px;">[${dateStr}] ${title}${l['내용'].replace(/\n/g, ' ')}</li>`;
+                // 제목이 있으면 제목을, 없으면 내용을 짧게 잘라서 표시
+                const logTitle = l['제목'] || (l['내용'] ? l['내용'].substring(0, 20) + "..." : "(내용 없음)");
+                logHtml += `<li style="margin-bottom: 4px;">[${dateStr}] <b>${logTitle}</b></li>`;
             });
             logHtml += `</ul>`;
         }
     }
     logHtml += `</div>`;
 
-    // 6. 1 Page 4분할 HTML 템플릿 조립 (테이블 구조로 견고하게)
+    // HTML 템플릿 조립
     let htmlTemplate = `
       <div style="font-family: 'Pretendard', 'Malgun Gothic', sans-serif; max-width: 900px; margin: 0 auto; color: #1e293b;">
         <h2 style="text-align: center; color: #0f172a; margin-bottom: 24px; font-size: 1.6rem; letter-spacing: -0.5px;">${titlePrefix}</h2>
@@ -463,7 +494,7 @@ document.addEventListener('DOMContentLoaded', () => {
               </h3>
               <ul style="padding-left: 20px; margin: 0; font-size: 0.95rem; color: #333; line-height: 1.8;">
                   <li><b>보고 기간:</b> ${startDate.toLocaleDateString()} ~ ${targetEndDate.toLocaleDateString()}</li>
-                  <li><b>총 작업 건수:</b> ${totalLogs}건 완료</li>
+                  ${breakdownHtml}
                   <li><b>주요 이슈:</b> (특이사항을 요약해 주세요)</li>
               </ul>
             </td>
@@ -477,7 +508,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <tr>
             <td style="width: 50%; vertical-align: top; border: 1px solid #cbd5e1; padding: 20px; background: #f8fafc;">
               <h3 style="margin: 0 0 12px 0; color: #2563eb; font-size: 1.1rem; border-bottom: 2px solid #bfdbfe; padding-bottom: 8px;">
-                3. 상세 진행 내역 및 이슈
+                3. 상세 진행 내역 (Task List)
               </h3>
               ${logHtml}
             </td>
