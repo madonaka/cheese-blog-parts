@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>문서 아카이브 - Cheese Lab</title>
+  
+  <link rel="stylesheet" href="./admin.css">
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.js"></script>
+
+  <script>
+    // ✅ 서버 API 주소 (todo_manage와 동일)
+    window.CHEESE_ADMIN_API_BASE = "https://script.google.com/macros/s/AKfycbwn1TrLeSIAe570LRWMJxRzx88u3LQYF38Kme9WhMd-YQsrMsSggrNy3I_2SGKGXTpS/exec";
+  </script>
+  <script src="./admin-common.js" defer></script>
+
+  <style>
+    /* --- 아카이브 전용 디자인 --- */
+    .archive-header {
+      display: flex; justify-content: space-between; align-items: flex-end;
+      margin-bottom: 24px; padding-bottom: 16px; border-bottom: 2px solid #e2e8f0;
+    }
+    .archive-title h2 { margin: 0 0 8px 0; font-size: 1.5rem; color: #1e293b; font-weight: 800; }
+    .archive-title p { margin: 0; color: #64748b; font-size: 0.95rem; }
+    
+    .report-generator-group {
+      display: flex; gap: 10px; background: #f8fafc; padding: 10px; border-radius: 12px; border: 1px solid #e2e8f0;
+    }
+    .btn-gen {
+      background: #fff; color: #3b82f6; border: 1px solid #bfdbfe; font-weight: 700; padding: 8px 16px;
+      border-radius: 8px; cursor: pointer; transition: 0.2s; display: flex; align-items: center; gap: 6px;
+    }
+    .btn-gen:hover { background: #eff6ff; border-color: #3b82f6; transform: translateY(-2px); box-shadow: 0 4px 6px -1px rgba(59,130,246,0.1); }
+    .btn-new { background: #3b82f6; color: white; border: none; }
+    .btn-new:hover { background: #2563eb; }
+
+    /* 문서 그리드 뷰 */
+    .doc-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px;
+    }
+    .doc-card {
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); transition: 0.2s; position: relative; cursor: pointer;
+      display: flex; flex-direction: column; height: 220px;
+    }
+    .doc-card:hover { transform: translateY(-4px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); border-color: #cbd5e1; }
+    .doc-type-badge {
+      position: absolute; top: 20px; right: 20px; background: #f1f5f9; color: #475569; font-size: 0.75rem;
+      padding: 4px 8px; border-radius: 4px; font-weight: 700;
+    }
+    .doc-card-title { font-size: 1.15rem; font-weight: 800; color: #1e293b; margin: 0 0 10px 0; padding-right: 50px; line-height: 1.4; }
+    .doc-card-date { font-size: 0.8rem; color: #94a3b8; margin-bottom: 12px; }
+    .doc-card-preview { font-size: 0.9rem; color: #64748b; line-height: 1.5; flex: 1; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+    
+    .doc-card-actions { margin-top: 16px; display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid #f1f5f9; padding-top: 12px; }
+    
+    /* 에디터 모달 (넓게 쾌적하게) */
+    .modal-box.large-modal { max-width: 900px; height: 90vh; display: flex; flex-direction: column; }
+    .note-editor.note-frame { border-color: #e2e8f0; border-radius: 8px; overflow: hidden; }
+  </style>
+</head>
+<body>
+
+<div class="admin-container">
+  <div id="header-slot"></div>
+  
+  <div class="admin-main">
+    <div id="menu-slot"></div>
+    
+    <div class="content-area">
+      <div class="content-header"></div>
+      
+      <div class="archive-header">
+        <div class="archive-title">
+          <h2>📂 보고서 & 기획서 아카이브</h2>
+          <p>작업 로그를 바탕으로 보고서를 자동 생성하고 문서를 보관하세요.</p>
+        </div>
+        <div class="report-generator-group">
+          <button class="btn-gen" onclick="generateAutoReport('daily')">📝 일일 보고서</button>
+          <button class="btn-gen" onclick="generateAutoReport('weekly')">📊 주간 보고서</button>
+          <button class="btn-gen" onclick="generateAutoReport('monthly')">📅 월간 보고서</button>
+          <div style="width:1px; background:#e2e8f0; margin: 0 4px;"></div>
+          <button class="btn-gen btn-new" onclick="openDocModal()">+ 빈 문서 작성</button>
+        </div>
+      </div>
+
+      <div class="doc-grid" id="doc-grid">
+        <div style="grid-column: 1 / -1; text-align: center; padding: 60px 0; color: #94a3b8;">데이터를 불러오는 중입니다...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="doc-modal" class="custom-modal">
+  <div class="modal-box large-modal">
+    <div class="modal-header-custom">
+      <span class="modal-title-custom" id="doc-modal-title">새 문서 작성</span>
+    </div>
+    
+    <form id="doc-form" style="display: flex; flex-direction: column; flex: 1; overflow: hidden; margin:0;">
+      <div class="modal-body-custom" style="flex: 1; overflow-y: auto; padding-bottom: 20px;">
+        <input type="hidden" id="doc-id" value="">
+        
+        <div class="field" style="display:flex; gap:12px; margin-bottom:16px;">
+          <div style="flex: 1;">
+            <label class="input-label">문서 제목</label>
+            <input type="text" id="doc-title" class="styled-input" placeholder="보고서 또는 기획서 제목" required style="font-size:1.1rem; font-weight:700;">
+          </div>
+          <div style="width: 150px;">
+            <label class="input-label">문서 유형</label>
+            <select id="doc-type" class="styled-input">
+              <option value="보고서">📊 보고서</option>
+              <option value="기획서">💡 기획서</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field" style="flex: 1; display:flex; flex-direction:column;">
+          <label class="input-label">본문 내용</label>
+          <textarea id="doc-content" required></textarea>
+        </div>
+      </div>
+      
+      <div class="modal-footer-custom" style="justify-content: flex-end; padding-top: 16px;">
+        <button type="button" class="btn-close-custom" onclick="closeModal('doc-modal')">취소</button>
+        <button type="submit" class="btn-save-custom" id="btn-save-doc" style="background:#3b82f6;">💾 문서 저장</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  let g_docs = [];
+  let g_logs = [];
+  let g_goals = [];
+  let g_tasks = [];
+
+  // ==========================================
+  // 1. 초기화 및 데이터 로드
+  // ==========================================
+  $(document).ready(async function() {
+    await loadHeaderMenu();
+    
+    // 에디터 초기화
+    $('#doc-content').summernote({
+      height: 450,
+      lang: 'ko-KR',
+      toolbar: [
+        ['style', ['style']],
+        ['font', ['bold', 'underline', 'clear']],
+        ['color', ['color']],
+        ['para', ['ul', 'ol', 'paragraph']],
+        ['table', ['table']],
+        ['insert', ['link']],
+        ['view', ['codeview']]
+      ]
+    });
+
+    loadAllData();
+  });
+
+  async function loadAllData() {
+    if(typeof showAdminLoading==='function') showAdminLoading("문서 불러오는 중...");
+    try {
+      const res = await fetch(window.CHEESE_ADMIN_API_BASE + "?mode=getAllData");
+      const json = await res.json();
+      if(json.result === "success") {
+        g_logs = json.logs || [];
+        g_goals = json.goals || [];
+        g_tasks = json.tasks || [];
+        
+        // 기존 task_master에서 유형이 '보고서'나 '기획서'인 것만 걸러내어 문서로 취급
+        g_docs = g_tasks.filter(t => t['유형'] === '보고서' || t['유형'] === '기획서');
+        
+        // 최신순 정렬
+        g_docs.sort((a, b) => b.ID.localeCompare(a.ID));
+        renderDocs();
+      }
+    } catch(e) { console.error(e); }
+    finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); }
+  }
+
+  // ==========================================
+  // 2. 아카이브 렌더링 (카드 UI)
+  // ==========================================
+  function renderDocs() {
+    const root = document.getElementById('doc-grid');
+    root.innerHTML = "";
+    
+    if(g_docs.length === 0) {
+        root.innerHTML = `<div style="grid-column: 1/-1; text-align:center; padding: 60px; color:#94a3b8; background:#f8fafc; border-radius:12px; border:2px dashed #cbd5e1;">보관된 문서가 없습니다. 새 문서를 작성하거나 보고서를 생성해 보세요!</div>`;
+        return;
+    }
+
+    g_docs.forEach(doc => {
+      const card = document.createElement('div');
+      card.className = "doc-card";
+      
+      const isReport = doc['유형'] === '보고서';
+      const badgeColor = isReport ? '#eff6ff' : '#f0fdf4';
+      const textColor = isReport ? '#2563eb' : '#16a34a';
+      
+      // HTML 태그 제거하여 텍스트만 추출 (미리보기 용도)
+      const plainText = (doc['상세내용'] || "").replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ');
+      
+      // 날짜 추출 (ID 기반 또는 오늘날짜)
+      const rawDate = doc['기한'] ? doc['기한'].split('T')[0] : (doc['시작일'] ? doc['시작일'].split('T')[0] : '날짜 없음');
+
+      card.innerHTML = `
+        <div class="doc-type-badge" style="background:${badgeColor}; color:${textColor};">${isReport ? '📊 보고서' : '💡 기획서'}</div>
+        <h3 class="doc-card-title">${doc['제목'] || '(제목 없음)'}</h3>
+        <div class="doc-card-date">🗓 최종 수정: ${rawDate}</div>
+        <div class="doc-card-preview">${plainText || '내용이 없습니다.'}</div>
+        <div class="doc-card-actions">
+           <button class="btn" style="background:#f1f5f9; color:#475569; border:none; padding:6px 12px; border-radius:6px; cursor:pointer;" onclick="openDocModal('${doc.ID}'); event.stopPropagation();">수정</button>
+           <button class="btn" style="background:#fee2e2; color:#ef4444; border:none; padding:6px 12px; border-radius:6px; cursor:pointer;" onclick="deleteDoc('${doc.ID}'); event.stopPropagation();">삭제</button>
+        </div>
+      `;
+      
+      card.onclick = () => openDocModal(doc.ID);
+      root.appendChild(card);
+    });
+  }
+
+  // ==========================================
+  // 3. 자동 보고서 생성 로직
+  // ==========================================
+  function generateAutoReport(rangeType) {
+    const today = new Date();
+    today.setHours(23,59,59,999);
+    
+    let startDate = new Date();
+    startDate.setHours(0,0,0,0);
+    let titlePrefix = "";
+
+    if (rangeType === 'daily') {
+        titlePrefix = `[일일 보고서] ${today.getFullYear()}년 ${today.getMonth()+1}월 ${today.getDate()}일`;
+    } 
+    else if (rangeType === 'weekly') {
+        // 이번 주 월요일 계산
+        const day = startDate.getDay() || 7; 
+        startDate.setDate(startDate.getDate() - day + 1);
+        titlePrefix = `[주간 보고서] ${today.getMonth()+1}월 ${Math.ceil(today.getDate()/7)}주차`;
+    } 
+    else if (rangeType === 'monthly') {
+        startDate.setDate(1); // 이달 1일
+        titlePrefix = `[월간 보고서] ${today.getFullYear()}년 ${today.getMonth()+1}월 결산`;
+    }
+
+    // 1. 해당 기간의 로그 추출
+    const targetLogs = g_logs.filter(log => {
+        if (!log['날짜']) return false;
+        const d = new Date(log['날짜']);
+        return d >= startDate && d <= today;
+    });
+
+    if (targetLogs.length === 0) {
+        alert("선택하신 기간 내에 작성된 로그(작업 기록)가 없습니다.");
+        return;
+    }
+
+    // 2. 목표별로 로그 묶기
+    const grouped = {};
+    let totalLogs = 0;
+    
+    targetLogs.forEach(log => {
+        const goalId = log['관련_목표ID'] || '기타 업무';
+        if (!grouped[goalId]) grouped[goalId] = [];
+        grouped[goalId].push(log);
+        totalLogs++;
+    });
+
+    // 3. HTML 템플릿 작성
+    let htmlStr = `
+        <div style="font-family: sans-serif; color: #333;">
+            <h2 style="color: #2563eb; border-bottom: 2px solid #bfdbfe; padding-bottom: 10px;">${titlePrefix}</h2>
+            <p><strong>🔹 요약:</strong> 설정된 기간 내 총 <strong>${totalLogs}건</strong>의 작업 로그가 기록되었습니다.</p>
+            <br/>
+            <h3 style="background: #f1f5f9; padding: 8px 12px; border-left: 4px solid #3b82f6;">상세 업무 내역</h3>
+    `;
+
+    for (const [gId, logs] of Object.entries(grouped)) {
+        let goalName = "기타 (미분류 작업)";
+        if (gId !== '기타 업무') {
+            const goalObj = g_goals.find(g => g.ID === gId) || g_tasks.find(t => t.ID === gId);
+            if (goalObj) goalName = `[${goalObj['유형']}] ${goalObj['제목']}`;
+        }
+        
+        htmlStr += `<h4 style="color: #1e293b; margin-top: 20px;">📌 ${goalName}</h4>`;
+        htmlStr += `<ul style="line-height: 1.6; color: #475569;">`;
+        
+        logs.forEach(l => {
+            const dateStr = l['날짜'] ? l['날짜'].substring(5,10) : '';
+            const duration = l['소요시간'] ? `<span style="color:#059669; font-size:0.9em;">(⏱${l['소요시간']})</span>` : '';
+            const logTitle = l['제목'] ? `<b>${l['제목']}</b> - ` : '';
+            const logContent = l['내용'].replace(/\\n/g, ' ');
+            htmlStr += `<li style="margin-bottom: 6px;">[${dateStr}] ${logTitle}${logContent} ${duration}</li>`;
+        });
+        htmlStr += `</ul>`;
+    }
+
+    htmlStr += `<br/><p style="color:#94a3b8; font-size:0.85em;">※ 이 보고서는 작업 로그를 기반으로 자동 생성되었습니다.</p></div>`;
+
+    // 에디터 열고 내용 세팅
+    openDocModal(null, titlePrefix, htmlStr, '보고서');
+  }
+
+  // ==========================================
+  // 4. 모달 제어 및 저장 로직
+  // ==========================================
+  function openDocModal(docId = null, defaultTitle = "", defaultHtml = "", defaultType = "보고서") {
+    const modal = document.getElementById('doc-modal');
+    modal.classList.add('open');
+    document.getElementById('doc-form').reset();
+    $('#doc-content').summernote('code', '');
+
+    if (docId) {
+        // 기존 문서 열기
+        const doc = g_docs.find(d => d.ID === docId);
+        if (doc) {
+            document.getElementById('doc-modal-title').textContent = "문서 수정";
+            document.getElementById('doc-id').value = doc.ID;
+            document.getElementById('doc-title').value = doc['제목'];
+            document.getElementById('doc-type').value = doc['유형'];
+            $('#doc-content').summernote('code', doc['상세내용'] || "");
+        }
+    } else {
+        // 새 문서 (또는 자동 생성)
+        document.getElementById('doc-modal-title').textContent = "새 문서 작성";
+        document.getElementById('doc-id').value = "";
+        document.getElementById('doc-title').value = defaultTitle;
+        document.getElementById('doc-type').value = defaultType;
+        if(defaultHtml) $('#doc-content').summernote('code', defaultHtml);
+    }
+  }
+
+  // 저장 이벤트
+  document.getElementById('doc-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('btn-save-doc');
+    const originalText = btn.textContent;
+    btn.textContent = "저장 중..."; btn.disabled = true;
+
+    try {
+        const docId = document.getElementById('doc-id').value;
+        const title = document.getElementById('doc-title').value;
+        const type = document.getElementById('doc-type').value;
+        const content = $('#doc-content').summernote('code');
+        const now = new Date().toISOString().split('T')[0];
+
+        // todo_manage의 task_master 저장 구조를 그대로 재사용 (호환성 100%)
+        const payload = {
+            mode: docId ? "editItem" : "addItem",
+            id: docId,
+            type: type, // "보고서" 또는 "기획서"
+            title: title,
+            detail: content,
+            priority: "보통",
+            dueDate: now, // 최종 수정일 추적용으로 기한 컬럼 활용
+            connectedId: "",
+            color: ""
+        };
+
+        if(typeof showAdminLoading==='function') showAdminLoading("저장 중...");
+        
+        const res = await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify(payload) });
+        const json = await res.json();
+        
+        if(json.result === "success") {
+            closeModal('doc-modal');
+            await loadAllData(); // 데이터 다시 불러와서 화면 갱신
+        } else {
+            alert("저장 실패: " + json.msg);
+        }
+    } catch(err) {
+        console.error(err); alert("오류가 발생했습니다.");
+    } finally {
+        btn.textContent = originalText; btn.disabled = false;
+        if(typeof hideAdminLoading==='function') hideAdminLoading();
+    }
+  });
+
+  // 삭제 로직
+  async function deleteDoc(id) {
+    if(!confirm("이 문서를 정말 삭제하시겠습니까?")) return;
+    if(typeof showAdminLoading==='function') showAdminLoading("삭제 중...");
+    try {
+      await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify({ mode: "deleteItem", id: id }) });
+      await loadAllData();
+    } catch(e) { console.error(e); alert("삭제 오류"); }
+    finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); }
+  }
+
+  function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+</script>
+
+</body>
+</html>
