@@ -694,6 +694,32 @@
     flex: 1;
     line-height: 1.3;
   }
+  /* [신규] 진척률 바 및 D-Day 뱃지 디자인 */
+  .progress-wrapper { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+  .progress-bar-bg { flex: 1; height: 8px; background: rgba(255, 255, 255, 0.3); border-radius: 4px; overflow: hidden; box-shadow: inset 0 1px 2px rgba(0,0,0,0.1); }
+  .progress-bar-fill { height: 100%; background: #fff; border-radius: 4px; transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
+  .progress-text { font-size: 0.9rem; font-weight: 800; color: #fff; min-width: 45px; text-align: right; }
+  
+  .mid-progress-wrapper { display: flex; align-items: center; gap: 8px; margin-top: 8px; width: 100%; }
+  .mid-progress-bg { flex: 1; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; }
+  .mid-progress-fill { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
+  .mid-progress-text { font-size: 0.75rem; font-weight: 800; color: #64748b; }
+  
+  .d-day-badge { 
+      padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 800;
+      background: rgba(255, 255, 255, 0.2); color: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      backdrop-filter: blur(4px); border: 1px solid rgba(255,255,255,0.3);
+      white-space: nowrap;
+  }
+  .d-day-badge.danger { 
+      background: #ef4444; color: #fff; border-color: #f87171;
+      animation: pulse-danger 2s infinite; 
+  }
+  @keyframes pulse-danger { 
+      0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); } 
+      70% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); } 
+      100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } 
+  }
   </style>
 </head>
 <body>
@@ -1087,8 +1113,8 @@
     if(mode === 'log') renderLogs();
   }
 
-// 🚀 [수정] 계층형 뷰 (버그 숨김)
-  function renderGoalTree() {
+// 🚀 [수정] 계층형 뷰 (진척률 프로그레스 바 & D-Day 추가)
+function renderGoalTree() {
     const root = document.getElementById('goal-tree-root'); root.innerHTML = "";
     const bigGoals = g_goals.filter(g => g['유형'] === '큰 목표');
     if(bigGoals.length===0) { root.innerHTML = `<div style="padding:40px;text-align:center;color:#94a3b8;">데이터 없음</div>`; return; }
@@ -1108,15 +1134,29 @@
         else { body.style.display = "none"; icon.textContent = "▶"; }
       };
 
-      let dateHtml = ""; if (bg['시작일'] || bg['마감일']) { const s = bg['시작일']?bg['시작일'].split('T')[0]:''; const e = bg['마감일']?bg['마감일'].split('T')[0]:''; dateHtml = `<div class="goal-date-badge">🗓 ${s} ~ ${e}</div>`; }
-      const descHtml = bg['상세내용'] ? `<div class="goal-card-desc">${bg['상세내용']}</div>` : '';
+      let dateHtml = ""; if (bg['시작일'] || bg['마감일']) { const s = bg['시작일']?bg['시작일'].split('T')[0]:''; const e = bg['마감일']?bg['마감일'].split('T')[0]:''; dateHtml = `<div class="goal-date-badge" style="margin-top:0;">🗓 ${s} ~ ${e}</div>`; }
+      const descHtml = bg['상세내용'] ? `<div class="goal-card-desc" style="margin-top:10px;">${bg['상세내용']}</div>` : '';
+      
+      // ✅ [추가] 진척률 및 D-Day 연산
+      const progressRate = calculateProgress(bg.ID, true);
+      const ddayInfo = calculateDday(bg['마감일']);
+      const ddayHtml = ddayInfo ? `<div class="d-day-badge ${ddayInfo.isDanger ? 'danger' : ''}">${ddayInfo.text}</div>` : '';
       
       header.innerHTML = `
         <div style="flex:1;">
-          <div class="goal-card-title"><span class="toggle-icon">▶</span> ${bg['제목']}</div>
-          ${dateHtml}${descHtml}
+          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+            <div class="goal-card-title"><span class="toggle-icon">▶</span> ${bg['제목']}</div>
+            ${ddayHtml}
+          </div>
+          <div style="margin-top:6px;">${dateHtml}</div>
+          ${descHtml}
+          
+          <div class="progress-wrapper">
+             <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: ${progressRate}%;"></div></div>
+             <div class="progress-text">${progressRate}%</div>
+          </div>
         </div>
-        <div class="header-actions" onclick="event.stopPropagation()">
+        <div class="header-actions" onclick="event.stopPropagation()" style="margin-left: 12px; flex-shrink: 0;">
            <button class="action-btn" onclick="openEditModal('goal', '${bg.ID}')">✏️</button>
            <button class="action-btn" onclick="deleteItem('${bg.ID}')">🗑️</button>
         </div>
@@ -1135,10 +1175,27 @@
         
         const midDesc = mg['상세내용'] ? `<span style="font-weight:400; font-size:0.85rem; color:#64748b; margin-left:8px;">${mg['상세내용']}</span>` : '';
         
+        // ✅ [추가] 중간 목표 진척률
+        const midProgressRate = calculateProgress(mg.ID, false);
+        
         const midHeader = document.createElement('div');
         midHeader.className = "mid-goal-header";
         midHeader.onclick = function() { toggleDisplay(this); };
-        midHeader.innerHTML = `<span>🚩 ${mg['제목']} ${midDesc}</span><div onclick="event.stopPropagation()" class="row-actions"><button class="row-btn" onclick="openEditModal('goal', '${mg.ID}')">✏️</button><button class="row-btn delete" onclick="deleteItem('${mg.ID}')">🗑️</button></div>`;
+        midHeader.innerHTML = `
+          <div style="flex:1;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <span>🚩 ${mg['제목']} ${midDesc}</span>
+                  <div onclick="event.stopPropagation()" class="row-actions">
+                      <button class="row-btn" onclick="openEditModal('goal', '${mg.ID}')">✏️</button>
+                      <button class="row-btn delete" onclick="deleteItem('${mg.ID}')">🗑️</button>
+                  </div>
+              </div>
+              <div class="mid-progress-wrapper">
+                 <div class="mid-progress-bg"><div class="mid-progress-fill" style="width: ${midProgressRate}%; background: ${themeColor};"></div></div>
+                 <div class="mid-progress-text">${midProgressRate}%</div>
+              </div>
+          </div>
+        `;
         midItem.appendChild(midHeader);
 
         const contentWrapper = document.createElement('div');
@@ -1182,7 +1239,7 @@
       });
       card.appendChild(body); root.appendChild(card);
     });
-  }
+}
   
   function createTaskRow(t) {
     const container = document.createElement('div'); const row = document.createElement('div'); row.className = "task-row";
@@ -2364,6 +2421,38 @@ document.getElementById('todo-form').addEventListener('submit', async (e) => {
       if (Array.from(select.options).some(opt => opt.value === currentVal)) {
           select.value = currentVal;
       }
+  }
+
+  // ==================================================
+  // [신규] D-Day 및 진척률 계산 유틸리티
+  // ==================================================
+  function calculateDday(dateStr) {
+      if (!dateStr) return null;
+      const targetDate = new Date(dateStr);
+      const today = new Date();
+      targetDate.setHours(0,0,0,0); today.setHours(0,0,0,0);
+      
+      const diffDays = Math.ceil((targetDate - today) / (1000 * 60 * 60 * 24));
+      
+      if (diffDays > 0) return { text: `D-${diffDays}`, isDanger: diffDays <= 3 }; // 3일 이하 남으면 Danger(빨간불)
+      if (diffDays === 0) return { text: `D-Day`, isDanger: true };
+      return { text: `D+${Math.abs(diffDays)} (지연)`, isDanger: true };
+  }
+
+  function calculateProgress(goalId, isBigGoal) {
+      let tasks = [];
+      if (isBigGoal) {
+          // 큰 목표: 하위 중간 목표들에 속한 모든 할 일을 싹 다 긁어옴
+          const midGoalIds = g_goals.filter(m => m['상위ID'] === goalId).map(m => m.ID);
+          tasks = g_tasks.filter(t => t['유형'] !== '아이디어' && t['유형'] !== '버그' && midGoalIds.includes(t['연결_중간목표ID']));
+      } else {
+          // 중간 목표: 자신에게 직접 연결된 할 일만 가져옴
+          tasks = g_tasks.filter(t => t['유형'] !== '아이디어' && t['유형'] !== '버그' && t['연결_중간목표ID'] === goalId);
+      }
+
+      if (tasks.length === 0) return 0; // 할 일이 없으면 0%
+      const doneCount = tasks.filter(t => t['상태'] === '완료').length;
+      return Math.round((doneCount / tasks.length) * 100);
   }
 </script>
 </body>
