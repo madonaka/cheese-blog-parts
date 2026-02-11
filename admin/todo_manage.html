@@ -1580,8 +1580,8 @@ function updateParentOptions(type) {
     let opts = [];
     
     // ✅ '할 일'로 띄어쓰기를 정확히 맞춰줍니다.
-    if(!type || type==='할 일' || type==='아이디어') {
-        opts = g_goals.filter(g => g['유형'] === '중간 목표');
+    if(!type || type==='할 일' || type==='아이디어' || type==='버그') {
+      opts = g_goals.filter(g => g['유형'] === '중간 목표');
     } else if(type==='중간 목표') {
         opts = g_goals.filter(g => g['유형'] === '큰 목표');
     }
@@ -1792,30 +1792,53 @@ document.getElementById('todo-form').addEventListener('submit', async (e) => {
             
         const originIdeaId = document.getElementById('origin-idea-id').value;
 
+        const linkVal = document.getElementById('input-connected-id').value || "";
+        
         const payload = { 
-            mode: isEdit ? "editItem" : "addItem", 
-            id: document.getElementById('edit-id').value, 
-            type: type, 
-            title: document.getElementById('input-title').value, 
-            parentId: document.getElementById('input-connected-id').value, 
-            connectedId: document.getElementById('input-connected-id').value, 
-            detail: detailContent, 
-            startDate: document.getElementById('input-start').value, 
-            dueDate: document.getElementById('input-due').value, 
-            priority: document.getElementById('input-priority').value, 
-            color: color 
+          mode: isEdit ? "editItem" : "addItem", 
+          id: document.getElementById('edit-id').value, 
+          type: type, 
+          title: document.getElementById('input-title').value, 
+          detail: detailContent, 
+          startDate: document.getElementById('input-start').value, 
+          dueDate: document.getElementById('input-due').value, 
+          priority: document.getElementById('input-priority').value, 
+          color: color 
         };
+        
+        // ✅ 목표 계열(큰/중간 목표)만 parentId 사용
+        if (type === "중간 목표") payload.parentId = linkVal;
+        if (type === "큰 목표")   payload.parentId = "";
+        
+        // ✅ 작업 계열(할 일/아이디어/버그)만 connectedId 사용 (서버의 연결_중간목표ID 컬럼)
+        if (type === "할 일" || type === "아이디어" || type === "버그") {
+          payload.connectedId = linkVal;
+        }
         
         if(typeof showAdminLoading==='function') showAdminLoading("저장 중..."); 
         
         const response = await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify(payload) });
         const result = await response.json();
 
-        // 🚀 아이디어 실현 연결 로직
+        // 🚀 아이디어 실현 연결 로직 (connectedId 덮어쓰기 금지!)
         if (!isEdit && result.id && originIdeaId) {
-            await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify({ mode: "editItem", id: originIdeaId, connectedId: result.id }) });
-            const taskTitle = document.getElementById('input-title').value;
-            await createAutoLog("realize_idea", taskTitle, result.id);
+          const idea = g_tasks.find(x => x.ID === originIdeaId);
+          const oldDetail = idea ? (idea['상세내용'] || "") : "";
+        
+          const stamp = `\n\n---\n[System] ✅ 실현됨: ${result.id}`;
+        
+          await fetch(window.CHEESE_ADMIN_API_BASE, {
+            method: "POST",
+            body: JSON.stringify({
+              mode: "editItem",
+              id: originIdeaId,
+              detail: oldDetail + stamp
+              // ❌ connectedId: result.id  (절대 보내지 않음)
+            })
+          });
+        
+          const taskTitle = document.getElementById('input-title').value;
+          await createAutoLog("realize_idea", taskTitle, result.id);
         }
 
         // 신규 등록 시 자동 로그 생성 로직
