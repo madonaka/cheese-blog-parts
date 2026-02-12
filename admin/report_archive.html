@@ -261,15 +261,20 @@
 </div>
 
 <script>
+// ✅ 사이드바 메뉴 활성화 인식용 변수
   window.CHEESE_ADMIN_ACTIVE_PAGE = "report_archive"; 
   
   let g_docs = [];
   let g_logs = [];
   let g_goals = [];
   let g_tasks = [];
+  
+  // 전역 변수: 현재 수정 중인 일정표 요소 추적용
+  let CURRENT_EDITING_SCHEDULE_EL = null; 
   let CURRENT_IDEA_MODE = 'new'; 
 
   document.addEventListener('DOMContentLoaded', () => {
+    // 썸머노트 초기화 (커스텀 버튼 동작을 위해 콜백 추가)
     $('#doc-content').summernote({
       height: 600, lang: 'ko-KR',
       toolbar: [
@@ -279,12 +284,14 @@
       ]
     });
     
+    // 보고서 기준일 오늘로 세팅
     const todayStr = new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0];
     document.getElementById('report-base-date').value = todayStr;
 
     loadAllData();
   });
 
+  // (기본 데이터 로딩 함수들은 기존과 동일)
   async function loadAllData() {
     if(typeof showAdminLoading==='function') showAdminLoading("데이터 불러오는 중...");
     try {
@@ -516,16 +523,25 @@
       }
   }
 
+  // ==========================================
+  // 🚀 [스마트] 일정 생성기 (수정 기능 포함)
+  // ==========================================
+  
   function openScheduleMaker() {
+    CURRENT_EDITING_SCHEDULE_EL = null; // 신규 생성 모드
     document.getElementById('schedule-maker-modal').classList.add('open');
-    if(!document.getElementById('sch-start-month').value) {
-        const today = new Date();
-        document.getElementById('sch-start-month').value = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
-    }
-    if(document.getElementById('sch-input-list').children.length === 0) addScheduleRow(); 
+    
+    // 기본값 초기화
+    const today = new Date();
+    document.getElementById('sch-start-month').value = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
+    document.getElementById('sch-input-list').innerHTML = ""; // 기존 목록 비우기
+    addScheduleRow(); // 빈 행 하나 추가
   }
   
-  function closeScheduleMaker() { document.getElementById('schedule-maker-modal').classList.remove('open'); }
+  function closeScheduleMaker() { 
+      document.getElementById('schedule-maker-modal').classList.remove('open'); 
+      CURRENT_EDITING_SCHEDULE_EL = null; 
+  }
 
   function addScheduleRow(cat="", task="", sDate="", eDate="") {
     const tbody = document.getElementById('sch-input-list');
@@ -534,6 +550,38 @@
     tr.innerHTML = `<td style="padding:8px 12px;"><input type="text" class="styled-input sch-cat" value="${cat}" placeholder="단계" style="width:100%;"></td><td style="padding:8px 12px;"><input type="text" class="styled-input sch-task" value="${task}" placeholder="할 일" style="width:100%;"></td><td style="padding:8px 12px;"><input type="date" class="styled-input sch-sdate" value="${sDate}" style="width:100%;"></td><td style="text-align:center;">➜</td><td style="padding:8px 12px;"><input type="date" class="styled-input sch-edate" value="${eDate}" style="width:100%;"></td><td style="padding:8px 12px; text-align:center;"><button onclick="this.closest('tr').remove()" style="border:none; background:#fff1f2; color:#ef4444; width:30px; height:30px; border-radius:6px; cursor:pointer;">×</button></td>`;
     tbody.appendChild(tr);
   }
+
+  // 🔄 [신규] 생성된 일정표에서 '수정' 버튼 클릭 시 호출 (데이터 복원)
+  window.editEmbeddedSchedule = function(btn) {
+      const wrapper = btn.closest('.schedule-section');
+      if (!wrapper) return;
+      
+      // 저장된 데이터 읽기 (Base64 Decode)
+      const configRaw = wrapper.getAttribute('data-config');
+      if (!configRaw) { alert("이 일정표는 수정 데이터가 손상되었습니다. 새로 만들어주세요."); return; }
+      
+      try {
+          const config = JSON.parse(decodeURIComponent(configRaw));
+          
+          CURRENT_EDITING_SCHEDULE_EL = wrapper; // 수정 모드 활성화
+          document.getElementById('schedule-maker-modal').classList.add('open');
+          
+          document.getElementById('sch-start-month').value = config.startMonth;
+          document.getElementById('sch-project-name').value = config.projectName || "프로젝트";
+          document.getElementById('sch-input-list').innerHTML = ""; // 기존 목록 초기화
+          
+          config.rows.forEach(r => {
+              // 날짜 객체를 문자열(YYYY-MM-DD)로 변환
+              const sDate = r.s ? r.s.split('T')[0] : "";
+              const eDate = r.e ? r.e.split('T')[0] : "";
+              addScheduleRow(r.cat, r.task, sDate, eDate);
+          });
+          
+      } catch(e) {
+          console.error(e);
+          alert("데이터 로드 중 오류가 발생했습니다.");
+      }
+  };
 
   function loadSchedulePreset() {
       if(document.getElementById('sch-input-list').children.length > 0 && !confirm("초기화 후 예제를 불러옵니다.")) return;
@@ -545,6 +593,7 @@
       addScheduleRow("3단계", "최종 마감", "2026-02-10", "2026-02-14");
   }
 
+  // 🚀 [최종] 일정표 삽입 (신규 생성 or 기존 수정 교체)
   function insertSmartSchedule() {
     const startMonthVal = document.getElementById('sch-start-month').value;
     const projectName = document.getElementById('sch-project-name').value;
@@ -552,12 +601,22 @@
 
     let maxDate = new Date(startMonthVal + "-01"); maxDate.setMonth(maxDate.getMonth() + 1); 
     const rows = [];
+    const saveRows = []; // 저장용 데이터 (깔끔한 포맷)
+
     document.querySelectorAll('#sch-input-list tr').forEach(tr => {
         const sVal = tr.querySelector('.sch-sdate').value;
         const eVal = tr.querySelector('.sch-edate').value;
         if(eVal) { const e = new Date(eVal); if(e > maxDate) maxDate = e; }
-        rows.push({ cat: tr.querySelector('.sch-cat').value, task: tr.querySelector('.sch-task').value, s: sVal?new Date(sVal):null, e: eVal?new Date(eVal):null });
+        
+        const rowData = { cat: tr.querySelector('.sch-cat').value, task: tr.querySelector('.sch-task').value, s: sVal?new Date(sVal):null, e: eVal?new Date(eVal):null };
+        rows.push(rowData);
+        
+        // 저장용 (Date 객체 대신 문자열)
+        saveRows.push({ ...rowData, s: sVal, e: eVal });
     });
+
+    // 데이터 직렬화 (수정 기능을 위해 태그에 심음)
+    const configData = encodeURIComponent(JSON.stringify({ startMonth: startMonthVal, projectName: projectName, rows: saveRows }));
 
     let gridHtml = "", subHeaderHtml = "";
     let currentIterDate = new Date(startMonthVal + "-01");
@@ -594,17 +653,38 @@
         tbodyHtml += `<tr><td style="border:1px solid #cbd5e1; padding:8px; font-size:0.85rem; text-align:center; vertical-align:middle; ${item.cat?'font-weight:700; background:#e0f2fe; color:#0369a1;':'background:#fff;'}">${item.cat}</td><td style="border:1px solid #cbd5e1; padding:6px 10px; font-size:0.9rem; color:#1e293b; font-weight:500;"><span style="color:#cbd5e1;">◻</span> ${item.task}</td>${cols}</tr>`;
     });
 
-    const scheduleHtml = `<div class="schedule-section" style="font-family:'Pretendard',sans-serif; margin-top:20px; page-break-inside:avoid;"><h3 style="margin:0 0 12px 0; color:#16a34a; font-size:1.15rem; border-bottom:2px solid #bbf7d0; padding-bottom:8px;">5. 세부 실행 일정 (Schedule) <span style="font-size:0.8em; color:#64748b; font-weight:normal;">- ${projectName}</span></h3><table style="width:100%; border-collapse:collapse; table-layout:fixed; border:1px solid #cbd5e1;"><thead><tr><th rowspan="2" style="border:1px solid #cbd5e1; background:#f1f5f9; padding:8px; width:100px;">구분</th><th rowspan="2" style="border:1px solid #cbd5e1; background:#f1f5f9; padding:8px; width:220px;">Task</th>${gridHtml}</tr><tr>${subHeaderHtml}</tr></thead><tbody>${tbodyHtml}</tbody></table><div style="margin-top:8px; font-size:0.8rem; color:#94a3b8; text-align:right;">* 각 칸은 해당 월의 주차(Week)를 의미합니다.</div></div><br/>`;
+    const scheduleHtml = `
+      <div class="schedule-section" data-config="${configData}" style="font-family:'Pretendard',sans-serif; margin-top:20px; page-break-inside:avoid; position:relative;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid #bbf7d0; padding-bottom:8px; margin-bottom:12px;">
+            <h3 style="margin:0; color:#16a34a; font-size:1.15rem;">5. 세부 실행 일정 (Schedule) <span style="font-size:0.8em; color:#64748b; font-weight:normal;">- ${projectName}</span></h3>
+            <button onclick="editEmbeddedSchedule(this)" style="background:#f0fdf4; border:1px solid #bbf7d0; color:#16a34a; border-radius:4px; padding:2px 8px; font-size:0.8rem; cursor:pointer; font-weight:600;">✏️ 수정</button>
+        </div>
+        <table style="width:100%; border-collapse:collapse; table-layout:fixed; border:1px solid #cbd5e1;">
+            <thead><tr><th rowspan="2" style="border:1px solid #cbd5e1; background:#f1f5f9; padding:8px; width:100px;">구분</th><th rowspan="2" style="border:1px solid #cbd5e1; background:#f1f5f9; padding:8px; width:220px;">Task</th>${gridHtml}</tr><tr>${subHeaderHtml}</tr></thead>
+            <tbody>${tbodyHtml}</tbody>
+        </table>
+        <div style="margin-top:8px; font-size:0.8rem; color:#94a3b8; text-align:right;">* 각 칸은 해당 월의 주차(Week)를 의미합니다.</div>
+      </div><br/>
+    `;
 
-    const currentCode = $('#doc-content').summernote('code');
-    if (currentCode.includes('id="schedule-placeholder"')) {
-        const parser = new DOMParser(); const doc = parser.parseFromString(currentCode, 'text/html');
-        const placeholder = doc.getElementById('schedule-placeholder');
-        if (placeholder) {
-            const tempDiv = doc.createElement('div'); tempDiv.innerHTML = scheduleHtml; placeholder.replaceWith(tempDiv);
-            $('#doc-content').summernote('code', doc.body.innerHTML);
+    // 🔄 수정 모드일 경우 기존 요소 교체
+    if (CURRENT_EDITING_SCHEDULE_EL) {
+        // 기존 요소를 새로운 HTML로 교체하기 위해 임시 div 생성 후 교체
+        $(CURRENT_EDITING_SCHEDULE_EL).replaceWith(scheduleHtml);
+        CURRENT_EDITING_SCHEDULE_EL = null;
+    } 
+    // ➕ 신규 삽입 (Placeholder 교체 또는 추가)
+    else {
+        const currentCode = $('#doc-content').summernote('code');
+        if (currentCode.includes('id="schedule-placeholder"')) {
+            const parser = new DOMParser(); const doc = parser.parseFromString(currentCode, 'text/html');
+            const placeholder = doc.getElementById('schedule-placeholder');
+            if (placeholder) {
+                const tempDiv = doc.createElement('div'); tempDiv.innerHTML = scheduleHtml; placeholder.replaceWith(tempDiv);
+                $('#doc-content').summernote('code', doc.body.innerHTML);
+            } else $('#doc-content').summernote('pasteHTML', scheduleHtml);
         } else $('#doc-content').summernote('pasteHTML', scheduleHtml);
-    } else $('#doc-content').summernote('pasteHTML', scheduleHtml);
+    }
     
     closeScheduleMaker();
   }
@@ -612,7 +692,7 @@
   function generateProposalTemplate() {
     const today = new Date();
     const dateStr = `${today.getFullYear()}.${today.getMonth()+1}.${today.getDate()}`;
-    const htmlTemplate = `<div style="font-family:'Pretendard','Malgun Gothic',sans-serif; max-width:900px; margin:0 auto; color:#1e293b;"><h2 style="text-align:center; color:#0f172a; margin-bottom:12px; font-size:1.8rem; letter-spacing:-0.5px;">[프로젝트명] 기획서</h2><div style="text-align:right; margin-bottom:16px; font-size:0.9rem; color:#64748b;">작성일: ${dateStr} / 작성자: OOO</div><table style="width:100%; border-collapse:collapse; table-layout:fixed; border:2px solid #cbd5e1;"><tr><td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;"><h3 style="margin:0 0 12px 0; color:#16a34a; font-size:1.15rem; border-bottom:2px solid #bbf7d0; padding-bottom:8px;">1. 기획 배경 및 목적 (Why)</h3><ul style="padding-left:20px; margin:0; font-size:1rem; color:#333; line-height:1.8;"><li><b>배경:</b> 왜 이 기획을 하게 되었는가?</li><li><b>목적:</b> 이 기획을 통해 달성하고자 하는 궁극적인 목표는?</li></ul></td><td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f8fafc;"><h3 style="margin:0 0 12px 0; color:#16a34a; font-size:1.15rem; border-bottom:2px solid #bbf7d0; padding-bottom:8px;">2. 현상 및 핵심 문제점 (What)</h3><ul style="padding-left:20px; margin:0; font-size:1rem; color:#333; line-height:1.8;"><li><b>현재 상황:</b> 현재 업무나 서비스의 상태는 어떠한가?</li><li><b>문제점:</b> 해결해야 할 가장 큰 병목이나 원인은?</li></ul></td></tr><tr><td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f8fafc;"><h3 style="margin:0 0 12px 0; color:#16a34a; font-size:1.15rem; border-bottom:2px solid #bbf7d0; padding-bottom:8px;">3. 해결 방안 및 핵심 전략 (How)</h3><ul style="padding-left:20px; margin:0; font-size:1rem; color:#333; line-height:1.8;"><li><b>핵심 솔루션:</b> 문제를 어떻게 타개할 것인가?</li><li><b>실행 전략:</b> 타 부서 협업, 리스크 대비책 등 상세 전략</li></ul></td><td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;"><h3 style="margin:0 0 12px 0; color:#16a34a; font-size:1.15rem; border-bottom:2px solid #bbf7d0; padding-bottom:8px;">4. 기대 효과 및 소요 예산 (ROI)</h3><ul style="padding-left:20px; margin:0; font-size:1rem; color:#333; line-height:1.8;"><li><b>정량적 효과:</b> 매출 X% 증대, 리드타임 Y시간 단축 등</li><li><b>소요 예산:</b> 투입되어야 할 인력 및 예산</li></ul></td></tr></table><div id="schedule-placeholder" style="margin-top:30px; padding:40px; border:2px dashed #e2e8f0; border-radius:12px; text-align:center; color:#94a3b8; background:#f8fafc;"><p style="font-size:1.1rem; font-weight:bold; margin-bottom:8px;">📅 세부 실행 일정 (Schedule)</p><p style="font-size:0.9rem;">상단의 [📅 일정표 넣기] 버튼을 눌러 이곳에 로드맵을 채워주세요.</p></div></div>`;
+    const htmlTemplate = `<div style="font-family:'Pretendard','Malgun Gothic',sans-serif; max-width:900px; margin:0 auto; color:#1e293b;"><h2 style="text-align:center; color:#ea580c; margin-bottom:12px; font-size:1.8rem; letter-spacing:-0.5px;">[프로젝트명] 기획서</h2><div style="text-align:right; margin-bottom:16px; font-size:0.9rem; color:#64748b;">작성일: ${dateStr} / 작성자: OOO</div><table style="width:100%; border-collapse:collapse; table-layout:fixed; border:2px solid #cbd5e1;"><tr><td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;"><h3 style="margin:0 0 12px 0; color:#ea580c; font-size:1.15rem; border-bottom:2px solid #fed7aa; padding-bottom:8px;">1. 기획 배경 및 목적 (Why)</h3><ul style="padding-left:20px; margin:0; font-size:1rem; color:#333; line-height:1.8;"><li><b>배경:</b> 왜 이 기획을 하게 되었는가?</li><li><b>목적:</b> 이 기획을 통해 달성하고자 하는 궁극적인 목표는?</li></ul></td><td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f8fafc;"><h3 style="margin:0 0 12px 0; color:#ea580c; font-size:1.15rem; border-bottom:2px solid #fed7aa; padding-bottom:8px;">2. 현상 및 핵심 문제점 (What)</h3><ul style="padding-left:20px; margin:0; font-size:1rem; color:#333; line-height:1.8;"><li><b>현재 상황:</b> 현재 업무나 서비스의 상태는 어떠한가?</li><li><b>문제점:</b> 해결해야 할 가장 큰 병목이나 원인은?</li></ul></td></tr><tr><td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f8fafc;"><h3 style="margin:0 0 12px 0; color:#ea580c; font-size:1.15rem; border-bottom:2px solid #fed7aa; padding-bottom:8px;">3. 해결 방안 및 핵심 전략 (How)</h3><ul style="padding-left:20px; margin:0; font-size:1rem; color:#333; line-height:1.6;"><li><b>핵심 솔루션:</b> 문제를 어떻게 타개할 것인가?</li><li><b>실행 전략:</b> 타 부서 협업, 리스크 대비책 등 상세 전략</li></ul></td><td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;"><h3 style="margin:0 0 12px 0; color:#ea580c; font-size:1.15rem; border-bottom:2px solid #fed7aa; padding-bottom:8px;">4. 기대 효과 및 소요 예산 (ROI)</h3><ul style="padding-left:20px; margin:0; font-size:1rem; color:#333; line-height:1.8;"><li><b>정량적 효과:</b> 매출 X% 증대, 리드타임 Y시간 단축 등</li><li><b>소요 예산:</b> 투입되어야 할 인력 및 예산</li></ul></td></tr></table><div id="schedule-placeholder" style="margin-top:30px; padding:40px; border:2px dashed #e2e8f0; border-radius:12px; text-align:center; color:#94a3b8; background:#f8fafc;"><p style="font-size:1.1rem; font-weight:bold; margin-bottom:8px;">📅 세부 실행 일정 (Schedule)</p><p style="font-size:0.9rem;">상단의 [📅 일정표 넣기] 버튼을 눌러 이곳에 로드맵을 채워주세요.</p></div></div>`;
     openDocModal(null, "[기획서] 새로운 프로젝트 기획", htmlTemplate, '기획서');
   }
 
