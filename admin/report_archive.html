@@ -337,13 +337,13 @@
   }
 
   // ==========================================
-  // [NEW] 일론 머스크 스타일 자동 보고서 로직 (타임머신 진척률 적용)
+  // [NEW] 일론 머스크 스타일 자동 보고서 로직 (진척률 계산 개선됨)
   // ==========================================
   function generateAutoReport(rangeType) {
     const baseDateStr = document.getElementById('report-base-date').value;
     if (!baseDateStr) { alert("보고서 기준일을 선택해 주세요."); return; }
     
-    // 기준 날짜 설정 (해당일의 23:59:59 까지 포함)
+    // 기준 날짜 설정
     const targetEndDate = new Date(baseDateStr); targetEndDate.setHours(23,59,59,999);
     let startDate = new Date(baseDateStr); startDate.setHours(0,0,0,0);
     
@@ -379,11 +379,10 @@
         doneLogs.push(log); 
     });
 
-    // 1. Signal (핵심 목표)
+    // 1. Signal (핵심 목표) - 개선된 getReportGoalProgress 호출
     let signalHtml = `<ul style="padding-left: 20px; margin: 0; color: #333; line-height: 1.6;">`;
     if (activeBigGoals.length > 0) {
         activeBigGoals.forEach(bg => {
-            // 🚀 [핵심] 기준일(targetEndDate)을 전달하여 과거 시점의 진척률 계산
             const percent = getReportGoalProgress(bg.ID, true, targetEndDate);
             const ddayBadge = getReportDday(bg['마감일'], targetEndDate);
             let statusColor = percent === 100 ? "#10b981" : (percent > 0 ? "#3b82f6" : "#64748b");
@@ -406,8 +405,6 @@
     // 2. Bottlenecks
     let bottleneckHtml = `<ul style="padding-left: 20px; margin: 0; color: #b91c1c; line-height: 1.6;">`;
     let riskCount = 0;
-    
-    // 🚀 리스크 분석에도 기준일 전달
     const autoRisks = analyzeProjectRisks(activeBigGoals, targetEndDate);
     if (autoRisks.length > 0) {
         autoRisks.forEach(risk => { bottleneckHtml += `<li style="margin-bottom:6px;">${risk}</li>`; riskCount++; });
@@ -415,7 +412,6 @@
     if (bugLogs.length > 0) {
         bottleneckHtml += `<li style="margin-bottom:6px; color:#ef4444;"><b>🐞 품질 이슈 발견:</b> ${bugLogs.length}건의 버그 리포트</li>`; riskCount++;
     }
-    
     if (riskCount === 0) bottleneckHtml = `<div style="text-align:center; color:#10b981; padding:20px;">✨ <b>No Bottlenecks</b><br>현재 식별된 지연 요소가 없습니다.</div>`;
     else bottleneckHtml += `</ul>`;
 
@@ -455,6 +451,7 @@
     openDocModal(null, titlePrefix, htmlTemplate, '보고서');
   }
 
+  // ... (이전 모달 제어 및 저장 로직은 그대로 유지) ...
   async function openDocModal(docId = null, defaultTitle = "", defaultHtml = "", defaultType = "보고서") {
     const modal = document.getElementById('doc-modal');
     modal.classList.add('open');
@@ -644,6 +641,7 @@
   // ==========================================
   // [기획서] 스마트 일정 생성기
   // ==========================================
+  
   function openScheduleMaker() {
     CURRENT_EDITING_SCHEDULE_EL = null; 
     document.getElementById('schedule-maker-modal').classList.add('open');
@@ -806,7 +804,7 @@
       openDocModal(null, "[기획서] " + mainTitle, htmlTemplate, '기획서');
   }
 
-  // ✅ [핵심] 진척률 타임머신 함수 (과거 상태 추적)
+  // ✅ [수정] D-Day 및 진척률 타임머신 함수 (완료일 및 로그 검색 강화)
   function getReportGoalProgress(goalId, isBigGoal, refDateObj) {
       let tasks = [];
       if (isBigGoal) {
@@ -818,34 +816,42 @@
       
       if (tasks.length === 0) return 0;
 
-      // 1. 기준일 (Target Date) 설정
-      // - refDateObj가 없으면 오늘을 기준으로 함
-      // - 시간은 해당일의 마지막(23:59:59)으로 설정
+      // 기준일 (해당일의 23:59:59)
       const targetDate = refDateObj ? new Date(refDateObj) : new Date();
       targetDate.setHours(23, 59, 59, 999);
 
-      // 2. 완료 건수 계산 (타임머신 적용)
+      const today = new Date(); today.setHours(0,0,0,0);
+
       const doneCount = tasks.filter(t => {
-          // (A) 현재 상태가 '완료'인가?
-          const isCurrentlyDone = t['상태'] === '완료';
+          // 1. 현재 완료되지 않은 것은 과거에도 완료되지 않았다고 가정 (단순화)
+          if (t['상태'] !== '완료') return false;
 
-          // (B) 기준일이 오늘/미래라면 -> 현재 상태 그대로 인정
-          const today = new Date(); today.setHours(0,0,0,0);
-          if (targetDate >= today) return isCurrentlyDone;
+          // 2. 기준일이 오늘/미래라면 현재 상태 그대로 인정
+          if (targetDate >= today) return true;
 
-          // (C) 기준일이 과거라면 -> 로그를 뒤져서 확인
-          // - 현재 완료되지 않았다면, 과거에도 완료되지 않았을 것임 (취소된 게 아니라면)
-          if (!isCurrentlyDone) return false;
+          // 3. [개선] 완료일 데이터가 있다면 최우선 사용
+          if (t['완료일']) {
+              return new Date(t['완료일']) <= targetDate;
+          }
 
-          // - 현재는 완료지만, "기준일 당시에 완료되었었나?" 확인
-          // - 해당 태스크와 관련된 로그 중 '완료'를 의미하는 로그가 '기준일 이전'에 있는지 체크
-          const doneLog = g_logs.find(l => 
-              l['관련_목표ID'] === t.ID && 
-              (l['상태'] === '완료' || l['태그'] === 'Publish' || (l['제목'] && l['제목'].includes('완료'))) &&
-              new Date(l['날짜']) <= targetDate
-          );
+          // 4. [개선] 로그 기반 추적 (검색 조건 대폭 완화)
+          const doneLog = g_logs.find(l => {
+              if (l['관련_목표ID'] !== t.ID) return false;
+              
+              const lDate = new Date(l['날짜']);
+              if (lDate > targetDate) return false;
 
-          // 로그가 있으면 완료 인정, 없으면 (최근에 완료된 것으로 간주하여) 미완료 처리
+              const status = l['상태'] || "";
+              const tag = l['태그'] || "";
+              const title = l['제목'] || "";
+              
+              return (
+                  status === '완료' || status === 'Done' ||
+                  tag === 'Publish' || tag === '완료' ||
+                  title.includes('완료') || title.includes('배포') || title.includes('해결') || title.includes('Finish')
+              );
+          });
+
           return !!doneLog; 
       }).length;
 
@@ -877,7 +883,6 @@
       let issues = [];
       const refDate = baseDateObj ? new Date(baseDateObj) : new Date(); refDate.setHours(0,0,0,0);
       activeBigGoals.forEach(bg => {
-          // 🚀 리스크 분석 시에도 타임머신 진척률 사용
           const percent = getReportGoalProgress(bg.ID, true, refDate);
           let diffDays = 999;
           if (bg['마감일']) {
@@ -894,7 +899,7 @@
     const el = document.getElementById("sysVersion"); if(!el) return;
     const d = new Date(document.lastModified);
     const pad = (n) => String(n).padStart(2, '0');
-    el.textContent = `Version: ${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())} [Ver 2.0]`;
+    el.textContent = `Version: ${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())} [Ver 2.1]`;
   })();
 </script>
 </body>
