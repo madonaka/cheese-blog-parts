@@ -89,6 +89,19 @@
     .styled-input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
     
     .note-editor.note-frame { border-color: #e2e8f0; border-radius: 12px; overflow: hidden; background: #fff; }
+
+    /* 아이디어 선택 리스트 스타일 */
+    .idea-select-item {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px;
+      background: #fff; cursor: pointer; transition: 0.2s;
+    }
+    .idea-select-item:hover { border-color: #ea580c; background: #fff7ed; }
+    .idea-select-item input[type="checkbox"] { margin-top: 4px; transform: scale(1.2); cursor: pointer; }
+    .idea-select-content { flex: 1; }
+    .idea-select-title { font-weight: 700; color: #1e293b; font-size: 0.95rem; margin-bottom: 4px; }
+    .idea-select-desc { font-size: 0.85rem; color: #64748b; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    
     /* 🖨️ 인쇄 및 PDF 저장 최적화 설정 */
     @media print {
       body * { visibility: hidden; }
@@ -127,6 +140,7 @@
             <button class="btn-gen" onclick="generateAutoReport('monthly')">📅 월간 보고서</button>
             <div style="width:1px; background:#e2e8f0; margin: 0 4px;"></div>
             <button class="btn-gen" style="background:#f0fdf4; color:#16a34a; border-color:#bbf7d0;" onclick="generateProposalTemplate()">💡 1-Page 기획서</button>
+            <button class="btn-gen" style="background:#fff7ed; color:#ea580c; border-color:#fed7aa;" onclick="openIdeaSelector()">✨ 아이디어로 기획</button>
             <button class="btn-gen btn-new" onclick="openDocModal()">+ 빈 문서</button>
           </div>
         </div>
@@ -170,6 +184,30 @@
           <textarea id="doc-content" required></textarea>
         </div>
       </div>
+
+        
+    <div id="idea-select-modal" class="custom-modal">
+      <div class="modal-box" style="width: 500px; max-width: 90vw; background: #fff; border-radius: 16px; display:flex; flex-direction:column; max-height:80vh;">
+        <div class="modal-header-custom" style="background:#fff7ed; border-bottom:1px solid #fed7aa;">
+          <span class="modal-title-custom" style="color:#c2410c;">✨ 구체화할 아이디어 선택</span>
+        </div>
+        
+        <div class="modal-body-custom" style="padding: 20px; overflow-y: auto;">
+          <p style="margin-top:0; color:#64748b; font-size:0.9rem; margin-bottom:12px;">
+            등록된 아이디어 중 기획서로 발전시킬 항목을 선택하세요.<br/>
+            (선택한 내용은 기획서의 '해결 방안'에 자동 입력됩니다.)
+          </p>
+          <div id="idea-list-container" style="display:flex; flex-direction:column; gap:8px;">
+            </div>
+        </div>
+        
+        <div class="modal-footer-custom" style="background:#fff; border-top:1px solid #f1f5f9;">
+          <button type="button" class="btn" onclick="document.getElementById('idea-select-modal').classList.remove('open')" style="padding:10px 20px; border-radius:8px; border:1px solid #e2e8f0; background:#fff; font-weight:600; cursor:pointer;">취소</button>
+          <button type="button" class="btn" onclick="confirmIdeaSelection()" style="padding:10px 20px; border-radius:8px; border:none; background:#ea580c; color:#fff; font-weight:700; cursor:pointer;">🚀 기획서 생성</button>
+        </div>
+      </div>
+    </div>
+
       
       <div class="modal-footer-custom">
         <button type="button" class="btn" style="padding:12px 24px; border-radius:12px; border:1px solid #e2e8f0; background:#fff; color:#64748b; font-weight:700; cursor:pointer;" onclick="closeModal('doc-modal')">취소</button>
@@ -809,6 +847,144 @@
         const link = document.createElement('a'); link.href = canvas.toDataURL('image/png'); link.download = `${title}.png`; link.click();
     } catch (err) { console.error("Image Save Error:", err); alert("이미지 생성 오류"); } 
     finally { document.body.removeChild(printContainer); if(typeof hideAdminLoading === 'function') hideAdminLoading(); }
+  }
+  // ==========================================
+  // [신규] 아이디어 선택 및 기획서 변환 로직
+  // ==========================================
+  
+  // 1. 아이디어 선택 모달 열기
+  function openIdeaSelector() {
+      const container = document.getElementById('idea-list-container');
+      container.innerHTML = "";
+      
+      // '아이디어' 유형이거나 제목에 전구(💡)가 있는 태스크 필터링
+      const ideas = g_tasks.filter(t => t['유형'] === '아이디어' || (t['제목'] && t['제목'].includes('💡')));
+      
+      if (ideas.length === 0) {
+          alert("등록된 아이디어가 없습니다. 먼저 '할 일 관리'에서 아이디어를 등록해 주세요.");
+          return;
+      }
+
+      // 최신순 정렬 후 렌더링
+      ideas.sort((a, b) => b.ID.localeCompare(a.ID));
+      
+      ideas.forEach(idea => {
+          const div = document.createElement('div');
+          div.className = 'idea-select-item';
+          div.onclick = (e) => {
+              // div 클릭 시 체크박스 토글 (체크박스 자체 클릭 제외)
+              if(e.target.type !== 'checkbox') {
+                  const chk = div.querySelector('input');
+                  chk.checked = !chk.checked;
+              }
+          };
+          
+          const desc = idea['상세내용'] ? idea['상세내용'].replace(/<[^>]*>?/gm, '').substring(0, 60) : '(내용 없음)';
+          
+          div.innerHTML = `
+              <input type="checkbox" class="idea-chk" value="${idea.ID}">
+              <div class="idea-select-content">
+                  <div class="idea-select-title">${idea['제목']}</div>
+                  <div class="idea-select-desc">${desc}</div>
+              </div>
+          `;
+          container.appendChild(div);
+      });
+      
+      document.getElementById('idea-select-modal').classList.add('open');
+  }
+
+  // 2. 선택된 아이디어로 4분할 기획서 생성
+  function confirmIdeaSelection() {
+      const checkboxes = document.querySelectorAll('.idea-chk:checked');
+      if (checkboxes.length === 0) {
+          alert("최소 1개 이상의 아이디어를 선택해 주세요.");
+          return;
+      }
+
+      let selectedIdeas = [];
+      checkboxes.forEach(chk => {
+          const idea = g_tasks.find(t => t.ID === chk.value);
+          if (idea) selectedIdeas.push(idea);
+      });
+
+      document.getElementById('idea-select-modal').classList.remove('open');
+      generateProposalFromIdeas(selectedIdeas);
+  }
+
+  // 3. 템플릿에 데이터 주입
+  function generateProposalFromIdeas(ideas) {
+      const today = new Date();
+      const dateStr = `${today.getFullYear()}.${today.getMonth()+1}.${today.getDate()}`;
+      
+      // 제목 조합 (첫 번째 아이디어 제목 활용)
+      const mainTitle = ideas.length === 1 ? ideas[0]['제목'] : `${ideas[0]['제목']} 외 ${ideas.length-1}건 구체화 기획`;
+      
+      // 아이디어 내용을 HTML 리스트로 변환
+      let ideaListHtml = "";
+      let solutionHtml = "";
+      
+      ideas.forEach(idea => {
+          const desc = idea['상세내용'] || "(상세 내용 없음)";
+          // 배경에 넣을 요약
+          ideaListHtml += `<li><b>${idea['제목']}:</b> 현재 아이디어 단계로, 구체적인 실행 계획 수립이 필요함.</li>`;
+          // 솔루션에 넣을 상세
+          solutionHtml += `<li style="margin-bottom:8px;"><b>[${idea['제목']}] 구현:</b><br/>${desc}<br/><span style="color:#ea580c; font-size:0.9em;">👉 (여기에 구체적 실행 방법을 보완하세요)</span></li>`;
+      });
+
+      // 유니클로 4분할 템플릿에 주입
+      let htmlTemplate = `
+      <div style="font-family: 'Pretendard', 'Malgun Gothic', sans-serif; max-width: 900px; margin: 0 auto; color: #1e293b;">
+        <h2 style="text-align: center; color: #ea580c; margin-bottom: 12px; font-size: 1.8rem; letter-spacing: -0.5px;">[기획서] ${mainTitle}</h2>
+        <div style="text-align: right; margin-bottom: 16px; font-size: 0.9rem; color: #64748b;">작성일: ${dateStr} / 작성자: OOO</div>
+        
+        <table style="width: 100%; border-collapse: collapse; table-layout: fixed; border: 2px solid #cbd5e1;">
+          <tr>
+            <td style="width: 50%; vertical-align: top; border: 1px solid #cbd5e1; padding: 20px; background: #fff;">
+              <h3 style="margin: 0 0 12px 0; color: #ea580c; font-size: 1.15rem; border-bottom: 2px solid #fed7aa; padding-bottom: 8px;">1. 기획 배경 및 목적 (Why)</h3>
+              <ul style="padding-left: 20px; margin: 0; font-size: 1rem; color: #333; line-height: 1.8;">
+                  ${ideaListHtml}
+                  <li><b>목적:</b> 위 아이디어를 실현하여 업무 효율 증대 및 가치 창출</li>
+              </ul>
+            </td>
+            <td style="width: 50%; vertical-align: top; border: 1px solid #cbd5e1; padding: 20px; background: #fff7ed;">
+              <h3 style="margin: 0 0 12px 0; color: #ea580c; font-size: 1.15rem; border-bottom: 2px solid #fed7aa; padding-bottom: 8px;">2. 현상 및 핵심 문제점 (What)</h3>
+              <ul style="padding-left: 20px; margin: 0; font-size: 1rem; color: #333; line-height: 1.8;">
+                  <li><b>Pain Point:</b> 현재 해당 아이디어가 부재하여 발생하는 불편함은?</li>
+                  <li><b>니즈:</b> (여기에 문제점을 구체적으로 작성하세요)</li>
+              </ul>
+            </td>
+          </tr>
+          <tr>
+            <td style="width: 50%; vertical-align: top; border: 1px solid #cbd5e1; padding: 20px; background: #fff7ed;">
+              <h3 style="margin: 0 0 12px 0; color: #ea580c; font-size: 1.15rem; border-bottom: 2px solid #fed7aa; padding-bottom: 8px;">3. 해결 방안 및 핵심 전략 (How)</h3>
+              <ul style="padding-left: 20px; margin: 0; font-size: 1rem; color: #333; line-height: 1.6;">
+                  ${solutionHtml}
+              </ul>
+            </td>
+            <td style="width: 50%; vertical-align: top; border: 1px solid #cbd5e1; padding: 20px; background: #fff;">
+              <h3 style="margin: 0 0 12px 0; color: #ea580c; font-size: 1.15rem; border-bottom: 2px solid #fed7aa; padding-bottom: 8px;">4. 세부 실행 일정 (Schedule)</h3>
+              <ul style="padding-left: 20px; margin: 0; font-size: 1rem; color: #333; line-height: 1.8;">
+                  <li><b>Step 1:</b> 기획 구체화 및 설계 (~MM.DD)</li>
+                  <li><b>Step 2:</b> 개발 및 제작 (~MM.DD)</li>
+                  <li><b>Step 3:</b> 테스트 및 배포 (~MM.DD)</li>
+              </ul>
+            </td>
+          </tr>
+          <tr>
+            <td colspan="2" style="vertical-align: top; border: 1px solid #cbd5e1; padding: 20px; background: #fdf2f8;">
+              <h3 style="margin: 0 0 12px 0; color: #db2777; font-size: 1.15rem; border-bottom: 2px solid #fbcfe8; padding-bottom: 8px;">5. 기대 효과 및 소요 예산 (ROI)</h3>
+              <ul style="padding-left: 20px; margin: 0; font-size: 1rem; color: #333; line-height: 1.8;">
+                  <li><b>예상 효과:</b> (이 아이디어가 실현되면 무엇이 좋아지나요?)</li>
+                  <li><b>필요 자원:</b> 인력 O명, 예산 OOO원</li>
+              </ul>
+            </td>
+          </tr>
+        </table>
+      </div>
+      `;
+
+      openDocModal(null, "[기획서] " + mainTitle, htmlTemplate, '기획서');
   }
 </script>
 
