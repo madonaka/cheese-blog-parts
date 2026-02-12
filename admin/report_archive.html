@@ -438,13 +438,11 @@
 
     // 🚀 [집계 변수 초기화]
     const hierarchyMap = {}; // { bigId: { title, dday, activeLogs: [], mids: { midId: { title, count } } } }
-    let ideaCount = 0;
-    let bugCount = 0;
+    let ideaLogs = [];
+    let bugLogs = [];
     let postPublishCount = 0;
     let totalLogs = 0;
-    
-    // Q3용 기타 목록 (아이디어, 버그, 미분류)
-    const otherActivityLogs = []; 
+    let otherLogs = []; // 기타 미분류
 
     targetLogs.forEach(log => {
         totalLogs++;
@@ -454,18 +452,16 @@
         const isBug = log['태그'] === '버그' || (log['제목'] && log['제목'].includes('🐞'));
         const isPublish = log['태그'] === 'Publish'; 
         
-        // 아이디어와 버그는 Q3로 이동
+        // 아이디어와 버그는 Q3 목록으로 저장
         if (isIdea) {
-            ideaCount++;
-            otherActivityLogs.push({ ...log, typeLabel: "💡 아이디어" });
+            ideaLogs.push(log);
             return;
         }
         if (isBug) {
-            bugCount++;
-            otherActivityLogs.push({ ...log, typeLabel: "🐞 버그" });
+            bugLogs.push(log);
             return;
         }
-        // 포스팅 발행은 Q1 건수에 반영하고, 프로젝트 로직으로 태움 (또는 기타로)
+        // 포스팅 발행은 Q1 건수에 반영
         if (isPublish) postPublishCount++;
 
         // 2. 일반 작업: 역추적 (Log -> Task -> Mid -> Big)
@@ -507,22 +503,37 @@
         hierarchyMap[bigId].mids[midId].count++;
         hierarchyMap[bigId].activeLogs.push(log);
         
-        // 기타 프로젝트인 경우 Q3 목록에도 추가 (상세 출력용)
+        // 기타 프로젝트인 경우 Q3용 로그로도 백업
         if (bigId === "OTHER") {
-            otherActivityLogs.push({ ...log, typeLabel: "📂 기타" });
+            otherLogs.push(log);
         }
     });
 
-    // [Q1] 핵심 요약: 계층형 트리 출력
-    let breakdownHtml = `<li><b>총 활동 건수:</b> 총 ${totalLogs}건 완료</li>`;
-    breakdownHtml += `<ul style="margin: 6px 0 12px 0; padding-left: 20px; font-size: 0.9em; color: #475569; list-style-type: none;">`;
+    // =========================================
+    // [Q1] 목표 및 핵심 요약 (포스팅 & 프로젝트 수행 건수)
+    // =========================================
+    let breakdownHtml = `<ul style="margin: 6px 0 12px 0; padding-left: 20px; font-size: 0.9em; color: #475569; list-style-type: none;">`;
     
-    // 1. 큰 목표 -> 중간 목표 계층 출력
+    // 1. 블로그 포스팅 발행 (최상단 강조)
+    if (postPublishCount > 0) {
+        breakdownHtml += `<li style="margin-bottom:8px; color: #2563eb; font-weight:bold; font-size: 1rem; border-bottom:1px dashed #bfdbfe; padding-bottom:4px;">
+            📝 블로그 포스팅 발행: ${postPublishCount}건
+        </li>`;
+    } else {
+        breakdownHtml += `<li style="margin-bottom:8px; color: #94a3b8; font-size: 0.9rem;">
+            (금일 포스팅 발행 없음)
+        </li>`;
+    }
+
+    // 2. 총 활동 건수
+    breakdownHtml += `<li style="margin-bottom: 8px;"><b>총 활동 건수:</b> ${totalLogs}건</li>`;
+
+    // 3. 프로젝트별 수행 건수 (계층형)
     for (const [bigId, bigData] of Object.entries(hierarchyMap)) {
         if (bigId === "OTHER") continue; 
 
         const ddayBadge = getReportDday(bigData.dday); 
-        breakdownHtml += `<li style="margin-top: 8px; margin-bottom: 4px; color: #1e293b;">
+        breakdownHtml += `<li style="margin-top: 6px; margin-bottom: 2px; color: #1e293b;">
             <b>${bigData.title}</b> ${ddayBadge}
         </li>`;
         
@@ -532,28 +543,13 @@
              </li>`;
         }
     }
-    // 2. 강조 항목
-    if (postPublishCount > 0) {
-        breakdownHtml += `<li style="margin-top:10px; color: #2563eb; font-weight:bold;">📝 블로그 포스팅 발행: ${postPublishCount}건</li>`;
-    }
-    if (ideaCount > 0) {
-        breakdownHtml += `<li style="margin-top:4px; color: #16a34a; font-weight:bold;">💡 신규 아이디어 생성: ${ideaCount}건</li>`;
-    }
-    // 3. 기타/버그
-    if (hierarchyMap["OTHER"]) {
-        breakdownHtml += `<li style="margin-top: 8px; color: #64748b;"><b>기타 (미분류 프로젝트)</b></li>`;
-        for (const [midId, midData] of Object.entries(hierarchyMap["OTHER"].mids)) {
-             breakdownHtml += `<li style="padding-left: 12px; margin-bottom: 2px;">${midData.title}: <b>${midData.count}</b>건</li>`;
-        }
-    }
-    if (bugCount > 0) breakdownHtml += `<li style="margin-top:4px; color: #ef4444;">🐞 버그 리포트: <b>${bugCount}</b>건</li>`;
     breakdownHtml += `</ul>`;
 
 
+    // =========================================
     // [Q2] 프로젝트 현황 및 수행 내역 (통합)
+    // =========================================
     let progressHtml = `<ul style="padding-left: 16px; margin: 0; font-size: 0.95rem; color: #333; line-height: 1.6;">`;
-    
-    // 활성 상태인 큰 목표 가져오기
     const activeBigGoals = g_goals.filter(g => g['유형'] === '큰 목표' && g['상태'] !== '완료');
     
     if (activeBigGoals.length > 0) {
@@ -568,7 +564,7 @@
                     <span style="color:${statusColor}; font-weight:800; font-size: 0.85em; margin-left:8px;">(${percent}%)</span>
                 </div>`;
             
-            // 해당 프로젝트의 오늘 수행 로그가 있다면 출력
+            // 해당 프로젝트의 오늘 수행 로그
             if (hierarchyMap[bg.ID] && hierarchyMap[bg.ID].activeLogs.length > 0) {
                  progressHtml += `<ul style="padding-left: 14px; margin: 0; color: #475569; font-size: 0.9em; list-style-type: square;">`;
                  hierarchyMap[bg.ID].activeLogs.forEach(l => {
@@ -588,24 +584,46 @@
     progressHtml += `</ul>`;
 
 
-    // [Q3] 기타 활동 및 아이디어/버그 (기존 상세내역 대체)
+    // =========================================
+    // [Q3] 아이디어 / 버그 / 기타 활동 (재구성)
+    // =========================================
     let otherHtml = `<div style="font-size: 0.95rem; padding-bottom: 10px;">`;
-    if (otherActivityLogs.length === 0) {
-        otherHtml += `<p style="color:#94a3b8; margin:0;">기타 특이사항이나 별도 활동이 없습니다.</p>`;
-    } else {
+    
+    // 1. 신규 아이디어 (최우선)
+    if (ideaLogs.length > 0) {
+        otherHtml += `<h4 style="margin: 4px 0 6px 0; color: #16a34a; font-size: 0.95rem;">💡 신규 아이디어 (${ideaLogs.length}건)</h4>`;
         otherHtml += `<ul style="padding-left: 16px; margin: 0; color: #475569; line-height: 1.6; list-style-type: circle;">`;
-        otherActivityLogs.forEach(l => {
-            let displayTitle = l['제목'] || (l['내용'] ? l['내용'].split('\n')[0].substring(0, 30) : "(내용 없음)");
-             if (displayTitle.includes("작업이 완료되었습니다")) displayTitle = l['내용'] ? l['내용'].split('\n')[0].substring(0, 25) + "..." : "세부 작업";
-            
-            // 타입 라벨에 따라 색상 강조
-            let prefix = `[${l.typeLabel}]`;
-            if (l.typeLabel.includes("아이디어")) prefix = `<span style="color:#16a34a; font-weight:bold;">${prefix}</span>`;
-            else if (l.typeLabel.includes("버그")) prefix = `<span style="color:#ef4444; font-weight:bold;">${prefix}</span>`;
-            
-            otherHtml += `<li style="margin-bottom: 4px;">${prefix} <b>${displayTitle}</b></li>`;
+        ideaLogs.forEach(l => {
+             let t = l['제목'] || "제목 없음";
+             otherHtml += `<li style="margin-bottom: 4px;"><b>${t}</b></li>`;
+        });
+        otherHtml += `</ul><div style="height:12px;"></div>`;
+    }
+
+    // 2. 버그 리포트
+    if (bugLogs.length > 0) {
+        otherHtml += `<h4 style="margin: 4px 0 6px 0; color: #ef4444; font-size: 0.95rem;">🐞 버그 발견 및 리포트 (${bugLogs.length}건)</h4>`;
+        otherHtml += `<ul style="padding-left: 16px; margin: 0; color: #475569; line-height: 1.6; list-style-type: circle;">`;
+        bugLogs.forEach(l => {
+             let t = l['제목'] || "제목 없음";
+             otherHtml += `<li style="margin-bottom: 4px;"><b>${t}</b></li>`;
+        });
+        otherHtml += `</ul><div style="height:12px;"></div>`;
+    }
+
+    // 3. 기타 미분류 업무
+    if (otherLogs.length > 0) {
+        otherHtml += `<h4 style="margin: 4px 0 6px 0; color: #64748b; font-size: 0.95rem;">📂 기타 업무 (${otherLogs.length}건)</h4>`;
+        otherHtml += `<ul style="padding-left: 16px; margin: 0; color: #94a3b8; line-height: 1.6; list-style-type: circle;">`;
+        otherLogs.forEach(l => {
+             let t = l['제목'] || "제목 없음";
+             otherHtml += `<li style="margin-bottom: 4px;">${t}</li>`;
         });
         otherHtml += `</ul>`;
+    }
+
+    if (ideaLogs.length === 0 && bugLogs.length === 0 && otherLogs.length === 0) {
+        otherHtml += `<p style="color:#94a3b8; margin:0;">특이사항이나 별도 활동이 없습니다.</p>`;
     }
     otherHtml += `</div>`;
 
@@ -618,10 +636,7 @@
           <tr>
             <td style="width: 50%; vertical-align: top; border: 1px solid #cbd5e1; padding: 20px; background: #fff;">
               <h3 style="margin: 0 0 12px 0; color: #2563eb; font-size: 1.1rem; border-bottom: 2px solid #bfdbfe; padding-bottom: 8px;">1. 목표 및 핵심 요약</h3>
-              <ul style="padding-left: 20px; margin: 0; font-size: 0.95rem; color: #333; line-height: 1.8;">
-                  <li><b>보고 기간:</b> ${startDate.toLocaleDateString()} ~ ${targetEndDate.toLocaleDateString()}</li>
-                  ${breakdownHtml}
-              </ul>
+              ${breakdownHtml}
             </td>
             <td style="width: 50%; vertical-align: top; border: 1px solid #cbd5e1; padding: 20px; background: #f8fafc;">
               <h3 style="margin: 0 0 12px 0; color: #2563eb; font-size: 1.1rem; border-bottom: 2px solid #bfdbfe; padding-bottom: 8px;">2. 프로젝트 현황 및 수행 내역</h3>
