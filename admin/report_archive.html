@@ -436,13 +436,15 @@
         const d = new Date(log['날짜']); return d >= startDate && d <= targetEndDate;
     });
 
-    // 🚀 [로직] 계층형 그룹화 & 특수 태그 집계
-    const hierarchyMap = {}; 
+    // 🚀 [집계 변수 초기화]
+    const hierarchyMap = {}; // { bigId: { title, dday, activeLogs: [], mids: { midId: { title, count } } } }
     let ideaCount = 0;
     let bugCount = 0;
-    let postPublishCount = 0; // 신규 발행 건수만 집계
+    let postPublishCount = 0;
     let totalLogs = 0;
-    const groupedLogsByName = {}; 
+    
+    // Q3용 기타 목록 (아이디어, 버그, 미분류)
+    const otherActivityLogs = []; 
 
     targetLogs.forEach(log => {
         totalLogs++;
@@ -450,38 +452,26 @@
         // 1. 특수 분류 (아이디어/버그/포스팅)
         const isIdea = log['태그'] === '아이디어' || (log['제목'] && log['제목'].includes('💡'));
         const isBug = log['태그'] === '버그' || (log['제목'] && log['제목'].includes('🐞'));
-        const isPublish = log['태그'] === 'Publish'; // 신규 발행만 체크
-        const isUpdate = log['태그'] === 'Update';
-        const isDraft = log['태그'] === 'Draft';
-
+        const isPublish = log['태그'] === 'Publish'; 
+        
+        // 아이디어와 버그는 Q3로 이동
         if (isIdea) {
             ideaCount++;
-            if (!groupedLogsByName["💡 신규 아이디어 제안"]) groupedLogsByName["💡 신규 아이디어 제안"] = [];
-            groupedLogsByName["💡 신규 아이디어 제안"].push(log);
+            otherActivityLogs.push({ ...log, typeLabel: "💡 아이디어" });
             return;
         }
         if (isBug) {
             bugCount++;
-            if (!groupedLogsByName["🐞 버그 발견 및 리포트"]) groupedLogsByName["🐞 버그 발견 및 리포트"] = [];
-            groupedLogsByName["🐞 버그 발견 및 리포트"].push(log);
+            otherActivityLogs.push({ ...log, typeLabel: "🐞 버그" });
             return;
         }
-        if (isPublish || isUpdate || isDraft) {
-            // 신규 발행일 경우에만 핵심 건수에 포함
-            if (isPublish) postPublishCount++;
-            
-            // 상세 내역에는 발행/수정 모두 표시
-            const postGroupName = "📝 블로그 포스팅 관리 (발행/수정)";
-            if (!groupedLogsByName[postGroupName]) groupedLogsByName[postGroupName] = [];
-            groupedLogsByName[postGroupName].push(log);
-            return;
-        }
+        // 포스팅 발행은 Q1 건수에 반영하고, 프로젝트 로직으로 태움 (또는 기타로)
+        if (isPublish) postPublishCount++;
 
         // 2. 일반 작업: 역추적 (Log -> Task -> Mid -> Big)
         const relId = log['관련_목표ID'];
         let bigGoalObj = null;
         let midGoalObj = null;
-        let taskTitleForLog = "기타 일반 업무"; 
 
         if (relId) {
             const obj = g_tasks.find(t => t.ID === relId) || g_goals.find(g => g.ID === relId);
@@ -489,14 +479,11 @@
                 if (obj['유형'] === '할 일' || obj['유형'] === '버그') {
                     midGoalObj = g_goals.find(g => g.ID === obj['연결_중간목표ID']);
                     if (midGoalObj) bigGoalObj = g_goals.find(g => g.ID === midGoalObj['상위ID']);
-                    taskTitleForLog = midGoalObj ? midGoalObj['제목'] : obj['제목']; 
                 } else if (obj['유형'] === '중간 목표') {
                     midGoalObj = obj;
                     bigGoalObj = g_goals.find(g => g.ID === midGoalObj['상위ID']);
-                    taskTitleForLog = midGoalObj['제목'];
                 } else if (obj['유형'] === '큰 목표') {
                     bigGoalObj = obj;
-                    taskTitleForLog = bigGoalObj['제목'];
                 }
             }
         }
@@ -510,18 +497,23 @@
         const midTitle = midGoalObj ? midGoalObj['제목'] : "↳ 직접 수행 / 기타";
 
         if (!hierarchyMap[bigId]) {
-            hierarchyMap[bigId] = { title: bigTitle, dday: bigDday, mids: {} };
+            hierarchyMap[bigId] = { title: bigTitle, dday: bigDday, mids: {}, activeLogs: [] };
         }
         if (!hierarchyMap[bigId].mids[midId]) {
             hierarchyMap[bigId].mids[midId] = { title: midTitle, count: 0 };
         }
+        
+        // 건수 증가 및 해당 프로젝트의 "오늘의 활동 로그"로 추가
         hierarchyMap[bigId].mids[midId].count++;
-
-        if (!groupedLogsByName[taskTitleForLog]) groupedLogsByName[taskTitleForLog] = [];
-        groupedLogsByName[taskTitleForLog].push(log);
+        hierarchyMap[bigId].activeLogs.push(log);
+        
+        // 기타 프로젝트인 경우 Q3 목록에도 추가 (상세 출력용)
+        if (bigId === "OTHER") {
+            otherActivityLogs.push({ ...log, typeLabel: "📂 기타" });
+        }
     });
 
-    // [Q1] 핵심 요약: 계층형 트리 출력 (포스팅 발행 & 아이디어 생성 강조)
+    // [Q1] 핵심 요약: 계층형 트리 출력
     let breakdownHtml = `<li><b>총 활동 건수:</b> 총 ${totalLogs}건 완료</li>`;
     breakdownHtml += `<ul style="margin: 6px 0 12px 0; padding-left: 20px; font-size: 0.9em; color: #475569; list-style-type: none;">`;
     
@@ -540,16 +532,14 @@
              </li>`;
         }
     }
-    // 2. 포스팅 발행 건수 강조
+    // 2. 강조 항목
     if (postPublishCount > 0) {
         breakdownHtml += `<li style="margin-top:10px; color: #2563eb; font-weight:bold;">📝 블로그 포스팅 발행: ${postPublishCount}건</li>`;
     }
-    // 3. 아이디어 생성 건수 강조
     if (ideaCount > 0) {
         breakdownHtml += `<li style="margin-top:4px; color: #16a34a; font-weight:bold;">💡 신규 아이디어 생성: ${ideaCount}건</li>`;
     }
-    
-    // 4. 기타 및 버그
+    // 3. 기타/버그
     if (hierarchyMap["OTHER"]) {
         breakdownHtml += `<li style="margin-top: 8px; color: #64748b;"><b>기타 (미분류 프로젝트)</b></li>`;
         for (const [midId, midData] of Object.entries(hierarchyMap["OTHER"].mids)) {
@@ -557,19 +547,40 @@
         }
     }
     if (bugCount > 0) breakdownHtml += `<li style="margin-top:4px; color: #ef4444;">🐞 버그 리포트: <b>${bugCount}</b>건</li>`;
-    
     breakdownHtml += `</ul>`;
 
 
-    // [Q2] 프로젝트 현황
-    let progressHtml = `<ul style="padding-left: 20px; margin: 0; font-size: 0.95rem; color: #333; line-height: 1.6;">`;
+    // [Q2] 프로젝트 현황 및 수행 내역 (통합)
+    let progressHtml = `<ul style="padding-left: 16px; margin: 0; font-size: 0.95rem; color: #333; line-height: 1.6;">`;
+    
+    // 활성 상태인 큰 목표 가져오기
     const activeBigGoals = g_goals.filter(g => g['유형'] === '큰 목표' && g['상태'] !== '완료');
+    
     if (activeBigGoals.length > 0) {
         activeBigGoals.forEach(bg => {
             const percent = getReportGoalProgress(bg.ID, true);
             const ddayBadge = getReportDday(bg['마감일']);
             let statusColor = percent === 100 ? "#10b981" : (percent > 0 ? "#3b82f6" : "#64748b");
-            progressHtml += `<li style="margin-bottom: 12px;"><b>${bg['제목']}</b> ${ddayBadge}<br/><span style="color:${statusColor}; font-weight:800; font-size: 0.9em; display:inline-block; margin-top:2px;">↳ ${percent}% 진행</span></li>`;
+            
+            progressHtml += `<li style="margin-bottom: 16px; list-style: none;">
+                <div style="border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; margin-bottom: 6px;">
+                    <b>${bg['제목']}</b> ${ddayBadge}
+                    <span style="color:${statusColor}; font-weight:800; font-size: 0.85em; margin-left:8px;">(${percent}%)</span>
+                </div>`;
+            
+            // 해당 프로젝트의 오늘 수행 로그가 있다면 출력
+            if (hierarchyMap[bg.ID] && hierarchyMap[bg.ID].activeLogs.length > 0) {
+                 progressHtml += `<ul style="padding-left: 14px; margin: 0; color: #475569; font-size: 0.9em; list-style-type: square;">`;
+                 hierarchyMap[bg.ID].activeLogs.forEach(l => {
+                     let displayTitle = l['제목'] || (l['내용'] ? l['내용'].split('\n')[0].substring(0, 30) : "(내용 없음)");
+                     if (displayTitle.includes("작업이 완료되었습니다")) displayTitle = l['내용'] ? l['내용'].split('\n')[0].substring(0, 25) + "..." : "세부 작업 완료";
+                     progressHtml += `<li style="margin-bottom: 3px;">${displayTitle}</li>`;
+                 });
+                 progressHtml += `</ul>`;
+            } else {
+                progressHtml += `<div style="color:#cbd5e1; font-size:0.85em; padding-left:14px;">(금일 활동 없음)</div>`;
+            }
+            progressHtml += `</li>`;
         });
     } else {
         progressHtml += `<li>진행 중인 큰 목표가 없습니다.</li>`;
@@ -577,33 +588,26 @@
     progressHtml += `</ul>`;
 
 
-    // [Q3] 상세 내역 (날짜 제거 & 실제 제목 위주)
-    let logHtml = `<div style="font-size: 0.95rem; padding-bottom: 10px;">`;
-    if (totalLogs === 0) {
-        logHtml += `<p style="color:#94a3b8; margin:0;">해당 기간에 작성된 작업 기록이 없습니다.</p>`;
+    // [Q3] 기타 활동 및 아이디어/버그 (기존 상세내역 대체)
+    let otherHtml = `<div style="font-size: 0.95rem; padding-bottom: 10px;">`;
+    if (otherActivityLogs.length === 0) {
+        otherHtml += `<p style="color:#94a3b8; margin:0;">기타 특이사항이나 별도 활동이 없습니다.</p>`;
     } else {
-        const sortedLogKeys = Object.keys(groupedLogsByName).sort();
-        sortedLogKeys.forEach(catName => {
-            logHtml += `<h4 style="margin: 14px 0 6px 0; color: #1e293b; font-size: 0.95rem;">📌 ${catName}</h4>`;
-            logHtml += `<ul style="padding-left: 16px; margin: 0; color: #475569; line-height: 1.6; list-style-type: square;">`;
+        otherHtml += `<ul style="padding-left: 16px; margin: 0; color: #475569; line-height: 1.6; list-style-type: circle;">`;
+        otherActivityLogs.forEach(l => {
+            let displayTitle = l['제목'] || (l['내용'] ? l['내용'].split('\n')[0].substring(0, 30) : "(내용 없음)");
+             if (displayTitle.includes("작업이 완료되었습니다")) displayTitle = l['내용'] ? l['내용'].split('\n')[0].substring(0, 25) + "..." : "세부 작업";
             
-            groupedLogsByName[catName].forEach(l => {
-                // "작업이 완료되었습니다" 같은 무의미한 문구 필터링 로직
-                let displayTitle = l['제목'];
-                
-                // 제목이 비어있거나 무의미한 문구일 경우 내용을 사용하되, 앞부분만 잘라서 제목화
-                if (!displayTitle || displayTitle.includes("작업이 완료되었습니다")) {
-                    displayTitle = l['내용'] ? l['내용'].split('\n')[0].substring(0, 30) : "(내용 없음)";
-                    if (l['내용'] && l['내용'].length > 30) displayTitle += "...";
-                }
-                
-                // 날짜 표시는 일일 보고서이므로 생략하고 깔끔하게 제목만 출력
-                logHtml += `<li style="margin-bottom: 4px;"><b>${displayTitle}</b></li>`;
-            });
-            logHtml += `</ul>`;
+            // 타입 라벨에 따라 색상 강조
+            let prefix = `[${l.typeLabel}]`;
+            if (l.typeLabel.includes("아이디어")) prefix = `<span style="color:#16a34a; font-weight:bold;">${prefix}</span>`;
+            else if (l.typeLabel.includes("버그")) prefix = `<span style="color:#ef4444; font-weight:bold;">${prefix}</span>`;
+            
+            otherHtml += `<li style="margin-bottom: 4px;">${prefix} <b>${displayTitle}</b></li>`;
         });
+        otherHtml += `</ul>`;
     }
-    logHtml += `</div>`;
+    otherHtml += `</div>`;
 
 
     // HTML 템플릿 조립
@@ -620,14 +624,14 @@
               </ul>
             </td>
             <td style="width: 50%; vertical-align: top; border: 1px solid #cbd5e1; padding: 20px; background: #f8fafc;">
-              <h3 style="margin: 0 0 12px 0; color: #2563eb; font-size: 1.1rem; border-bottom: 2px solid #bfdbfe; padding-bottom: 8px;">2. 프로젝트 진행 현황 (목표 달성률)</h3>
+              <h3 style="margin: 0 0 12px 0; color: #2563eb; font-size: 1.1rem; border-bottom: 2px solid #bfdbfe; padding-bottom: 8px;">2. 프로젝트 현황 및 수행 내역</h3>
               ${progressHtml}
             </td>
           </tr>
           <tr>
             <td style="width: 50%; vertical-align: top; border: 1px solid #cbd5e1; padding: 20px; background: #f8fafc;">
-              <h3 style="margin: 0 0 12px 0; color: #2563eb; font-size: 1.1rem; border-bottom: 2px solid #bfdbfe; padding-bottom: 8px;">3. 상세 진행 내역 (Task List)</h3>
-              ${logHtml}
+              <h3 style="margin: 0 0 12px 0; color: #2563eb; font-size: 1.1rem; border-bottom: 2px solid #bfdbfe; padding-bottom: 8px;">3. 아이디어 / 버그 / 기타 활동</h3>
+              ${otherHtml}
             </td>
             <td style="width: 50%; vertical-align: top; border: 1px solid #cbd5e1; padding: 20px; background: #fff;">
               <h3 style="margin: 0 0 12px 0; color: #2563eb; font-size: 1.1rem; border-bottom: 2px solid #bfdbfe; padding-bottom: 8px;">4. 향후 계획 및 Action Item</h3>
