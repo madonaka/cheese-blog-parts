@@ -141,7 +141,7 @@
             <div style="width:1px; background:#e2e8f0; margin: 0 4px;"></div>
             <button class="btn-gen" style="background:#f0fdf4; color:#16a34a; border-color:#bbf7d0;" onclick="generateProposalTemplate()">💡 1-Page 기획서</button>
             <button class="btn-gen" style="background:#fff7ed; color:#ea580c; border-color:#fed7aa;" onclick="openIdeaSelector()">✨ 아이디어로 기획</button>
-            <button class="btn-gen" style="background:#fdf2f8; color:#db2777; border-color:#fbcfe8;" onclick="generateProjectSchedule()">📅 프로젝트 일정표</button>
+            <button class="btn-gen" style="background:#fdf2f8; color:#db2777; border-color:#fbcfe8;" onclick="openScheduleMaker()">📅 일정표 만들기</button>
             <button class="btn-gen btn-new" onclick="openDocModal()">+ 빈 문서</button>
           </div>
         </div>
@@ -209,6 +209,51 @@
       </div>
     </div>
 
+    <div id="schedule-maker-modal" class="custom-modal">
+      <div class="modal-box" style="width: 800px; max-width: 95vw; background: #fff; border-radius: 16px;">
+        <div class="modal-header-custom" style="background:#fdf2f8; border-bottom:1px solid #fbcfe8;">
+          <span class="modal-title-custom" style="color:#be185d;">📅 프로젝트 일정표 생성기</span>
+          <button type="button" class="btn" onclick="closeScheduleMaker()" style="background:transparent; border:none; font-size:1.2rem; cursor:pointer;">✕</button>
+        </div>
+        
+        <div class="modal-body-custom" style="padding: 20px; overflow-y: auto; max-height: 70vh;">
+          <div style="display:flex; gap:10px; margin-bottom:16px; background:#f8fafc; padding:12px; border-radius:8px; border:1px solid #e2e8f0;">
+            <div style="flex:1;">
+              <label style="display:block; font-size:0.8rem; color:#64748b; margin-bottom:4px;">프로젝트 시작일 (첫 칸 날짜)</label>
+              <input type="date" id="sch-start-date" class="form-input" style="width:100%;">
+            </div>
+            <div style="flex:2;">
+              <label style="display:block; font-size:0.8rem; color:#64748b; margin-bottom:4px;">프로젝트명</label>
+              <input type="text" id="sch-project-name" class="form-input" value="블로그 이관 프로젝트" style="width:100%;">
+            </div>
+            <div style="flex:0 0 auto; display:flex; align-items:flex-end;">
+                <button type="button" class="btn" onclick="loadSchedulePreset()" style="padding:8px 12px; background:#fff; border:1px solid #cbd5e1; font-size:0.85rem; border-radius:6px; cursor:pointer;">🔄 예제 불러오기</button>
+            </div>
+          </div>
+    
+          <table style="width:100%; border-collapse: collapse; font-size:0.9rem;">
+            <thead>
+                <tr style="background:#f1f5f9; color:#475569;">
+                    <th style="padding:8px; width:120px;">구분 (단계)</th>
+                    <th style="padding:8px;">작업 내용 (Task)</th>
+                    <th style="padding:8px; width:80px;">시작칸<br>(0~5)</th>
+                    <th style="padding:8px; width:80px;">기간<br>(칸수)</th>
+                    <th style="padding:8px; width:50px;">삭제</th>
+                </tr>
+            </thead>
+            <tbody id="sch-input-list">
+                </tbody>
+          </table>
+          
+          <button type="button" onclick="addScheduleRow()" style="width:100%; margin-top:10px; padding:10px; border:2px dashed #cbd5e1; background:#fff; color:#64748b; font-weight:bold; border-radius:8px; cursor:pointer;">+ 작업 행 추가하기</button>
+        </div>
+        
+        <div class="modal-footer-custom">
+          <button type="button" class="btn" onclick="closeScheduleMaker()" style="padding:10px 20px; border-radius:8px; background:#f1f5f9; color:#64748b; border:none; cursor:pointer;">취소</button>
+          <button type="button" class="btn" onclick="insertCustomSchedule()" style="padding:10px 20px; border-radius:8px; background:#db2777; color:#fff; border:none; font-weight:700; cursor:pointer;">✨ 에디터에 삽입</button>
+        </div>
+      </div>
+    </div>
       
       <div class="modal-footer-custom">
         <button type="button" class="btn" style="padding:12px 24px; border-radius:12px; border:1px solid #e2e8f0; background:#fff; color:#64748b; font-weight:700; cursor:pointer;" onclick="closeModal('doc-modal')">취소</button>
@@ -987,57 +1032,110 @@
 
       openDocModal(null, "[기획서] " + mainTitle, htmlTemplate, '기획서');
   }
-  // ==========================================
-  // [신규] 순차적 실행을 위한 간트차트(일정표) 생성
-  // ==========================================
-  function generateProjectSchedule() {
-    const today = new Date();
-    const dateStr = `${today.getFullYear()}.${today.getMonth()+1}.${today.getDate()}`;
 
-    // 1. 헤더 (날짜 그리드) 설정 - 사용자 요청 날짜(1/28 ~ 2/14) 기준
-    // 실제로는 동적으로 계산할 수도 있지만, 일단 요청하신 기간에 맞춰 3일 단위로 끊었습니다.
-    const timeHeaders = ["1/28~30", "1/31~2/2", "2/3~5", "2/6~8", "2/9~11", "2/12~14"];
-    let headerCols = "";
-    timeHeaders.forEach(h => {
-        headerCols += `<th style="border:1px solid #cbd5e1; background:#f1f5f9; padding:8px; font-size:0.85rem; color:#475569; width:60px;">${h}</th>`;
+
+
+  // ==========================================
+  // [신규] 커스텀 일정 생성기 로직
+  // ==========================================
+  
+  // 1. 모달 열기/닫기
+  function openScheduleMaker() {
+    document.getElementById('schedule-maker-modal').classList.add('open');
+    // 오늘 날짜 기본 세팅
+    if(!document.getElementById('sch-start-date').value) {
+        document.getElementById('sch-start-date').value = new Date().toISOString().split('T')[0];
+    }
+    // 비어있으면 기본 행 하나 추가
+    if(document.getElementById('sch-input-list').children.length === 0) {
+        addScheduleRow(); 
+    }
+  }
+  
+  function closeScheduleMaker() {
+    document.getElementById('schedule-maker-modal').classList.remove('open');
+  }
+
+  // 2. 입력 행 추가
+  function addScheduleRow(cat="", task="", start=0, dur=1) {
+    const tbody = document.getElementById('sch-input-list');
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+        <td style="padding:4px;"><input type="text" class="form-input sch-cat" value="${cat}" placeholder="예: 1단계" style="width:100%;"></td>
+        <td style="padding:4px;"><input type="text" class="form-input sch-task" value="${task}" placeholder="작업명 입력" style="width:100%;"></td>
+        <td style="padding:4px;"><input type="number" class="form-input sch-start" value="${start}" min="0" max="5" style="width:100%; text-align:center;"></td>
+        <td style="padding:4px;"><input type="number" class="form-input sch-dur" value="${dur}" min="1" max="6" style="width:100%; text-align:center;"></td>
+        <td style="padding:4px; text-align:center;"><button onclick="this.closest('tr').remove()" style="border:none; background:none; cursor:pointer; color:#ef4444;">🗑️</button></td>
+    `;
+    tbody.appendChild(tr);
+  }
+
+  // 3. 예제 데이터 불러오기 (사용자님 로드맵)
+  function loadSchedulePreset() {
+      if(!confirm("작성 중인 내용이 사라지고 예제로 대체됩니다. 계속할까요?")) return;
+      const tbody = document.getElementById('sch-input-list');
+      tbody.innerHTML = "";
+      
+      // 사용자님의 실제 데이터
+      addScheduleRow("1단계<br>(안정화)", "툴 불편 포인트 보완", 0, 1);
+      addScheduleRow("", "테스트 글 5~10개 이전", 0, 2);
+      addScheduleRow("", "이미지 정책 문서화", 1, 1);
+      addScheduleRow("2단계<br>(가계도)", "시리즈 네비게이션 완성", 2, 1);
+      addScheduleRow("", "가계도 글 우선순위 이전", 2, 2);
+      addScheduleRow("", "링크/문구 정책 통일", 3, 1);
+      addScheduleRow("3단계<br>(마감)", "한중일 연표 생성툴 테스트", 4, 1);
+      addScheduleRow("", "잔여 글 일괄 이전", 4, 2);
+      addScheduleRow("", "최종 품질 점검 (SEO)", 5, 1);
+  }
+
+  // 4. 최종 HTML 생성 및 삽입
+  function insertCustomSchedule() {
+    const startDateVal = document.getElementById('sch-start-date').value;
+    const projectName = document.getElementById('sch-project-name').value;
+    
+    if(!startDateVal) { alert("시작일을 선택해 주세요."); return; }
+
+    // (A) 헤더 날짜 계산 (3일 단위 6칸)
+    const headers = [];
+    const startObj = new Date(startDateVal);
+    
+    for(let i=0; i<6; i++) {
+        const s = new Date(startObj); s.setDate(s.getDate() + (i*3));
+        const e = new Date(s); e.setDate(e.getDate() + 2); // 3일 간격
+        const sStr = `${s.getMonth()+1}/${s.getDate()}`;
+        const eStr = `${e.getDate()}`;
+        headers.push(`${sStr}~${eStr}`);
+    }
+    
+    let headerHtml = "";
+    headers.forEach(h => {
+        headerHtml += `<th style="border:1px solid #cbd5e1; background:#f1f5f9; padding:8px; font-size:0.85rem; color:#475569; width:60px;">${h}</th>`;
     });
 
-    // 2. 데이터 (카테고리 | 작업명 | 시작인덱스 | 기간)
-    // start: 0부터 시작, duration: 칸 개수
-    const scheduleData = [
-        { cat: "1단계<br>(안정화)", task: "툴 '불편 포인트' 보완", start: 0, dur: 1 },
-        { cat: "", task: "테스트 글 5~10개 이전", start: 0, dur: 2 },
-        { cat: "", task: "이미지 정책 확정 (문서화)", start: 1, dur: 1 },
-        
-        { cat: "2단계<br>(가계도)", task: "시리즈 네비게이션 완성", start: 2, dur: 1 },
-        { cat: "", task: "가계도 글 우선순위 이전", start: 2, dur: 2 },
-        { cat: "", task: "링크/문구 정책 통일", start: 3, dur: 1 },
-        
-        { cat: "3단계<br>(마감)", task: "한중일 연표 생성툴 테스트", start: 4, dur: 1 },
-        { cat: "", task: "잔여 글 일괄 이전", start: 4, dur: 2 },
-        { cat: "", task: "최종 품질 점검 (SEO/모바일)", start: 5, dur: 1 }
-    ];
-
-    // 3. 테이블 바디 생성
+    // (B) 바디 생성
     let rowsHtml = "";
-    scheduleData.forEach((item, index) => {
-        // 카테고리 셀 (병합 처리 등을 간단하게 하기 위해 빈 값은 테두리만 유지)
-        const catStyle = item.cat ? "font-weight:800; color:#3b82f6; background:#eff6ff;" : "color:#fff;";
+    const rows = document.querySelectorAll('#sch-input-list tr');
+    
+    rows.forEach(tr => {
+        const cat = tr.querySelector('.sch-cat').value;
+        const task = tr.querySelector('.sch-task').value;
+        const start = parseInt(tr.querySelector('.sch-start').value) || 0;
+        const dur = parseInt(tr.querySelector('.sch-dur').value) || 1;
+        
+        const catStyle = cat ? "font-weight:800; color:#3b82f6; background:#eff6ff;" : "color:#fff;";
         
         let cols = "";
-        for(let i=0; i<timeHeaders.length; i++) {
-            // 해당 기간에 화살표/바 표시
-            if (i >= item.start && i < item.start + item.dur) {
-                // 시작점이냐 중간이냐에 따라 모양 다르게 (화살표 모양 구현)
+        for(let i=0; i<6; i++) {
+            if (i >= start && i < start + dur) {
+                // 바 스타일링 (화살표)
                 let barStyle = "background:#3b82f6; height:12px; margin-top:6px; opacity:0.8;";
-                if (item.dur === 1) barStyle += "border-radius:6px;"; // 1칸짜리
-                else if (i === item.start) barStyle += "border-radius:6px 0 0 6px;"; // 시작
-                else if (i === item.start + item.dur - 1) barStyle += "border-radius:0 6px 6px 0;"; // 끝
-                else barStyle += "border-radius:0;"; // 중간
-                
-                // 화살표 끝 처리 (마지막 칸일 때)
                 let content = "";
-                if (i === item.start + item.dur - 1) content = "▶"; 
+                
+                // 시작/중간/끝 모양 처리
+                if (dur === 1) barStyle += "border-radius:6px;"; 
+                else if (i === start) barStyle += "border-radius:6px 0 0 6px;"; 
+                else if (i === start + dur - 1) { barStyle += "border-radius:0 6px 6px 0;"; content = "▶"; }
+                else barStyle += "border-radius:0;"; 
                 
                 cols += `<td style="border:1px solid #e2e8f0; padding:0; text-align:right; vertical-align:middle; color:#3b82f6; font-size:10px; line-height:1;">
                             <div style="${barStyle} position:relative;">
@@ -1045,55 +1143,43 @@
                             </div>
                          </td>`;
             } else {
-                cols += `<td style="border:1px solid #e2e8f0; background:#fff;"></td>`; // 빈칸
+                cols += `<td style="border:1px solid #e2e8f0; background:#fff;"></td>`;
             }
         }
 
         rowsHtml += `
         <tr>
-            <td style="border:1px solid #cbd5e1; padding:10px; font-size:0.9rem; text-align:center; vertical-align:middle; ${catStyle}">${item.cat}</td>
+            <td style="border:1px solid #cbd5e1; padding:10px; font-size:0.9rem; text-align:center; vertical-align:middle; ${catStyle}">${cat}</td>
             <td style="border:1px solid #cbd5e1; padding:8px 12px; font-size:0.95rem; font-weight:600; color:#1e293b;">
-                <span style="color:#cbd5e1; margin-right:6px;">◻</span> ${item.task}
+                <span style="color:#cbd5e1; margin-right:6px;">◻</span> ${task}
             </td>
             ${cols}
         </tr>`;
     });
 
-    // 4. 최종 HTML 조립
-    let htmlTemplate = `
-      <div style="font-family: 'Pretendard', 'Malgun Gothic', sans-serif; max-width: 1000px; margin: 0 auto; color: #1e293b;">
-        <h2 style="text-align: center; color: #1e293b; margin-bottom: 8px; font-size: 1.8rem; letter-spacing: -0.5px;">🚀 프로젝트 추진 일정표</h2>
-        <div style="text-align: right; margin-bottom: 16px; font-size: 0.9rem; color: #64748b;">작성일: ${dateStr} / 프로젝트: 블로그 이관 및 안정화</div>
-        
-        <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:24px;">
-            <h4 style="margin:0 0 8px 0; color:#334155;">💡 사용 가이드 (Checklist Rule)</h4>
-            <ul style="margin:0; padding-left:20px; font-size:0.9rem; color:#64748b; line-height:1.6;">
-                <li>이 표는 <b>위에서 아래로</b> 순차적으로 진행되도록 설계되었습니다.</li>
-                <li>작업을 완료하면 작업명 앞의 체크박스(◻)를 클릭하여 완료(✅) 표시를 하세요.</li>
-                <li>일정이 밀리면 파란색 화살표 막대를 드래그하거나 셀 색상을 변경하여 조정하세요.</li>
-            </ul>
-        </div>
-
+    // (C) 최종 템플릿
+    const finalHtml = `
+      <div style="font-family: 'Pretendard', sans-serif; margin-bottom: 30px;">
+        <h3 style="color:#1e293b; font-size:1.4rem; border-left:5px solid #db2777; padding-left:12px; margin-bottom:12px;">📅 ${projectName} 로드맵</h3>
         <table style="width: 100%; border-collapse: collapse; table-layout: fixed; border: 2px solid #cbd5e1;">
           <thead>
             <tr>
               <th style="border:1px solid #cbd5e1; background:#f1f5f9; padding:10px; width:100px;">구분</th>
-              <th style="border:1px solid #cbd5e1; background:#f1f5f9; padding:10px; width:220px;">세부 작업 명</th>
-              ${headerCols}
+              <th style="border:1px solid #cbd5e1; background:#f1f5f9; padding:10px; width:220px;">Task (작업명)</th>
+              ${headerHtml}
             </tr>
           </thead>
           <tbody>
             ${rowsHtml}
           </tbody>
         </table>
-        
-        <div style="margin-top:20px; text-align:right;">
-            <span style="font-size:0.85rem; color:#94a3b8;">※ 화살표는 예상 기간을 의미하며, 실제 완료일은 체크박스로 관리합니다.</span>
-        </div>
-      </div>
+        <div style="text-align:right; font-size:0.8rem; color:#94a3b8; margin-top:4px;">* 체크박스(◻)를 클릭하여 완료 상태로 변경하세요.</div>
+      </div><br/>
     `;
 
-    openDocModal(null, "[일정] 블로그 이관 프로젝트 로드맵", htmlTemplate, '기획서');
+    // 에디터에 삽입
+    $('#doc-content').summernote('pasteHTML', finalHtml);
+    closeScheduleMaker();
   }
 </script>
 
