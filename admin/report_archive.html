@@ -370,6 +370,7 @@
     let ideaCreateLogs = [], ideaRealizeLogs = [];
     let bugCreateLogs = [], bugFixLogs = [];
     let publishLogs = [];
+	let reportTagLogs = []; 
     let doneLogs = [];
     let postCount = 0;
 
@@ -445,7 +446,8 @@
         content.includes('🐞 버그 리포트 생성됨:'); // log-form이 본문에 심는 시스템 문구
     
 	      const isPublishBase = (tag === 'Publish');
-
+		  const isReportTag = /(^|[,\s])report($|[,\s])/i.test(tag);
+			
 	      // ✅ 아이디어 실현(아이디어 → 작업 변환 등)
 	      const isIdeaRealize =
 	        tag === 'Realization' ||
@@ -467,10 +469,16 @@
 	      if (isBugCreate)  { bugCreateLogs.push(log);  return; }
     
 	      if (isPublish) {
-        postCount++;
-        publishLogs.push(log);   // ✅ 목록용으로도 보관
-        return;                  // ✅ doneLogs에 섞지 않기(원하면 return 제거)
-      }
+			postCount++;
+			publishLogs.push(log);   // ✅ 목록용으로도 보관
+			return;                  // ✅ doneLogs에 섞지 않기(원하면 return 제거)
+		  }
+
+		 // ✅ report 태그는 Velocity에 별도 노출
+		 if (isReportTag) {
+		   reportTagLogs.push(log);
+		   return;
+	      }
 
 	      // ✅ 수정된 버그: 완료/해결 로그 중, 관련ID가 "버그" 아이템에 매칭되는 것
 	      const isBugFix =
@@ -581,7 +589,20 @@
 	        </li>
 	      `;
 	    }
-    
+
+		// ✅ Report 태그(내가 보고서에 꼭 넣고 싶은 수동 로그)
+		if (reportTagLogs.length > 0) {
+		  velocityHtml += `
+		    <li style="margin-bottom:6px; color:#0f172a; font-weight:800; list-style:none;">
+		      🏷️ <b>Report</b> 태그 기록 ${reportTagLogs.length}건
+		      <div style="margin-top:6px; padding-left:14px; color:#1e293b; font-weight:600;">
+		        ${reportTagLogs.slice(0,5).map(r => `- ${pickMeaningTitle(r)}`).join('<br/>')}
+		        ${reportTagLogs.length > 5 ? `<br/>...외 ${reportTagLogs.length-5}건` : ``}
+		      </div>
+		    </li>
+		  `;
+		}
+	  
 	    // ✅ (Shipped/Innovation) 둘 다 없으면 메시지 1줄만
 	    if (publishLogs.length === 0 && ideaCreateLogs.length === 0 && ideaRealizeLogs.length === 0) {
 	      velocityHtml += `<li style="color:#94a3b8;">금일 기록된 성과(포스팅/아이디어)가 없습니다.</li>`;
@@ -1094,9 +1115,13 @@
   });
   if (doneLogs.length > 7) velocityHtml += `<li style="color:#64748b; list-style:none;">...외 ${doneLogs.length - 7}건의 세부 작업 완료</li>`;
   
-  if (doneLogs.length === 0 && publishLogs.length === 0 && ideaCreateLogs.length === 0) {
-    velocityHtml += `<li style="color:#94a3b8;">기준일 기록된 성과가 없습니다.</li>`;
-  }
+	if (
+	  doneLogs.length === 0 &&
+	  publishLogs.length === 0 &&
+	  ideaCreateLogs.length === 0 &&
+	  reportTagLogs.length === 0
+	) velocityHtml += `<li style="color:#94a3b8;">금일 기록된 완료 내역이 없습니다.</li>`;
+
   velocityHtml += `</ul>`;
 
   
