@@ -365,20 +365,51 @@
     });
 
     const activeBigGoals = g_goals.filter(g => g['유형'] === '큰 목표' && g['상태'] !== '완료');
-    let ideaLogs = [], bugLogs = [], doneLogs = [], otherLogs = [];
+    
+    // ✅ “생성”과 “일반 기록”을 분리
+    let ideaCreateLogs = [], bugCreateLogs = [], publishLogs = [];
+    let doneLogs = [];
     let postCount = 0;
-
+    
+    function getTag(log){
+      return (log['태그'] || log['tags'] || "").toString().trim();
+    }
+    function getTitle(log){
+      return (log['제목'] || log['title'] || "").toString();
+    }
+    function getContent(log){
+      return (log['내용'] || log['content'] || "").toString();
+    }
+    
     targetLogs.forEach(log => {
-        const isIdea = log['태그'] === '아이디어' || (log['제목'] && log['제목'].includes('💡'));
-        const isBug = log['태그'] === '버그' || (log['제목'] && log['제목'].includes('🐞'));
-        const isPublish = log['태그'] === 'Publish'; 
-        
-        if (isIdea) { ideaLogs.push(log); return; }
-        if (isBug) { bugLogs.push(log); return; }
-        if (isPublish) postCount++;
-        
-        doneLogs.push(log); 
+      const tag = getTag(log);
+      const title = getTitle(log);
+      const content = getContent(log);
+    
+      // ✅ todo_manage 자동로그 커버: BugReport / Idea :contentReference[oaicite:6]{index=6}
+      const isIdeaCreate =
+        tag === '아이디어' || tag === 'Idea' ||
+        title.includes('💡') || content.includes('새로운 아이디어가 추가되었습니다.');
+    
+      const isBugCreate =
+        tag === '버그' || tag === 'BugReport' ||
+        title.includes('🐞') || title.includes('버그') ||
+        content.includes('🐞 버그 리포트 생성됨:'); // log-form이 본문에 심는 시스템 문구 :contentReference[oaicite:7]{index=7}
+    
+      const isPublish = (tag === 'Publish');
+    
+      if (isIdeaCreate) { ideaCreateLogs.push(log); return; }
+      if (isBugCreate)  { bugCreateLogs.push(log);  return; }
+    
+      if (isPublish) {
+        postCount++;
+        publishLogs.push(log);   // ✅ 목록용으로도 보관
+        return;                  // ✅ doneLogs에 섞지 않기(원하면 return 제거)
+      }
+    
+      doneLogs.push(log);
     });
+
 
     // 1. Signal (핵심 목표) - 진척률 계산 시 targetEndDate 전달
     let signalHtml = `<ul style="padding-left: 20px; margin: 0; color: #333; line-height: 1.6;">`;
@@ -410,8 +441,16 @@
     if (autoRisks.length > 0) {
         autoRisks.forEach(risk => { bottleneckHtml += `<li style="margin-bottom:6px;">${risk}</li>`; riskCount++; });
     }
-    if (bugLogs.length > 0) {
-        bottleneckHtml += `<li style="margin-bottom:6px; color:#ef4444;"><b>🐞 품질 이슈 발견:</b> ${bugLogs.length}건의 버그 리포트</li>`; riskCount++;
+    if (bugCreateLogs.length > 0) {
+      bottleneckHtml += `
+        <li style="margin-bottom:6px; color:#ef4444;">
+          <b>🐞 품질 이슈 발견:</b> ${bugCreateLogs.length}건 (기준일 생성)
+          <div style="margin-top:6px; padding-left:14px; color:#b91c1c; font-weight:600;">
+            ${bugCreateLogs.slice(0,5).map(b => `- ${getSmartLogTitle(b)}`).join('<br/>')}
+            ${bugCreateLogs.length > 5 ? `<br/>...외 ${bugCreateLogs.length-5}건` : ``}
+          </div>
+        </li>`;
+      riskCount++;
     }
     if (riskCount === 0) bottleneckHtml = `<div style="text-align:center; color:#10b981; padding:20px;">✨ <b>No Bottlenecks</b><br>현재 식별된 지연 요소가 없습니다.</div>`;
     else bottleneckHtml += `</ul>`;
@@ -898,7 +937,46 @@
       });
       return issues;
   }
+  
+  let velocityHtml = `<ul style="padding-left: 20px; margin: 0; color: #333; line-height: 1.6;">`;
+  
+  // 📝 Shipped 목록
+  if (publishLogs.length > 0) {
+    velocityHtml += `
+      <li style="margin-bottom:10px; color:#2563eb; font-weight:bold; list-style:none;">
+        📝 <b>[Shipped]</b> 블로그 포스팅 ${publishLogs.length}건 발행
+        <div style="margin-top:6px; padding-left:14px; color:#1e40af; font-weight:600;">
+          ${publishLogs.slice(0,5).map(p => `- ${getSmartLogTitle(p)}`).join('<br/>')}
+          ${publishLogs.length > 5 ? `<br/>...외 ${publishLogs.length-5}건` : ``}
+        </div>
+      </li>`;
+  }
+  
+  // 💡 아이디어 생성 목록 (기준일)
+  if (ideaCreateLogs.length > 0) {
+    velocityHtml += `
+      <li style="margin-bottom:10px; color:#ea580c; font-weight:bold; list-style:none;">
+        💡 <b>[Ideas Created]</b> ${ideaCreateLogs.length}건 생성
+        <div style="margin-top:6px; padding-left:14px; color:#9a3412; font-weight:600;">
+          ${ideaCreateLogs.slice(0,5).map(i => `- ${getSmartLogTitle(i)}`).join('<br/>')}
+          ${ideaCreateLogs.length > 5 ? `<br/>...외 ${ideaCreateLogs.length-5}건` : ``}
+        </div>
+      </li>`;
+  }
+  
+  // 나머지 done 로그
+  doneLogs.slice(0, 7).forEach(l => {
+    const title = getSmartLogTitle(l);
+    velocityHtml += `<li style="margin-bottom:4px;">${title}</li>`;
+  });
+  if (doneLogs.length > 7) velocityHtml += `<li style="color:#64748b; list-style:none;">...외 ${doneLogs.length - 7}건의 세부 작업 완료</li>`;
+  
+  if (doneLogs.length === 0 && publishLogs.length === 0 && ideaCreateLogs.length === 0) {
+    velocityHtml += `<li style="color:#94a3b8;">기준일 기록된 성과가 없습니다.</li>`;
+  }
+  velocityHtml += `</ul>`;
 
+  
   (function showVersion() {
     const el = document.getElementById("sysVersion"); if(!el) return;
     const d = new Date(document.lastModified);
