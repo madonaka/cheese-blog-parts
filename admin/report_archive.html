@@ -678,20 +678,75 @@
     printWindow.document.close();
   }
 
+  // ==========================================
+  // [수정] 이미지 저장 함수 (깨짐 방지 최적화)
+  // ==========================================
   async function saveAsImage() {
     const title = document.getElementById('doc-title').value || "report";
     const contentHtml = $('#doc-content').summernote('code');
+    
+    if (!contentHtml || contentHtml === "<p><br></p>") { 
+        alert("저장할 내용이 없습니다."); 
+        return; 
+    }
+
+    // 1. 임시 컨테이너 생성
+    // [중요 변경] left: -9999px 대신 z-index로 뒤로 숨김 (브라우저 렌더링 보장)
     const printContainer = document.createElement('div');
-    printContainer.style.position = 'fixed'; printContainer.style.left = '-9999px'; printContainer.style.width = '900px'; 
-    printContainer.style.padding = '40px'; printContainer.style.background = '#ffffff';
-    printContainer.innerHTML = `<style>.temp-wrap{font-family:'Pretendard',sans-serif;color:#1e293b}.temp-wrap table{width:100%;border-collapse:collapse;border:2px solid #cbd5e1}.temp-wrap td{border:1px solid #cbd5e1;padding:20px;vertical-align:top}</style><div class="temp-wrap">${contentHtml}</div>`;
+    printContainer.style.position = 'absolute'; // fixed -> absolute 변경
+    printContainer.style.top = '0';
+    printContainer.style.left = '0';
+    printContainer.style.zIndex = '-9999'; // 화면 맨 뒤로 숨김
+    printContainer.style.width = '900px';  // 보고서 정규 너비
+    printContainer.style.padding = '40px';
+    printContainer.style.background = '#ffffff';
+    
+    // 스타일 및 내용 주입
+    printContainer.innerHTML = `
+        <style>
+            .temp-wrap { font-family: 'Pretendard', sans-serif; color: #1e293b; line-height: 1.6; }
+            .temp-wrap table { width: 100%; border-collapse: collapse; border: 2px solid #cbd5e1; }
+            .temp-wrap td, .temp-wrap th { border: 1px solid #cbd5e1; padding: 12px; vertical-align: top; }
+            /* 이미지 캡처 시 테이블 깨짐 방지용 강제 스타일 */
+            .temp-wrap * { box-sizing: border-box; }
+        </style>
+        <div class="temp-wrap">${contentHtml}</div>
+    `;
+    
     document.body.appendChild(printContainer);
-    if(typeof showAdminLoading === 'function') showAdminLoading("이미지 생성 중...");
+
+    if(typeof showAdminLoading === 'function') showAdminLoading("이미지 생성 중 (고화질)...");
+
     try {
-        const canvas = await html2canvas(printContainer, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false });
-        const link = document.createElement('a'); link.href = canvas.toDataURL('image/png'); link.download = `${title}.png`; link.click();
-    } catch (err) { console.error(err); alert("이미지 생성 오류"); } 
-    finally { document.body.removeChild(printContainer); if(typeof hideAdminLoading === 'function') hideAdminLoading(); }
+        // 2. html2canvas 옵션 강화
+        const canvas = await html2canvas(printContainer, {
+            scale: 2, // 2배 해상도 (선명하게)
+            useCORS: true, // 외부 이미지 허용
+            backgroundColor: '#ffffff',
+            // [중요] 캡처 영역 명시적 지정 (잘림 방지)
+            width: printContainer.offsetWidth,
+            height: printContainer.offsetHeight,
+            x: 0,
+            y: 0,
+            scrollY: 0, // 스크롤 위치 초기화 (아래쪽 잘림 방지)
+            windowWidth: document.documentElement.offsetWidth,
+            windowHeight: document.documentElement.offsetHeight
+        });
+
+        // 3. 다운로드 처리
+        const link = document.createElement('a');
+        link.href = canvas.toDataURL('image/png');
+        link.download = `${title}.png`;
+        link.click();
+        
+    } catch (err) { 
+        console.error("Image Save Error:", err); 
+        alert("이미지 생성 중 오류가 발생했습니다.\n" + err.message); 
+    } finally { 
+        // 청소
+        document.body.removeChild(printContainer); 
+        if(typeof hideAdminLoading === 'function') hideAdminLoading(); 
+    }
   }
 
   // ==========================================
