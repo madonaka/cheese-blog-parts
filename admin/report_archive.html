@@ -235,6 +235,9 @@ document.addEventListener('DOMContentLoaded', () => {
     finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); }
   }
 
+// ==========================================
+  // 2. 아카이브 렌더링 (그리드)
+  // ==========================================
   function renderDocs() {
     const root = document.getElementById('doc-grid');
     root.innerHTML = "";
@@ -278,6 +281,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // ==========================================
+  // 3. 모달 제어
+  // ==========================================
   async function openDocModal(docId = null, defaultTitle = "", defaultHtml = "", defaultType = "보고서") {
     const modal = document.getElementById('doc-modal');
     modal.classList.add('open');
@@ -321,6 +327,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // ==========================================
+  // 4. 저장 로직
+  // ==========================================
   document.getElementById('doc-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const btn = document.getElementById('btn-save-doc');
@@ -384,9 +393,22 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-// ==========================================
-  // [신규] D-Day 계산 유틸리티 (보고서용)
   // ==========================================
+  // ✅ [복구됨] 보조 함수: 진척률 & D-Day 계산
+  // ==========================================
+  function getReportGoalProgress(goalId, isBigGoal) {
+      let tasks = [];
+      if (isBigGoal) {
+          const midGoalIds = g_goals.filter(m => m['상위ID'] === goalId).map(m => m.ID);
+          tasks = g_tasks.filter(t => t['유형'] !== '아이디어' && t['유형'] !== '버그' && midGoalIds.includes(t['연결_중간목표ID']));
+      } else {
+          tasks = g_tasks.filter(t => t['유형'] !== '아이디어' && t['유형'] !== '버그' && t['연결_중간목표ID'] === goalId);
+      }
+      if (tasks.length === 0) return 0;
+      const doneCount = tasks.filter(t => t['상태'] === '완료').length;
+      return Math.round((doneCount / tasks.length) * 100);
+  }
+
   function getReportDday(dateStr) {
       if (!dateStr) return `<span style="color:#94a3b8; font-size:0.85em; margin-left:6px; font-weight:normal;">(마감 미정)</span>`;
       const targetDate = new Date(dateStr);
@@ -400,8 +422,8 @@ document.addEventListener('DOMContentLoaded', () => {
       return `<span style="color:#ef4444; font-size:0.85em; font-weight:900; margin-left:6px; background:#fee2e2; padding:2px 6px; border-radius:4px;">D+${Math.abs(diffDays)} 지연</span>`;
   }
 
-// ==========================================
-  // 5. 1 Page 4분할 자동 보고서 생성 로직 (계층형 건수 집계 적용)
+  // ==========================================
+  // 5. 1 Page 4분할 자동 보고서 생성 로직 (계층형 + 포스팅분류 통합판)
   // ==========================================
   function generateAutoReport(rangeType) {
     const baseDateStr = document.getElementById('report-base-date').value;
@@ -426,23 +448,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const d = new Date(log['날짜']); return d >= startDate && d <= targetEndDate;
     });
 
-    // 🚀 [계층형 그룹화 로직] Big Goal -> Mid Goal -> Count
-    const hierarchyMap = {}; // { bigGoalId: { title, dday, mids: { midId: { title, count } } } }
+    // --- 집계 로직 시작 ---
+    const hierarchyMap = {}; // { bigId: { title, dday, mids: { midId: { title, count } } } }
     let ideaCount = 0;
     let bugCount = 0;
+    let postCount = 0;
     let totalLogs = 0;
-
-    // 상세 내역(Q3) 출력을 위한 단순 그룹핑 (기존 유지)
     const groupedLogsByName = {}; 
 
     targetLogs.forEach(log => {
         totalLogs++;
         
-    // 1. 아이디어/버그/포스팅 확인
+        // 1. 특수 분류 확인 (아이디어/버그/포스팅)
         const isIdea = log['태그'] === '아이디어' || (log['제목'] && log['제목'].includes('💡'));
         const isBug = log['태그'] === '버그' || (log['제목'] && log['제목'].includes('🐞'));
-        
-        // ✅ [추가] 포스팅 관련 태그 감지 (Publish, Update, Draft)
         const isPost = ['Publish', 'Update', 'Draft'].includes(log['태그']);
 
         if (isIdea) {
@@ -451,27 +470,17 @@ document.addEventListener('DOMContentLoaded', () => {
             groupedLogsByName["💡 신규 아이디어 제안"].push(log);
             return;
         }
-        
         if (isBug) {
             bugCount++;
             if (!groupedLogsByName["🐞 버그 발견 및 리포트"]) groupedLogsByName["🐞 버그 발견 및 리포트"] = [];
             groupedLogsByName["🐞 버그 발견 및 리포트"].push(log);
             return;
         }
-
-        // ✅ [추가] 블로그 포스팅 활동 별도 분류
         if (isPost) {
-            // 포스팅은 건수 집계 변수를 따로 만들지 않고, 상세 내역에서만 묶어 보여주거나
-            // 필요하다면 postCount 변수를 위에 let postCount = 0; 으로 선언해서 쓸 수 있습니다.
-            // 여기서는 '기타'에 섞이지 않게 그룹명만 명확히 지정합니다.
-            const groupName = "📝 블로그 포스팅 관리 (발행/수정)";
-            
-            if (!groupedLogsByName[groupName]) groupedLogsByName[groupName] = [];
-            groupedLogsByName[groupName].push(log);
-            
-            // 요약(Q1)에 표시하기 위해 goalTaskCounts에도 추가
-            if (!goalTaskCounts[groupName]) goalTaskCounts[groupName] = 0;
-            goalTaskCounts[groupName]++;
+            postCount++;
+            const postGroupName = "📝 블로그 포스팅 관리 (발행/수정)";
+            if (!groupedLogsByName[postGroupName]) groupedLogsByName[postGroupName] = [];
+            groupedLogsByName[postGroupName].push(log);
             return;
         }
 
@@ -479,38 +488,33 @@ document.addEventListener('DOMContentLoaded', () => {
         const relId = log['관련_목표ID'];
         let bigGoalObj = null;
         let midGoalObj = null;
-        let taskTitleForLog = "기타 업무"; // 상세내역용 그룹명
+        let taskTitleForLog = "기타 일반 업무"; 
 
         if (relId) {
-            // 연결된 객체 찾기 (할 일, 중간목표, 큰목표 중 하나)
             const obj = g_tasks.find(t => t.ID === relId) || g_goals.find(g => g.ID === relId);
-            
             if (obj) {
                 if (obj['유형'] === '할 일' || obj['유형'] === '버그') {
-                    // 할 일인 경우 -> 중간목표 찾기
                     midGoalObj = g_goals.find(g => g.ID === obj['연결_중간목표ID']);
                     if (midGoalObj) bigGoalObj = g_goals.find(g => g.ID === midGoalObj['상위ID']);
-                    taskTitleForLog = midGoalObj ? midGoalObj['제목'] : obj['제목']; // 상세내역은 중간목표명으로 묶음
+                    taskTitleForLog = midGoalObj ? midGoalObj['제목'] : obj['제목']; 
                 } else if (obj['유형'] === '중간 목표') {
-                    // 중간목표인 경우 -> 큰목표 찾기
                     midGoalObj = obj;
                     bigGoalObj = g_goals.find(g => g.ID === midGoalObj['상위ID']);
                     taskTitleForLog = midGoalObj['제목'];
                 } else if (obj['유형'] === '큰 목표') {
-                    // 큰목표인 경우
                     bigGoalObj = obj;
                     taskTitleForLog = bigGoalObj['제목'];
                 }
             }
         }
 
-        // 3. 계층 맵(Hierarchy Map)에 데이터 적재
+        // 3. 계층 맵 적재
         const bigId = bigGoalObj ? bigGoalObj.ID : "OTHER";
         const bigTitle = bigGoalObj ? bigGoalObj['제목'] : "기타 (미분류 프로젝트)";
         const bigDday = bigGoalObj ? bigGoalObj['마감일'] : null;
 
         const midId = midGoalObj ? midGoalObj.ID : "DIRECT";
-        const midTitle = midGoalObj ? midGoalObj['제목'] : "↳ 직접 수행 / 일반 업무";
+        const midTitle = midGoalObj ? midGoalObj['제목'] : "↳ 직접 수행 / 기타";
 
         if (!hierarchyMap[bigId]) {
             hierarchyMap[bigId] = { title: bigTitle, dday: bigDday, mids: {} };
@@ -520,75 +524,61 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         hierarchyMap[bigId].mids[midId].count++;
 
-        // 상세 내역용 적재
         if (!groupedLogsByName[taskTitleForLog]) groupedLogsByName[taskTitleForLog] = [];
         groupedLogsByName[taskTitleForLog].push(log);
     });
 
-
-    // ✅ [Q1] 핵심 요약: 계층형 트리 구조로 출력
+    // [Q1] 핵심 요약: 계층형 트리 출력
     let breakdownHtml = `<li><b>총 활동 건수:</b> 총 ${totalLogs}건 완료</li>`;
     breakdownHtml += `<ul style="margin: 6px 0 12px 0; padding-left: 20px; font-size: 0.9em; color: #475569; list-style-type: none;">`;
     
-    // 큰 목표 순회
     for (const [bigId, bigData] of Object.entries(hierarchyMap)) {
-        if (bigId === "OTHER" && Object.keys(hierarchyMap).length > 1) continue; // 기타는 나중에 출력하거나 생략 가능
+        if (bigId === "OTHER") continue; 
 
-        const ddayBadge = getReportDday(bigData.dday); // D-Day 뱃지 생성
+        const ddayBadge = getReportDday(bigData.dday); 
         breakdownHtml += `<li style="margin-top: 8px; margin-bottom: 4px; color: #1e293b;">
             <b>${bigData.title}</b> ${ddayBadge}
         </li>`;
         
-        // 중간 목표 순회
         for (const [midId, midData] of Object.entries(bigData.mids)) {
              breakdownHtml += `<li style="padding-left: 12px; margin-bottom: 2px; color: #64748b;">
                 ${midData.title}: <b>${midData.count}</b>건
              </li>`;
         }
     }
-
-    // 기타 항목이 있으면 맨 마지막에 출력
+    // 기타, 포스팅, 아이디어, 버그 출력
     if (hierarchyMap["OTHER"]) {
-        breakdownHtml += `<li style="margin-top: 8px; margin-bottom: 4px; color: #64748b;"><b>기타 (미분류 프로젝트)</b></li>`;
+        breakdownHtml += `<li style="margin-top: 8px; color: #64748b;"><b>기타 (미분류 프로젝트)</b></li>`;
         for (const [midId, midData] of Object.entries(hierarchyMap["OTHER"].mids)) {
-             breakdownHtml += `<li style="padding-left: 12px; margin-bottom: 2px; color: #64748b;">${midData.title}: <b>${midData.count}</b>건</li>`;
+             breakdownHtml += `<li style="padding-left: 12px; margin-bottom: 2px;">${midData.title}: <b>${midData.count}</b>건</li>`;
         }
     }
-
-    // 아이디어/버그 출력
-    if (ideaCount > 0) breakdownHtml += `<li style="margin-top:8px; color: #16a34a;">💡 신규 아이디어: <b>${ideaCount}</b>건</li>`;
-    if (bugCount > 0) breakdownHtml += `<li style="margin-top:4px; color: #ef4444;">🐞 버그 리포트: <b>${bugCount}</b>건</li>`;
+    if (postCount > 0) breakdownHtml += `<li style="margin-top:6px; color: #2563eb;">📝 블로그 포스팅: <b>${postCount}</b>건</li>`;
+    if (ideaCount > 0) breakdownHtml += `<li style="margin-top:2px; color: #16a34a;">💡 신규 아이디어: <b>${ideaCount}</b>건</li>`;
+    if (bugCount > 0) breakdownHtml += `<li style="margin-top:2px; color: #ef4444;">🐞 버그 리포트: <b>${bugCount}</b>건</li>`;
     
     breakdownHtml += `</ul>`;
 
-
-    // ✅ [Q2] 프로젝트 현황: 목표 달성률 + D-Day 시각화
+    // [Q2] 프로젝트 현황
     let progressHtml = `<ul style="padding-left: 20px; margin: 0; font-size: 0.95rem; color: #333; line-height: 1.6;">`;
     const activeBigGoals = g_goals.filter(g => g['유형'] === '큰 목표' && g['상태'] !== '완료');
-    
     if (activeBigGoals.length > 0) {
         activeBigGoals.forEach(bg => {
             const percent = getReportGoalProgress(bg.ID, true);
             const ddayBadge = getReportDday(bg['마감일']);
             let statusColor = percent === 100 ? "#10b981" : (percent > 0 ? "#3b82f6" : "#64748b");
-            
-            progressHtml += `<li style="margin-bottom: 12px;">
-                <b>${bg['제목']}</b> ${ddayBadge}<br/>
-                <span style="color:${statusColor}; font-weight:800; font-size: 0.9em; display:inline-block; margin-top:2px;">↳ ${percent}% 진행</span>
-            </li>`;
+            progressHtml += `<li style="margin-bottom: 12px;"><b>${bg['제목']}</b> ${ddayBadge}<br/><span style="color:${statusColor}; font-weight:800; font-size: 0.9em; display:inline-block; margin-top:2px;">↳ ${percent}% 진행</span></li>`;
         });
     } else {
         progressHtml += `<li>진행 중인 큰 목표가 없습니다.</li>`;
     }
     progressHtml += `</ul>`;
 
-
-    // ✅ [Q3] 상세 진행 내역 (정렬된 순서로)
+    // [Q3] 상세 내역
     let logHtml = `<div style="font-size: 0.95rem; padding-bottom: 10px;">`;
     if (totalLogs === 0) {
         logHtml += `<p style="color:#94a3b8; margin:0;">해당 기간에 작성된 작업 기록이 없습니다.</p>`;
     } else {
-        // 상세내역은 '중간목표 이름' 기준으로 정렬해서 보여줍니다.
         const sortedLogKeys = Object.keys(groupedLogsByName).sort();
         sortedLogKeys.forEach(catName => {
             logHtml += `<h4 style="margin: 14px 0 6px 0; color: #1e293b; font-size: 0.95rem;">📌 ${catName}</h4>`;
@@ -603,41 +593,31 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     logHtml += `</div>`;
 
-
-    // HTML 템플릿 조립 (4분할)
+    // HTML 조립
     let htmlTemplate = `
       <div style="font-family: 'Pretendard', 'Malgun Gothic', sans-serif; max-width: 900px; margin: 0 auto; color: #1e293b;">
         <h2 style="text-align: center; color: #0f172a; margin-bottom: 24px; font-size: 1.6rem; letter-spacing: -0.5px;">${titlePrefix}</h2>
-        
         <table style="width: 100%; border-collapse: collapse; table-layout: fixed; border: 2px solid #cbd5e1;">
           <tr>
             <td style="width: 50%; vertical-align: top; border: 1px solid #cbd5e1; padding: 20px; background: #fff;">
-              <h3 style="margin: 0 0 12px 0; color: #2563eb; font-size: 1.1rem; border-bottom: 2px solid #bfdbfe; padding-bottom: 8px;">
-                1. 목표 및 핵심 요약
-              </h3>
+              <h3 style="margin: 0 0 12px 0; color: #2563eb; font-size: 1.1rem; border-bottom: 2px solid #bfdbfe; padding-bottom: 8px;">1. 목표 및 핵심 요약</h3>
               <ul style="padding-left: 20px; margin: 0; font-size: 0.95rem; color: #333; line-height: 1.8;">
                   <li><b>보고 기간:</b> ${startDate.toLocaleDateString()} ~ ${targetEndDate.toLocaleDateString()}</li>
                   ${breakdownHtml}
               </ul>
             </td>
             <td style="width: 50%; vertical-align: top; border: 1px solid #cbd5e1; padding: 20px; background: #f8fafc;">
-              <h3 style="margin: 0 0 12px 0; color: #2563eb; font-size: 1.1rem; border-bottom: 2px solid #bfdbfe; padding-bottom: 8px;">
-                2. 프로젝트 진행 현황 (목표 달성률)
-              </h3>
+              <h3 style="margin: 0 0 12px 0; color: #2563eb; font-size: 1.1rem; border-bottom: 2px solid #bfdbfe; padding-bottom: 8px;">2. 프로젝트 진행 현황 (목표 달성률)</h3>
               ${progressHtml}
             </td>
           </tr>
           <tr>
             <td style="width: 50%; vertical-align: top; border: 1px solid #cbd5e1; padding: 20px; background: #f8fafc;">
-              <h3 style="margin: 0 0 12px 0; color: #2563eb; font-size: 1.1rem; border-bottom: 2px solid #bfdbfe; padding-bottom: 8px;">
-                3. 상세 진행 내역 (Task List)
-              </h3>
+              <h3 style="margin: 0 0 12px 0; color: #2563eb; font-size: 1.1rem; border-bottom: 2px solid #bfdbfe; padding-bottom: 8px;">3. 상세 진행 내역 (Task List)</h3>
               ${logHtml}
             </td>
             <td style="width: 50%; vertical-align: top; border: 1px solid #cbd5e1; padding: 20px; background: #fff;">
-              <h3 style="margin: 0 0 12px 0; color: #2563eb; font-size: 1.1rem; border-bottom: 2px solid #bfdbfe; padding-bottom: 8px;">
-                4. 향후 계획 및 Action Item
-              </h3>
+              <h3 style="margin: 0 0 12px 0; color: #2563eb; font-size: 1.1rem; border-bottom: 2px solid #bfdbfe; padding-bottom: 8px;">4. 향후 계획 및 Action Item</h3>
               <ul style="padding-left: 20px; margin: 0; font-size: 0.95rem; color: #333; line-height: 1.8;">
                   <li>내일/차주 진행할 핵심 목표 1...</li>
                   <li>해결해야 할 액션 아이템 작성...</li>
@@ -646,44 +626,34 @@ document.addEventListener('DOMContentLoaded', () => {
             </td>
           </tr>
         </table>
-        
-        <p style="text-align: right; color: #94a3b8; font-size: 0.8rem; margin-top: 12px;">
-          ※ 본 보고서는 Cheese Lab 시스템에 의해 <b>${baseDateStr}</b> 기준으로 자동 추출되었습니다.
-        </p>
+        <p style="text-align: right; color: #94a3b8; font-size: 0.8rem; margin-top: 12px;">※ 본 보고서는 Cheese Lab 시스템에 의해 <b>${baseDateStr}</b> 기준으로 자동 추출되었습니다.</p>
       </div>
     `;
 
     openDocModal(null, titlePrefix, htmlTemplate, '보고서');
   }
-  
+
   // ==========================================
-  // [신규] 유니클로식 1-Page 기획서 템플릿 생성 로직
+  // [신규] 유니클로식 1-Page 기획서 템플릿 생성
   // ==========================================
   function generateProposalTemplate() {
     const today = new Date();
     const dateStr = `${today.getFullYear()}.${today.getMonth()+1}.${today.getDate()}`;
-
-    // 💡 논리적 흐름(Why -> What -> How -> Schedule -> ROI)을 담은 5블록 테이블
     let htmlTemplate = `
       <div style="font-family: 'Pretendard', 'Malgun Gothic', sans-serif; max-width: 900px; margin: 0 auto; color: #1e293b;">
         <h2 style="text-align: center; color: #0f172a; margin-bottom: 12px; font-size: 1.8rem; letter-spacing: -0.5px;">[프로젝트명] 기획서</h2>
         <div style="text-align: right; margin-bottom: 16px; font-size: 0.9rem; color: #64748b;">작성일: ${dateStr} / 작성자: OOO</div>
-        
         <table style="width: 100%; border-collapse: collapse; table-layout: fixed; border: 2px solid #cbd5e1;">
           <tr>
             <td style="width: 50%; vertical-align: top; border: 1px solid #cbd5e1; padding: 20px; background: #fff;">
-              <h3 style="margin: 0 0 12px 0; color: #16a34a; font-size: 1.15rem; border-bottom: 2px solid #bbf7d0; padding-bottom: 8px;">
-                1. 기획 배경 및 목적 (Why)
-              </h3>
+              <h3 style="margin: 0 0 12px 0; color: #16a34a; font-size: 1.15rem; border-bottom: 2px solid #bbf7d0; padding-bottom: 8px;">1. 기획 배경 및 목적 (Why)</h3>
               <ul style="padding-left: 20px; margin: 0; font-size: 1rem; color: #333; line-height: 1.8;">
-                  <li><b>배경:</b> 왜 이 기획을 하게 되었는가? (시장 변화, 내부 니즈 등)</li>
+                  <li><b>배경:</b> 왜 이 기획을 하게 되었는가?</li>
                   <li><b>목적:</b> 이 기획을 통해 달성하고자 하는 궁극적인 목표는?</li>
               </ul>
             </td>
             <td style="width: 50%; vertical-align: top; border: 1px solid #cbd5e1; padding: 20px; background: #f8fafc;">
-              <h3 style="margin: 0 0 12px 0; color: #16a34a; font-size: 1.15rem; border-bottom: 2px solid #bbf7d0; padding-bottom: 8px;">
-                2. 현상 및 핵심 문제점 (What)
-              </h3>
+              <h3 style="margin: 0 0 12px 0; color: #16a34a; font-size: 1.15rem; border-bottom: 2px solid #bbf7d0; padding-bottom: 8px;">2. 현상 및 핵심 문제점 (What)</h3>
               <ul style="padding-left: 20px; margin: 0; font-size: 1rem; color: #333; line-height: 1.8;">
                   <li><b>현재 상황:</b> 현재 업무나 서비스의 상태는 어떠한가?</li>
                   <li><b>문제점(Pain Point):</b> 해결해야 할 가장 큰 병목이나 원인은?</li>
@@ -692,51 +662,41 @@ document.addEventListener('DOMContentLoaded', () => {
           </tr>
           <tr>
             <td style="width: 50%; vertical-align: top; border: 1px solid #cbd5e1; padding: 20px; background: #f8fafc;">
-              <h3 style="margin: 0 0 12px 0; color: #16a34a; font-size: 1.15rem; border-bottom: 2px solid #bbf7d0; padding-bottom: 8px;">
-                3. 해결 방안 및 핵심 전략 (How)
-              </h3>
+              <h3 style="margin: 0 0 12px 0; color: #16a34a; font-size: 1.15rem; border-bottom: 2px solid #bbf7d0; padding-bottom: 8px;">3. 해결 방안 및 핵심 전략 (How)</h3>
               <ul style="padding-left: 20px; margin: 0; font-size: 1rem; color: #333; line-height: 1.8;">
                   <li><b>핵심 솔루션:</b> 문제를 어떻게 타개할 것인가?</li>
                   <li><b>실행 전략:</b> 타 부서 협업, 리스크 대비책 등 상세 전략</li>
               </ul>
             </td>
             <td style="width: 50%; vertical-align: top; border: 1px solid #cbd5e1; padding: 20px; background: #fff;">
-              <h3 style="margin: 0 0 12px 0; color: #16a34a; font-size: 1.15rem; border-bottom: 2px solid #bbf7d0; padding-bottom: 8px;">
-                4. 세부 실행 일정 (Schedule)
-              </h3>
+              <h3 style="margin: 0 0 12px 0; color: #16a34a; font-size: 1.15rem; border-bottom: 2px solid #bbf7d0; padding-bottom: 8px;">4. 세부 실행 일정 (Schedule)</h3>
               <ul style="padding-left: 20px; margin: 0; font-size: 1rem; color: #333; line-height: 1.8;">
                   <li><b>W1 (1주차):</b> 사전 준비 및 기획안 확정</li>
                   <li><b>W2 (2주차):</b> 본격 실행 및 1차 배포</li>
-                  <li><b>W3 (3주차):</b> 결과 데이터 측정 및 피드백</li>
               </ul>
             </td>
           </tr>
           <tr>
             <td colspan="2" style="vertical-align: top; border: 1px solid #cbd5e1; padding: 20px; background: #f0fdf4;">
-              <h3 style="margin: 0 0 12px 0; color: #16a34a; font-size: 1.15rem; border-bottom: 2px solid #bbf7d0; padding-bottom: 8px;">
-                5. 기대 효과 및 소요 예산 (Expected Effect / ROI)
-              </h3>
+              <h3 style="margin: 0 0 12px 0; color: #16a34a; font-size: 1.15rem; border-bottom: 2px solid #bbf7d0; padding-bottom: 8px;">5. 기대 효과 및 소요 예산 (ROI)</h3>
               <ul style="padding-left: 20px; margin: 0; font-size: 1rem; color: #333; line-height: 1.8;">
-                  <li><b>정량적 효과:</b> 매출 X% 증대, 리드타임 Y시간 단축 등 (수치화 필수)</li>
-                  <li><b>정성적 효과:</b> 고객 경험 개선, 업무 효율성 증대 등</li>
-                  <li><b>소요 예산 / 필요 자원:</b> 투입되어야 할 인력 및 예산</li>
+                  <li><b>정량적 효과:</b> 매출 X% 증대, 리드타임 Y시간 단축 등</li>
+                  <li><b>소요 예산:</b> 투입되어야 할 인력 및 예산</li>
               </ul>
             </td>
           </tr>
         </table>
       </div>
     `;
-
     openDocModal(null, "[기획서] 새로운 프로젝트 기획", htmlTemplate, '기획서');
   }
 
-  
-  async function deleteDoc(id) {
+  function deleteDoc(id) {
     if(!confirm("목록에서 삭제하시겠습니까? (드라이브의 원본 HTML 파일은 보존됩니다)")) return;
     if(typeof showAdminLoading==='function') showAdminLoading("삭제 중...");
     try {
-      await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify({ mode: "deleteItem", id: id }) });
-      await loadAllData();
+      fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify({ mode: "deleteItem", id: id }) })
+      .then(()=>loadAllData());
     } catch(e) { alert("삭제 오류"); }
     finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); }
   }
@@ -751,81 +711,28 @@ document.addEventListener('DOMContentLoaded', () => {
     el.textContent = `Version: ${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())}_${pad(d.getHours())}:${pad(d.getMinutes())} [수정]`;
   })();
 
-  // ==========================================
-  // [신규] 보고서 PDF/이미지 저장을 위한 인쇄 기능
-  // ==========================================
   function printReport() {
-    // 1. 에디터의 현재 내용을 가져와서 임시 영역에 복사
     const content = $('#doc-content').summernote('code');
-    
-    // 2. 인쇄용 창을 새로 띄우거나 현재 창에서 인쇄 실행
     const printWindow = window.open('', '_blank');
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>${document.getElementById('doc-title').value}</title>
-          <style>
-            body { font-family: 'Pretendard', sans-serif; padding: 40px; line-height: 1.6; }
-            table { width: 100%; border-collapse: collapse; table-layout: fixed; border: 2px solid #cbd5e1; }
-            td { border: 1px solid #cbd5e1; padding: 20px; vertical-align: top; }
-            ul { padding-left: 20px; }
-            @page { size: A4; margin: 0; }
-          </style>
-        </head>
-        <body>
-          ${content}
-          <script>
-            // 이미지 등이 다 로드된 후 인쇄창 띄우기
-            window.onload = function() {
-              window.print();
-              setTimeout(function() { window.close(); }, 100);
-            };
-          <\/script>
-        </body>
-      </html>
-    `);
+    printWindow.document.write(`<html><head><title>${document.getElementById('doc-title').value}</title><style>body{font-family:'Pretendard',sans-serif;padding:40px;line-height:1.6}table{width:100%;border-collapse:collapse;border:2px solid #cbd5e1}td{border:1px solid #cbd5e1;padding:20px;vertical-align:top}ul{padding-left:20px}@page{size:A4;margin:0}</style></head><body>${content}<script>window.onload=function(){window.print();setTimeout(function(){window.close();},100);}<\/script></body></html>`);
     printWindow.document.close();
   }
-  // ==========================================
-  // [신규] 보고서를 PNG 이미지 파일로 저장
-  // ==========================================
+
   async function saveAsImage() {
     const title = document.getElementById('doc-title').value || "report";
-    
-    // 1. 에디터 내용을 담고 있는 임시 요소 생성 (화면에 안 보이게)
+    const contentHtml = $('#doc-content').summernote('code');
+    if (!contentHtml || contentHtml === "<p><br></p>") { alert("저장할 내용이 없습니다."); return; }
     const printContainer = document.createElement('div');
-    printContainer.style.position = 'fixed';
-    printContainer.style.left = '-9999px';
-    printContainer.style.top = '0';
-    printContainer.style.width = '900px'; // 보고서 정규 너비
-    printContainer.style.padding = '40px';
-    printContainer.style.background = '#fff';
-    printContainer.innerHTML = $('#doc-content').summernote('code');
+    printContainer.style.position = 'fixed'; printContainer.style.left = '-9999px'; printContainer.style.width = '900px'; 
+    printContainer.style.padding = '40px'; printContainer.style.background = '#ffffff';
+    printContainer.innerHTML = `<style>.temp-wrap{font-family:'Pretendard',sans-serif;color:#1e293b}.temp-wrap table{width:100%;border-collapse:collapse;border:2px solid #cbd5e1}.temp-wrap td{border:1px solid #cbd5e1;padding:20px;vertical-align:top}</style><div class="temp-wrap">${contentHtml}</div>`;
     document.body.appendChild(printContainer);
-
-    if(typeof showAdminLoading==='function') showAdminLoading("이미지 생성 중...");
-
+    if(typeof showAdminLoading === 'function') showAdminLoading("이미지 파일 생성 중...");
     try {
-        // 2. html2canvas를 이용해 캡처 (고화질을 위해 scale 설정)
-        const canvas = await html2canvas(printContainer, {
-            scale: 2, 
-            useCORS: true,
-            backgroundColor: '#ffffff'
-        });
-
-        // 3. 이미지 다운로드 링크 생성
-        const link = document.createElement('a');
-        link.href = canvas.toDataURL('image/png');
-        link.download = `${title}.png`;
-        link.click();
-        
-    } catch (err) {
-        console.error(err);
-        alert("이미지 저장 중 오류가 발생했습니다.");
-    } finally {
-        document.body.removeChild(printContainer);
-        if(typeof hideAdminLoading==='function') hideAdminLoading();
-    }
+        const canvas = await html2canvas(printContainer, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false });
+        const link = document.createElement('a'); link.href = canvas.toDataURL('image/png'); link.download = `${title}.png`; link.click();
+    } catch (err) { console.error("Image Save Error:", err); alert("이미지 생성 오류"); } 
+    finally { document.body.removeChild(printContainer); if(typeof hideAdminLoading === 'function') hideAdminLoading(); }
   }
 </script>
 
