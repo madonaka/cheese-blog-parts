@@ -1105,7 +1105,7 @@
   }
 
 // ==========================================
-  // [최종] 일정표 삽입 로직 (기획서 4번 항목 대체)
+  // [최종] 일정표 자동 삽입 로직 (스마트 위치 감지)
   // ==========================================
   function insertSmartSchedule() {
     const startMonthVal = document.getElementById('sch-start-month').value;
@@ -1113,7 +1113,7 @@
     
     if(!startMonthVal) { alert("시작 월을 선택해 주세요."); return; }
 
-    // 1. 날짜 범위 계산 및 헤더 생성
+    // 1. 차트 데이터 생성 (기존 로직 유지)
     let maxDate = new Date(startMonthVal + "-01");
     maxDate.setMonth(maxDate.getMonth() + 1); 
     
@@ -1133,7 +1133,7 @@
         });
     });
 
-    // 그리드 헤더 생성
+    // 헤더 생성
     let gridHtml = "";
     let subHeaderHtml = "";
     let currentIterDate = new Date(startMonthVal + "-01");
@@ -1208,11 +1208,11 @@
         </tr>`;
     });
 
-    // 🚀 [핵심 수정] 4. 세부 실행 일정 (Schedule) 제목 적용
+    // 🚀 [최종 HTML] 제목을 "5. 세부 실행 일정"으로 변경
     const scheduleHtml = `
-      <div class="schedule-section" style="font-family: 'Pretendard', sans-serif; margin-top: 30px; page-break-inside: avoid;">
-        <h3 style="margin: 0 0 12px 0; color: #ea580c; font-size: 1.15rem; border-bottom: 2px solid #fed7aa; padding-bottom: 8px;">
-            4. 세부 실행 일정 (Schedule) <span style="font-size:0.8em; color:#64748b; font-weight:normal;">- ${projectName}</span>
+      <div class="schedule-section" style="font-family: 'Pretendard', sans-serif; margin-top: 20px; page-break-inside: avoid;">
+        <h3 style="margin: 0 0 12px 0; color: #16a34a; font-size: 1.15rem; border-bottom: 2px solid #bbf7d0; padding-bottom: 8px;">
+            5. 세부 실행 일정 (Schedule) <span style="font-size:0.8em; color:#64748b; font-weight:normal;">- ${projectName}</span>
         </h3>
         
         <table style="width: 100%; border-collapse: collapse; table-layout: fixed; border: 1px solid #cbd5e1;">
@@ -1236,18 +1236,34 @@
       </div><br/>
     `;
 
-    // 🚀 [핵심 수정] 에디터 내 삽입 로직 (기존 4번 항목 대체 시도)
-    const currentContent = $('#doc-content').summernote('code');
+    // 🚀 [핵심] Placeholder 교체 로직
+    // Summernote의 현재 코드를 가져와서 문자열 치환으로 위치를 잡습니다.
+    let currentCode = $('#doc-content').summernote('code');
     
-    // 만약 기존 기획서 템플릿의 "4. 세부 실행 일정" 텍스트가 있다면 그 뒷부분(<ul>...</ul>)을 통째로 교체
-    // (정확한 교체는 HTML 파싱이 필요하므로, 여기서는 가장 안전하게 맨 아래에 추가하거나
-    // 사용자가 커서를 둔 위치에 삽입하도록 pasteHTML을 유지하되, 안내 메시지를 띄웁니다.)
-    
-    // 1. 커서 위치에 삽입 (가장 확실함)
-    $('#doc-content').summernote('pasteHTML', scheduleHtml);
+    // placeholder div가 있으면 통째로 교체
+    if (currentCode.includes('id="schedule-placeholder"')) {
+        // 정규식으로 div 태그 전체를 찾아서 교체 (안전하게)
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(currentCode, 'text/html');
+        const placeholder = doc.getElementById('schedule-placeholder');
+        
+        if (placeholder) {
+            // placeholder div 자체를 새로운 scheduleHtml로 교체
+            const tempDiv = doc.createElement('div');
+            tempDiv.innerHTML = scheduleHtml;
+            placeholder.replaceWith(tempDiv);
+            $('#doc-content').summernote('code', doc.body.innerHTML);
+        } else {
+            // ID는 있는데 파싱 실패 시 그냥 append
+            $('#doc-content').summernote('pasteHTML', scheduleHtml);
+        }
+    } else {
+        // 없으면 그냥 커서 위치나 맨 뒤에 삽입
+        $('#doc-content').summernote('pasteHTML', scheduleHtml);
+    }
     
     closeScheduleMaker();
-  }  
+  }
 </script>
 
 </body>
