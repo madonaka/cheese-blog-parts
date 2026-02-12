@@ -273,7 +273,7 @@
   let CURRENT_IDEA_MODE = 'new'; 
 
   document.addEventListener('DOMContentLoaded', () => {
-    // 썸머노트 초기화 (커스텀 버튼 동작을 위해 콜백 추가)
+    // 썸머노트 초기화
     $('#doc-content').summernote({
       height: 600, lang: 'ko-KR',
       toolbar: [
@@ -290,7 +290,6 @@
     loadAllData();
   });
 
-  // (기본 데이터 로딩 함수들은 기존과 동일)
   async function loadAllData() {
     if(typeof showAdminLoading==='function') showAdminLoading("데이터 불러오는 중...");
     try {
@@ -481,6 +480,9 @@
     finally { document.body.removeChild(printContainer); if(typeof hideAdminLoading === 'function') hideAdminLoading(); }
   }
 
+  // ==========================================
+  // [기능] 아이디어 선택 및 기획서 변환
+  // ==========================================
   function openIdeaSelector(mode = 'new') {
       CURRENT_IDEA_MODE = mode;
       const container = document.getElementById('idea-list-container');
@@ -523,18 +525,18 @@
   }
 
   // ==========================================
-  // 🚀 [스마트] 일정 생성기 (수정 기능 포함)
+  // [기능] 스마트 일정 생성기 (수정 기능 완비)
   // ==========================================
   
   function openScheduleMaker() {
-    CURRENT_EDITING_SCHEDULE_EL = null; // 신규 생성 모드
+    CURRENT_EDITING_SCHEDULE_EL = null; 
     document.getElementById('schedule-maker-modal').classList.add('open');
     
     // 기본값 초기화
     const today = new Date();
     document.getElementById('sch-start-month').value = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
-    document.getElementById('sch-input-list').innerHTML = ""; // 기존 목록 비우기
-    addScheduleRow(); // 빈 행 하나 추가
+    document.getElementById('sch-input-list').innerHTML = ""; 
+    addScheduleRow(); 
   }
   
   function closeScheduleMaker() { 
@@ -542,13 +544,12 @@
       CURRENT_EDITING_SCHEDULE_EL = null; 
   }
 
-// [보완] 행 추가 함수 (삭제 버튼에 type="button" 추가하여 저장 방지)
+  // [중요] 버튼에 type="button" 명시하여 폼 전송 방지
   function addScheduleRow(cat="", task="", sDate="", eDate="") {
     const tbody = document.getElementById('sch-input-list');
     const tr = document.createElement('tr');
     tr.style.borderBottom = "1px solid #f1f5f9";
     
-    // 👇 아래 button 태그에 type="button"을 꼭 확인하세요!
     tr.innerHTML = `
         <td style="padding:8px 12px;"><input type="text" class="styled-input sch-cat" value="${cat}" placeholder="단계" style="width:100%;"></td>
         <td style="padding:8px 12px;"><input type="text" class="styled-input sch-task" value="${task}" placeholder="할 일" style="width:100%;"></td>
@@ -562,36 +563,29 @@
     tbody.appendChild(tr);
   }
 
-  // 🔄 [신규] 생성된 일정표에서 '수정' 버튼 클릭 시 호출 (데이터 복원)
+  // 🔄 생성된 일정표에서 '수정' 버튼 클릭 시 (데이터 복원)
   window.editEmbeddedSchedule = function(btn) {
       const wrapper = btn.closest('.schedule-section');
       if (!wrapper) return;
       
-      // 저장된 데이터 읽기 (Base64 Decode)
       const configRaw = wrapper.getAttribute('data-config');
-      if (!configRaw) { alert("이 일정표는 수정 데이터가 손상되었습니다. 새로 만들어주세요."); return; }
+      if (!configRaw) { alert("데이터 손상"); return; }
       
       try {
           const config = JSON.parse(decodeURIComponent(configRaw));
-          
-          CURRENT_EDITING_SCHEDULE_EL = wrapper; // 수정 모드 활성화
+          CURRENT_EDITING_SCHEDULE_EL = wrapper; 
           document.getElementById('schedule-maker-modal').classList.add('open');
           
           document.getElementById('sch-start-month').value = config.startMonth;
           document.getElementById('sch-project-name').value = config.projectName || "프로젝트";
-          document.getElementById('sch-input-list').innerHTML = ""; // 기존 목록 초기화
+          document.getElementById('sch-input-list').innerHTML = ""; 
           
           config.rows.forEach(r => {
-              // 날짜 객체를 문자열(YYYY-MM-DD)로 변환
               const sDate = r.s ? r.s.split('T')[0] : "";
               const eDate = r.e ? r.e.split('T')[0] : "";
               addScheduleRow(r.cat, r.task, sDate, eDate);
           });
-          
-      } catch(e) {
-          console.error(e);
-          alert("데이터 로드 중 오류가 발생했습니다.");
-      }
+      } catch(e) { console.error(e); }
   };
 
   function loadSchedulePreset() {
@@ -604,7 +598,7 @@
       addScheduleRow("3단계", "최종 마감", "2026-02-10", "2026-02-14");
   }
 
-  // 🚀 [최종] 일정표 삽입 (신규 생성 or 기존 수정 교체)
+  // 🚀 [최종] 일정표 삽입 (수정 버튼에 type="button" 필수로 추가됨!)
   function insertSmartSchedule() {
     const startMonthVal = document.getElementById('sch-start-month').value;
     const projectName = document.getElementById('sch-project-name').value;
@@ -612,7 +606,7 @@
 
     let maxDate = new Date(startMonthVal + "-01"); maxDate.setMonth(maxDate.getMonth() + 1); 
     const rows = [];
-    const saveRows = []; // 저장용 데이터 (깔끔한 포맷)
+    const saveRows = []; 
 
     document.querySelectorAll('#sch-input-list tr').forEach(tr => {
         const sVal = tr.querySelector('.sch-sdate').value;
@@ -621,12 +615,9 @@
         
         const rowData = { cat: tr.querySelector('.sch-cat').value, task: tr.querySelector('.sch-task').value, s: sVal?new Date(sVal):null, e: eVal?new Date(eVal):null };
         rows.push(rowData);
-        
-        // 저장용 (Date 객체 대신 문자열)
         saveRows.push({ ...rowData, s: sVal, e: eVal });
     });
 
-    // 데이터 직렬화 (수정 기능을 위해 태그에 심음)
     const configData = encodeURIComponent(JSON.stringify({ startMonth: startMonthVal, projectName: projectName, rows: saveRows }));
 
     let gridHtml = "", subHeaderHtml = "";
@@ -664,11 +655,12 @@
         tbodyHtml += `<tr><td style="border:1px solid #cbd5e1; padding:8px; font-size:0.85rem; text-align:center; vertical-align:middle; ${item.cat?'font-weight:700; background:#e0f2fe; color:#0369a1;':'background:#fff;'}">${item.cat}</td><td style="border:1px solid #cbd5e1; padding:6px 10px; font-size:0.9rem; color:#1e293b; font-weight:500;"><span style="color:#cbd5e1;">◻</span> ${item.task}</td>${cols}</tr>`;
     });
 
+    // 🚨 핵심 수정: [✏️ 수정] 버튼에 type="button" 명시 (이게 없어서 저장되었던 것!)
     const scheduleHtml = `
       <div class="schedule-section" data-config="${configData}" style="font-family:'Pretendard',sans-serif; margin-top:20px; page-break-inside:avoid; position:relative;">
         <div style="display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid #bbf7d0; padding-bottom:8px; margin-bottom:12px;">
             <h3 style="margin:0; color:#16a34a; font-size:1.15rem;">5. 세부 실행 일정 (Schedule) <span style="font-size:0.8em; color:#64748b; font-weight:normal;">- ${projectName}</span></h3>
-            <button onclick="editEmbeddedSchedule(this)" style="background:#f0fdf4; border:1px solid #bbf7d0; color:#16a34a; border-radius:4px; padding:2px 8px; font-size:0.8rem; cursor:pointer; font-weight:600;">✏️ 수정</button>
+            <button type="button" onclick="editEmbeddedSchedule(this)" style="background:#f0fdf4; border:1px solid #bbf7d0; color:#16a34a; border-radius:4px; padding:2px 8px; font-size:0.8rem; cursor:pointer; font-weight:600;">✏️ 수정</button>
         </div>
         <table style="width:100%; border-collapse:collapse; table-layout:fixed; border:1px solid #cbd5e1;">
             <thead><tr><th rowspan="2" style="border:1px solid #cbd5e1; background:#f1f5f9; padding:8px; width:100px;">구분</th><th rowspan="2" style="border:1px solid #cbd5e1; background:#f1f5f9; padding:8px; width:220px;">Task</th>${gridHtml}</tr><tr>${subHeaderHtml}</tr></thead>
@@ -680,11 +672,10 @@
 
     // 🔄 수정 모드일 경우 기존 요소 교체
     if (CURRENT_EDITING_SCHEDULE_EL) {
-        // 기존 요소를 새로운 HTML로 교체하기 위해 임시 div 생성 후 교체
         $(CURRENT_EDITING_SCHEDULE_EL).replaceWith(scheduleHtml);
         CURRENT_EDITING_SCHEDULE_EL = null;
     } 
-    // ➕ 신규 삽입 (Placeholder 교체 또는 추가)
+    // ➕ 신규 삽입
     else {
         const currentCode = $('#doc-content').summernote('code');
         if (currentCode.includes('id="schedule-placeholder"')) {
@@ -700,6 +691,9 @@
     closeScheduleMaker();
   }
 
+  // ==========================================
+  // 8. 2x2 기획서 템플릿 생성
+  // ==========================================
   function generateProposalTemplate() {
     const today = new Date();
     const dateStr = `${today.getFullYear()}.${today.getMonth()+1}.${today.getDate()}`;
@@ -869,63 +863,13 @@
     openDocModal(null, titlePrefix, htmlTemplate, '보고서');
   }
 
-  // ✅ 보조 함수들 (누락 없이 포함됨)
-  function getReportDday(dateStr, baseDateObj) {
-      if (!dateStr) return `<span style="color:#94a3b8; font-size:0.85em; margin-left:6px; font-weight:normal;">(마감 미정)</span>`;
-      const targetDate = new Date(dateStr); targetDate.setHours(0,0,0,0);
-      const refDate = baseDateObj ? new Date(baseDateObj) : new Date(); refDate.setHours(0,0,0,0);
-      const diffDays = Math.ceil((targetDate - refDate) / (1000 * 60 * 60 * 24));
-      if (diffDays > 0) return `<span style="color:#ef4444; font-size:0.85em; font-weight:900; margin-left:6px; background:#fee2e2; padding:2px 6px; border-radius:4px;">D-${diffDays}</span>`;
-      if (diffDays === 0) return `<span style="color:#ef4444; font-size:0.85em; font-weight:900; margin-left:6px; background:#fee2e2; padding:2px 6px; border-radius:4px;">D-Day</span>`;
-      return `<span style="color:#ef4444; font-size:0.85em; font-weight:900; margin-left:6px; background:#fee2e2; padding:2px 6px; border-radius:4px;">D+${Math.abs(diffDays)} 지연</span>`;
-  }
-
-  function getReportGoalProgress(goalId, isBigGoal) {
-      let tasks = [];
-      if (isBigGoal) {
-          const midGoalIds = g_goals.filter(m => m['상위ID'] === goalId).map(m => m.ID);
-          tasks = g_tasks.filter(t => t['유형'] !== '아이디어' && t['유형'] !== '버그' && midGoalIds.includes(t['연결_중간목표ID']));
-      } else {
-          tasks = g_tasks.filter(t => t['유형'] !== '아이디어' && t['유형'] !== '버그' && t['연결_중간목표ID'] === goalId);
-      }
-      if (tasks.length === 0) return 0;
-      const doneCount = tasks.filter(t => t['상태'] === '완료').length;
-      return Math.round((doneCount / tasks.length) * 100);
-  }
-
-  function getSmartLogTitle(log) {
-      let displayTitle = log['제목'];
-      if (!displayTitle || displayTitle.trim() === "") {
-          const content = log['내용'] || "";
-          displayTitle = content.replace(/\n/g, " ").trim().substring(0, 30);
-          if (content.length > 30) displayTitle += "...";
-      }
-      if (!displayTitle || displayTitle.trim() === "") displayTitle = "(내용 없음)";
-      return displayTitle;
-  }
-
-  function analyzeProjectRisks(activeBigGoals, baseDateObj) {
-      let issues = [];
-      const refDate = baseDateObj ? new Date(baseDateObj) : new Date(); refDate.setHours(0,0,0,0);
-      activeBigGoals.forEach(bg => {
-          const percent = getReportGoalProgress(bg.ID, true);
-          let diffDays = 999;
-          if (bg['마감일']) {
-             const target = new Date(bg['마감일']); target.setHours(0,0,0,0);
-             diffDays = Math.ceil((target - refDate) / (1000 * 60 * 60 * 24));
-          }
-          if (diffDays < 0 && percent < 100) issues.push(`🚨 <b>[지연]</b> '${bg['제목']}' 프로젝트의 일정이 지연되고 있습니다. (진척률 ${percent}%)`);
-          else if (diffDays >= 0 && diffDays <= 3 && percent < 50) issues.push(`⚠️ <b>[리스크]</b> '${bg['제목']}' 목표 달성이 불투명합니다. 집중적인 리소스 투입이 필요합니다.`);
-      });
-      return issues;
-  }
-
   (function showVersion() {
     const el = document.getElementById("sysVersion"); if(!el) return;
     const d = new Date(document.lastModified);
     const pad = (n) => String(n).padStart(2, '0');
     el.textContent = `Version: ${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())} [최종완성]`;
   })();
+
 </script>
 </body>
 </html>
