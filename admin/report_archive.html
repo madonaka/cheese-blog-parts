@@ -269,11 +269,10 @@
   let g_tasks = [];
   
   // 전역 변수
-  let CURRENT_EDITING_SCHEDULE_EL = null; // 일정표 수정 타겟
-  let CURRENT_IDEA_MODE = 'new'; // 아이디어 삽입 모드
+  let CURRENT_EDITING_SCHEDULE_EL = null; 
+  let CURRENT_IDEA_MODE = 'new'; 
 
   document.addEventListener('DOMContentLoaded', () => {
-    // 썸머노트 초기화
     $('#doc-content').summernote({
       height: 600, lang: 'ko-KR',
       toolbar: [
@@ -283,7 +282,6 @@
       ]
     });
     
-    // 보고서 기준일 오늘로 세팅
     const todayStr = new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0];
     document.getElementById('report-base-date').value = todayStr;
 
@@ -339,7 +337,176 @@
   }
 
   // ==========================================
-  // [핵심] 모달 제어 (보고서/기획서 모드 분리)
+  // [NEW] 일론 머스크 스타일 자동 보고서 로직
+  // ==========================================
+  function generateAutoReport(rangeType) {
+    const baseDateStr = document.getElementById('report-base-date').value;
+    if (!baseDateStr) { alert("보고서 기준일을 선택해 주세요."); return; }
+    
+    const targetEndDate = new Date(baseDateStr); targetEndDate.setHours(23,59,59,999);
+    let startDate = new Date(baseDateStr); startDate.setHours(0,0,0,0);
+    
+    let titlePrefix = "";
+    if (rangeType === 'daily') {
+        titlePrefix = `[Daily Report] ${targetEndDate.getFullYear()}년 ${targetEndDate.getMonth()+1}월 ${targetEndDate.getDate()}일`;
+    } else if (rangeType === 'weekly') {
+        const day = startDate.getDay() || 7; startDate.setDate(startDate.getDate() - day + 1);
+        titlePrefix = `[Weekly Report] ${targetEndDate.getMonth()+1}월 ${Math.ceil(targetEndDate.getDate()/7)}주차`;
+    } else if (rangeType === 'monthly') {
+        startDate.setDate(1); 
+        titlePrefix = `[Monthly Report] ${targetEndDate.getFullYear()}년 ${targetEndDate.getMonth()+1}월 결산`;
+    }
+
+    // 해당 기간의 로그 필터링
+    const targetLogs = g_logs.filter(log => {
+        if (!log['날짜']) return false;
+        const d = new Date(log['날짜']); return d >= startDate && d <= targetEndDate;
+    });
+
+    // --- 1. 데이터 분류 ---
+    const activeBigGoals = g_goals.filter(g => g['유형'] === '큰 목표' && g['상태'] !== '완료');
+    let ideaLogs = [], bugLogs = [], doneLogs = [], otherLogs = [];
+    let postCount = 0;
+
+    targetLogs.forEach(log => {
+        const isIdea = log['태그'] === '아이디어' || (log['제목'] && log['제목'].includes('💡'));
+        const isBug = log['태그'] === '버그' || (log['제목'] && log['제목'].includes('🐞'));
+        const isPublish = log['태그'] === 'Publish'; 
+        
+        if (isIdea) { ideaLogs.push(log); return; }
+        if (isBug) { bugLogs.push(log); return; }
+        if (isPublish) postCount++;
+        
+        doneLogs.push(log); // 일반 수행 내역
+    });
+
+    // --- 2. Q1: The Signal (핵심 목표 현황) ---
+    let signalHtml = `<ul style="padding-left: 20px; margin: 0; color: #333; line-height: 1.6;">`;
+    if (activeBigGoals.length > 0) {
+        activeBigGoals.forEach(bg => {
+            const percent = getReportGoalProgress(bg.ID, true);
+            const ddayBadge = getReportDday(bg['마감일'], targetEndDate);
+            let statusColor = percent === 100 ? "#10b981" : (percent > 0 ? "#3b82f6" : "#64748b");
+            
+            signalHtml += `<li style="margin-bottom: 12px; list-style: none;">
+                <div style="font-weight:700; color:#1e293b; margin-bottom:4px;">🎯 ${bg['제목']} ${ddayBadge}</div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <div style="flex:1; background:#f1f5f9; height:8px; border-radius:4px; overflow:hidden;">
+                        <div style="width:${percent}%; background:${statusColor}; height:100%;"></div>
+                    </div>
+                    <span style="font-size:0.85em; font-weight:800; color:${statusColor}">${percent}%</span>
+                </div>
+            </li>`;
+        });
+    } else {
+        signalHtml += `<li>🚀 현재 진행 중인 핵심 목표가 없습니다. (목표 설정 필요)</li>`;
+    }
+    signalHtml += `</ul>`;
+
+    // --- 3. Q2: The Bottlenecks (병목, 리스크, 버그) ---
+    let bottleneckHtml = `<ul style="padding-left: 20px; margin: 0; color: #b91c1c; line-height: 1.6;">`;
+    let riskCount = 0;
+    
+    // (1) 자동 리스크 감지
+    const autoRisks = analyzeProjectRisks(activeBigGoals, targetEndDate);
+    if (autoRisks.length > 0) {
+        autoRisks.forEach(risk => {
+            bottleneckHtml += `<li style="margin-bottom:6px;">${risk}</li>`;
+            riskCount++;
+        });
+    }
+    // (2) 버그 리포트
+    if (bugLogs.length > 0) {
+        bottleneckHtml += `<li style="margin-bottom:6px; color:#ef4444;"><b>🐞 품질 이슈 발견:</b> ${bugLogs.length}건의 버그가 리포트되었습니다.</li>`;
+        riskCount++;
+    }
+    
+    if (riskCount === 0) {
+        bottleneckHtml = `<div style="text-align:center; color:#10b981; padding:20px;">✨ <b>No Bottlenecks</b><br>현재 식별된 지연 요소나 심각한 리스크가 없습니다.</div>`;
+    } else {
+        bottleneckHtml += `</ul>`;
+    }
+
+    // --- 4. Q3: Velocity & Output (실행 속도 및 성과) ---
+    let velocityHtml = `<ul style="padding-left: 20px; margin: 0; color: #333; line-height: 1.6;">`;
+    // 포스팅 강조
+    if (postCount > 0) {
+        velocityHtml += `<li style="margin-bottom:10px; color:#2563eb; font-weight:bold; list-style:none;">📝 <b>[Shipped]</b> 블로그 포스팅 ${postCount}건 발행 완료</li>`;
+    }
+    // 완료된 주요 작업 (최대 7개까지만 표시하여 요약)
+    doneLogs.slice(0, 7).forEach(l => {
+        const title = getSmartLogTitle(l);
+        velocityHtml += `<li style="margin-bottom:4px;">${title}</li>`;
+    });
+    if (doneLogs.length > 7) {
+        velocityHtml += `<li style="color:#64748b; list-style:none;">...외 ${doneLogs.length - 7}건의 세부 작업 완료</li>`;
+    }
+    if (doneLogs.length === 0 && postCount === 0) {
+        velocityHtml += `<li style="color:#94a3b8;">금일 기록된 완료 내역이 없습니다.</li>`;
+    }
+    velocityHtml += `</ul>`;
+
+    // --- 5. Q4: The Algorithm (최적화 및 향후 계획) ---
+    let algoHtml = `<ul style="padding-left: 20px; margin: 0; color: #333; line-height: 1.6;">`;
+    // 아이디어 제안
+    if (ideaLogs.length > 0) {
+        algoHtml += `<li style="margin-bottom:8px; color:#ea580c;"><b>💡 Innovation (아이디어):</b><br/>`;
+        ideaLogs.forEach(i => { algoHtml += `- ${i['제목'] || '새로운 아이디어'}<br/>`; });
+        algoHtml += `</li>`;
+    }
+    // 기본 액션 아이템 템플릿
+    algoHtml += `
+        <li style="margin-bottom:6px;"><b>⚡ Optimization (효율화):</b><br/>(반복 작업 제거 또는 자동화 할 부분 작성)</li>
+        <li><b>⏩ Next Critical Path (내일 할 일):</b><br/>(목표 달성을 위해 반드시 처리해야 할 1순위 작업)</li>
+    </ul>`;
+
+    // --- HTML 조립 ---
+    const htmlTemplate = `
+      <div style="font-family:'Pretendard','Malgun Gothic',sans-serif; max-width:900px; margin:0 auto; color:#1e293b;">
+        <h2 style="text-align:center; color:#0f172a; margin-bottom:24px; font-size:1.6rem; letter-spacing:-0.5px;">${titlePrefix}</h2>
+        
+        <table style="width:100%; border-collapse:collapse; table-layout:fixed; border:2px solid #cbd5e1;">
+          <tr>
+            <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;">
+              <h3 style="margin:0 0 12px 0; color:#1e293b; font-size:1.1rem; border-bottom:2px solid #cbd5e1; padding-bottom:8px;">
+                1. 🎯 The Signal (핵심 목표 현황)
+              </h3>
+              ${signalHtml}
+            </td>
+            <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fef2f2;">
+              <h3 style="margin:0 0 12px 0; color:#b91c1c; font-size:1.1rem; border-bottom:2px solid #fca5a5; padding-bottom:8px;">
+                2. 🛑 The Bottlenecks (리스크 & 방해요소)
+              </h3>
+              ${bottleneckHtml}
+            </td>
+          </tr>
+          <tr>
+            <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f0f9ff;">
+              <h3 style="margin:0 0 12px 0; color:#0369a1; font-size:1.1rem; border-bottom:2px solid #bae6fd; padding-bottom:8px;">
+                3. ⚡ Velocity (실행 속도 & 성과)
+              </h3>
+              ${velocityHtml}
+            </td>
+            <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;">
+              <h3 style="margin:0 0 12px 0; color:#1e293b; font-size:1.1rem; border-bottom:2px solid #cbd5e1; padding-bottom:8px;">
+                4. ⚙️ The Algorithm (최적화 & Next Step)
+              </h3>
+              ${algoHtml}
+            </td>
+          </tr>
+        </table>
+        
+        <p style="text-align:right; color:#94a3b8; font-size:0.8rem; margin-top:12px;">
+            ※ Generated by Cheese Lab (Elon Musk Style Action-Report)
+        </p>
+      </div>
+    `;
+
+    openDocModal(null, titlePrefix, htmlTemplate, '보고서');
+  }
+
+  // ==========================================
+  // 모달 제어 (보고서/기획서 모드 분리)
   // ==========================================
   async function openDocModal(docId = null, defaultTitle = "", defaultHtml = "", defaultType = "보고서") {
     const modal = document.getElementById('doc-modal');
@@ -353,21 +520,20 @@
     const toolsLeft = document.getElementById('modal-tools-left');
     const saveBtn = document.getElementById('btn-save-doc');
 
-    // 🎨 테마 및 도구 설정 함수
     const setModalTheme = (type) => {
         if (type === '기획서') {
             header.style.background = '#fff7ed';
             header.style.borderBottom = '1px solid #fed7aa';
             titleEl.style.color = '#c2410c';
             titleEl.innerHTML = '📙 기획서 작성 (Planning)';
-            toolsLeft.style.display = 'flex'; // 기획 도구 보이기
+            toolsLeft.style.display = 'flex';
             saveBtn.style.background = '#ea580c';
         } else {
             header.style.background = '#eff6ff';
             header.style.borderBottom = '1px solid #bfdbfe';
             titleEl.style.color = '#1e40af';
             titleEl.innerHTML = '📘 보고서 작성 (Report)';
-            toolsLeft.style.display = 'none'; // 기획 도구 숨기기
+            toolsLeft.style.display = 'none';
             saveBtn.style.background = '#3b82f6';
         }
     };
@@ -404,7 +570,7 @@
   }
 
   // ==========================================
-  // [저장]
+  // 저장 및 공통 기능
   // ==========================================
   document.getElementById('doc-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -593,6 +759,7 @@
       addScheduleRow("3단계", "최종 마감", "2026-02-10", "2026-02-14");
   }
 
+  // 🚀 [최종] 일정표 삽입 (수정 버튼에 type="button" 필수로 추가됨!)
   function insertSmartSchedule() {
     const startMonthVal = document.getElementById('sch-start-month').value;
     const projectName = document.getElementById('sch-project-name').value;
@@ -649,7 +816,6 @@
         tbodyHtml += `<tr><td style="border:1px solid #cbd5e1; padding:8px; font-size:0.85rem; text-align:center; vertical-align:middle; ${item.cat?'font-weight:700; background:#e0f2fe; color:#0369a1;':'background:#fff;'}">${item.cat}</td><td style="border:1px solid #cbd5e1; padding:6px 10px; font-size:0.9rem; color:#1e293b; font-weight:500;"><span style="color:#cbd5e1;">◻</span> ${item.task}</td>${cols}</tr>`;
     });
 
-    // 🚨 [수정] 생성된 수정 버튼에도 type="button" 명시
     const scheduleHtml = `
       <div class="schedule-section" data-config="${configData}" style="font-family:'Pretendard',sans-serif; margin-top:20px; page-break-inside:avoid; position:relative;">
         <div style="display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid #bbf7d0; padding-bottom:8px; margin-bottom:12px;">
@@ -707,153 +873,6 @@
       openDocModal(null, "[기획서] " + mainTitle, htmlTemplate, '기획서');
   }
 
-  // ✅ [복구완료] 자동 보고서 생성 로직 (전체)
-  function generateAutoReport(rangeType) {
-    const baseDateStr = document.getElementById('report-base-date').value;
-    if (!baseDateStr) { alert("보고서 기준일을 선택해 주세요."); return; }
-    
-    // 🚀 보고서 기준 날짜 설정
-    const targetEndDate = new Date(baseDateStr); targetEndDate.setHours(23,59,59,999);
-    let startDate = new Date(baseDateStr); startDate.setHours(0,0,0,0);
-    
-    let titlePrefix = "";
-    if (rangeType === 'daily') {
-        titlePrefix = `[일일 보고서] ${targetEndDate.getFullYear()}년 ${targetEndDate.getMonth()+1}월 ${targetEndDate.getDate()}일`;
-    } else if (rangeType === 'weekly') {
-        const day = startDate.getDay() || 7; startDate.setDate(startDate.getDate() - day + 1);
-        titlePrefix = `[주간 보고서] ${targetEndDate.getMonth()+1}월 ${Math.ceil(targetEndDate.getDate()/7)}주차`;
-    } else if (rangeType === 'monthly') {
-        startDate.setDate(1); 
-        titlePrefix = `[월간 보고서] ${targetEndDate.getFullYear()}년 ${targetEndDate.getMonth()+1}월 결산`;
-    }
-
-    const targetLogs = g_logs.filter(log => {
-        if (!log['날짜']) return false;
-        const d = new Date(log['날짜']); return d >= startDate && d <= targetEndDate;
-    });
-
-    const hierarchyMap = {}; 
-    let ideaLogs = [];
-    let bugLogs = [];
-    let postPublishCount = 0;
-    let totalLogs = 0;
-    let otherLogs = [];
-
-    targetLogs.forEach(log => {
-        totalLogs++;
-        const isIdea = log['태그'] === '아이디어' || (log['제목'] && log['제목'].includes('💡'));
-        const isBug = log['태그'] === '버그' || (log['제목'] && log['제목'].includes('🐞'));
-        const isPublish = log['태그'] === 'Publish'; 
-        
-        if (isIdea) { ideaLogs.push(log); return; }
-        if (isBug) { bugLogs.push(log); return; }
-        if (isPublish) postPublishCount++;
-
-        const relId = log['관련_목표ID'];
-        let bigGoalObj = null;
-        let midGoalObj = null;
-
-        if (relId) {
-            const obj = g_tasks.find(t => t.ID === relId) || g_goals.find(g => g.ID === relId);
-            if (obj) {
-                if (obj['유형'] === '할 일' || obj['유형'] === '버그') {
-                    midGoalObj = g_goals.find(g => g.ID === obj['연결_중간목표ID']);
-                    if (midGoalObj) bigGoalObj = g_goals.find(g => g.ID === midGoalObj['상위ID']);
-                } else if (obj['유형'] === '중간 목표') {
-                    midGoalObj = obj;
-                    bigGoalObj = g_goals.find(g => g.ID === midGoalObj['상위ID']);
-                } else if (obj['유형'] === '큰 목표') {
-                    bigGoalObj = obj;
-                }
-            }
-        }
-
-        const bigId = bigGoalObj ? bigGoalObj.ID : "OTHER";
-        const bigTitle = bigGoalObj ? bigGoalObj['제목'] : "기타 (미분류 프로젝트)";
-        const bigDday = bigGoalObj ? bigGoalObj['마감일'] : null;
-        const midId = midGoalObj ? midGoalObj.ID : "DIRECT";
-        const midTitle = midGoalObj ? midGoalObj['제목'] : "↳ 직접 수행 / 기타";
-
-        if (!hierarchyMap[bigId]) {
-            hierarchyMap[bigId] = { title: bigTitle, dday: bigDday, mids: {}, activeLogs: [] };
-        }
-        if (!hierarchyMap[bigId].mids[midId]) {
-            hierarchyMap[bigId].mids[midId] = { title: midTitle, count: 0 };
-        }
-        
-        hierarchyMap[bigId].mids[midId].count++;
-        hierarchyMap[bigId].activeLogs.push(log);
-        
-        if (bigId === "OTHER") otherLogs.push(log);
-    });
-
-    let breakdownHtml = `<ul style="margin: 6px 0 12px 0; padding-left: 20px; font-size: 0.9em; color: #475569; list-style-type: none;">`;
-    if (postPublishCount > 0) {
-        breakdownHtml += `<li style="margin-bottom:8px; color: #2563eb; font-weight:bold; font-size: 1rem; border-bottom:1px dashed #bfdbfe; padding-bottom:4px;">🏆 [성과] 블로그 포스팅 ${postPublishCount}건 발행 완료</li>`;
-    } else {
-        breakdownHtml += `<li style="margin-bottom:8px; color: #94a3b8; font-size: 0.9rem;">📉 금일 발행된 포스팅이 없습니다.</li>`;
-    }
-    breakdownHtml += `<li style="margin-bottom: 8px;"><b>총 활동 건수:</b> ${totalLogs}건</li>`;
-    for (const [bigId, bigData] of Object.entries(hierarchyMap)) {
-        if (bigId === "OTHER") continue; 
-        const ddayBadge = getReportDday(bigData.dday, targetEndDate); 
-        breakdownHtml += `<li style="margin-top: 6px; margin-bottom: 2px; color: #1e293b;"><b>${bigData.title}</b> ${ddayBadge}</li>`;
-        for (const [midId, midData] of Object.entries(bigData.mids)) {
-             breakdownHtml += `<li style="padding-left: 12px; margin-bottom: 2px; color: #64748b;">${midData.title}: <b>${midData.count}</b>건</li>`;
-        }
-    }
-    breakdownHtml += `</ul>`;
-
-    let progressHtml = `<ul style="padding-left: 16px; margin: 0; font-size: 0.95rem; color: #333; line-height: 1.6;">`;
-    const activeBigGoals = g_goals.filter(g => g['유형'] === '큰 목표' && g['상태'] !== '완료');
-    const autoRisks = analyzeProjectRisks(activeBigGoals, targetEndDate);
-
-    if (activeBigGoals.length > 0) {
-        activeBigGoals.forEach(bg => {
-            const percent = getReportGoalProgress(bg.ID, true);
-            const ddayBadge = getReportDday(bg['마감일'], targetEndDate);
-            let statusColor = percent === 100 ? "#10b981" : (percent > 0 ? "#3b82f6" : "#64748b");
-            progressHtml += `<li style="margin-bottom: 16px; list-style: none;"><div style="margin-bottom: 4px;"><b>${bg['제목']}</b> ${ddayBadge}</div><div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><div style="flex:1; background:#f1f5f9; height:8px; border-radius:4px; overflow:hidden;"><div style="width:${percent}%; background:${statusColor}; height:100%;"></div></div><span style="font-size:0.8em; font-weight:bold; color:${statusColor}">${percent}%</span></div>`;
-            if (hierarchyMap[bg.ID] && hierarchyMap[bg.ID].activeLogs.length > 0) {
-                 progressHtml += `<ul style="padding-left: 14px; margin: 0; color: #475569; font-size: 0.9em; list-style-type: square;">`;
-                 hierarchyMap[bg.ID].activeLogs.forEach(l => {
-                     const displayTitle = getSmartLogTitle(l);
-                     progressHtml += `<li style="margin-bottom: 3px;">${displayTitle}</li>`;
-                 });
-                 progressHtml += `</ul>`;
-            } else progressHtml += `<div style="color:#cbd5e1; font-size:0.85em; padding-left:14px;">(금일 활동 없음)</div>`;
-            progressHtml += `</li>`;
-        });
-    } else progressHtml += `<li>진행 중인 큰 목표가 없습니다.</li>`;
-    progressHtml += `</ul>`;
-
-    let otherHtml = `<div style="font-size: 0.95rem; padding-bottom: 10px;">`;
-    if (ideaLogs.length > 0) {
-        otherHtml += `<h4 style="margin: 4px 0 6px 0; color: #16a34a; font-size: 0.95rem;">💡 신규 아이디어 (${ideaLogs.length}건)</h4><ul style="padding-left: 16px; margin: 0; color: #475569; line-height: 1.6; list-style-type: circle;">`;
-        ideaLogs.forEach(l => { const t = getSmartLogTitle(l); otherHtml += `<li style="margin-bottom: 4px;"><b>${t}</b></li>`; }); otherHtml += `</ul><div style="height:12px;"></div>`;
-    }
-    if (bugLogs.length > 0) {
-        otherHtml += `<h4 style="margin: 4px 0 6px 0; color: #ef4444; font-size: 0.95rem;">🐞 버그 발견 및 리포트 (${bugLogs.length}건)</h4><ul style="padding-left: 16px; margin: 0; color: #475569; line-height: 1.6; list-style-type: circle;">`;
-        bugLogs.forEach(l => { const t = getSmartLogTitle(l); otherHtml += `<li style="margin-bottom: 4px;"><b>${t}</b></li>`; }); otherHtml += `</ul><div style="height:12px;"></div>`;
-    }
-    if (otherLogs.length > 0) {
-        otherHtml += `<h4 style="margin: 4px 0 6px 0; color: #64748b; font-size: 0.95rem;">📂 기타 업무 (${otherLogs.length}건)</h4><ul style="padding-left: 16px; margin: 0; color: #94a3b8; line-height: 1.6; list-style-type: circle;">`;
-        otherLogs.forEach(l => { const t = getSmartLogTitle(l); otherHtml += `<li style="margin-bottom: 4px;">${t}</li>`; }); otherHtml += `</ul>`;
-    }
-    if (ideaLogs.length === 0 && bugLogs.length === 0 && otherLogs.length === 0) otherHtml += `<p style="color:#94a3b8; margin:0;">특이사항이나 별도 활동이 없습니다.</p>`;
-    otherHtml += `</div>`;
-
-    let improveHtml = `<ul style="padding-left: 20px; margin: 0; font-size: 0.95rem; color: #333; line-height: 1.8;">`;
-    if (autoRisks.length > 0) autoRisks.forEach(risk => { improveHtml += `<li style="margin-bottom:6px;">${risk}</li>`; });
-    else improveHtml += `<li style="margin-bottom:6px; color:#10b981;">✅ 현재 주요 프로젝트들이 순조롭게 진행되고 있습니다.</li>`;
-    if (bugLogs.length >= 3) improveHtml += `<li style="margin-bottom:6px;">🐞 <b>[품질 이슈]</b> 금일 버그 리포트가 다수 발생했습니다. QA 시간을 확보하세요.</li>`;
-    improveHtml += `<li>내일 진행할 핵심 목표 1: (직접 입력)</li><li>해결해야 할 액션 아이템: (직접 입력)</li></ul>`;
-
-    const htmlTemplate = `<div style="font-family:'Pretendard','Malgun Gothic',sans-serif; max-width:900px; margin:0 auto; color:#1e293b;"><h2 style="text-align:center; color:#0f172a; margin-bottom:24px; font-size:1.6rem; letter-spacing:-0.5px;">${titlePrefix}</h2><table style="width:100%; border-collapse:collapse; table-layout:fixed; border:2px solid #cbd5e1;"><tr><td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;"><h3 style="margin:0 0 12px 0; color:#2563eb; font-size:1.1rem; border-bottom:2px solid #bfdbfe; padding-bottom:8px;">1. 목표 및 핵심 요약</h3>${breakdownHtml}</td><td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f8fafc;"><h3 style="margin:0 0 12px 0; color:#2563eb; font-size:1.1rem; border-bottom:2px solid #bfdbfe; padding-bottom:8px;">2. 프로젝트 현황 및 수행 내역</h3>${progressHtml}</td></tr><tr><td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f8fafc;"><h3 style="margin:0 0 12px 0; color:#2563eb; font-size:1.1rem; border-bottom:2px solid #bfdbfe; padding-bottom:8px;">3. 아이디어 / 버그 / 기타 활동</h3>${otherHtml}</td><td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;"><h3 style="margin:0 0 12px 0; color:#2563eb; font-size:1.1rem; border-bottom:2px solid #bfdbfe; padding-bottom:8px;">4. 개선점 및 향후 계획 (Insight)</h3>${improveHtml}</td></tr></table><p style="text-align:right; color:#94a3b8; font-size:0.8rem; margin-top:12px;">※ 본 보고서는 Cheese Lab 시스템에 의해 <b>${baseDateStr}</b> 기준으로 자동 추출되었습니다.</p></div>`;
-
-    openDocModal(null, titlePrefix, htmlTemplate, '보고서');
-  }
-
   // ✅ 보조 함수들
   function getReportDday(dateStr, baseDateObj) {
       if (!dateStr) return `<span style="color:#94a3b8; font-size:0.85em; margin-left:6px; font-weight:normal;">(마감 미정)</span>`;
@@ -909,7 +928,7 @@
     const el = document.getElementById("sysVersion"); if(!el) return;
     const d = new Date(document.lastModified);
     const pad = (n) => String(n).padStart(2, '0');
-    el.textContent = `Version: ${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())} [최종통합]`;
+    el.textContent = `Version: ${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())} [최종완성]`;
   })();
 </script>
 </body>
