@@ -824,24 +824,36 @@
           // - 해당 태스크와 관련된 '완료' 흔적을 찾음
           // - 상태 변경 뿐만 아니라 태그, 제목 등에서 '완료' 시그널을 모두 찾음
           const doneLog = g_logs.find(l => {
-              if (l['관련_목표ID'] !== t.ID) return false;
-              
-              const lDate = new Date(l['날짜']);
-              // 로그 날짜가 기준일보다 미래면 무시
-              if (lDate > targetDate) return false;
-
-              const status = l['상태'] || "";
-              const tag = l['태그'] || "";
-              const title = l['제목'] || "";
-              
-              // '완료'를 의미하는 모든 키워드 검색
-              return (
-                  status === '완료' || status === 'Done' ||
-                  tag === 'Publish' || tag === '완료' || tag === '배포' ||
-                  title.includes('완료') || title.includes('배포') || title.includes('해결') || title.includes('Finish') ||
-                  title.includes('성공') || title.includes('작업 끝')
-              );
+            // 0) 관련 ID 키 호환 (서버/버전 차이 대비)
+            const relId =
+              l['관련_목표ID'] ||
+              l['relatedId'] ||
+              l['관련ID'] ||
+              l['관련_작업ID'] ||
+              "";
+          
+            if (relId !== t.ID) return false;
+          
+            // 1) 날짜 파싱/비교 안정화
+            const raw = l['날짜'] || l['date'];
+            if (!raw) return false;
+            const lDate = new Date(raw);
+            if (isNaN(lDate.getTime())) return false;
+            if (lDate > targetDate) return false;
+          
+            // 2) 완료 시그널 확장 (todo_manage 자동로그 태그 Done 커버)
+            const status = (l['상태'] || "").toString();
+            const tag = (l['태그'] || l['tags'] || "").toString();
+            const title = (l['제목'] || l['title'] || "").toString();
+          
+            return (
+              status === '완료' || status === 'Done' ||
+              tag === 'Done' || tag === 'Publish' || tag === '완료' || tag === '배포' ||
+              title.includes('완료') || title.includes('달성') || title.includes('배포') ||
+              title.includes('해결') || title.includes('Finish') || title.includes('성공') || title.includes('작업 끝')
+            );
           });
+
 
           // 로그가 하나라도 발견되면 인정
           return !!doneLog; 
