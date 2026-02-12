@@ -594,7 +594,7 @@
 		if (reportTagLogs.length > 0) {
 		  velocityHtml += `
 		    <li style="margin-bottom:6px; color:#0f172a; font-weight:800; list-style:none;">
-		      🏷️ <b>Report</b> 태그 기록 ${reportTagLogs.length}건
+		      🏷️ <b>Report</b> 꼭 기록할 사항 ${reportTagLogs.length}건
 		      <div style="margin-top:6px; padding-left:14px; color:#1e293b; font-weight:600;">
 		        ${reportTagLogs.slice(0,5).map(r => `- ${pickMeaningTitle(r)}`).join('<br/>')}
 		        ${reportTagLogs.length > 5 ? `<br/>...외 ${reportTagLogs.length-5}건` : ``}
@@ -762,20 +762,101 @@
     printWindow.document.close();
   }
 
+// ==========================================
+  // [최종 수정] 이미지 저장 함수 (3자리수 폰트 깨짐 완벽 방지)
+  // ==========================================
   async function saveAsImage() {
     const title = document.getElementById('doc-title').value || "report";
     const contentHtml = $('#doc-content').summernote('code');
+    
+    if (!contentHtml || contentHtml === "<p><br></p>") { 
+        alert("저장할 내용이 없습니다."); 
+        return; 
+    }
+
     const printContainer = document.createElement('div');
-    printContainer.style.position = 'fixed'; printContainer.style.left = '-9999px'; printContainer.style.width = '900px'; 
-    printContainer.style.padding = '40px'; printContainer.style.background = '#ffffff';
-    printContainer.innerHTML = `<style>.temp-wrap{font-family:'Pretendard',sans-serif;color:#1e293b}.temp-wrap table{width:100%;border-collapse:collapse;border:2px solid #cbd5e1}.temp-wrap td{border:1px solid #cbd5e1;padding:20px;vertical-align:top}</style><div class="temp-wrap">${contentHtml}</div>`;
+    // 화면 최상단 고정 (렌더링 안정성)
+    printContainer.style.position = 'fixed'; 
+    printContainer.style.top = '0';
+    printContainer.style.left = '0';
+    printContainer.style.zIndex = '99999'; 
+    
+    // 너비 1200px로 넉넉하게
+    printContainer.style.width = '1200px'; 
+    printContainer.style.height = 'auto';
+    printContainer.style.minHeight = '100vh';
+    printContainer.style.padding = '60px'; 
+    printContainer.style.background = '#ffffff';
+    printContainer.style.boxSizing = 'border-box';
+    
+    printContainer.innerHTML = `
+        <style>
+            /* [핵심] 캡처 시에는 'Arial' 같은 시스템 폰트를 최우선으로 써서 너비 계산 오차를 줄임 */
+            .temp-wrap { 
+                font-family: 'Arial', 'Malgun Gothic', sans-serif !important; 
+                color: #1e293b !important; 
+                line-height: 1.6 !important; 
+                width: 100% !important;
+            }
+            .temp-wrap table { 
+                width: 100% !important; 
+                border-collapse: collapse !important; 
+                border: 2px solid #cbd5e1 !important; 
+                table-layout: fixed !important; 
+            }
+            .temp-wrap td, .temp-wrap th { 
+                border: 1px solid #cbd5e1 !important; 
+                padding: 10px !important; 
+                vertical-align: top !important;
+                overflow: visible !important; 
+                position: relative !important;
+            }
+            /* span 요소(뱃지)의 너비를 강제로 유연하게 만듦 */
+            .temp-wrap span {
+                width: auto !important;
+                min-width: min-content !important;
+                white-space: nowrap !important;
+                display: inline-flex !important;
+            }
+            .temp-wrap * { box-sizing: border-box !important; }
+            .temp-wrap h1, .temp-wrap h2, .temp-wrap h3, .temp-wrap h4 { margin-top: 0 !important; }
+        </style>
+        <div class="temp-wrap">${contentHtml}</div>
+    `;
+    
     document.body.appendChild(printContainer);
-    if(typeof showAdminLoading === 'function') showAdminLoading("이미지 생성 중...");
+
+    if(typeof showAdminLoading === 'function') showAdminLoading("고화질 이미지 생성 중...");
+
     try {
-        const canvas = await html2canvas(printContainer, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false });
-        const link = document.createElement('a'); link.href = canvas.toDataURL('image/png'); link.download = `${title}.png`; link.click();
-    } catch (err) { console.error(err); alert("이미지 생성 오류"); } 
-    finally { document.body.removeChild(printContainer); if(typeof hideAdminLoading === 'function') hideAdminLoading(); }
+        const canvas = await html2canvas(printContainer, {
+            scale: 2, 
+            useCORS: true, 
+            backgroundColor: '#ffffff',
+            width: printContainer.offsetWidth,
+            height: printContainer.offsetHeight,
+            x: 0, y: 0, scrollX: 0, scrollY: 0,
+            windowWidth: document.documentElement.offsetWidth,
+            windowHeight: document.documentElement.offsetHeight,
+            // [추가] 폰트 렌더링 최적화 옵션
+            onclone: (clonedDoc) => {
+                const spans = clonedDoc.querySelectorAll('span');
+                spans.forEach(s => s.style.fontVariantNumeric = 'tabular-nums'); // 숫자 너비 고정
+            }
+        });
+
+        const link = document.createElement('a');
+        link.href = canvas.toDataURL('image/png');
+        link.download = `${title}.png`;
+        link.click();
+        
+    } catch (err) { 
+        console.error("Image Save Error:", err); 
+        alert("이미지 생성 실패: " + err.message); 
+    } finally { 
+        document.body.removeChild(printContainer); 
+        if(typeof hideAdminLoading === 'function') hideAdminLoading(); 
+    }
   }
 
   // ==========================================
@@ -1045,14 +1126,25 @@
       return Math.round((doneCount / tasks.length) * 100);
   }
 
+	// ==========================================
+  // [최종 수정] D-Day 뱃지 스타일 (3자리수 깨짐 방지)
+  // ==========================================
   function getReportDday(dateStr, baseDateObj) {
       if (!dateStr) return `<span style="color:#94a3b8; font-size:0.85em; margin-left:6px; font-weight:normal;">(마감 미정)</span>`;
+      
       const targetDate = new Date(dateStr); targetDate.setHours(0,0,0,0);
       const refDate = baseDateObj ? new Date(baseDateObj) : new Date(); refDate.setHours(0,0,0,0);
       const diffDays = Math.ceil((targetDate - refDate) / (1000 * 60 * 60 * 24));
-      if (diffDays > 0) return `<span style="color:#ef4444; font-size:0.85em; font-weight:900; margin-left:6px; background:#fee2e2; padding:2px 6px; border-radius:4px;">D-${diffDays}</span>`;
-      if (diffDays === 0) return `<span style="color:#ef4444; font-size:0.85em; font-weight:900; margin-left:6px; background:#fee2e2; padding:2px 6px; border-radius:4px;">D-Day</span>`;
-      return `<span style="color:#ef4444; font-size:0.85em; font-weight:900; margin-left:6px; background:#fee2e2; padding:2px 6px; border-radius:4px;">D+${Math.abs(diffDays)} 지연</span>`;
+      
+      // [핵심 변경] 
+      // 1. width: fit-content -> 글자 길이에 맞춰 박스 자동 확장
+      // 2. display: inline-flex -> 박스 형태 유지력 강화
+      // 3. padding: 2px 8px -> 좌우 여백을 넉넉하게 줘서 글자 잘림 방지
+      const badgeStyle = "display:inline-flex; align-items:center; justify-content:center; width:fit-content; white-space:nowrap; word-break:keep-all; color:#ef4444; font-size:0.85em; font-weight:900; margin-left:6px; background:#fee2e2; padding:2px 8px; border-radius:4px;";
+      
+      if (diffDays > 0) return `<span style="${badgeStyle}">D-${diffDays}</span>`;
+      if (diffDays === 0) return `<span style="${badgeStyle}">D-Day</span>`;
+      return `<span style="${badgeStyle}">D+${Math.abs(diffDays)} 지연</span>`;
   }
 
   function getSmartLogTitle(log) {
