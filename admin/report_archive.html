@@ -401,7 +401,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
 // ==========================================
-  // 5. 1 Page 4분할 자동 보고서 생성 로직 (분류 병합 최적화)
+  // 5. 1 Page 4분할 자동 보고서 생성 로직 (계층형 건수 집계 적용)
   // ==========================================
   function generateAutoReport(rangeType) {
     const baseDateStr = document.getElementById('report-base-date').value;
@@ -426,68 +426,123 @@ document.addEventListener('DOMContentLoaded', () => {
         const d = new Date(log['날짜']); return d >= startDate && d <= targetEndDate;
     });
 
-// 🚀 [수정 반영] 로그 분류 및 목표/아이디어/버그 그룹화 로직
-    const goalTaskCounts = {}; // 목표별 할 일 건수 (병합용)
-    let ideaCount = 0;         // 아이디어 생성 총 건수
-    let bugCount = 0;          // 버그 생성 총 건수
-    const groupedLogsByName = {}; // 상세 내역(Q3) 출력용 그룹
+    // 🚀 [계층형 그룹화 로직] Big Goal -> Mid Goal -> Count
+    const hierarchyMap = {}; // { bigGoalId: { title, dday, mids: { midId: { title, count } } } }
+    let ideaCount = 0;
+    let bugCount = 0;
     let totalLogs = 0;
+
+    // 상세 내역(Q3) 출력을 위한 단순 그룹핑 (기존 유지)
+    const groupedLogsByName = {}; 
 
     targetLogs.forEach(log => {
         totalLogs++;
-        let categoryName = "기타 일반 업무";
-        const gId = log['관련_목표ID'];
-
-        // 1. 아이디어/버그 여부 먼저 판단 (태그나 제목 아이콘 기준)
+        
+        // 1. 아이디어/버그 확인
         const isIdea = log['태그'] === '아이디어' || (log['제목'] && log['제목'].includes('💡'));
         const isBug = log['태그'] === '버그' || (log['제목'] && log['제목'].includes('🐞'));
 
         if (isIdea) {
             ideaCount++;
-            categoryName = "💡 신규 아이디어 제안";
-        } else if (isBug) {
+            // 상세내역용
+            if (!groupedLogsByName["💡 신규 아이디어 제안"]) groupedLogsByName["💡 신규 아이디어 제안"] = [];
+            groupedLogsByName["💡 신규 아이디어 제안"].push(log);
+            return;
+        }
+        if (isBug) {
             bugCount++;
-            categoryName = "🐞 버그 발견 및 리포트";
-        } else {
-            // 2. 일반 할 일인 경우 목표 이름 찾아오기
-            if (gId && String(gId).trim() !== "") {
-                const goalObj = g_goals.find(g => g.ID === gId) || g_tasks.find(t => t.ID === gId);
-                if (goalObj && goalObj['제목'] && !String(goalObj['제목']).includes('#ERROR!')) {
-                    categoryName = goalObj['제목']; 
-                }
-            }
-            // 목표별 할 일 건수 카운트
-            if (!goalTaskCounts[categoryName]) goalTaskCounts[categoryName] = 0;
-            goalTaskCounts[categoryName]++;
+             // 상세내역용
+            if (!groupedLogsByName["🐞 버그 발견 및 리포트"]) groupedLogsByName["🐞 버그 발견 및 리포트"] = [];
+            groupedLogsByName["🐞 버그 발견 및 리포트"].push(log);
+            return;
         }
 
-        // 3. 상세 내역(Q3) 구성을 위해 이름별로 로그 모으기
-        if (!groupedLogsByName[categoryName]) groupedLogsByName[categoryName] = [];
-        groupedLogsByName[categoryName].push(log);
+        // 2. 일반 작업: 역추적 (Log -> Task -> Mid -> Big)
+        const relId = log['관련_목표ID'];
+        let bigGoalObj = null;
+        let midGoalObj = null;
+        let taskTitleForLog = "기타 업무"; // 상세내역용 그룹명
+
+        if (relId) {
+            // 연결된 객체 찾기 (할 일, 중간목표, 큰목표 중 하나)
+            const obj = g_tasks.find(t => t.ID === relId) || g_goals.find(g => g.ID === relId);
+            
+            if (obj) {
+                if (obj['유형'] === '할 일' || obj['유형'] === '버그') {
+                    // 할 일인 경우 -> 중간목표 찾기
+                    midGoalObj = g_goals.find(g => g.ID === obj['연결_중간목표ID']);
+                    if (midGoalObj) bigGoalObj = g_goals.find(g => g.ID === midGoalObj['상위ID']);
+                    taskTitleForLog = midGoalObj ? midGoalObj['제목'] : obj['제목']; // 상세내역은 중간목표명으로 묶음
+                } else if (obj['유형'] === '중간 목표') {
+                    // 중간목표인 경우 -> 큰목표 찾기
+                    midGoalObj = obj;
+                    bigGoalObj = g_goals.find(g => g.ID === midGoalObj['상위ID']);
+                    taskTitleForLog = midGoalObj['제목'];
+                } else if (obj['유형'] === '큰 목표') {
+                    // 큰목표인 경우
+                    bigGoalObj = obj;
+                    taskTitleForLog = bigGoalObj['제목'];
+                }
+            }
+        }
+
+        // 3. 계층 맵(Hierarchy Map)에 데이터 적재
+        const bigId = bigGoalObj ? bigGoalObj.ID : "OTHER";
+        const bigTitle = bigGoalObj ? bigGoalObj['제목'] : "기타 (미분류 프로젝트)";
+        const bigDday = bigGoalObj ? bigGoalObj['마감일'] : null;
+
+        const midId = midGoalObj ? midGoalObj.ID : "DIRECT";
+        const midTitle = midGoalObj ? midGoalObj['제목'] : "↳ 직접 수행 / 일반 업무";
+
+        if (!hierarchyMap[bigId]) {
+            hierarchyMap[bigId] = { title: bigTitle, dday: bigDday, mids: {} };
+        }
+        if (!hierarchyMap[bigId].mids[midId]) {
+            hierarchyMap[bigId].mids[midId] = { title: midTitle, count: 0 };
+        }
+        hierarchyMap[bigId].mids[midId].count++;
+
+        // 상세 내역용 적재
+        if (!groupedLogsByName[taskTitleForLog]) groupedLogsByName[taskTitleForLog] = [];
+        groupedLogsByName[taskTitleForLog].push(log);
     });
 
-    // 화면 정렬 (기타/아이디어/버그를 아래쪽으로)
-    const sortedCategories = Object.keys(groupedLogsByName).sort((a, b) => {
-        const priority = { "💡 신규 아이디어 제안": 10, "🐞 버그 발견 및 리포트": 11, "기타 일반 업무": 12 };
-        const valA = priority[a] || 0;
-        const valB = priority[b] || 0;
-        if (valA !== valB) return valA - valB;
-        return a.localeCompare(b);
-    });
 
-    // ✅ [Q1] 핵심 요약 HTML 조립 (이후 breakdownHtml 변수 사용 부분과 연결됨)
-    let breakdownHtml = `<li><b>전체 활동 건수:</b> 총 ${totalLogs}건</li>`;
-    breakdownHtml += `<ul style="margin: 6px 0 12px 0; padding-left: 20px; font-size: 0.9em; color: #475569; list-style-type: circle;">`;
+    // ✅ [Q1] 핵심 요약: 계층형 트리 구조로 출력
+    let breakdownHtml = `<li><b>총 활동 건수:</b> 총 ${totalLogs}건 완료</li>`;
+    breakdownHtml += `<ul style="margin: 6px 0 12px 0; padding-left: 20px; font-size: 0.9em; color: #475569; list-style-type: none;">`;
     
-    // 목표별 할 일 건수만 먼저 출력
-    for (const [name, count] of Object.entries(goalTaskCounts)) {
-        breakdownHtml += `<li style="margin-bottom:2px;">${name} (할 일): <b>${count}</b>건</li>`;
+    // 큰 목표 순회
+    for (const [bigId, bigData] of Object.entries(hierarchyMap)) {
+        if (bigId === "OTHER" && Object.keys(hierarchyMap).length > 1) continue; // 기타는 나중에 출력하거나 생략 가능
+
+        const ddayBadge = getReportDday(bigData.dday); // D-Day 뱃지 생성
+        breakdownHtml += `<li style="margin-top: 8px; margin-bottom: 4px; color: #1e293b;">
+            <b>${bigData.title}</b> ${ddayBadge}
+        </li>`;
+        
+        // 중간 목표 순회
+        for (const [midId, midData] of Object.entries(bigData.mids)) {
+             breakdownHtml += `<li style="padding-left: 12px; margin-bottom: 2px; color: #64748b;">
+                ${midData.title}: <b>${midData.count}</b>건
+             </li>`;
+        }
     }
-    // 아이디어/버그는 별도 강조 출력
-    if (ideaCount > 0) breakdownHtml += `<li style="margin-bottom:2px; color: #16a34a;">💡 신규 아이디어 제안: <b>${ideaCount}</b>건</li>`;
-    if (bugCount > 0) breakdownHtml += `<li style="margin-bottom:2px; color: #ef4444;">🐞 버그 발견 및 리포트: <b>${bugCount}</b>건</li>`;
-    breakdownHtml += `</ul>`;
+
+    // 기타 항목이 있으면 맨 마지막에 출력
+    if (hierarchyMap["OTHER"]) {
+        breakdownHtml += `<li style="margin-top: 8px; margin-bottom: 4px; color: #64748b;"><b>기타 (미분류 프로젝트)</b></li>`;
+        for (const [midId, midData] of Object.entries(hierarchyMap["OTHER"].mids)) {
+             breakdownHtml += `<li style="padding-left: 12px; margin-bottom: 2px; color: #64748b;">${midData.title}: <b>${midData.count}</b>건</li>`;
+        }
+    }
+
+    // 아이디어/버그 출력
+    if (ideaCount > 0) breakdownHtml += `<li style="margin-top:8px; color: #16a34a;">💡 신규 아이디어: <b>${ideaCount}</b>건</li>`;
+    if (bugCount > 0) breakdownHtml += `<li style="margin-top:4px; color: #ef4444;">🐞 버그 리포트: <b>${bugCount}</b>건</li>`;
     
+    breakdownHtml += `</ul>`;
+
 
     // ✅ [Q2] 프로젝트 현황: 목표 달성률 + D-Day 시각화
     let progressHtml = `<ul style="padding-left: 20px; margin: 0; font-size: 0.95rem; color: #333; line-height: 1.6;">`;
@@ -509,12 +564,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     progressHtml += `</ul>`;
 
-    // ✅ [Q3] 상세 진행 내역: 병합된 카테고리 이름 사용
+
+    // ✅ [Q3] 상세 진행 내역 (정렬된 순서로)
     let logHtml = `<div style="font-size: 0.95rem; padding-bottom: 10px;">`;
     if (totalLogs === 0) {
         logHtml += `<p style="color:#94a3b8; margin:0;">해당 기간에 작성된 작업 기록이 없습니다.</p>`;
     } else {
-        sortedCategories.forEach(catName => {
+        // 상세내역은 '중간목표 이름' 기준으로 정렬해서 보여줍니다.
+        const sortedLogKeys = Object.keys(groupedLogsByName).sort();
+        sortedLogKeys.forEach(catName => {
             logHtml += `<h4 style="margin: 14px 0 6px 0; color: #1e293b; font-size: 0.95rem;">📌 ${catName}</h4>`;
             logHtml += `<ul style="padding-left: 16px; margin: 0; color: #475569; line-height: 1.6; list-style-type: square;">`;
             groupedLogsByName[catName].forEach(l => {
@@ -526,6 +584,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     logHtml += `</div>`;
+
 
     // HTML 템플릿 조립 (4분할)
     let htmlTemplate = `
@@ -541,7 +600,6 @@ document.addEventListener('DOMContentLoaded', () => {
               <ul style="padding-left: 20px; margin: 0; font-size: 0.95rem; color: #333; line-height: 1.8;">
                   <li><b>보고 기간:</b> ${startDate.toLocaleDateString()} ~ ${targetEndDate.toLocaleDateString()}</li>
                   ${breakdownHtml}
-                  <li><b>주요 이슈:</b> (특이사항을 요약해 주세요)</li>
               </ul>
             </td>
             <td style="width: 50%; vertical-align: top; border: 1px solid #cbd5e1; padding: 20px; background: #f8fafc;">
@@ -565,6 +623,7 @@ document.addEventListener('DOMContentLoaded', () => {
               <ul style="padding-left: 20px; margin: 0; font-size: 0.95rem; color: #333; line-height: 1.8;">
                   <li>내일/차주 진행할 핵심 목표 1...</li>
                   <li>해결해야 할 액션 아이템 작성...</li>
+                  <li>주요 이슈: (특이사항을 요약해 주세요)</li>
               </ul>
             </td>
           </tr>
@@ -578,7 +637,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     openDocModal(null, titlePrefix, htmlTemplate, '보고서');
   }
-// ==========================================
+  
+  // ==========================================
   // [신규] 유니클로식 1-Page 기획서 템플릿 생성 로직
   // ==========================================
   function generateProposalTemplate() {
