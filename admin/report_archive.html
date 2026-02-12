@@ -337,12 +337,13 @@
   }
 
   // ==========================================
-  // [NEW] 일론 머스크 스타일 자동 보고서 로직
+  // [NEW] 일론 머스크 스타일 자동 보고서 로직 (타임머신 진척률 적용)
   // ==========================================
   function generateAutoReport(rangeType) {
     const baseDateStr = document.getElementById('report-base-date').value;
     if (!baseDateStr) { alert("보고서 기준일을 선택해 주세요."); return; }
     
+    // 기준 날짜 설정 (해당일의 23:59:59 까지 포함)
     const targetEndDate = new Date(baseDateStr); targetEndDate.setHours(23,59,59,999);
     let startDate = new Date(baseDateStr); startDate.setHours(0,0,0,0);
     
@@ -357,13 +358,11 @@
         titlePrefix = `[Monthly Report] ${targetEndDate.getFullYear()}년 ${targetEndDate.getMonth()+1}월 결산`;
     }
 
-    // 해당 기간의 로그 필터링
     const targetLogs = g_logs.filter(log => {
         if (!log['날짜']) return false;
         const d = new Date(log['날짜']); return d >= startDate && d <= targetEndDate;
     });
 
-    // --- 1. 데이터 분류 ---
     const activeBigGoals = g_goals.filter(g => g['유형'] === '큰 목표' && g['상태'] !== '완료');
     let ideaLogs = [], bugLogs = [], doneLogs = [], otherLogs = [];
     let postCount = 0;
@@ -377,14 +376,15 @@
         if (isBug) { bugLogs.push(log); return; }
         if (isPublish) postCount++;
         
-        doneLogs.push(log); // 일반 수행 내역
+        doneLogs.push(log); 
     });
 
-    // --- 2. Q1: The Signal (핵심 목표 현황) ---
+    // 1. Signal (핵심 목표)
     let signalHtml = `<ul style="padding-left: 20px; margin: 0; color: #333; line-height: 1.6;">`;
     if (activeBigGoals.length > 0) {
         activeBigGoals.forEach(bg => {
-            const percent = getReportGoalProgress(bg.ID, true);
+            // 🚀 [핵심] 기준일(targetEndDate)을 전달하여 과거 시점의 진척률 계산
+            const percent = getReportGoalProgress(bg.ID, true, targetEndDate);
             const ddayBadge = getReportDday(bg['마감일'], targetEndDate);
             let statusColor = percent === 100 ? "#10b981" : (percent > 0 ? "#3b82f6" : "#64748b");
             
@@ -399,115 +399,62 @@
             </li>`;
         });
     } else {
-        signalHtml += `<li>🚀 현재 진행 중인 핵심 목표가 없습니다. (목표 설정 필요)</li>`;
+        signalHtml += `<li>🚀 현재 진행 중인 핵심 목표가 없습니다.</li>`;
     }
     signalHtml += `</ul>`;
 
-    // --- 3. Q2: The Bottlenecks (병목, 리스크, 버그) ---
+    // 2. Bottlenecks
     let bottleneckHtml = `<ul style="padding-left: 20px; margin: 0; color: #b91c1c; line-height: 1.6;">`;
     let riskCount = 0;
     
-    // (1) 자동 리스크 감지
+    // 🚀 리스크 분석에도 기준일 전달
     const autoRisks = analyzeProjectRisks(activeBigGoals, targetEndDate);
     if (autoRisks.length > 0) {
-        autoRisks.forEach(risk => {
-            bottleneckHtml += `<li style="margin-bottom:6px;">${risk}</li>`;
-            riskCount++;
-        });
+        autoRisks.forEach(risk => { bottleneckHtml += `<li style="margin-bottom:6px;">${risk}</li>`; riskCount++; });
     }
-    // (2) 버그 리포트
     if (bugLogs.length > 0) {
-        bottleneckHtml += `<li style="margin-bottom:6px; color:#ef4444;"><b>🐞 품질 이슈 발견:</b> ${bugLogs.length}건의 버그가 리포트되었습니다.</li>`;
-        riskCount++;
+        bottleneckHtml += `<li style="margin-bottom:6px; color:#ef4444;"><b>🐞 품질 이슈 발견:</b> ${bugLogs.length}건의 버그 리포트</li>`; riskCount++;
     }
     
-    if (riskCount === 0) {
-        bottleneckHtml = `<div style="text-align:center; color:#10b981; padding:20px;">✨ <b>No Bottlenecks</b><br>현재 식별된 지연 요소나 심각한 리스크가 없습니다.</div>`;
-    } else {
-        bottleneckHtml += `</ul>`;
-    }
+    if (riskCount === 0) bottleneckHtml = `<div style="text-align:center; color:#10b981; padding:20px;">✨ <b>No Bottlenecks</b><br>현재 식별된 지연 요소가 없습니다.</div>`;
+    else bottleneckHtml += `</ul>`;
 
-    // --- 4. Q3: Velocity & Output (실행 속도 및 성과) ---
+    // 3. Velocity
     let velocityHtml = `<ul style="padding-left: 20px; margin: 0; color: #333; line-height: 1.6;">`;
-    // 포스팅 강조
-    if (postCount > 0) {
-        velocityHtml += `<li style="margin-bottom:10px; color:#2563eb; font-weight:bold; list-style:none;">📝 <b>[Shipped]</b> 블로그 포스팅 ${postCount}건 발행 완료</li>`;
-    }
-    // 완료된 주요 작업 (최대 7개까지만 표시하여 요약)
-    doneLogs.slice(0, 7).forEach(l => {
-        const title = getSmartLogTitle(l);
-        velocityHtml += `<li style="margin-bottom:4px;">${title}</li>`;
-    });
-    if (doneLogs.length > 7) {
-        velocityHtml += `<li style="color:#64748b; list-style:none;">...외 ${doneLogs.length - 7}건의 세부 작업 완료</li>`;
-    }
-    if (doneLogs.length === 0 && postCount === 0) {
-        velocityHtml += `<li style="color:#94a3b8;">금일 기록된 완료 내역이 없습니다.</li>`;
-    }
+    if (postCount > 0) velocityHtml += `<li style="margin-bottom:10px; color:#2563eb; font-weight:bold; list-style:none;">📝 <b>[Shipped]</b> 블로그 포스팅 ${postCount}건 발행 완료</li>`;
+    doneLogs.slice(0, 7).forEach(l => { const title = getSmartLogTitle(l); velocityHtml += `<li style="margin-bottom:4px;">${title}</li>`; });
+    if (doneLogs.length > 7) velocityHtml += `<li style="color:#64748b; list-style:none;">...외 ${doneLogs.length - 7}건의 세부 작업 완료</li>`;
+    if (doneLogs.length === 0 && postCount === 0) velocityHtml += `<li style="color:#94a3b8;">금일 기록된 완료 내역이 없습니다.</li>`;
     velocityHtml += `</ul>`;
 
-    // --- 5. Q4: The Algorithm (최적화 및 향후 계획) ---
+    // 4. Algorithm
     let algoHtml = `<ul style="padding-left: 20px; margin: 0; color: #333; line-height: 1.6;">`;
-    // 아이디어 제안
     if (ideaLogs.length > 0) {
         algoHtml += `<li style="margin-bottom:8px; color:#ea580c;"><b>💡 Innovation (아이디어):</b><br/>`;
         ideaLogs.forEach(i => { algoHtml += `- ${i['제목'] || '새로운 아이디어'}<br/>`; });
         algoHtml += `</li>`;
     }
-    // 기본 액션 아이템 템플릿
-    algoHtml += `
-        <li style="margin-bottom:6px;"><b>⚡ Optimization (효율화):</b><br/>(반복 작업 제거 또는 자동화 할 부분 작성)</li>
-        <li><b>⏩ Next Critical Path (내일 할 일):</b><br/>(목표 달성을 위해 반드시 처리해야 할 1순위 작업)</li>
-    </ul>`;
+    algoHtml += `<li style="margin-bottom:6px;"><b>⚡ Optimization (효율화):</b><br/>(반복 작업 제거 또는 자동화 할 부분 작성)</li><li><b>⏩ Next Critical Path (내일 할 일):</b><br/>(목표 달성을 위해 반드시 처리해야 할 1순위 작업)</li></ul>`;
 
-    // --- HTML 조립 ---
     const htmlTemplate = `
       <div style="font-family:'Pretendard','Malgun Gothic',sans-serif; max-width:900px; margin:0 auto; color:#1e293b;">
         <h2 style="text-align:center; color:#0f172a; margin-bottom:24px; font-size:1.6rem; letter-spacing:-0.5px;">${titlePrefix}</h2>
-        
         <table style="width:100%; border-collapse:collapse; table-layout:fixed; border:2px solid #cbd5e1;">
           <tr>
-            <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;">
-              <h3 style="margin:0 0 12px 0; color:#1e293b; font-size:1.1rem; border-bottom:2px solid #cbd5e1; padding-bottom:8px;">
-                1. 🎯 The Signal (핵심 목표 현황)
-              </h3>
-              ${signalHtml}
-            </td>
-            <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fef2f2;">
-              <h3 style="margin:0 0 12px 0; color:#b91c1c; font-size:1.1rem; border-bottom:2px solid #fca5a5; padding-bottom:8px;">
-                2. 🛑 The Bottlenecks (리스크 & 방해요소)
-              </h3>
-              ${bottleneckHtml}
-            </td>
+            <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;"><h3 style="margin:0 0 12px 0; color:#1e293b; font-size:1.1rem; border-bottom:2px solid #cbd5e1; padding-bottom:8px;">1. 🎯 The Signal (핵심 목표 현황)</h3>${signalHtml}</td>
+            <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fef2f2;"><h3 style="margin:0 0 12px 0; color:#b91c1c; font-size:1.1rem; border-bottom:2px solid #fca5a5; padding-bottom:8px;">2. 🛑 The Bottlenecks (리스크 & 방해요소)</h3>${bottleneckHtml}</td>
           </tr>
           <tr>
-            <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f0f9ff;">
-              <h3 style="margin:0 0 12px 0; color:#0369a1; font-size:1.1rem; border-bottom:2px solid #bae6fd; padding-bottom:8px;">
-                3. ⚡ Velocity (실행 속도 & 성과)
-              </h3>
-              ${velocityHtml}
-            </td>
-            <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;">
-              <h3 style="margin:0 0 12px 0; color:#1e293b; font-size:1.1rem; border-bottom:2px solid #cbd5e1; padding-bottom:8px;">
-                4. ⚙️ The Algorithm (최적화 & Next Step)
-              </h3>
-              ${algoHtml}
-            </td>
+            <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f0f9ff;"><h3 style="margin:0 0 12px 0; color:#0369a1; font-size:1.1rem; border-bottom:2px solid #bae6fd; padding-bottom:8px;">3. ⚡ Velocity (실행 속도 & 성과)</h3>${velocityHtml}</td>
+            <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;"><h3 style="margin:0 0 12px 0; color:#1e293b; font-size:1.1rem; border-bottom:2px solid #cbd5e1; padding-bottom:8px;">4. ⚙️ The Algorithm (최적화 & Next Step)</h3>${algoHtml}</td>
           </tr>
         </table>
-        
-        <p style="text-align:right; color:#94a3b8; font-size:0.8rem; margin-top:12px;">
-            ※ Generated by Cheese Lab (Elon Musk Style Action-Report)
-        </p>
-      </div>
-    `;
+        <p style="text-align:right; color:#94a3b8; font-size:0.8rem; margin-top:12px;">※ Generated by Cheese Lab (Elon Musk Style Action-Report)</p>
+      </div>`;
 
     openDocModal(null, titlePrefix, htmlTemplate, '보고서');
   }
 
-  // ==========================================
-  // 모달 제어 (보고서/기획서 모드 분리)
-  // ==========================================
   async function openDocModal(docId = null, defaultTitle = "", defaultHtml = "", defaultType = "보고서") {
     const modal = document.getElementById('doc-modal');
     modal.classList.add('open');
@@ -569,9 +516,6 @@
     }
   }
 
-  // ==========================================
-  // 저장 및 공통 기능
-  // ==========================================
   document.getElementById('doc-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const btn = document.getElementById('btn-save-doc');
@@ -698,9 +642,8 @@
   }
 
   // ==========================================
-  // [기획서] 스마트 일정 생성기 (수정 기능 완비)
+  // [기획서] 스마트 일정 생성기
   // ==========================================
-  
   function openScheduleMaker() {
     CURRENT_EDITING_SCHEDULE_EL = null; 
     document.getElementById('schedule-maker-modal').classList.add('open');
@@ -715,7 +658,6 @@
       CURRENT_EDITING_SCHEDULE_EL = null; 
   }
 
-  // [중요] type="button" 명시하여 폼 전송 방지
   function addScheduleRow(cat="", task="", sDate="", eDate="") {
     const tbody = document.getElementById('sch-input-list');
     const tr = document.createElement('tr');
@@ -724,23 +666,18 @@
     tbody.appendChild(tr);
   }
 
-  // 🔄 생성된 일정표에서 '수정' 버튼 클릭 시 (데이터 복원)
   window.editEmbeddedSchedule = function(btn) {
       const wrapper = btn.closest('.schedule-section');
       if (!wrapper) return;
-      
       const configRaw = wrapper.getAttribute('data-config');
       if (!configRaw) { alert("데이터 손상"); return; }
-      
       try {
           const config = JSON.parse(decodeURIComponent(configRaw));
           CURRENT_EDITING_SCHEDULE_EL = wrapper; 
           document.getElementById('schedule-maker-modal').classList.add('open');
-          
           document.getElementById('sch-start-month').value = config.startMonth;
           document.getElementById('sch-project-name').value = config.projectName || "프로젝트";
           document.getElementById('sch-input-list').innerHTML = ""; 
-          
           config.rows.forEach(r => {
               const sDate = r.s ? r.s.split('T')[0] : "";
               const eDate = r.e ? r.e.split('T')[0] : "";
@@ -759,7 +696,6 @@
       addScheduleRow("3단계", "최종 마감", "2026-02-10", "2026-02-14");
   }
 
-  // 🚀 [최종] 일정표 삽입 (수정 버튼에 type="button" 필수로 추가됨!)
   function insertSmartSchedule() {
     const startMonthVal = document.getElementById('sch-start-month').value;
     const projectName = document.getElementById('sch-project-name').value;
@@ -773,7 +709,6 @@
         const sVal = tr.querySelector('.sch-sdate').value;
         const eVal = tr.querySelector('.sch-edate').value;
         if(eVal) { const e = new Date(eVal); if(e > maxDate) maxDate = e; }
-        
         const rowData = { cat: tr.querySelector('.sch-cat').value, task: tr.querySelector('.sch-task').value, s: sVal?new Date(sVal):null, e: eVal?new Date(eVal):null };
         rows.push(rowData);
         saveRows.push({ ...rowData, s: sVal, e: eVal });
@@ -830,12 +765,10 @@
       </div><br/>
     `;
 
-    // 🔄 수정 모드일 경우 기존 요소 교체
     if (CURRENT_EDITING_SCHEDULE_EL) {
         $(CURRENT_EDITING_SCHEDULE_EL).replaceWith(scheduleHtml);
         CURRENT_EDITING_SCHEDULE_EL = null;
     } 
-    // ➕ 신규 삽입
     else {
         const currentCode = $('#doc-content').summernote('code');
         if (currentCode.includes('id="schedule-placeholder"')) {
@@ -873,7 +806,52 @@
       openDocModal(null, "[기획서] " + mainTitle, htmlTemplate, '기획서');
   }
 
-  // ✅ 보조 함수들
+  // ✅ [핵심] 진척률 타임머신 함수 (과거 상태 추적)
+  function getReportGoalProgress(goalId, isBigGoal, refDateObj) {
+      let tasks = [];
+      if (isBigGoal) {
+          const midGoalIds = g_goals.filter(m => m['상위ID'] === goalId).map(m => m.ID);
+          tasks = g_tasks.filter(t => t['유형'] !== '아이디어' && t['유형'] !== '버그' && midGoalIds.includes(t['연결_중간목표ID']));
+      } else {
+          tasks = g_tasks.filter(t => t['유형'] !== '아이디어' && t['유형'] !== '버그' && t['연결_중간목표ID'] === goalId);
+      }
+      
+      if (tasks.length === 0) return 0;
+
+      // 1. 기준일 (Target Date) 설정
+      // - refDateObj가 없으면 오늘을 기준으로 함
+      // - 시간은 해당일의 마지막(23:59:59)으로 설정
+      const targetDate = refDateObj ? new Date(refDateObj) : new Date();
+      targetDate.setHours(23, 59, 59, 999);
+
+      // 2. 완료 건수 계산 (타임머신 적용)
+      const doneCount = tasks.filter(t => {
+          // (A) 현재 상태가 '완료'인가?
+          const isCurrentlyDone = t['상태'] === '완료';
+
+          // (B) 기준일이 오늘/미래라면 -> 현재 상태 그대로 인정
+          const today = new Date(); today.setHours(0,0,0,0);
+          if (targetDate >= today) return isCurrentlyDone;
+
+          // (C) 기준일이 과거라면 -> 로그를 뒤져서 확인
+          // - 현재 완료되지 않았다면, 과거에도 완료되지 않았을 것임 (취소된 게 아니라면)
+          if (!isCurrentlyDone) return false;
+
+          // - 현재는 완료지만, "기준일 당시에 완료되었었나?" 확인
+          // - 해당 태스크와 관련된 로그 중 '완료'를 의미하는 로그가 '기준일 이전'에 있는지 체크
+          const doneLog = g_logs.find(l => 
+              l['관련_목표ID'] === t.ID && 
+              (l['상태'] === '완료' || l['태그'] === 'Publish' || (l['제목'] && l['제목'].includes('완료'))) &&
+              new Date(l['날짜']) <= targetDate
+          );
+
+          // 로그가 있으면 완료 인정, 없으면 (최근에 완료된 것으로 간주하여) 미완료 처리
+          return !!doneLog; 
+      }).length;
+
+      return Math.round((doneCount / tasks.length) * 100);
+  }
+
   function getReportDday(dateStr, baseDateObj) {
       if (!dateStr) return `<span style="color:#94a3b8; font-size:0.85em; margin-left:6px; font-weight:normal;">(마감 미정)</span>`;
       const targetDate = new Date(dateStr); targetDate.setHours(0,0,0,0);
@@ -882,19 +860,6 @@
       if (diffDays > 0) return `<span style="color:#ef4444; font-size:0.85em; font-weight:900; margin-left:6px; background:#fee2e2; padding:2px 6px; border-radius:4px;">D-${diffDays}</span>`;
       if (diffDays === 0) return `<span style="color:#ef4444; font-size:0.85em; font-weight:900; margin-left:6px; background:#fee2e2; padding:2px 6px; border-radius:4px;">D-Day</span>`;
       return `<span style="color:#ef4444; font-size:0.85em; font-weight:900; margin-left:6px; background:#fee2e2; padding:2px 6px; border-radius:4px;">D+${Math.abs(diffDays)} 지연</span>`;
-  }
-
-  function getReportGoalProgress(goalId, isBigGoal) {
-      let tasks = [];
-      if (isBigGoal) {
-          const midGoalIds = g_goals.filter(m => m['상위ID'] === goalId).map(m => m.ID);
-          tasks = g_tasks.filter(t => t['유형'] !== '아이디어' && t['유형'] !== '버그' && midGoalIds.includes(t['연결_중간목표ID']));
-      } else {
-          tasks = g_tasks.filter(t => t['유형'] !== '아이디어' && t['유형'] !== '버그' && t['연결_중간목표ID'] === goalId);
-      }
-      if (tasks.length === 0) return 0;
-      const doneCount = tasks.filter(t => t['상태'] === '완료').length;
-      return Math.round((doneCount / tasks.length) * 100);
   }
 
   function getSmartLogTitle(log) {
@@ -912,7 +877,8 @@
       let issues = [];
       const refDate = baseDateObj ? new Date(baseDateObj) : new Date(); refDate.setHours(0,0,0,0);
       activeBigGoals.forEach(bg => {
-          const percent = getReportGoalProgress(bg.ID, true);
+          // 🚀 리스크 분석 시에도 타임머신 진척률 사용
+          const percent = getReportGoalProgress(bg.ID, true, refDate);
           let diffDays = 999;
           if (bg['마감일']) {
              const target = new Date(bg['마감일']); target.setHours(0,0,0,0);
@@ -928,7 +894,7 @@
     const el = document.getElementById("sysVersion"); if(!el) return;
     const d = new Date(document.lastModified);
     const pad = (n) => String(n).padStart(2, '0');
-    el.textContent = `Version: ${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())} [최종완성]`;
+    el.textContent = `Version: ${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())} [Ver 2.0]`;
   })();
 </script>
 </body>
