@@ -182,6 +182,7 @@
 </div>
 
 <script>
+// ✅ 사이드바 메뉴 활성화 인식용 변수
   window.CHEESE_ADMIN_ACTIVE_PAGE = "report_archive"; 
   
   let g_docs = [];
@@ -189,9 +190,10 @@
   let g_goals = [];
   let g_tasks = [];
 
-document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('DOMContentLoaded', () => {
+    // 썸머노트 에디터 초기화
     $('#doc-content').summernote({
-      height: 600, lang: 'ko-KR', // 4분할 보고서를 위해 에디터 높이를 600으로 늘렸습니다
+      height: 600, lang: 'ko-KR',
       toolbar: [
         ['style', ['style']], ['font', ['bold', 'underline', 'clear']],
         ['color', ['color']], ['para', ['ul', 'ol', 'paragraph']],
@@ -199,26 +201,12 @@ document.addEventListener('DOMContentLoaded', () => {
       ]
     });
     
-    // ✅ [신규] 보고서 기준일을 '오늘'로 자동 세팅
+    // 보고서 기준일을 '오늘'로 자동 세팅
     const todayStr = new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0];
     document.getElementById('report-base-date').value = todayStr;
 
     loadAllData();
   });
-
-  // ✅ [신규] 보고서용 목표 진척률(%) 계산 유틸리티
-  function getReportGoalProgress(goalId, isBigGoal) {
-      let tasks = [];
-      if (isBigGoal) {
-          const midGoalIds = g_goals.filter(m => m['상위ID'] === goalId).map(m => m.ID);
-          tasks = g_tasks.filter(t => t['유형'] !== '아이디어' && t['유형'] !== '버그' && midGoalIds.includes(t['연결_중간목표ID']));
-      } else {
-          tasks = g_tasks.filter(t => t['유형'] !== '아이디어' && t['유형'] !== '버그' && t['연결_중간목표ID'] === goalId);
-      }
-      if (tasks.length === 0) return 0;
-      const doneCount = tasks.filter(t => t['상태'] === '완료').length;
-      return Math.round((doneCount / tasks.length) * 100);
-  }
 
   async function loadAllData() {
     if(typeof showAdminLoading==='function') showAdminLoading("문서 목록 불러오는 중...");
@@ -235,8 +223,8 @@ document.addEventListener('DOMContentLoaded', () => {
     finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); }
   }
 
-// ==========================================
-  // 2. 아카이브 렌더링 (그리드)
+  // ==========================================
+  // 2. 아카이브 렌더링
   // ==========================================
   function renderDocs() {
     const root = document.getElementById('doc-grid');
@@ -394,21 +382,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // ==========================================
-  // ✅ [복구됨] 보조 함수: 진척률 & D-Day 계산
+  // 5. 보조 함수 (D-Day, 진척률)
   // ==========================================
-  function getReportGoalProgress(goalId, isBigGoal) {
-      let tasks = [];
-      if (isBigGoal) {
-          const midGoalIds = g_goals.filter(m => m['상위ID'] === goalId).map(m => m.ID);
-          tasks = g_tasks.filter(t => t['유형'] !== '아이디어' && t['유형'] !== '버그' && midGoalIds.includes(t['연결_중간목표ID']));
-      } else {
-          tasks = g_tasks.filter(t => t['유형'] !== '아이디어' && t['유형'] !== '버그' && t['연결_중간목표ID'] === goalId);
-      }
-      if (tasks.length === 0) return 0;
-      const doneCount = tasks.filter(t => t['상태'] === '완료').length;
-      return Math.round((doneCount / tasks.length) * 100);
-  }
-
   function getReportDday(dateStr) {
       if (!dateStr) return `<span style="color:#94a3b8; font-size:0.85em; margin-left:6px; font-weight:normal;">(마감 미정)</span>`;
       const targetDate = new Date(dateStr);
@@ -422,8 +397,21 @@ document.addEventListener('DOMContentLoaded', () => {
       return `<span style="color:#ef4444; font-size:0.85em; font-weight:900; margin-left:6px; background:#fee2e2; padding:2px 6px; border-radius:4px;">D+${Math.abs(diffDays)} 지연</span>`;
   }
 
+  function getReportGoalProgress(goalId, isBigGoal) {
+      let tasks = [];
+      if (isBigGoal) {
+          const midGoalIds = g_goals.filter(m => m['상위ID'] === goalId).map(m => m.ID);
+          tasks = g_tasks.filter(t => t['유형'] !== '아이디어' && t['유형'] !== '버그' && midGoalIds.includes(t['연결_중간목표ID']));
+      } else {
+          tasks = g_tasks.filter(t => t['유형'] !== '아이디어' && t['유형'] !== '버그' && t['연결_중간목표ID'] === goalId);
+      }
+      if (tasks.length === 0) return 0;
+      const doneCount = tasks.filter(t => t['상태'] === '완료').length;
+      return Math.round((doneCount / tasks.length) * 100);
+  }
+
   // ==========================================
-  // 5. 1 Page 4분할 자동 보고서 생성 로직 (계층형 + 포스팅분류 통합판)
+  // 6. 1 Page 4분할 자동 보고서 생성 (최종 업그레이드)
   // ==========================================
   function generateAutoReport(rangeType) {
     const baseDateStr = document.getElementById('report-base-date').value;
@@ -448,21 +436,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const d = new Date(log['날짜']); return d >= startDate && d <= targetEndDate;
     });
 
-    // --- 집계 로직 시작 ---
-    const hierarchyMap = {}; // { bigId: { title, dday, mids: { midId: { title, count } } } }
+    // 🚀 [로직] 계층형 그룹화 & 특수 태그 집계
+    const hierarchyMap = {}; 
     let ideaCount = 0;
     let bugCount = 0;
-    let postCount = 0;
+    let postPublishCount = 0; // 신규 발행 건수만 집계
     let totalLogs = 0;
     const groupedLogsByName = {}; 
 
     targetLogs.forEach(log => {
         totalLogs++;
         
-        // 1. 특수 분류 확인 (아이디어/버그/포스팅)
+        // 1. 특수 분류 (아이디어/버그/포스팅)
         const isIdea = log['태그'] === '아이디어' || (log['제목'] && log['제목'].includes('💡'));
         const isBug = log['태그'] === '버그' || (log['제목'] && log['제목'].includes('🐞'));
-        const isPost = ['Publish', 'Update', 'Draft'].includes(log['태그']);
+        const isPublish = log['태그'] === 'Publish'; // 신규 발행만 체크
+        const isUpdate = log['태그'] === 'Update';
+        const isDraft = log['태그'] === 'Draft';
 
         if (isIdea) {
             ideaCount++;
@@ -476,8 +466,11 @@ document.addEventListener('DOMContentLoaded', () => {
             groupedLogsByName["🐞 버그 발견 및 리포트"].push(log);
             return;
         }
-        if (isPost) {
-            postCount++;
+        if (isPublish || isUpdate || isDraft) {
+            // 신규 발행일 경우에만 핵심 건수에 포함
+            if (isPublish) postPublishCount++;
+            
+            // 상세 내역에는 발행/수정 모두 표시
             const postGroupName = "📝 블로그 포스팅 관리 (발행/수정)";
             if (!groupedLogsByName[postGroupName]) groupedLogsByName[postGroupName] = [];
             groupedLogsByName[postGroupName].push(log);
@@ -528,10 +521,11 @@ document.addEventListener('DOMContentLoaded', () => {
         groupedLogsByName[taskTitleForLog].push(log);
     });
 
-    // [Q1] 핵심 요약: 계층형 트리 출력
+    // [Q1] 핵심 요약: 계층형 트리 출력 (포스팅 발행 & 아이디어 생성 강조)
     let breakdownHtml = `<li><b>총 활동 건수:</b> 총 ${totalLogs}건 완료</li>`;
     breakdownHtml += `<ul style="margin: 6px 0 12px 0; padding-left: 20px; font-size: 0.9em; color: #475569; list-style-type: none;">`;
     
+    // 1. 큰 목표 -> 중간 목표 계층 출력
     for (const [bigId, bigData] of Object.entries(hierarchyMap)) {
         if (bigId === "OTHER") continue; 
 
@@ -546,18 +540,26 @@ document.addEventListener('DOMContentLoaded', () => {
              </li>`;
         }
     }
-    // 기타, 포스팅, 아이디어, 버그 출력
+    // 2. 포스팅 발행 건수 강조
+    if (postPublishCount > 0) {
+        breakdownHtml += `<li style="margin-top:10px; color: #2563eb; font-weight:bold;">📝 블로그 포스팅 발행: ${postPublishCount}건</li>`;
+    }
+    // 3. 아이디어 생성 건수 강조
+    if (ideaCount > 0) {
+        breakdownHtml += `<li style="margin-top:4px; color: #16a34a; font-weight:bold;">💡 신규 아이디어 생성: ${ideaCount}건</li>`;
+    }
+    
+    // 4. 기타 및 버그
     if (hierarchyMap["OTHER"]) {
         breakdownHtml += `<li style="margin-top: 8px; color: #64748b;"><b>기타 (미분류 프로젝트)</b></li>`;
         for (const [midId, midData] of Object.entries(hierarchyMap["OTHER"].mids)) {
              breakdownHtml += `<li style="padding-left: 12px; margin-bottom: 2px;">${midData.title}: <b>${midData.count}</b>건</li>`;
         }
     }
-    if (postCount > 0) breakdownHtml += `<li style="margin-top:6px; color: #2563eb;">📝 블로그 포스팅: <b>${postCount}</b>건</li>`;
-    if (ideaCount > 0) breakdownHtml += `<li style="margin-top:2px; color: #16a34a;">💡 신규 아이디어: <b>${ideaCount}</b>건</li>`;
-    if (bugCount > 0) breakdownHtml += `<li style="margin-top:2px; color: #ef4444;">🐞 버그 리포트: <b>${bugCount}</b>건</li>`;
+    if (bugCount > 0) breakdownHtml += `<li style="margin-top:4px; color: #ef4444;">🐞 버그 리포트: <b>${bugCount}</b>건</li>`;
     
     breakdownHtml += `</ul>`;
+
 
     // [Q2] 프로젝트 현황
     let progressHtml = `<ul style="padding-left: 20px; margin: 0; font-size: 0.95rem; color: #333; line-height: 1.6;">`;
@@ -574,7 +576,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     progressHtml += `</ul>`;
 
-    // [Q3] 상세 내역
+
+    // [Q3] 상세 내역 (날짜 제거 & 실제 제목 위주)
     let logHtml = `<div style="font-size: 0.95rem; padding-bottom: 10px;">`;
     if (totalLogs === 0) {
         logHtml += `<p style="color:#94a3b8; margin:0;">해당 기간에 작성된 작업 기록이 없습니다.</p>`;
@@ -583,17 +586,27 @@ document.addEventListener('DOMContentLoaded', () => {
         sortedLogKeys.forEach(catName => {
             logHtml += `<h4 style="margin: 14px 0 6px 0; color: #1e293b; font-size: 0.95rem;">📌 ${catName}</h4>`;
             logHtml += `<ul style="padding-left: 16px; margin: 0; color: #475569; line-height: 1.6; list-style-type: square;">`;
+            
             groupedLogsByName[catName].forEach(l => {
-                const dateStr = l['날짜'] ? l['날짜'].substring(5,10) : '';
-                const logTitle = l['제목'] || (l['내용'] ? l['내용'].substring(0, 20) + "..." : "(내용 없음)");
-                logHtml += `<li style="margin-bottom: 4px;">[${dateStr}] <b>${logTitle}</b></li>`;
+                // "작업이 완료되었습니다" 같은 무의미한 문구 필터링 로직
+                let displayTitle = l['제목'];
+                
+                // 제목이 비어있거나 무의미한 문구일 경우 내용을 사용하되, 앞부분만 잘라서 제목화
+                if (!displayTitle || displayTitle.includes("작업이 완료되었습니다")) {
+                    displayTitle = l['내용'] ? l['내용'].split('\n')[0].substring(0, 30) : "(내용 없음)";
+                    if (l['내용'] && l['내용'].length > 30) displayTitle += "...";
+                }
+                
+                // 날짜 표시는 일일 보고서이므로 생략하고 깔끔하게 제목만 출력
+                logHtml += `<li style="margin-bottom: 4px;"><b>${displayTitle}</b></li>`;
             });
             logHtml += `</ul>`;
         });
     }
     logHtml += `</div>`;
 
-    // HTML 조립
+
+    // HTML 템플릿 조립
     let htmlTemplate = `
       <div style="font-family: 'Pretendard', 'Malgun Gothic', sans-serif; max-width: 900px; margin: 0 auto; color: #1e293b;">
         <h2 style="text-align: center; color: #0f172a; margin-bottom: 24px; font-size: 1.6rem; letter-spacing: -0.5px;">${titlePrefix}</h2>
