@@ -382,7 +382,7 @@
   });
 
   // ==========================================
-  // 5. 보조 함수 (D-Day, 진척률)
+  // 5. 보조 함수 (D-Day, 진척률, 자동진단)
   // ==========================================
   function getReportDday(dateStr) {
       if (!dateStr) return `<span style="color:#94a3b8; font-size:0.85em; margin-left:6px; font-weight:normal;">(마감 미정)</span>`;
@@ -410,8 +410,33 @@
       return Math.round((doneCount / tasks.length) * 100);
   }
 
+  // [신규] 프로젝트 자동 진단 로직
+  function analyzeProjectRisks(activeBigGoals) {
+      let issues = [];
+      const today = new Date(); today.setHours(0,0,0,0);
+
+      activeBigGoals.forEach(bg => {
+          const percent = getReportGoalProgress(bg.ID, true);
+          let diffDays = 999;
+          if (bg['마감일']) {
+             const target = new Date(bg['마감일']);
+             diffDays = Math.ceil((target - today) / (1000 * 60 * 60 * 24));
+          }
+
+          // 1. 지연 감지
+          if (diffDays < 0 && percent < 100) {
+              issues.push(`🚨 <b>[지연]</b> '${bg['제목']}' 프로젝트의 일정이 지연되고 있습니다. (진척률 ${percent}%)`);
+          }
+          // 2. 리스크 감지 (마감 3일 전인데 50% 미만)
+          else if (diffDays >= 0 && diffDays <= 3 && percent < 50) {
+              issues.push(`⚠️ <b>[리스크]</b> '${bg['제목']}' 목표 달성이 불투명합니다. 집중적인 리소스 투입이 필요합니다.`);
+          }
+      });
+      return issues;
+  }
+
   // ==========================================
-  // 6. 1 Page 4분할 자동 보고서 생성 (최종 업그레이드)
+  // 6. 1 Page 4분할 자동 보고서 생성 (자동 진단 포함)
   // ==========================================
   function generateAutoReport(rangeType) {
     const baseDateStr = document.getElementById('report-base-date').value;
@@ -437,34 +462,23 @@
     });
 
     // 🚀 [집계 변수 초기화]
-    const hierarchyMap = {}; // { bigId: { title, dday, activeLogs: [], mids: { midId: { title, count } } } }
+    const hierarchyMap = {}; 
     let ideaLogs = [];
     let bugLogs = [];
     let postPublishCount = 0;
     let totalLogs = 0;
-    let otherLogs = []; // 기타 미분류
+    let otherLogs = [];
 
     targetLogs.forEach(log => {
         totalLogs++;
-        
-        // 1. 특수 분류 (아이디어/버그/포스팅)
         const isIdea = log['태그'] === '아이디어' || (log['제목'] && log['제목'].includes('💡'));
         const isBug = log['태그'] === '버그' || (log['제목'] && log['제목'].includes('🐞'));
         const isPublish = log['태그'] === 'Publish'; 
         
-        // 아이디어와 버그는 Q3 목록으로 저장
-        if (isIdea) {
-            ideaLogs.push(log);
-            return;
-        }
-        if (isBug) {
-            bugLogs.push(log);
-            return;
-        }
-        // 포스팅 발행은 Q1 건수에 반영
+        if (isIdea) { ideaLogs.push(log); return; }
+        if (isBug) { bugLogs.push(log); return; }
         if (isPublish) postPublishCount++;
 
-        // 2. 일반 작업: 역추적 (Log -> Task -> Mid -> Big)
         const relId = log['관련_목표ID'];
         let bigGoalObj = null;
         let midGoalObj = null;
@@ -484,11 +498,9 @@
             }
         }
 
-        // 3. 계층 맵 적재
         const bigId = bigGoalObj ? bigGoalObj.ID : "OTHER";
         const bigTitle = bigGoalObj ? bigGoalObj['제목'] : "기타 (미분류 프로젝트)";
         const bigDday = bigGoalObj ? bigGoalObj['마감일'] : null;
-
         const midId = midGoalObj ? midGoalObj.ID : "DIRECT";
         const midTitle = midGoalObj ? midGoalObj['제목'] : "↳ 직접 수행 / 기타";
 
@@ -499,44 +511,38 @@
             hierarchyMap[bigId].mids[midId] = { title: midTitle, count: 0 };
         }
         
-        // 건수 증가 및 해당 프로젝트의 "오늘의 활동 로그"로 추가
         hierarchyMap[bigId].mids[midId].count++;
         hierarchyMap[bigId].activeLogs.push(log);
         
-        // 기타 프로젝트인 경우 Q3용 로그로도 백업
-        if (bigId === "OTHER") {
-            otherLogs.push(log);
-        }
+        if (bigId === "OTHER") otherLogs.push(log);
     });
 
     // =========================================
-    // [Q1] 목표 및 핵심 요약 (포스팅 & 프로젝트 수행 건수)
+    // [Q1] 목표 및 핵심 요약
     // =========================================
     let breakdownHtml = `<ul style="margin: 6px 0 12px 0; padding-left: 20px; font-size: 0.9em; color: #475569; list-style-type: none;">`;
     
-    // 1. 블로그 포스팅 발행 (최상단 강조)
+    // 1. 포스팅 성과
     if (postPublishCount > 0) {
         breakdownHtml += `<li style="margin-bottom:8px; color: #2563eb; font-weight:bold; font-size: 1rem; border-bottom:1px dashed #bfdbfe; padding-bottom:4px;">
-            📝 블로그 포스팅 발행: ${postPublishCount}건
+            🏆 [성과] 블로그 포스팅 ${postPublishCount}건 발행 완료
         </li>`;
     } else {
         breakdownHtml += `<li style="margin-bottom:8px; color: #94a3b8; font-size: 0.9rem;">
-            (금일 포스팅 발행 없음)
+            📉 금일 발행된 포스팅이 없습니다.
         </li>`;
     }
 
-    // 2. 총 활동 건수
+    // 2. 총 건수
     breakdownHtml += `<li style="margin-bottom: 8px;"><b>총 활동 건수:</b> ${totalLogs}건</li>`;
 
-    // 3. 프로젝트별 수행 건수 (계층형)
+    // 3. 프로젝트별 수행 건수
     for (const [bigId, bigData] of Object.entries(hierarchyMap)) {
         if (bigId === "OTHER") continue; 
-
         const ddayBadge = getReportDday(bigData.dday); 
         breakdownHtml += `<li style="margin-top: 6px; margin-bottom: 2px; color: #1e293b;">
             <b>${bigData.title}</b> ${ddayBadge}
         </li>`;
-        
         for (const [midId, midData] of Object.entries(bigData.mids)) {
              breakdownHtml += `<li style="padding-left: 12px; margin-bottom: 2px; color: #64748b;">
                 ${midData.title}: <b>${midData.count}</b>건
@@ -547,24 +553,32 @@
 
 
     // =========================================
-    // [Q2] 프로젝트 현황 및 수행 내역 (통합)
+    // [Q2] 프로젝트 현황 및 수행 내역
     // =========================================
     let progressHtml = `<ul style="padding-left: 16px; margin: 0; font-size: 0.95rem; color: #333; line-height: 1.6;">`;
     const activeBigGoals = g_goals.filter(g => g['유형'] === '큰 목표' && g['상태'] !== '완료');
     
+    // 자동 진단을 위해 활성 목표 전달
+    const autoRisks = analyzeProjectRisks(activeBigGoals);
+
     if (activeBigGoals.length > 0) {
         activeBigGoals.forEach(bg => {
             const percent = getReportGoalProgress(bg.ID, true);
             const ddayBadge = getReportDday(bg['마감일']);
             let statusColor = percent === 100 ? "#10b981" : (percent > 0 ? "#3b82f6" : "#64748b");
             
+            // 시각적 게이지 바 적용
             progressHtml += `<li style="margin-bottom: 16px; list-style: none;">
-                <div style="border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; margin-bottom: 6px;">
+                <div style="margin-bottom: 4px;">
                     <b>${bg['제목']}</b> ${ddayBadge}
-                    <span style="color:${statusColor}; font-weight:800; font-size: 0.85em; margin-left:8px;">(${percent}%)</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+                    <div style="flex:1; background:#f1f5f9; height:8px; border-radius:4px; overflow:hidden;">
+                        <div style="width:${percent}%; background:${statusColor}; height:100%;"></div>
+                    </div>
+                    <span style="font-size:0.8em; font-weight:bold; color:${statusColor}">${percent}%</span>
                 </div>`;
             
-            // 해당 프로젝트의 오늘 수행 로그
             if (hierarchyMap[bg.ID] && hierarchyMap[bg.ID].activeLogs.length > 0) {
                  progressHtml += `<ul style="padding-left: 14px; margin: 0; color: #475569; font-size: 0.9em; list-style-type: square;">`;
                  hierarchyMap[bg.ID].activeLogs.forEach(l => {
@@ -585,11 +599,9 @@
 
 
     // =========================================
-    // [Q3] 아이디어 / 버그 / 기타 활동 (재구성)
+    // [Q3] 아이디어 / 버그 / 기타 활동
     // =========================================
     let otherHtml = `<div style="font-size: 0.95rem; padding-bottom: 10px;">`;
-    
-    // 1. 신규 아이디어 (최우선)
     if (ideaLogs.length > 0) {
         otherHtml += `<h4 style="margin: 4px 0 6px 0; color: #16a34a; font-size: 0.95rem;">💡 신규 아이디어 (${ideaLogs.length}건)</h4>`;
         otherHtml += `<ul style="padding-left: 16px; margin: 0; color: #475569; line-height: 1.6; list-style-type: circle;">`;
@@ -599,8 +611,6 @@
         });
         otherHtml += `</ul><div style="height:12px;"></div>`;
     }
-
-    // 2. 버그 리포트
     if (bugLogs.length > 0) {
         otherHtml += `<h4 style="margin: 4px 0 6px 0; color: #ef4444; font-size: 0.95rem;">🐞 버그 발견 및 리포트 (${bugLogs.length}건)</h4>`;
         otherHtml += `<ul style="padding-left: 16px; margin: 0; color: #475569; line-height: 1.6; list-style-type: circle;">`;
@@ -610,8 +620,6 @@
         });
         otherHtml += `</ul><div style="height:12px;"></div>`;
     }
-
-    // 3. 기타 미분류 업무
     if (otherLogs.length > 0) {
         otherHtml += `<h4 style="margin: 4px 0 6px 0; color: #64748b; font-size: 0.95rem;">📂 기타 업무 (${otherLogs.length}건)</h4>`;
         otherHtml += `<ul style="padding-left: 16px; margin: 0; color: #94a3b8; line-height: 1.6; list-style-type: circle;">`;
@@ -621,11 +629,36 @@
         });
         otherHtml += `</ul>`;
     }
-
     if (ideaLogs.length === 0 && bugLogs.length === 0 && otherLogs.length === 0) {
         otherHtml += `<p style="color:#94a3b8; margin:0;">특이사항이나 별도 활동이 없습니다.</p>`;
     }
     otherHtml += `</div>`;
+
+
+    // =========================================
+    // [Q4] 자동 개선점 제안 (Auto Insight)
+    // =========================================
+    let improveHtml = `<ul style="padding-left: 20px; margin: 0; font-size: 0.95rem; color: #333; line-height: 1.8;">`;
+    
+    // 1. 자동 감지된 리스크 추가
+    if (autoRisks.length > 0) {
+        autoRisks.forEach(risk => {
+            improveHtml += `<li style="margin-bottom:6px;">${risk}</li>`;
+        });
+    } else {
+        improveHtml += `<li style="margin-bottom:6px; color:#10b981;">✅ 현재 주요 프로젝트들이 순조롭게 진행되고 있습니다.</li>`;
+    }
+    
+    // 2. 버그가 많을 경우 추가 제안
+    if (bugLogs.length >= 3) {
+        improveHtml += `<li style="margin-bottom:6px;">🐞 <b>[품질 이슈]</b> 금일 버그 리포트가 다수 발생했습니다. QA 시간을 확보하세요.</li>`;
+    }
+    
+    // 3. 기본 템플릿 (수동 입력용)
+    improveHtml += `
+        <li>내일 진행할 핵심 목표 1: (직접 입력)</li>
+        <li>해결해야 할 액션 아이템: (직접 입력)</li>
+    </ul>`;
 
 
     // HTML 템플릿 조립
@@ -649,12 +682,8 @@
               ${otherHtml}
             </td>
             <td style="width: 50%; vertical-align: top; border: 1px solid #cbd5e1; padding: 20px; background: #fff;">
-              <h3 style="margin: 0 0 12px 0; color: #2563eb; font-size: 1.1rem; border-bottom: 2px solid #bfdbfe; padding-bottom: 8px;">4. 향후 계획 및 Action Item</h3>
-              <ul style="padding-left: 20px; margin: 0; font-size: 0.95rem; color: #333; line-height: 1.8;">
-                  <li>내일/차주 진행할 핵심 목표 1...</li>
-                  <li>해결해야 할 액션 아이템 작성...</li>
-                  <li>주요 이슈: (특이사항을 요약해 주세요)</li>
-              </ul>
+              <h3 style="margin: 0 0 12px 0; color: #2563eb; font-size: 1.1rem; border-bottom: 2px solid #bfdbfe; padding-bottom: 8px;">4. 개선점 및 향후 계획 (Insight)</h3>
+              ${improveHtml}
             </td>
           </tr>
         </table>
