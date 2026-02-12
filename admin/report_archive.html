@@ -366,10 +366,19 @@
 
     const activeBigGoals = g_goals.filter(g => g['유형'] === '큰 목표' && g['상태'] !== '완료');
     
-    // ✅ “생성”과 “일반 기록”을 분리
-    let ideaCreateLogs = [], bugCreateLogs = [], publishLogs = [];
+    // ✅ “생성/실현/수정”을 분리
+    let ideaCreateLogs = [], ideaRealizeLogs = [];
+    let bugCreateLogs = [], bugFixLogs = [];
+    let publishLogs = [];
     let doneLogs = [];
     let postCount = 0;
+
+    // ✅ 버그 아이템 ID 목록(로그의 관련ID로 "수정된 버그" 추출)
+    const BUG_IDS = new Set(
+      (g_tasks || [])
+        .filter(t => (t['유형'] || t['type'] || '') === '버그')
+        .map(t => t.ID)
+    );
     
     function getTag(log){
       return (log['태그'] || log['tags'] || "").toString().trim();
@@ -386,6 +395,16 @@
       if (idx === -1) return "";
       return text.slice(idx + label.length).trim();
     }
+	    function getRelatedId(log){
+	      return (
+	        log['관련_목표ID'] ||
+	        log['relatedId'] ||
+	        log['관련ID'] ||
+	        log['관련_작업ID'] ||
+	        log['related_id'] ||
+	        ""
+	      ).toString().trim();
+	    }
     
     function pickMeaningTitle(log) {
       const title = getTitle(log).trim();
@@ -409,10 +428,11 @@
     }
 
     
-    targetLogs.forEach(log => {
+	    targetLogs.forEach(log => {
       const tag = getTag(log);
       const title = getTitle(log);
       const content = getContent(log);
+	      const relId = getRelatedId(log);
     
       // ✅ todo_manage 자동로그 커버: BugReport / Idea :contentReference[oaicite:6]{index=6}
       const isIdeaCreate =
@@ -424,7 +444,14 @@
         title.includes('🐞') || title.includes('버그') ||
         content.includes('🐞 버그 리포트 생성됨:'); // log-form이 본문에 심는 시스템 문구
     
-      const isPublishBase = (tag === 'Publish');
+	      const isPublishBase = (tag === 'Publish');
+
+	      // ✅ 아이디어 실현(아이디어 → 작업 변환 등)
+	      const isIdeaRealize =
+	        tag === 'Realization' ||
+	        title.includes('아이디어 실현') ||
+	        title.includes('🚀') ||
+	        content.includes('아이디어가 구체적인 작업으로 변환');
 
       // ✅ 초안 저장/수정/업데이트는 제외, "발행"만 포함
       const publishText = (title + "\n" + content);
@@ -435,14 +462,24 @@
       
       const isPublish = isRealPublish;
     
-      if (isIdeaCreate) { ideaCreateLogs.push(log); return; }
-      if (isBugCreate)  { bugCreateLogs.push(log);  return; }
+	      if (isIdeaCreate) { ideaCreateLogs.push(log); return; }
+	      if (isIdeaRealize){ ideaRealizeLogs.push(log); return; }
+	      if (isBugCreate)  { bugCreateLogs.push(log);  return; }
     
-      if (isPublish) {
+	      if (isPublish) {
         postCount++;
         publishLogs.push(log);   // ✅ 목록용으로도 보관
         return;                  // ✅ doneLogs에 섞지 않기(원하면 return 제거)
       }
+
+	      // ✅ 수정된 버그: 완료/해결 로그 중, 관련ID가 "버그" 아이템에 매칭되는 것
+	      const isBugFix =
+	        BUG_IDS.has(relId) && (
+	          tag === 'Done' || tag === '완료' ||
+	          title.includes('완료') || title.includes('해결') || title.includes('Fix') ||
+	          content.includes('완료') || content.includes('해결')
+	        );
+	      if (isBugFix) { bugFixLogs.push(log); return; }
     
       doneLogs.push(log);
     });
@@ -489,6 +526,18 @@
         </li>`;
       riskCount++;
     }
+	    // ✅ 수정된 버그(기준일 내 "완료/해결" 처리된 버그)
+	    if (bugFixLogs.length > 0) {
+	      bottleneckHtml += `
+	        <li style="margin-bottom:6px; color:#16a34a; list-style:none;">
+	          ✅ <b>수정 완료:</b> ${bugFixLogs.length}건
+	          <div style="margin-top:6px; padding-left:14px; color:#14532d; font-weight:600;">
+	            ${bugFixLogs.slice(0,5).map(b => `- ${pickMeaningTitle(b)}`).join('<br/>')}
+	            ${bugFixLogs.length > 5 ? `<br/>...외 ${bugFixLogs.length-5}건` : ``}
+	          </div>
+	        </li>`;
+	      riskCount++;
+	    }
     if (riskCount === 0) bottleneckHtml = `<div style="text-align:center; color:#10b981; padding:20px;">✨ <b>No Bottlenecks</b><br>현재 식별된 지연 요소가 없습니다.</div>`;
     else bottleneckHtml += `</ul>`;
 
@@ -520,9 +569,23 @@
         </li>
       `;
     }
+	    // ✅ Realized (실현된 아이디어)
+	    if (ideaRealizeLogs.length > 0) {
+	      velocityHtml += `
+	        <li style="margin-bottom:6px; color:#16a34a; font-weight:800; list-style:none;">
+	          🚀 <b>Innovation</b> 아이디어 ${ideaRealizeLogs.length}건 실현
+	          <div style="margin-top:6px; padding-left:14px; color:#1e293b; font-weight:600;">
+	            ${ideaRealizeLogs.slice(0,5).map(i => `- ${pickMeaningTitle(i)}`).join('<br/>')}
+	            ${ideaRealizeLogs.length > 5 ? `<br/>...외 ${ideaRealizeLogs.length-5}건` : ``}
+	          </div>
+	        </li>
+	      `;
+	    }
     
-    // ✅ 둘 다 없으면 메시지 1줄만
-    if (doneLogs.length === 0 && publishLogs.length === 0 && ideaCreateLogs.length === 0) velocityHtml += `<li style="color:#94a3b8;">금일 기록된 완료 내역이 없습니다.</li>`;
+	    // ✅ (Shipped/Innovation) 둘 다 없으면 메시지 1줄만
+	    if (publishLogs.length === 0 && ideaCreateLogs.length === 0 && ideaRealizeLogs.length === 0) {
+	      velocityHtml += `<li style="color:#94a3b8;">금일 기록된 성과(포스팅/아이디어)가 없습니다.</li>`;
+	    }
     velocityHtml += `</ul>`;
 
 
@@ -678,75 +741,20 @@
     printWindow.document.close();
   }
 
-  // ==========================================
-  // [수정] 이미지 저장 함수 (깨짐 방지 최적화)
-  // ==========================================
   async function saveAsImage() {
     const title = document.getElementById('doc-title').value || "report";
     const contentHtml = $('#doc-content').summernote('code');
-    
-    if (!contentHtml || contentHtml === "<p><br></p>") { 
-        alert("저장할 내용이 없습니다."); 
-        return; 
-    }
-
-    // 1. 임시 컨테이너 생성
-    // [중요 변경] left: -9999px 대신 z-index로 뒤로 숨김 (브라우저 렌더링 보장)
     const printContainer = document.createElement('div');
-    printContainer.style.position = 'absolute'; // fixed -> absolute 변경
-    printContainer.style.top = '0';
-    printContainer.style.left = '0';
-    printContainer.style.zIndex = '-9999'; // 화면 맨 뒤로 숨김
-    printContainer.style.width = '900px';  // 보고서 정규 너비
-    printContainer.style.padding = '40px';
-    printContainer.style.background = '#ffffff';
-    
-    // 스타일 및 내용 주입
-    printContainer.innerHTML = `
-        <style>
-            .temp-wrap { font-family: 'Pretendard', sans-serif; color: #1e293b; line-height: 1.6; }
-            .temp-wrap table { width: 100%; border-collapse: collapse; border: 2px solid #cbd5e1; }
-            .temp-wrap td, .temp-wrap th { border: 1px solid #cbd5e1; padding: 12px; vertical-align: top; }
-            /* 이미지 캡처 시 테이블 깨짐 방지용 강제 스타일 */
-            .temp-wrap * { box-sizing: border-box; }
-        </style>
-        <div class="temp-wrap">${contentHtml}</div>
-    `;
-    
+    printContainer.style.position = 'fixed'; printContainer.style.left = '-9999px'; printContainer.style.width = '900px'; 
+    printContainer.style.padding = '40px'; printContainer.style.background = '#ffffff';
+    printContainer.innerHTML = `<style>.temp-wrap{font-family:'Pretendard',sans-serif;color:#1e293b}.temp-wrap table{width:100%;border-collapse:collapse;border:2px solid #cbd5e1}.temp-wrap td{border:1px solid #cbd5e1;padding:20px;vertical-align:top}</style><div class="temp-wrap">${contentHtml}</div>`;
     document.body.appendChild(printContainer);
-
-    if(typeof showAdminLoading === 'function') showAdminLoading("이미지 생성 중 (고화질)...");
-
+    if(typeof showAdminLoading === 'function') showAdminLoading("이미지 생성 중...");
     try {
-        // 2. html2canvas 옵션 강화
-        const canvas = await html2canvas(printContainer, {
-            scale: 2, // 2배 해상도 (선명하게)
-            useCORS: true, // 외부 이미지 허용
-            backgroundColor: '#ffffff',
-            // [중요] 캡처 영역 명시적 지정 (잘림 방지)
-            width: printContainer.offsetWidth,
-            height: printContainer.offsetHeight,
-            x: 0,
-            y: 0,
-            scrollY: 0, // 스크롤 위치 초기화 (아래쪽 잘림 방지)
-            windowWidth: document.documentElement.offsetWidth,
-            windowHeight: document.documentElement.offsetHeight
-        });
-
-        // 3. 다운로드 처리
-        const link = document.createElement('a');
-        link.href = canvas.toDataURL('image/png');
-        link.download = `${title}.png`;
-        link.click();
-        
-    } catch (err) { 
-        console.error("Image Save Error:", err); 
-        alert("이미지 생성 중 오류가 발생했습니다.\n" + err.message); 
-    } finally { 
-        // 청소
-        document.body.removeChild(printContainer); 
-        if(typeof hideAdminLoading === 'function') hideAdminLoading(); 
-    }
+        const canvas = await html2canvas(printContainer, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false });
+        const link = document.createElement('a'); link.href = canvas.toDataURL('image/png'); link.download = `${title}.png`; link.click();
+    } catch (err) { console.error(err); alert("이미지 생성 오류"); } 
+    finally { document.body.removeChild(printContainer); if(typeof hideAdminLoading === 'function') hideAdminLoading(); }
   }
 
   // ==========================================
