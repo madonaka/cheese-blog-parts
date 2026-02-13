@@ -10,10 +10,13 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tinymce/6.8.2/tinymce.min.js" referrerpolicy="origin"></script>
 
   <script>
-    // ✅ API V2.0 주소 연결
+    // ✅ API 주소 연결
     window.CHEESE_ADMIN_API_BASE = "https://script.google.com/macros/s/AKfycbyE0uUpF2VdePr6AC6VcK7UOI4y5zvkUfMHlGHEiNKiGiiAjSzr172140GtV5MpiwzaSg/exec";
-    window.CURRENT_USER_EMP_NO = "CL-ADMIN";
-    window.CURRENT_USER_NAME = "관리자";
+    
+    // 🚨 [핵심 1] index.html 등에서 로그인 시 발급된 세션(또는 로컬) 값을 자동으로 가져옵니다!
+    // 만약 저장하신 키 이름이 'emp_no'가 아니라 'userId' 등이라면 아래 괄호 안의 글자를 수정해 주세요.
+    window.CURRENT_USER_EMP_NO = sessionStorage.getItem("emp_no") || localStorage.getItem("emp_no") || "CL-ADMIN";
+    window.CURRENT_USER_NAME = sessionStorage.getItem("display_name") || localStorage.getItem("display_name") || "관리자";
   </script>
   <script src="./admin-common.js" defer></script>
 
@@ -77,10 +80,16 @@
             </div>
           </div>
           <div id="view-body" class="view-content"></div>
+          
           <div class="action-bar">
             <a href="board.html" class="btn-bbs">목록</a>
-            <button id="btn-edit-trigger" class="btn-bbs" onclick="enterEditMode()">수정</button>
+            
+            <div id="author-action-btns" style="display:none; gap:10px;">
+              <button class="btn-bbs" style="color:var(--danger); border-color:var(--danger);" onclick="deleteNotice()">삭제</button>
+              <button id="btn-edit-trigger" class="btn-bbs" onclick="enterEditMode()">수정</button>
+            </div>
           </div>
+
           <div class="comment-wrap">
             <div class="comment-header">댓글 <span id="comment-total-count">0</span></div>
             <div id="comment-list-root"></div>
@@ -123,17 +132,14 @@
 </div>
 
 <script>
-  // URL에서 파라미터(id)를 가져옵니다.
   const urlParams = new URLSearchParams(window.location.search);
   const targetNoticeId = urlParams.get('id') || urlParams.get('noticeId');
-  
   let currentNotice = null;
   let currentComments = [];
 
   document.addEventListener('DOMContentLoaded', initPage);
 
   async function initPage() {
-    // 새 글 작성 모드인지 조회 모드인지 판단
     if (!targetNoticeId || targetNoticeId === "null") {
       showEditMode(true);
     } else {
@@ -164,15 +170,13 @@
     });
   }
 
-  // 데이터 필드명 매칭 유틸리티
   function getV(obj, key) {
     if(!obj) return "";
     const foundKey = Object.keys(obj).find(k => k.toLowerCase() === key.toLowerCase());
     return foundKey ? obj[foundKey] : "";
   }
 
-  // ✅ 핵심 수정 부분: 데이터를 불러오고 'notice' 포장지를 뜯습니다.
-async function loadNoticeData() {
+  async function loadNoticeData() {
     if(typeof showAdminLoading==='function') showAdminLoading("공지 불러오는 중...");
     try {
       const qId = String(targetNoticeId || "").trim();
@@ -187,22 +191,17 @@ async function loadNoticeData() {
         renderNotice();
         await loadComments();
         
-        // 🚨 [핵심 해결 3] 조회수 증가 요청 시 구글 API의 보안 차단(CORS)을 피하는 헤더 추가
         fetch(window.CHEESE_ADMIN_API_BASE, { 
             method: 'POST', 
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // 안전한 통신 타입
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' }, 
             body: JSON.stringify({ mode: 'incrementNoticeView', noticeId: qId }) 
-        })
-        .then(r => r.json())
-        .then(data => console.log("👀 조회수 증가 결과:", data)) // F12 콘솔에서 증가 확인 가능!
-        .catch(e => console.error("조회수 증가 에러:", e));
+        }).catch(e=>{});
 
       } else {
         alert("게시글 데이터를 찾을 수 없습니다.");
         location.href = 'board.html';
       }
     } catch(e) {
-      console.error("통신 에러:", e);
       alert("서버 통신 중 오류가 발생했습니다.");
     } finally { 
       if(typeof hideAdminLoading==='function') hideAdminLoading(); 
@@ -217,12 +216,34 @@ async function loadNoticeData() {
     else cat.textContent = '공지';
 
     document.getElementById('view-title').textContent = getV(currentNotice, 'title') || "제목 없음";
-    document.getElementById('view-author').textContent = getV(currentNotice, 'authorName') || getV(currentNotice, 'authorEmpNo') || "관리자";
+    
+    // 🚨 [핵심 3] 작성자 노출 및 권한 관리
+    const authorEmp = getV(currentNotice, 'authorEmpNo');
+    
+    // 기본적으로 남의 글이면 사번을 표시, 내 글이면 내 세션 이름(display_name) 표시
+    let displayAuthor = authorEmp;
+    if (authorEmp === window.CURRENT_USER_EMP_NO) {
+        displayAuthor = window.CURRENT_USER_NAME;
+    }
+    
+    // 만약 백엔드에서 authorName 컬럼을 별도로 준다면 그것을 1순위로 씁니다.
+    document.getElementById('view-author').textContent = getV(currentNotice, 'authorName') || displayAuthor || "익명";
+    
     document.getElementById('view-date').textContent = String(getV(currentNotice, 'createdAt') || "--.--.--").substring(0, 16);
     document.getElementById('view-count').textContent = getV(currentNotice, 'viewCount') || 0;
     
     const bodyText = getV(currentNotice, 'body') || getV(currentNotice, 'content') || "";
     document.getElementById('view-body').innerHTML = bodyText;
+
+    // 🚨 [핵심 4] 본인이 쓴 글일 때만 수정/삭제 버튼 컨테이너를 노출시킵니다!
+    const actionBtns = document.getElementById('author-action-btns');
+    if (actionBtns) {
+        if (authorEmp && authorEmp === window.CURRENT_USER_EMP_NO) {
+            actionBtns.style.display = 'flex';
+        } else {
+            actionBtns.style.display = 'none';
+        }
+    }
   }
 
   function enterEditMode() {
@@ -239,6 +260,37 @@ async function loadNoticeData() {
 
   function cancelEdit() { if(!targetNoticeId) location.href = 'board.html'; else showViewMode(); }
 
+  // ✅ 삭제 기능 구현 (서버에 상태를 deleted로 전송)
+  async function deleteNotice() {
+    if(!confirm("이 공지사항을 정말 삭제하시겠습니까?")) return;
+
+    const payload = {
+      mode: 'upsertAnnouncement',
+      noticeId: targetNoticeId,
+      title: getV(currentNotice, 'title'),
+      body: getV(currentNotice, 'body') || getV(currentNotice, 'content') || "",
+      level: getV(currentNotice, 'level') || "normal",
+      isPinned: getV(currentNotice, 'isPinned') == 1 ? 1 : 0,
+      status: 'deleted',
+      authorEmpNo: getV(currentNotice, 'authorEmpNo') // 삭제 시에도 원작자 정보 유지
+    };
+
+    if(typeof showAdminLoading==='function') showAdminLoading("삭제 중...");
+    try {
+      const res = await fetch(window.CHEESE_ADMIN_API_BASE, { method:'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) });
+      const json = await res.json();
+      if(json.ok || json.result === "success") {
+          alert("성공적으로 삭제되었습니다.");
+          location.href = 'board.html';
+      } else {
+          alert("삭제 실패: " + (json.message || "원인 불명"));
+      }
+    } catch(e) { 
+      alert("삭제 중 서버 통신 오류가 발생했습니다."); 
+    }
+    finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); }
+  }
+
   async function saveNotice(status) {
     const title = document.getElementById('edit-title').value.trim();
     const body = tinymce.get('notice-editor').getContent();
@@ -250,12 +302,14 @@ async function loadNoticeData() {
       title: title, body: body,
       level: document.getElementById('edit-level').value,
       isPinned: document.getElementById('edit-pinned').checked ? 1 : 0,
-      status: status, authorEmpNo: window.CURRENT_USER_EMP_NO
+      status: status, 
+      // 🚨 [핵심 5] DB 저장 시 무조건 로그인한 유저의 "사번(EMP_NO)"을 기준으로 저장합니다!
+      authorEmpNo: window.CURRENT_USER_EMP_NO 
     };
 
     if(typeof showAdminLoading==='function') showAdminLoading("저장 중...");
     try {
-      const res = await fetch(window.CHEESE_ADMIN_API_BASE, { method:'POST', body: JSON.stringify(payload) });
+      const res = await fetch(window.CHEESE_ADMIN_API_BASE, { method:'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) });
       const json = await res.json();
       const newId = json.noticeId || json.id || targetNoticeId;
       location.href = `notice.html?id=${newId}`;
@@ -320,7 +374,7 @@ async function loadNoticeData() {
     if(!text.trim()) return alert("내용을 입력하세요.");
     const payload = { mode: 'addComment', noticeId: targetNoticeId, parentCommentId: parentId, body: text, authorEmpNo: window.CURRENT_USER_EMP_NO, authorName: window.CURRENT_USER_NAME };
     try {
-      await fetch(window.CHEESE_ADMIN_API_BASE, { method:'POST', body: JSON.stringify(payload) });
+      await fetch(window.CHEESE_ADMIN_API_BASE, { method:'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) });
       document.getElementById(inputId).value = "";
       if(parentId) toggleReplyForm(parentId);
       await loadComments();
@@ -330,7 +384,7 @@ async function loadNoticeData() {
   async function deleteComment(id) {
     if(!confirm("댓글을 삭제하시겠습니까?")) return;
     try {
-      await fetch(window.CHEESE_ADMIN_API_BASE, { method:'POST', body: JSON.stringify({ mode:'setCommentStatus', commentId: id, status:'deleted' }) });
+      await fetch(window.CHEESE_ADMIN_API_BASE, { method:'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ mode:'setCommentStatus', commentId: id, status:'deleted' }) });
       await loadComments();
     } catch(e) { alert("삭제 실패"); }
   }
@@ -340,7 +394,7 @@ async function loadNoticeData() {
       if (!el) return;
       const d = new Date(document.lastModified);
       const pad = (n) => String(n).padStart(2, '0');
-      el.textContent = `Ver: ${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())}_${pad(d.getHours())}:${pad(d.getMinutes())} [Final-Fix]`;
+      el.textContent = `Ver: ${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())}_${pad(d.getHours())}:${pad(d.getMinutes())} [Auth&Delete-Fix]`;
   })();
 </script>
 </body>
