@@ -199,39 +199,70 @@
     });
   }
 
-  async function loadNoticeData() {
+ async function loadNoticeData() {
     if(typeof showAdminLoading==='function') showAdminLoading("불러오는 중...");
     try {
-      // API 호출
-      const res = await fetch(`${window.CHEESE_ADMIN_API_BASE}?mode=getAnnouncement&id=${targetNoticeId}`);
+      // 1. URL에서 ID 파라미터를 가져옵니다. (id 또는 noticeId 모두 대응)
+      const queryId = urlParams.get('id') || urlParams.get('noticeId');
+      
+      // 2. API 호출
+      const res = await fetch(`${window.CHEESE_ADMIN_API_BASE}?mode=getAnnouncement&id=${queryId}&noticeId=${queryId}`);
       const json = await res.json();
       
-      // 데이터 추출 시도 (여러 경로 대응)
-      // json.announcement 또는 json.data 또는 json.item 등 시트 API 설정에 따라 다를 수 있음
-      const data = json.announcement || json.data || json.item || (json.ok && json.result);
+      // [디버깅용] 서버에서 실제로 어떤 데이터가 오는지 콘솔에 찍어봅니다. (문제시 확인용)
+      console.log("서버 응답 데이터:", json);
 
-      if(data && (data.noticeId || data.id)) {
+      // 3. 데이터 추출 (json.announcement, json.data, json.item 등 모든 가능성 체크)
+      const data = json.announcement || json.data || json.item || json.result;
+
+      // 4. 데이터가 존재하고, 그 안에 제목(title)이나 ID가 있는지 확인
+      if(data && (data.title || data.noticeId || data.id)) {
         currentNotice = data;
+        
+        // 5. 화면에 데이터 뿌리기
         renderNotice();
+        
+        // 6. 댓글 로드 (데이터 로딩 후 순차 실행)
         await loadComments();
         
-        // 조회수 증가 (비동기 처리)
+        // 7. 조회수 증가 (백그라운드 비동기 처리)
         fetch(window.CHEESE_ADMIN_API_BASE, { 
           method:'POST', 
-          body: JSON.stringify({ mode:'incrementNoticeView', id: targetNoticeId }) 
+          body: JSON.stringify({ mode:'incrementNoticeView', id: queryId, noticeId: queryId }) 
         }).catch(e => console.log("조회수 증가 실패", e));
         
       } else {
-        // 데이터가 비어있거나 형식이 안 맞을 때
-        console.error("받은 데이터 형식:", json);
-        alert("해당 게시글을 찾을 수 없거나 데이터 형식이 맞지 않습니다.");
-        location.href = 'board.html';
+        throw new Error("데이터 구조가 올바르지 않습니다.");
       }
     } catch(e) { 
-      console.error("통신 에러:", e);
-      alert("서버와 통신 중 오류가 발생했습니다.");
+      console.error("통신 에러 상세:", e);
+      alert("글을 불러오는 데 실패했습니다. 목록으로 돌아갑니다.");
+      location.href = 'board.html';
     }
     finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); }
+  }
+
+  // ✅ 데이터 렌더링 함수 보강 (변수명 불일치 대비)
+  function renderNotice() {
+    if(!currentNotice) return;
+    
+    const l = String(currentNotice.level || '').toLowerCase();
+    const badgeContainer = document.getElementById('view-category');
+    
+    // 뱃지 표시
+    if (l === 'danger') badgeContainer.innerHTML = '<span class="m-badge bg-danger">필독</span>';
+    else if (l === 'warn') badgeContainer.innerHTML = '<span class="m-badge bg-primary">중요</span>';
+    else badgeContainer.innerHTML = '공지';
+
+    // 텍스트 매칭 (noticeId, createdAt 등 필드명 차이 대응)
+    document.getElementById('view-title').textContent = currentNotice.title || "제목 없음";
+    document.getElementById('view-author').textContent = currentNotice.authorName || currentNotice.authorEmpNo || "관리자";
+    document.getElementById('view-date').textContent = (currentNotice.createdAt || currentNotice.updatedAt || "--.--.--").substring(0, 16);
+    document.getElementById('view-count').textContent = currentNotice.viewCount || 0;
+    
+    // 본문 (body 또는 content 필드 대응)
+    const contentHtml = currentNotice.body || currentNotice.content || "";
+    document.getElementById('view-body').innerHTML = contentHtml;
   }
 
   function renderNotice() {
