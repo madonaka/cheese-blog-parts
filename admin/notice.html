@@ -244,32 +244,40 @@
   // ==========================================
   // [조회 모드] 데이터 로드 및 렌더링
   // ==========================================
+  // ==========================================
+  // [조회 모드] 공지 데이터 로드 및 렌더링
+  // ==========================================
   async function loadNoticeData() {
       if(typeof showAdminLoading==='function') showAdminLoading("공지사항 불러오는 중...");
       try {
-          // 1. 공지 조회
-          const res = await fetch(window.CHEESE_ADMIN_API_BASE + "?mode=getAnnouncement&noticeId=" + targetNoticeId);
+          // 🔥 서버가 'id'를 원할지 'noticeId'를 원할지 모르니 둘 다 확실하게 보냅니다!
+          const reqUrl = window.CHEESE_ADMIN_API_BASE + "?mode=getAnnouncement&id=" + targetNoticeId + "&noticeId=" + targetNoticeId;
+          const res = await fetch(reqUrl);
           const json = await res.json();
           
-          if(json.ok && json.announcement) {
-              currentNotice = json.announcement;
+          // 🔥 서버가 던져주는 키 이름이 announcement, notice, data 중 무엇이든 다 잡아냅니다.
+          const noticeData = json.announcement || json.notice || json.data || json.item;
+          
+          if((json.ok || json.result === "success") && noticeData) {
+              currentNotice = noticeData;
               renderViewMode();
               
-              // 2. 조회수 1 증가 (비동기 처리)
+              // 조회수 증가 요청 (백그라운드 처리 - id, noticeId 둘 다 전송)
               fetch(window.CHEESE_ADMIN_API_BASE, { 
                   method: 'POST', 
-                  body: JSON.stringify({ mode: 'incrementNoticeView', noticeId: targetNoticeId })
+                  body: JSON.stringify({ mode: 'incrementNoticeView', noticeId: targetNoticeId, id: targetNoticeId })
               });
 
-              // 3. 댓글 로드
+              // 댓글 로드
               await loadCommentsData();
           } else {
-              alert("삭제되었거나 존재하지 않는 공지사항입니다.");
+              alert("삭제되었거나 존재하지 않는 공지사항입니다.\n(서버응답: " + (json.message || "데이터 없음") + ")");
               location.href = 'board.html';
           }
       } catch(e) {
           console.error(e);
           alert("데이터 통신에 실패했습니다.");
+          location.href = 'board.html';
       } finally {
           if(typeof hideAdminLoading==='function') hideAdminLoading();
       }
@@ -367,20 +375,26 @@ async function saveNotice(statusToSave) {
       }
   }
 
-  // ==========================================
+// ==========================================
   // [댓글 시스템] 로드 및 렌더링
   // ==========================================
   async function loadCommentsData() {
       try {
-          const res = await fetch(window.CHEESE_ADMIN_API_BASE + "?mode=listComments&noticeId=" + targetNoticeId);
+          // 🔥 댓글도 마찬가지로 id, noticeId 둘 다 보냅니다.
+          const reqUrl = window.CHEESE_ADMIN_API_BASE + "?mode=listComments&id=" + targetNoticeId + "&noticeId=" + targetNoticeId;
+          const res = await fetch(reqUrl);
           const json = await res.json();
-          if(json.ok) {
-              // active 상태인 댓글만 필터링
-              currentComments = (json.comments || []).filter(c => c.status === 'active');
+          
+          if(json.ok || json.result === "success") {
+              const commentList = json.comments || json.data || json.items || [];
+              // active 상태인 댓글만 필터링 (status 값이 아예 없는 경우도 커버)
+              currentComments = commentList.filter(c => c.status === 'active' || !c.status);
               document.getElementById('comment-total-count').textContent = currentComments.length;
               renderCommentsUI();
           }
-      } catch(e) { console.error("댓글 로드 실패", e); }
+      } catch(e) { 
+          console.error("댓글 로드 실패", e); 
+      }
   }
 
   function renderCommentsUI() {
