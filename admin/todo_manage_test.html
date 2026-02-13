@@ -719,14 +719,18 @@
   window.CHEESE_ADMIN_ACTIVE_PAGE = "todo_manage";
   let g_goals=[], g_tasks=[], g_logs=[];
 
-  // ✅ [수정] DOMContentLoaded에서 TinyMCE 높이를 500으로 변경!
-  document.addEventListener('DOMContentLoaded', () => {
-    tinymce.init({
+ // ✅ 1. 에디터 초기화 상태를 관리하는 변수와 함수 추가
+  let isTinyMCEInitialized = false;
+
+  async function initTinyMCEIfNeeded() {
+    if (isTinyMCEInitialized) return;
+    
+    // 모달이 화면에 열린 직후에 에디터를 생성해야 '먹통(클릭 불가)' 버그가 생기지 않습니다.
+    await tinymce.init({
       selector: '#input-detail',
-      height: 500, // 🔥 높이를 500px로 넉넉하게 고정 보장
+      height: 500,
       language: 'ko_KR',
       plugins: 'advlist autolink lists link image charmap preview anchor searchreplace visualblocks code fullscreen insertdatetime media table help wordcount',
-      // 툴바 2줄 자동 래핑
       toolbar: [
         'fontfamily fontsize blocks | bold italic underline strikethrough | forecolor backcolor removeformat',
         'alignleft aligncenter alignright alignjustify | bullist numlist | outdent indent | table link image | undo redo code fullscreen'
@@ -739,7 +743,11 @@
       extended_valid_elements: '*[*]',
       verify_html: false
     });
+    isTinyMCEInitialized = true;
+  }
 
+  // ✅ DOMContentLoaded에서는 데이터만 불러옵니다.
+  document.addEventListener('DOMContentLoaded', () => {
     loadAllData();
   });
 
@@ -1407,7 +1415,7 @@ async function realizeIdea(ideaId) {
     updateLogTaskOptions();
   }
 
-// ✅ [수정] TinyMCE용 토글 (읽기/수정) 로직 적용
+// ✅ 2. 토글 로직 변경 (에디터 강제 재렌더링 방식 적용)
 function toggleEditMode(isEdit) {
   const btnSave   = document.getElementById('btn-save-submit');
   const btnSwitch = document.getElementById('btn-switch-edit');
@@ -1426,32 +1434,24 @@ function toggleEditMode(isEdit) {
     }
   }
 
-  // 🌟 에디터 영역 제어 🌟
   const viewBox = document.getElementById('view-detail-content');
   const editTa = document.getElementById('input-detail');
   const editor = tinymce.get('input-detail');
 
-  let currentHtml = "";
-  if (editor) {
-      currentHtml = editor.getContent();
-  } else {
-      currentHtml = editTa.value;
-  }
+  let currentHtml = editor ? editor.getContent() : editTa.value;
 
   if (!isEdit) {
-    // 읽기 모드 (TinyMCE 숨김, HTML 뷰 표시)
-    if (editor && editor.getContainer()) {
-        editor.getContainer().style.display = 'none';
-    } else {
-        editTa.style.display = 'none';
-    }
+    // 읽기 모드 (TinyMCE 자체를 안전하게 숨김)
+    if (editor) editor.hide(); 
+    editTa.style.display = 'none'; // 원본 textarea도 숨김
+    
     viewBox.innerHTML = currentHtml || "<p style='color:#94a3b8;'>상세 내용이 없습니다.</p>";
     viewBox.style.display = 'block';
   } else {
-    // 수정 모드 (TinyMCE 표시, HTML 뷰 숨김)
+    // 수정 모드 (TinyMCE 재활성화)
     viewBox.style.display = 'none';
-    if (editor && editor.getContainer()) {
-        editor.getContainer().style.display = 'block';
+    if (editor) {
+        editor.show(); // 🔥 네이티브 show()를 사용해 iframe 먹통 방지
         editor.setContent(currentHtml);
     } else {
         editTa.style.display = 'block';
@@ -1459,35 +1459,31 @@ function toggleEditMode(isEdit) {
   }
 }
 
-function openModal(type) {
+// ✅ 3. 새 항목 모달 비동기 처리
+async function openModal(type) {
+  // 1️⃣ 모달을 먼저 화면에 그립니다 (display: flex)
   document.getElementById('input-modal').classList.add('open');
+  
+  // 2️⃣ 모달이 열린 상태에서 에디터를 생성합니다 (가장 중요)
+  await initTinyMCEIfNeeded();
+
   document.getElementById('todo-modal-title').textContent = "새 항목 등록";
   document.getElementById('edit-mode').value = "false"; 
-
   document.getElementById('edit-id').value = "";
   document.getElementById('origin-idea-id').value = "";
-
   document.getElementById('todo-form').reset();
 
   const today = new Date();
-  const localIso = new Date(today.getTime() - (today.getTimezoneOffset() * 60000))
-    .toISOString().split('T')[0];
+  const localIso = new Date(today.getTime() - (today.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
   document.getElementById('input-due').value = localIso;
   document.getElementById('input-start').value = localIso;
 
-  // ✅ TinyMCE 내용 비우기
   const editor = tinymce.get('input-detail');
-  if (editor) {
-      editor.setContent('');
-  } else {
-      document.getElementById('input-detail').value = "";
-  }
+  if (editor) editor.setContent('');
+  else document.getElementById('input-detail').value = "";
 
   toggleEditMode(true);
   
-  const editActions = document.getElementById('edit-actions');
-  if (editActions) editActions.style.display = 'none';
-
   const h = document.getElementById('related-history-section');
   if (h) h.style.display = "none";
   const i = document.getElementById('related-idea-section');
@@ -1498,10 +1494,9 @@ function openModal(type) {
     const radio = document.querySelector(`input[name="type"][value="${normalized}"]`);
     if (radio) radio.click();
   }
-
   toggleFormFields();
 }
-
+  
 function updateParentOptions(type) {
     const select = document.getElementById('input-connected-id'); 
     select.innerHTML = '<option value="">(선택 없음)</option>';
@@ -1521,57 +1516,56 @@ function updateParentOptions(type) {
     });
   }
 
-function openEditModal(typeHint, id) {
-  let item = g_goals.find(x => x.ID === id) || g_tasks.find(x => x.ID === id);
-  if (!item) return;
-
-  document.getElementById('input-modal').classList.add('open');
-  document.getElementById('todo-modal-title').textContent = "항목 상세";
-  document.getElementById('edit-id').value = id;
-  document.getElementById('origin-idea-id').value = "";
-
-  document.getElementById('edit-mode').value = "true";
-
-  document.getElementById('input-title').value = item['제목'] || "";
-
-  // ✅ TinyMCE로 기존 내용 불러오기
-  const safeContent = item['상세내용'] || "";
-  const editor = tinymce.get('input-detail');
-  if (editor) {
-      editor.setContent(safeContent);
-  } else {
-      document.getElementById('input-detail').value = safeContent;
-  }
-
-  let currentType = item['유형'];
-  if (currentType === "할일") currentType = "할 일"; 
-
-  const typeRadios = document.querySelectorAll('input[name="type"]');
-  typeRadios.forEach(r => { if (r.value === currentType) r.checked = true; });
+  // ✅ 4. 글 수정 모달 비동기 처리
+  async function openEditModal(typeHint, id) {
+    let item = g_goals.find(x => x.ID === id) || g_tasks.find(x => x.ID === id);
+    if (!item) return;
   
-  if (typeof toggleFormFields === 'function') toggleFormFields();
-
-  if ((item['유형'] || "").includes("목표")) {
-    document.getElementById('input-start').value = (item['시작일'] || "").split('T')[0];
-    document.getElementById('input-due').value   = (item['마감일'] || "").split('T')[0];
-    if (item['유형'] === '중간 목표') document.getElementById('input-connected-id').value = item['상위ID'];
-  } else {
-    document.getElementById('input-connected-id').value = item['연결_중간목표ID'];
-    document.getElementById('input-due').value          = (item['기한'] || "").split('T')[0];
-    document.getElementById('input-priority').value     = item['우선순위'] || "보통";
+    // 1️⃣ 모달을 먼저 엽니다
+    document.getElementById('input-modal').classList.add('open');
+    
+    // 2️⃣ 에디터 초기화 대기
+    await initTinyMCEIfNeeded();
+  
+    document.getElementById('todo-modal-title').textContent = "항목 상세";
+    document.getElementById('edit-id').value = id;
+    document.getElementById('origin-idea-id').value = "";
+    document.getElementById('edit-mode').value = "true";
+    document.getElementById('input-title').value = item['제목'] || "";
+  
+    const safeContent = item['상세내용'] || "";
+    const editor = tinymce.get('input-detail');
+    if (editor) editor.setContent(safeContent);
+    else document.getElementById('input-detail').value = safeContent;
+  
+    let currentType = item['유형'];
+    if (currentType === "할일") currentType = "할 일"; 
+  
+    const typeRadios = document.querySelectorAll('input[name="type"]');
+    typeRadios.forEach(r => { if (r.value === currentType) r.checked = true; });
+    
+    if (typeof toggleFormFields === 'function') toggleFormFields();
+  
+    if ((item['유형'] || "").includes("목표")) {
+      document.getElementById('input-start').value = (item['시작일'] || "").split('T')[0];
+      document.getElementById('input-due').value   = (item['마감일'] || "").split('T')[0];
+      if (item['유형'] === '중간 목표') document.getElementById('input-connected-id').value = item['상위ID'];
+    } else {
+      document.getElementById('input-connected-id').value = item['연결_중간목표ID'];
+      document.getElementById('input-due').value          = (item['기한'] || "").split('T')[0];
+      document.getElementById('input-priority').value     = item['우선순위'] || "보통";
+    }
+  
+    toggleEditMode(false); // 3️⃣ 읽기 모드로 세팅 완료
+  
+    const delBtn = document.getElementById('btn-delete-modal');
+    if (delBtn) {
+        delBtn.style.display = 'flex'; 
+        delBtn.onclick = () => deleteFromModal();
+    }
+    renderHistoryInModal(id);
+    renderRelatedIdeasInModal(id);
   }
-
-  // 기본 읽기 모드
-  toggleEditMode(false);
-
-  const delBtn = document.getElementById('btn-delete-modal');
-  if (delBtn) {
-      delBtn.style.display = 'flex'; 
-      delBtn.onclick = () => deleteFromModal();
-  }
-  renderHistoryInModal(id);
-  renderRelatedIdeasInModal(id);
-}
   
   function renderHistoryInModal(targetId) {
     const container = document.getElementById('related-history-section');
