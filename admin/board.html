@@ -56,18 +56,18 @@
     .m-badge-new { color: var(--danger); font-weight: 900; font-style: italic; font-family: 'Arial'; margin-left: 2px; }
     .comment-count { color: var(--primary); font-size: 0.8rem; font-weight: 700; margin-left: 3px; }
 
-    /* 페이징 (커뮤니티 스타일) */
+    /* 페이징 */
     .pagination { display: flex; justify-content: center; gap: 6px; margin-top: 25px; margin-bottom: 40px; }
     .page-btn { padding: 6px 12px; border: 1px solid #ddd; background: #fff; border-radius: 4px; font-size: 0.9rem; cursor: pointer; color: #555; font-weight: 600; }
     .page-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
     .page-btn:hover:not(.active) { background: #f1f5f9; }
 
-    /* 모바일 대응: 날짜/조회수는 작게 유지하고 번호만 숨김 */
+    /* 모바일 대응: 날짜/조회수 숨기지 않고 폰트만 줄임 */
     @media (max-width: 600px) {
       .col-id { display: none; }
       .board-table th:nth-child(1), .board-table td:nth-child(1) { display: none; } 
-      .col-date { width: 45px; font-size: 0.75rem; }
-      .col-view { width: 35px; font-size: 0.75rem; }
+      .col-date { width: 50px; font-size: 0.75rem; padding: 10px 2px; }
+      .col-view { width: 40px; font-size: 0.75rem; padding: 10px 2px; }
       .page-header h2 { font-size: 1.1rem; }
     }
     
@@ -127,17 +127,25 @@
   window.CHEESE_ADMIN_ACTIVE_PAGE = "board"; 
   let g_announcements = [];
   
-  // ✅ 페이징 관련 변수
   let currentTab = 'all';
   let currentPage = 1;
-  const itemsPerPage = 10; // 한 페이지당 보여줄 게시글 수
+  const itemsPerPage = 10; 
 
   document.addEventListener('DOMContentLoaded', loadAnnouncements);
 
-  function getV(obj, key) {
-    if(!obj) return "";
-    const foundKey = Object.keys(obj).find(k => k.toLowerCase() === key.toLowerCase());
-    return foundKey ? obj[foundKey] : "";
+  // ✅ [가장 중요한 핵심] 눈에 보이지 않는 공백과 대소문자를 모두 무시하고 데이터를 찾아내는 만능 함수
+  function getV(obj, ...keys) {
+      if (!obj) return "";
+      for (let key of keys) {
+          // 찾고자 하는 키값의 공백 제거 및 소문자화
+          const target = String(key).toLowerCase().replace(/[\s_]/g, '');
+          // 실제 데이터 객체의 키값들을 변환해서 비교
+          const foundKey = Object.keys(obj).find(k => String(k).toLowerCase().replace(/[\s_]/g, '') === target);
+          if (foundKey && obj[foundKey] !== undefined && obj[foundKey] !== null && obj[foundKey] !== "") {
+              return obj[foundKey];
+          }
+      }
+      return "";
   }
 
   async function loadAnnouncements() {
@@ -146,7 +154,7 @@
           const res = await fetch(window.CHEESE_ADMIN_API_BASE + "?mode=listAnnouncements");
           const json = await res.json();
           if(json.ok || json.result === "success") {
-              g_announcements = json.announcements || json.data || json.items || [];
+              g_announcements = json.announcements || json.data || json.items || json.notice || [];
               renderBoard();
           }
       } catch(e) { console.error(e); } 
@@ -155,14 +163,14 @@
 
   function switchTab(tabId) {
       currentTab = tabId;
-      currentPage = 1; // 탭 변경 시 1페이지로 초기화
+      currentPage = 1; 
       document.querySelectorAll('.view-tab-btn').forEach(b => b.classList.remove('active'));
       document.getElementById('tab-' + tabId).classList.add('active');
       renderBoard();
   }
 
   function executeSearch() {
-      currentPage = 1; // 검색 시 1페이지로 초기화
+      currentPage = 1; 
       renderBoard();
   }
 
@@ -174,12 +182,11 @@
       const keyword = document.getElementById('search-keyword').value.toLowerCase().trim();
       const now = new Date();
 
-      // 1. 데이터 필터링
       let filtered = g_announcements.filter(item => {
-          const status = String(getV(item, 'status') || '').trim().toLowerCase();
-          const level = String(getV(item, 'level') || '').trim().toLowerCase();
-          const isPinned = (getV(item, 'isPinned') == 1);
-          const title = String(getV(item, 'title') || '').toLowerCase();
+          const status = String(getV(item, 'status', '상태') || '').trim().toLowerCase();
+          const level = String(getV(item, 'level', '중요도') || '').trim().toLowerCase();
+          const isPinned = (getV(item, 'isPinned', '상단고정') == 1);
+          const title = String(getV(item, 'title', '제목') || '').toLowerCase();
 
           if (currentTab === 'draft') return status === 'draft';
           if (status === 'draft') return false;
@@ -188,11 +195,14 @@
           return true;
       });
 
-      // 2. 정렬 (고정글 분리 없이 모두 최신순 정렬 후 분류)
-      filtered.sort((a, b) => new Date(getV(b, 'createdAt') || 0) - new Date(getV(a, 'createdAt') || 0));
+      filtered.sort((a, b) => {
+          const dateA = new Date(getV(a, 'createdAt', '생성일시', '작성일', '날짜') || 0);
+          const dateB = new Date(getV(b, 'createdAt', '생성일시', '작성일', '날짜') || 0);
+          return dateB - dateA;
+      });
 
-      const pinnedItems = filtered.filter(item => getV(item, 'isPinned') == 1 || String(getV(item, 'level')).toLowerCase() === 'danger');
-      const normalItems = filtered.filter(item => !(getV(item, 'isPinned') == 1 || String(getV(item, 'level')).toLowerCase() === 'danger'));
+      const pinnedItems = filtered.filter(item => getV(item, 'isPinned', '상단고정') == 1 || String(getV(item, 'level', '중요도')).toLowerCase() === 'danger');
+      const normalItems = filtered.filter(item => !(getV(item, 'isPinned', '상단고정') == 1 || String(getV(item, 'level', '중요도')).toLowerCase() === 'danger'));
 
       if (filtered.length === 0) { 
           empty.style.display = 'block'; 
@@ -200,25 +210,21 @@
           return; 
       }
 
-      // 3. 페이징 계산 (일반 글 기준)
       const totalPages = Math.ceil(normalItems.length / itemsPerPage) || 1;
       if (currentPage > totalPages) currentPage = totalPages;
 
       const startIndex = (currentPage - 1) * itemsPerPage;
       const pageNormalItems = normalItems.slice(startIndex, startIndex + itemsPerPage);
 
-      // 4. 렌더링 - 고정글(Pinned)은 1페이지에서만 상단에 표시
       if (currentPage === 1 && currentTab !== 'draft') {
           pinnedItems.forEach(item => body.appendChild(createRow(item, true, '📌')));
       }
 
-      // 5. 렌더링 - 일반글 페이징 처리
       pageNormalItems.forEach((item, idx) => {
-          const displayNum = normalItems.length - startIndex - idx; // 역순 번호 매기기
+          const displayNum = normalItems.length - startIndex - idx; 
           body.appendChild(createRow(item, false, displayNum));
       });
 
-      // 6. 페이징 버튼 생성
       renderPagination(totalPages);
   }
 
@@ -226,22 +232,28 @@
       const row = document.createElement('tr');
       row.className = `notice-row ${isPinned ? 'is-pinned' : ''}`;
       
-      const isDanger = String(getV(item, 'level')).toLowerCase() === 'danger';
-      const cDate = getV(item, 'createdAt');
+      const isDanger = String(getV(item, 'level', '중요도')).toLowerCase() === 'danger';
+      
+      // ✅ 1. 여러 이름으로 올 수 있는 날짜 데이터를 모두 찾습니다.
+      const cDate = getV(item, 'createdAt', 'created_at', '생성일시', '작성일', '날짜', '등록일');
       const isNew = cDate ? (new Date() - new Date(cDate)) < (24 * 60 * 60 * 1000) : false;
       
-      // ✅ 날짜 추출 안전하게 처리 (MM.DD 포맷)
+      // 날짜 포맷팅 로직 (어떤 형태든 YYYY-MM-DD 로 찾아서 잘라냄)
       let dateStr = '--.--';
       if (cDate) {
-          const match = String(cDate).match(/(\d{4})[-/.](\d{2})[-/.](\d{2})/);
-          if(match) dateStr = `${match[2]}.${match[3]}`; // 12.14 형식
-          else dateStr = String(cDate).substring(0, 10);
+          const match = String(cDate).match(/(\d{4})[-/.]\s*(\d{1,2})[-/.]\s*(\d{1,2})/);
+          if(match) {
+              dateStr = `${match[2].padStart(2, '0')}.${match[3].padStart(2, '0')}`; // 12.14 형식 고정
+          } else {
+              dateStr = String(cDate).substring(0, 10);
+          }
       }
       
-      const id = getV(item, 'noticeId') || getV(item, 'id');
-      const viewCount = getV(item, 'viewCount') || 0;
-      const commentCount = getV(item, 'commentCount') || 0;
-      const title = getV(item, 'title') || '(제목 없음)';
+      // ✅ 2. 조회수/댓글수도 여러 이름에 대비합니다.
+      const id = getV(item, 'noticeId', 'id');
+      const viewCount = getV(item, 'viewCount', 'view_count', '조회수', '조회') || 0;
+      const commentCount = getV(item, 'commentCount', '댓글수', '댓글') || 0;
+      const title = getV(item, 'title', '제목') || '(제목 없음)';
 
       row.innerHTML = `
           <td class="col-id">${displayNum}</td>
@@ -260,14 +272,11 @@
       return row;
   }
 
-  // ✅ 페이징 버튼 렌더링 함수
   function renderPagination(totalPages) {
       const pRoot = document.getElementById('pagination-root');
       pRoot.innerHTML = '';
-      
-      if (totalPages <= 1) return; // 1페이지 뿐이면 버튼 숨김
+      if (totalPages <= 1) return;
 
-      // 이전 버튼
       if (currentPage > 1) {
           const prevBtn = document.createElement('button');
           prevBtn.className = 'page-btn';
@@ -276,7 +285,6 @@
           pRoot.appendChild(prevBtn);
       }
 
-      // 숫자 버튼
       for (let i = 1; i <= totalPages; i++) {
           const btn = document.createElement('button');
           btn.className = `page-btn ${i === currentPage ? 'active' : ''}`;
@@ -285,7 +293,6 @@
           pRoot.appendChild(btn);
       }
 
-      // 다음 버튼
       if (currentPage < totalPages) {
           const nextBtn = document.createElement('button');
           nextBtn.className = 'page-btn';
@@ -300,7 +307,7 @@
       if (!el) return;
       const d = new Date(document.lastModified);
       const pad = (n) => String(n).padStart(2, '0');
-      el.textContent = `Ver: ${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())} [Paging-Update]`;
+      el.textContent = `Ver: ${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())} [Final-Board-Fix]`;
   })();
 </script>
 </body>
