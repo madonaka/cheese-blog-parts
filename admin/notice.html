@@ -160,13 +160,62 @@
     initTinyMCE();
   }
 
-  async function initTinyMCE() {
+// ✅ 이미지 업로드 서버(공지사항 이미지 서버) 주소 세팅
+  const NOTICE_IMAGE_API = "https://script.google.com/macros/s/AKfycby-P3dibmH3SX0aHcWltvAq1yRDDP0vxECZ_ztJ5fuThHzaXi96SjCIRHoIv81P49vV/exec";
+  
+ async function initTinyMCE() {
     if (tinymce.get('notice-editor')) return;
+    
     await tinymce.init({
-      selector: '#notice-editor', height: 500, language: 'ko_KR', menubar: false,
+      selector: '#notice-editor', 
+      height: 500, 
+      language: 'ko_KR', 
+      menubar: false,
       plugins: 'advlist autolink lists link image charmap preview anchor searchreplace visualblocks code fullscreen table help wordcount',
       toolbar: 'undo redo | blocks fontfamily fontsize | bold italic underline | forecolor backcolor | alignleft aligncenter alignright | bullist numlist outdent indent | table link image | code',
-      toolbar_mode: 'wrap', branding: false, valid_elements: '*[*]'
+      toolbar_mode: 'wrap', 
+      branding: false, 
+      
+      // 🚨 이미지 업로드 처리 로직
+      images_upload_handler: (blobInfo, progress) => new Promise((resolve, reject) => {
+        if(typeof showAdminLoading === 'function') showAdminLoading("이미지 서버로 전송 중... 🚀");
+        
+        const file = blobInfo.blob();
+        const reader = new FileReader();
+        
+        reader.readAsDataURL(file);
+        reader.onload = async () => {
+          try {
+            const base64Str = reader.result.split(',')[1];
+            
+            // 전용 서버에 맞춘 가벼운 데이터 형식
+            const payload = {
+              mode: "upload",
+              base64: base64Str,
+              mime: file.type,
+              filename: "notice_" + Date.now() + "_" + blobInfo.filename()
+            };
+
+            const res = await fetch(NOTICE_IMAGE_API, {
+              method: "POST",
+              body: JSON.stringify(payload)
+            });
+            
+            const data = await res.json();
+            if (!data.ok) throw new Error(data.error);
+
+            // 성공 시 본문에 다이렉트 이미지 URL 삽입
+            resolve(data.url); 
+            
+          } catch (e) {
+            console.error(e);
+            reject("이미지 업로드 실패: " + e.message);
+          } finally {
+            if(typeof hideAdminLoading === 'function') hideAdminLoading();
+          }
+        };
+        reader.onerror = () => reject("파일 읽기 오류");
+      })
     });
   }
 
