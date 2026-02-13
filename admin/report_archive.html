@@ -173,7 +173,7 @@
 
         <div style="display:flex; flex-direction:column; flex:1;">
           <label class="input-label">본문 내용</label>
-          <textarea id="doc-content" required></textarea>
+          <div id="doc-content" style="height: 600px; background: #fff; font-size: 1rem;"></div>
         </div>
       </div>
 
@@ -271,19 +271,35 @@
   // 전역 변수
   let CURRENT_EDITING_SCHEDULE_EL = null; 
   let CURRENT_IDEA_MODE = 'new'; 
+  let quill; // 💡 Quill 에디터 전역 변수 추가
 
   document.addEventListener('DOMContentLoaded', () => {
-    // 썸머노트 초기화
-    $('#doc-content').summernote({
-      height: 600, lang: 'ko-KR',
-      toolbar: [
-        ['style', ['style']], ['font', ['bold', 'underline', 'clear']],
-        ['color', ['color']], ['para', ['ul', 'ol', 'paragraph']],
-        ['table', ['table']], ['insert', ['link']], ['view', ['codeview', 'fullscreen']]
-      ]
+    // 💡 Quill 폰트 및 에디터 초기화
+    const Font = Quill.import('formats/font');
+    Font.whitelist = ['sans-serif', 'serif', 'monospace', 'nanum-gothic', 'roboto']; 
+    Quill.register(Font, true);
+
+    quill = new Quill('#doc-content', {
+      theme: 'snow',
+      placeholder: '본문 내용을 입력하세요...',
+      modules: {
+        toolbar: [
+          [{ 'font': Font.whitelist }, { 'size': ['small', false, 'large', 'huge'] }],
+          ['bold', 'italic', 'underline', 'strike'], 
+          [{ 'color': [] }, { 'background': [] }], 
+          [{ 'align': [] }],
+          ['blockquote', 'code-block'],
+          [{ 'list': 'ordered'}, { 'list': 'bullet' }, { 'list': 'check' }],
+          [{ 'indent': '-1'}, { 'indent': '+1' }], 
+          ['link', 'image', 'video'], 
+          ['clean']
+        ]
+      }
     });
     
     const todayStr = new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+
+	
     document.getElementById('report-base-date').value = todayStr;
 
     loadAllData();
@@ -641,7 +657,7 @@
     modal.classList.add('open');
     document.getElementById('doc-form').reset();
     document.getElementById('doc-drive-id').value = ""; 
-    $('#doc-content').summernote('code', '');
+    quill.root.innerHTML = '';
 
     const header = modal.querySelector('.modal-header-custom');
     const titleEl = document.getElementById('doc-modal-title');
@@ -681,11 +697,11 @@
                 try {
                     const res = await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify({ mode: "getReportContent", fileId: fileId }) });
                     const json = await res.json();
-                    if(json.result === "success") $('#doc-content').summernote('code', json.content);
+                    if(json.result === "success") quill.root.innerHTML = json.content;
                 } catch(e) { alert("파일 로드 실패"); } 
                 finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); }
             } else {
-                $('#doc-content').summernote('code', doc['상세내용'] || "");
+                quill.root.innerHTML = doc['상세내용'] || "";
             }
         }
     } else {
@@ -693,7 +709,7 @@
         document.getElementById('doc-id').value = "";
         document.getElementById('doc-title').value = defaultTitle;
         document.getElementById('doc-type').value = defaultType;
-        if(defaultHtml) $('#doc-content').summernote('code', defaultHtml);
+        if(defaultHtml) quill.root.innerHTML = defaultHtml;
     }
   }
 
@@ -707,7 +723,7 @@
         const docId = document.getElementById('doc-id').value;
         const title = document.getElementById('doc-title').value;
         const type = document.getElementById('doc-type').value;
-        const contentHtml = $('#doc-content').summernote('code');
+        const contentHtml = quill.root.innerHTML;
         const driveId = document.getElementById('doc-drive-id').value;
         const now = new Date().toISOString().split('T')[0];
 
@@ -756,7 +772,7 @@
   function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
   function printReport() {
-    const content = $('#doc-content').summernote('code');
+    const content = quill.root.innerHTML;
     const printWindow = window.open('', '_blank');
     printWindow.document.write(`<html><head><title>${document.getElementById('doc-title').value}</title><style>body{font-family:'Pretendard',sans-serif;padding:40px;}table{width:100%;border-collapse:collapse;border:2px solid #cbd5e1}td{border:1px solid #cbd5e1;padding:20px;}</style></head><body>${content}<script>window.onload=function(){window.print();setTimeout(function(){window.close();},100);}<\/script></body></html>`);
     printWindow.document.close();
@@ -767,7 +783,7 @@
   // ==========================================
   async function saveAsImage() {
     const title = document.getElementById('doc-title').value || "report";
-    const contentHtml = $('#doc-content').summernote('code');
+    const contentHtml = quill.root.innerHTML;
     
     if (!contentHtml || contentHtml === "<p><br></p>") { 
         alert("저장할 내용이 없습니다."); 
@@ -897,7 +913,7 @@
               const desc = idea['상세내용'] || "내용 없음";
               insertHtml += `<div style="margin-bottom:16px; padding:16px; background:#fff7ed; border-left:4px solid #ea580c; border-radius:4px;"><h4 style="margin:0 0 8px 0; color:#c2410c;">💡 ${idea['제목']}</h4><div style="font-size:0.95rem; color:#431407; line-height:1.6;">${desc}</div></div><br/>`;
           });
-          $('#doc-content').summernote('pasteHTML', insertHtml);
+          quill.clipboard.dangerouslyPasteHTML(quill.getSelection(true)?.index || quill.getLength(), insertHtml);
       } else {
           generateProposalFromIdeas(selectedIdeas);
       }
@@ -1033,14 +1049,14 @@
         CURRENT_EDITING_SCHEDULE_EL = null;
     } 
     else {
-        const currentCode = $('#doc-content').summernote('code');
+        const currentCode = quill.root.innerHTML;
         if (currentCode.includes('id="schedule-placeholder"')) {
             const parser = new DOMParser(); const doc = parser.parseFromString(currentCode, 'text/html');
             const placeholder = doc.getElementById('schedule-placeholder');
             if (placeholder) {
                 const tempDiv = doc.createElement('div'); tempDiv.innerHTML = scheduleHtml; placeholder.replaceWith(tempDiv);
-                $('#doc-content').summernote('code', doc.body.innerHTML);
-            } else $('#doc-content').summernote('pasteHTML', scheduleHtml);
+                quill.root.innerHTML = doc.body.innerHTML;
+            } else quill.clipboard.dangerouslyPasteHTML(quill.getSelection(true)?.index || quill.getLength(), scheduleHtml);
         } else $('#doc-content').summernote('pasteHTML', scheduleHtml);
     }
     
