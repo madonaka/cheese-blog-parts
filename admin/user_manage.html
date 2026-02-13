@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>인사 관리 - Cheese Lab</title>
+  <link rel="stylesheet" href="./admin.css">
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <style>
+    /* 인사 관리 전용 스타일 */
+    .user-list-card { background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+    .table-responsive { overflow-x: auto; }
+    .user-table { width: 100%; border-collapse: collapse; text-align: left; }
+    .user-table th { background: #f8fafc; padding: 15px; font-size: 0.8rem; text-transform: uppercase; color: #64748b; border-bottom: 1px solid #e2e8f0; }
+    .user-table td { padding: 15px; border-bottom: 1px solid #e2e8f0; font-size: 0.9rem; color: #1a202c; }
+    .user-table tr:last-child td { border-bottom: none; }
+    .user-table tr:hover { background: #f1f5f9; }
+    
+    .status-badge { padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 700; }
+    .status-1 { background: #dcfce7; color: #166534; } /* 활성 */
+    .status-0 { background: #fee2e2; color: #991b1b; } /* 차단 */
+
+    /* 모달 스타일 */
+    .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); backdrop-filter: blur(4px); }
+    .modal-content { background: #fff; margin: 10% auto; padding: 30px; border-radius: 12px; width: 90%; max-width: 500px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+    .full-width { grid-column: span 2; }
+  </style>
+  <script>
+    // ✅ 최신 배포된 로그인 API 주소를 입력하세요!
+    window.CHEESE_LOGIN_API = "https://script.google.com/macros/s/여기에_본인의_스크립트_ID/exec";
+  </script>
+  <script src="./admin-common.js" defer></script>
+</head>
+<body>
+  <div class="admin-shell">
+    <div id="admin-header-slot"></div>
+    <main class="admin-main">
+      <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+      
+      <section class="admin-content">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:25px;">
+          <div>
+            <h2 style="margin:0;">👤 인사 관리</h2>
+            <p style="color:#718096; font-size:0.9rem; margin-top:5px;">시스템에 등록된 전체 사용자 목록입니다.</p>
+          </div>
+          <button class="btn-bbs" style="background:#1a202c; color:#fff; border:none;" onclick="openModal()">+ 새 직원 등록</button>
+        </div>
+
+        <div class="user-list-card">
+          <div class="table-responsive">
+            <table class="user-table">
+              <thead>
+                <tr>
+                  <th>이름 / 사번</th>
+                  <th>아이디</th>
+                  <th>부서 / 직급</th>
+                  <th>이메일</th>
+                  <th>상태</th>
+                  <th>작업</th>
+                </tr>
+              </thead>
+              <tbody id="user-tbody">
+                <tr><td colspan="6" style="text-align:center; padding:40px;">데이터를 불러오는 중...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="userModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="modal-title" style="margin:0;">사용자 정보</h3>
+        <button onclick="closeModal()" style="background:none; border:none; font-size:1.5rem; cursor:pointer;">&times;</button>
+      </div>
+      <div class="form-grid">
+        <div class="full-width">
+          <label style="font-size:0.8rem; font-weight:700;">이름</label>
+          <input type="text" id="m-name" class="styled-input" placeholder="실명 입력">
+        </div>
+        <div>
+          <label style="font-size:0.8rem; font-weight:700;">사번</label>
+          <input type="text" id="m-empNo" class="styled-input" placeholder="CL25-0000">
+        </div>
+        <div>
+          <label style="font-size:0.8rem; font-weight:700;">로그인 ID</label>
+          <input type="text" id="m-loginId" class="styled-input" placeholder="아이디">
+        </div>
+        <div class="full-width">
+          <label style="font-size:0.8rem; font-weight:700;">이메일</label>
+          <input type="email" id="m-email" class="styled-input" placeholder="user@company.com">
+        </div>
+        <div>
+          <label style="font-size:0.8rem; font-weight:700;">부서</label>
+          <input type="text" id="m-dept" class="styled-input" placeholder="부서명">
+        </div>
+        <div>
+          <label style="font-size:0.8rem; font-weight:700;">직급</label>
+          <input type="text" id="m-pos" class="styled-input" placeholder="직급">
+        </div>
+        <div>
+          <label style="font-size:0.8rem; font-weight:700;">권한 그룹</label>
+          <select id="m-role" class="styled-input">
+            <option value="EMP">일반 사원(EMP)</option>
+            <option value="MGR">매니저(MGR)</option>
+            <option value="ADMIN">관리자(ADMIN)</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:0.8rem; font-weight:700;">계정 상태</label>
+          <select id="m-active" class="styled-input">
+            <option value="1">정상(Active)</option>
+            <option value="0">차단(Locked)</option>
+          </select>
+        </div>
+      </div>
+      <div style="margin-top:30px;">
+        <button onclick="saveUser()" class="btn-bbs" style="width:100%; background:#3b82f6; color:#fff; border:none; padding:12px;">저장하기</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    $(document).ready(fetchUsers);
+
+    async function fetchUsers() {
+      try {
+        const res = await fetch(`${window.CHEESE_LOGIN_API}?mode=listUsers`);
+        const json = await res.json();
+        if(!json.ok) return alert("데이터 로드 실패");
+
+        const html = json.users.map(u => `
+          <tr>
+            <td>
+              <div style="font-weight:700;">${u.displayName}</div>
+              <div style="font-size:0.75rem; color:#718096;">${u.empNo}</div>
+            </td>
+            <td>${u.loginId}</td>
+            <td>${u.deptId || '-'} / ${u.positionName || '-'}</td>
+            <td>${u.email}</td>
+            <td><span class="status-badge status-${u.active}">${u.active == 1 ? '정상' : '잠금'}</span></td>
+            <td><button class="btn-action" onclick='openModal(${JSON.stringify(u)})'>수정</button></td>
+          </tr>
+        `).join('');
+        document.getElementById('user-tbody').innerHTML = html;
+      } catch(e) { console.error(e); }
+    }
+
+    function openModal(user = null) {
+      const modal = document.getElementById('userModal');
+      modal.style.display = 'block';
+      
+      if(user) {
+        document.getElementById('modal-title').textContent = "직원 정보 수정";
+        document.getElementById('m-name').value = user.displayName;
+        document.getElementById('m-empNo').value = user.empNo;
+        document.getElementById('m-empNo').disabled = true; // 사번은 수정 불가
+        document.getElementById('m-loginId').value = user.loginId;
+        document.getElementById('m-email').value = user.email;
+        document.getElementById('m-dept').value = user.deptId;
+        document.getElementById('m-pos').value = user.positionName;
+        document.getElementById('m-role').value = user.role;
+        document.getElementById('m-active').value = user.active;
+      } else {
+        document.getElementById('modal-title').textContent = "새 직원 등록";
+        // 폼 초기화 로직...
+      }
+    }
+
+    function closeModal() { document.getElementById('userModal').style.display = 'none'; }
+
+    async function saveUser() {
+      const payload = {
+        mode: 'upsertUser',
+        empNo: document.getElementById('m-empNo').value,
+        loginId: document.getElementById('m-loginId').value,
+        displayName: document.getElementById('m-name').value,
+        email: document.getElementById('m-email').value,
+        deptId: document.getElementById('m-dept').value,
+        positionName: document.getElementById('m-pos').value,
+        role: document.getElementById('m-role').value,
+        active: document.getElementById('m-active').value
+      };
+
+      try {
+        const res = await fetch(window.CHEESE_LOGIN_API, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(payload)
+        });
+        const json = await res.json();
+        alert(json.message);
+        closeModal();
+        fetchUsers();
+      } catch(e) { alert("저장 중 오류 발생"); }
+    }
+  </script>
+</body>
+</html>
