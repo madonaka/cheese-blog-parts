@@ -401,28 +401,36 @@ async function saveNotice(statusToSave) {
       const root = document.getElementById('comment-list-root');
       root.innerHTML = '';
 
-      if (currentComments.length === 0) {
+      // 1. 서버 응답이 배열인지 확인
+      if (!Array.isArray(currentComments) || currentComments.length === 0) {
           root.innerHTML = `<div style="text-align:center; padding:40px; color:#94a3b8; font-weight:600; background:#f8fafc; border-radius:12px;">아직 작성된 댓글이 없습니다. 첫 댓글을 남겨보세요!</div>`;
           return;
       }
 
-      // 1. 부모 댓글과 대댓글 분리
-      const parents = currentComments.filter(c => !c.parentCommentId);
-      const children = currentComments.filter(c => c.parentCommentId);
+      console.log("렌더링할 댓글 데이터:", currentComments); // 브라우저 콘솔(F12)에서 데이터 확인용
+
+      // 2. 부모 댓글과 대댓글 분리 (parentCommentId가 비어있거나 null이면 부모)
+      // CSV 데이터에 따라 'null', 'undefined' 문자열로 들어오는 경우까지 체크합니다.
+      const isNullish = (v) => !v || v === "" || v === "null" || v === "undefined";
+      
+      const parents = currentComments.filter(c => isNullish(c.parentCommentId));
+      const children = currentComments.filter(c => !isNullish(c.parentCommentId));
 
       // 시간순 정렬 (오래된 순)
-      parents.sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt));
-      children.sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt));
+      parents.sort((a,b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
 
       parents.forEach(parent => {
           // 부모 렌더링
           root.appendChild(createCommentHTML(parent, false));
 
-          // 해당 부모의 대댓글 렌더링
-          const replies = children.filter(c => c.parentCommentId === parent.commentId);
+          // 해당 부모의 대댓글 렌더링 (commentId 또는 id 필드 대응)
+          const pId = parent.commentId || parent.id;
+          const replies = children.filter(c => String(c.parentCommentId) === String(pId));
+          
           if (replies.length > 0) {
               const replyContainer = document.createElement('div');
               replyContainer.className = 'reply-container';
+              replies.sort((a,b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
               replies.forEach(reply => {
                   replyContainer.appendChild(createCommentHTML(reply, true));
               });
@@ -430,7 +438,6 @@ async function saveNotice(statusToSave) {
           }
       });
   }
-
   function createCommentHTML(item, isReply) {
       const el = document.createElement('div');
       el.className = isReply ? 'reply-card' : 'comment-card';
