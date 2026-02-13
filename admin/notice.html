@@ -376,27 +376,35 @@ async function submitComment(parentId = "") {
     }
   }
 
-  // ✅ 3. 댓글 삭제 (실시간 반영되도록 동기화)
+  // ✅ 댓글 삭제 기능 (서버에 내 사번 신분증 동봉)
   async function deleteComment(id) {
     if(!confirm("댓글을 삭제하시겠습니까?")) return;
     
     if(typeof showAdminLoading==='function') showAdminLoading("삭제 중...");
     try {
+      const payload = { 
+          mode: 'setCommentStatus', 
+          commentId: id, 
+          status: 'deleted',
+          // 🚨 [핵심] 댓글 삭제 시에도 내 사번을 보내서 서버가 본인인지 검사하게 합니다.
+          reqEmpNo: window.CURRENT_USER_EMP_NO 
+      };
+
       const res = await fetch(window.CHEESE_ADMIN_API_BASE, { 
           method:'POST', 
           headers: { 'Content-Type': 'text/plain;charset=utf-8' }, 
-          body: JSON.stringify({ mode:'setCommentStatus', commentId: id, status:'deleted' }) 
+          body: JSON.stringify(payload) 
       });
       
-      await res.json(); // 삭제 처리가 완전히 끝날 때까지 대기
-      
-      // 새로고침 없이 즉시 화면에서 지워짐!
-      await loadComments();
-    } catch(e) { 
-      alert("삭제 실패"); 
-    } finally {
-      if(typeof hideAdminLoading==='function') hideAdminLoading();
-    }
+      const json = await res.json();
+      if(json.ok || json.result === "success") {
+          await loadComments(); // 삭제 성공 시 화면 즉시 갱신
+      } else {
+          // 서버에서 차단했을 때 뜨는 에러 메시지
+          alert("삭제 실패: " + (json.message || "권한이 없습니다.")); 
+      }
+    } catch(e) { alert("삭제 실패"); } 
+    finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); }
   }
 
   function renderComments() {
@@ -421,20 +429,34 @@ async function submitComment(parentId = "") {
     });
   }
 
+  // ✅ 댓글 UI 그리기 (본인 댓글에만 삭제 버튼 표시 + 서버가 변환해준 실명 표시)
   function createCommentEl(c, isReply) {
     const div = document.createElement('div');
     div.className = `comment-item ${isReply ? 'is-reply' : ''}`;
     const cId = getV(c, 'commentId') || getV(c, 'id');
+    
+    // 서버가 로그인 DB에서 사번을 찾아 변환해준 실제 이름 (없으면 사번 그대로 표시)
+    const authorName = getV(c, 'authorName') || getV(c, 'authorEmpNo') || "익명";
+    // 작성자의 사번
+    const authorEmp = getV(c, 'authorEmpNo');
+    
     div.innerHTML = `
-      <div class="comment-user"><span class="user-name">${getV(c, 'authorName') || getV(c, 'authorEmpNo') || "익명"}</span><span class="comment-date">${getV(c, 'createdAt')}</span></div>
+      <div class="comment-user">
+        <span class="user-name">${authorName}</span>
+        <span class="comment-date">${getV(c, 'createdAt')}</span>
+      </div>
       <div class="comment-text">${getV(c, 'body')}</div>
       <div class="comment-btns">
         ${!isReply ? `<button class="btn-comment-sm" onclick="toggleReplyForm('${cId}')">답글</button>` : ''}
-        ${getV(c, 'authorEmpNo') === window.CURRENT_USER_EMP_NO ? `<button class="btn-comment-sm" style="color:var(--danger);" onclick="deleteComment('${cId}')">삭제</button>` : ''}
+        
+        ${authorEmp === window.CURRENT_USER_EMP_NO ? `<button class="btn-comment-sm" style="color:var(--danger);" onclick="deleteComment('${cId}')">삭제</button>` : ''}
+      
       </div>
       <div id="reply-form-${cId}" style="display:none; margin-top:10px;">
         <textarea class="comment-textarea" rows="2" id="reply-text-${cId}" placeholder="답글을 입력하세요."></textarea>
-        <div style="display:flex; justify-content:flex-end; margin-top:5px;"><button class="btn-submit" style="padding:4px 12px; font-size:0.8rem;" onclick="submitComment('${cId}')">등록</button></div>
+        <div style="display:flex; justify-content:flex-end; margin-top:5px;">
+          <button class="btn-submit" style="padding:4px 12px; font-size:0.8rem;" onclick="submitComment('${cId}')">등록</button>
+        </div>
       </div>`;
     return div;
   }
