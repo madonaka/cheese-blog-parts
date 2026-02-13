@@ -1,327 +1,291 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <title>공지사항 · Cheese Admin</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="stylesheet" href="./admin.css" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>공지사항 - Cheese Lab</title>
+  
+  <link rel="stylesheet" href="./admin.css">
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+  <script>
+    // ✅ 서버 API 주소
+    window.CHEESE_ADMIN_API_BASE = "https://script.google.com/macros/s/AKfycbyE0uUpF2VdePr6AC6VcK7UOI4y5zvkUfMHlGHEiNKiGiiAjSzr172140GtV5MpiwzaSg/exec";
+  </script>
+  <script src="./admin-common.js" defer></script>
+
   <style>
-    :root{
-      --bg:#f3f4f6; --card:#ffffff; --text:#0f172a; --sub:#475569;
-      --line:rgba(15,23,42,0.10); --shadow:0 10px 28px rgba(15,23,42,0.10); --r:18px;
+    :root { --bg-soft: #f8fafc; --border-color: #e2e8f0; --text-main: #1e293b; --text-sub: #64748b; --primary: #3b82f6; }
+    
+    .dashboard-layout { display: block; max-width: 1200px; margin: 0 auto; padding-bottom: 60px; }
+    
+    /* 상단 헤더 영역 */
+    .archive-header { display: flex; flex-direction: column; gap: 16px; margin-bottom: 24px; }
+    .archive-title h2 { font-size: 1.8rem; color: #1e293b; margin: 0 0 8px 0; letter-spacing: -0.5px; font-weight: 800; }
+    .archive-title p { color: #64748b; margin: 0; font-size: 0.95rem; }
+    
+    .report-controls { 
+        display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
+        background: #fff; padding: 16px; border-radius: 12px; border: 1px solid #e2e8f0; 
+        box-shadow: 0 2px 4px rgba(0,0,0,0.03);
     }
-    body{ margin:0; background:var(--bg); color:var(--text);
-      font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    
+    .styled-input { padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 0.95rem; outline: none; transition: 0.2s; font-family: inherit; }
+    .styled-input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
+    
+    .btn-new { padding: 10px 20px; border-radius: 8px; border: none; background: #3b82f6; color: #fff; font-weight: 700; font-size: 0.95rem; cursor: pointer; transition: 0.2s; box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.4); }
+    .btn-new:hover { background: #2563eb; transform: translateY(-2px); }
 
-    .page-title{ margin:10px 0 14px; display:flex; align-items:flex-end; justify-content:space-between; gap:10px; flex-wrap:wrap; }
-    .page-title .t{ font-size:20px; font-weight:1000; letter-spacing:-0.02em; }
-    .page-title .s{ margin-top:4px; color:var(--sub); font-size:12px; font-weight:650; }
-    .pill{ display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; font-size:12px; font-weight:900;
-      border:1px solid rgba(15,23,42,0.10); background:rgba(15,23,42,0.04); white-space:nowrap; }
+    /* 탭 메뉴 */
+    .view-tabs { display: flex; gap: 6px; margin-bottom: 24px; background: #f1f5f9; padding: 6px; border-radius: 12px; overflow-x: auto; white-space: nowrap; }
+    .view-tab-btn { padding: 10px 20px; border-radius: 8px; font-weight: 700; font-size: 0.95rem; border: none; background: transparent; color: var(--text-sub); cursor: pointer; transition: all 0.2s; }
+    .view-tab-btn:hover { color: var(--text-main); }
+    .view-tab-btn.active { background: #fff; color: var(--primary); box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
 
-    .card{ background:var(--card); border:1px solid var(--line); border-radius:var(--r); box-shadow:var(--shadow); overflow:hidden; }
-    .card-h{ padding:14px 14px 10px; display:flex; align-items:center; justify-content:space-between; gap:10px;
-      border-bottom:1px solid rgba(15,23,42,0.06); }
-    .card-title{ font-weight:1000; letter-spacing:-0.02em; font-size:14px; display:flex; align-items:center; gap:8px; }
-    .card-b{ padding:12px 14px 14px; }
+    /* 중요 공지 (Pinned) 그리드 */
+    .pinned-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; margin-bottom: 32px; }
+    .pinned-card { background: #fff; border-radius: 16px; padding: 24px; border: 2px solid #fca5a5; box-shadow: 0 10px 15px -3px rgba(239, 68, 68, 0.1); cursor: pointer; transition: all 0.2s; position: relative; overflow: hidden; }
+    .pinned-card:hover { transform: translateY(-4px); box-shadow: 0 20px 25px -5px rgba(239, 68, 68, 0.15); }
+    .pinned-card::before { content: '📌 필독'; position: absolute; top: 0; right: 0; background: #ef4444; color: #fff; font-size: 0.75rem; font-weight: 800; padding: 6px 16px; border-bottom-left-radius: 12px; }
+    
+    /* 일반 공지 리스트 */
+    .notice-list { display: flex; flex-direction: column; gap: 12px; }
+    .notice-item { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; transition: all 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.02); }
+    .notice-item:hover { border-color: #cbd5e1; transform: translateX(4px); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+    
+    .notice-info-left { display: flex; align-items: center; gap: 16px; flex: 1; min-width: 0; }
+    .notice-info-right { display: flex; align-items: center; gap: 20px; flex-shrink: 0; color: #64748b; font-size: 0.9rem; }
+    
+    .notice-title { font-size: 1.1rem; font-weight: 700; color: #1e293b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .notice-preview { font-size: 0.9rem; color: #64748b; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+    
+    /* 뱃지 스타일 */
+    .badge { padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; font-weight: 800; white-space: nowrap; }
+    .badge-danger { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
+    .badge-warn { background: #fef3c7; color: #d97706; border: 1px solid #fde68a; }
+    .badge-normal { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+    .badge-draft { background: #f3f4f6; color: #94a3b8; border: 1px dashed #cbd5e1; }
+    
+    .meta-stat { display: flex; align-items: center; gap: 4px; font-weight: 600; }
+    .meta-date { font-family: monospace; font-size: 0.85rem; color: #94a3b8; }
 
-    .toolbar{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:space-between; margin-bottom:10px; }
-    .left-tools{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-    .right-tools{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-
-    .chip{ border:1px solid rgba(15,23,42,0.12); background:#fff; border-radius:999px; padding:6px 10px;
-      font-size:12px; font-weight:900; cursor:pointer; }
-    .chip.is-on{ background:rgba(15,23,42,0.06); border-color:rgba(15,23,42,0.22); }
-
-    .input{
-      border:1px solid rgba(15,23,42,0.14); background:#fff; border-radius:12px;
-      padding:10px 12px; font-size:13px; font-weight:650; outline:none; min-width:260px;
+    @media (max-width: 768px) {
+        .notice-item { flex-direction: column; align-items: flex-start; gap: 12px; }
+        .notice-info-right { width: 100%; justify-content: flex-end; border-top: 1px dashed #e2e8f0; padding-top: 12px; }
     }
-    .btn{
-      border:1px solid rgba(15,23,42,0.14); background:#fff; border-radius:12px;
-      padding:10px 12px; font-size:13px; font-weight:900; cursor:pointer;
-    }
-    .btn.primary{ background:rgba(15,23,42,0.92); color:#fff; border-color:rgba(15,23,42,0.92); }
-    .btn:disabled{ opacity:.5; cursor:not-allowed; }
-
-    .list{ margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:10px; }
-    .row{ display:flex; gap:10px; align-items:flex-start; justify-content:space-between; padding:12px 12px; border-radius:14px;
-      border:1px solid rgba(15,23,42,0.08); background:rgba(2,6,23,0.02); }
-    .row-left{ min-width:0; display:flex; flex-direction:column; gap:6px; }
-    .row-title{ font-weight:1000; font-size:14px; letter-spacing:-0.01em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; }
-    .row-meta{ color:var(--sub); font-size:12px; font-weight:650; display:flex; gap:10px; flex-wrap:wrap; }
-
-    .tag{ display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; font-size:12px; font-weight:900;
-      border:1px solid rgba(15,23,42,0.10); background:rgba(15,23,42,0.04); white-space:nowrap; }
-    .tag--warn{ background:rgba(245,158,11,0.12); border-color:rgba(245,158,11,0.28); }
-    .tag--bad{ background:rgba(239,68,68,0.10); border-color:rgba(239,68,68,0.25); }
-    .tag--pin{ background:rgba(59,130,246,0.10); border-color:rgba(59,130,246,0.25); }
-
-    .muted{ color:var(--sub); font-size:12px; font-weight:650; }
-    .actions{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; justify-content:flex-end; }
-    .linkbtn{ border:1px solid rgba(15,23,42,0.14); background:#fff; border-radius:12px; padding:8px 10px; font-size:12px; font-weight:900; cursor:pointer; }
-
-    .skeleton{ height:12px; border-radius:999px; background:rgba(15,23,42,0.08); overflow:hidden; position:relative; }
-    .skeleton::after{ content:""; position:absolute; inset:0; transform:translateX(-60%);
-      background:linear-gradient(90deg, transparent, rgba(255,255,255,0.55), transparent); animation:shimmer 1.2s infinite; }
-    @keyframes shimmer{ 0%{transform:translateX(-60%);} 100%{transform:translateX(160%);} }
-
-    @media (max-width:520px){
-      .input{ min-width: 100%; width: 100%; }
-      .row-title{ white-space:normal; overflow:visible; }
-    }
+    
+    .empty-state { text-align: center; padding: 60px 20px; background: #f8fafc; border-radius: 16px; border: 2px dashed #cbd5e1; color: #94a3b8; font-weight: 600; }
+    /* 버전 표시 뱃지 스타일 */
+    .sys-version-large { font-size: 1.1rem; font-weight: 800; color: #ef4444; background: #fee2e2; display: inline-block; padding: 4px 12px; border-radius: 20px; margin-top: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
   </style>
 </head>
-
 <body>
-  <div class="admin-shell">
-    <div id="admin-header-slot"></div>
 
-    <div class="admin-main">
-      <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+<div class="admin-shell">
+  <div id="admin-header-slot"></div>
+  <main class="admin-main">
+    <aside id="admin-menu-slot" class="admin-sidebar"></aside>
 
-      <main>
-        <div class="page-title">
-          <div>
-            <div class="t">공지사항</div>
-            <div class="s">전체 목록 · 검색 · 필터</div>
+    <section class="admin-content">
+      <div class="dashboard-layout">
+        
+        <div class="archive-header">
+          <div class="archive-title">
+            <h2>📢 사내 공지사항</h2>
+            <p>새로운 소식과 중요한 정책을 확인하세요.</p>
+            <div id="sysVersion" class="sys-version-large">Checking version...</div>
           </div>
-          <div class="pill" id="countPill">로딩중…</div>
+          
+          <div class="report-controls">
+            <div style="display: flex; gap: 10px; flex: 1; max-width: 500px;">
+                <input type="text" id="search-keyword" class="styled-input" placeholder="제목 또는 내용 검색..." style="flex: 1;" onkeyup="if(event.key==='Enter') renderBoard()">
+                <button class="styled-input" style="background:#f1f5f9; cursor:pointer; font-weight:700;" onclick="renderBoard()">🔍 검색</button>
+            </div>
+            <button class="btn-new" onclick="location.href='notice.html'">+ 새 공지 작성</button>
+          </div>
         </div>
 
-        <div class="card">
-          <div class="card-h">
-            <div class="card-title">📋 공지 목록</div>
-            <div class="actions">
-              <button class="btn" type="button" onclick="location.href='./new_dashboard.html'">대시보드</button>
-              <button class="btn primary" id="btnNew" type="button">공지 작성</button>
-            </div>
-          </div>
-
-          <div class="card-b">
-            <div class="toolbar">
-              <div class="left-tools">
-                <button class="chip is-on" data-filter="all" type="button">전체</button>
-                <button class="chip" data-filter="pin" type="button">고정</button>
-                <button class="chip" data-filter="danger" type="button">필독</button>
-                <button class="chip" data-filter="warn" type="button">중요</button>
-                <button class="chip" data-filter="normal" type="button">일반</button>
-              </div>
-
-              <div class="right-tools">
-                <input class="input" id="q" placeholder="검색: 제목/사번(예 CL25-0001)" />
-                <button class="btn" id="btnReload" type="button">새로고침</button>
-                <button class="btn" id="btnMore" type="button">더보기</button>
-              </div>
-            </div>
-
-            <ul class="list" id="list">
-              <li class="row"><div style="flex:1"><div class="skeleton" style="width:78%"></div><div style="height:8px"></div><div class="skeleton" style="width:55%"></div></div></li>
-              <li class="row"><div style="flex:1"><div class="skeleton" style="width:84%"></div><div style="height:8px"></div><div class="skeleton" style="width:45%"></div></div></li>
-            </ul>
-
-            <div class="muted" id="empty" style="display:none; margin-top:12px;">공지 없음</div>
-          </div>
+        <div class="view-tabs">
+          <button class="view-tab-btn active" onclick="switchTab('all')" id="tab-all">📂 전체 공지</button>
+          <button class="view-tab-btn" onclick="switchTab('important')" id="tab-important">🚨 중요/필독</button>
+          <button class="view-tab-btn" onclick="switchTab('archived')" id="tab-archived">🗂️ 종료/보관</button>
+          <button class="view-tab-btn" onclick="switchTab('draft')" id="tab-draft" style="margin-left: auto;">📝 임시저장</button>
         </div>
-      </main>
-    </div>
-  </div>
 
-  <script src="./admin-common.js"></script>
-  <script>
-    const ANN_API_BASE = "https://script.google.com/macros/s/AKfycbyE0uUpF2VdePr6AC6VcK7UOI4y5zvkUfMHlGHEiNKiGiiAjSzr172140GtV5MpiwzaSg/exec";
+        <div id="pinned-notice-list" class="pinned-grid"></div>
 
-    function escapeHtml(s){
-      return String(s ?? '')
-        .replaceAll('&','&amp;').replaceAll('<','&lt;')
-        .replaceAll('>','&gt;').replaceAll('"','&quot;')
-        .replaceAll("'","&#039;");
-    }
+        <div id="normal-notice-list" class="notice-list">
+             <div class="empty-state">공지사항을 불러오는 중입니다...</div>
+        </div>
 
-    function getSessionUser_(){
-      const empNo = (sessionStorage.getItem("cheese_admin_emp_no") || "").trim();
-      const name  = (sessionStorage.getItem("cheese_admin_display_name") || "").trim();
-      const role  = (sessionStorage.getItem("cheese_admin_role") || "").trim();
-      return empNo ? { empNo, name, role } : null;
-    }
+      </div>
+    </section>
+  </main>
+</div>
 
-    function canWrite_(role){
-      return ["ADMIN","FIN","MGR"].includes(String(role||"").toUpperCase());
-    }
+<script>
+  window.CHEESE_ADMIN_ACTIVE_PAGE = "board"; 
+  let g_announcements = [];
+  let currentTab = 'all';
 
-    function mountShell_(){
-      const tryCall = (names, args)=>{
-        for(const n of names){
-          if(typeof window[n] === 'function'){
-            try{ window[n](args); }catch(e){ console.warn(n,e); }
-            return true;
+  document.addEventListener('DOMContentLoaded', () => {
+      loadAnnouncements();
+  });
+
+  async function loadAnnouncements() {
+      if(typeof showAdminLoading==='function') showAdminLoading("공지사항 불러오는 중...");
+      try {
+          // API 모드: listAnnouncements
+          const res = await fetch(window.CHEESE_ADMIN_API_BASE + "?mode=listAnnouncements");
+          const json = await res.json();
+          if(json.ok) {
+              g_announcements = json.announcements || [];
+              renderBoard();
+          } else {
+              alert("데이터를 불러오지 못했습니다: " + (json.message || "알 수 없는 오류"));
           }
-        }
-        return false;
-      };
+      } catch(e) { 
+          console.error(e); 
+          document.getElementById('normal-notice-list').innerHTML = `<div class="empty-state" style="color:#ef4444;">데이터 통신에 실패했습니다.</div>`;
+      } finally { 
+          if(typeof hideAdminLoading==='function') hideAdminLoading(); 
+      }
+  }
 
-      // header
-      tryCall(['renderAdminHeader','mountAdminHeader'], {
-        mountId: 'admin-header-slot',
-        badgeText: 'board',
-        subtitle: '공지사항'
+  function switchTab(tabId) {
+      currentTab = tabId;
+      document.querySelectorAll('.view-tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('tab-' + tabId).classList.add('active');
+      renderBoard();
+  }
+
+  function renderBoard() {
+      const pinnedRoot = document.getElementById('pinned-notice-list');
+      const normalRoot = document.getElementById('normal-notice-list');
+      pinnedRoot.innerHTML = ''; normalRoot.innerHTML = '';
+
+      const keyword = document.getElementById('search-keyword').value.toLowerCase().trim();
+      const todayStr = new Date().toISOString().split('T')[0];
+
+      // 필터링
+      let filtered = g_announcements.filter(item => {
+          // 1. 상태 및 탭 필터
+          if (currentTab === 'draft' && item.status !== 'draft') return false;
+          if (currentTab !== 'draft' && item.status === 'draft') return false;
+          
+          if (currentTab === 'archived' && item.status !== 'archived') return false;
+          if (currentTab !== 'archived' && item.status === 'archived') return false;
+
+          if (currentTab === 'important') {
+              if (item.level !== 'danger' && item.level !== 'warn' && item.isPinned != 1) return false;
+          }
+
+          // 2. 검색 필터
+          if (keyword) {
+              const title = (item.title || "").toLowerCase();
+              const body = (item.body || "").toLowerCase();
+              if (!title.includes(keyword) && !body.includes(keyword)) return false;
+          }
+
+          return true;
       });
 
-      // menu
-      tryCall(['renderAdminMenu','renderAdminSidebar','mountAdminMenu'], {
-        mountId: 'admin-menu-slot',
-        active: 'board'
+      // 정렬: 최신 글(updatedAt 또는 createdAt) 기준 내림차순
+      filtered.sort((a, b) => {
+          const dateA = new Date(a.createdAt || 0);
+          const dateB = new Date(b.createdAt || 0);
+          return dateB - dateA;
       });
-    }
 
-    async function apiGet_(params){
-      const url = ANN_API_BASE + "?" + new URLSearchParams(params).toString();
-      const res = await fetch(url);
-      const txt = await res.text();
-      let j; try{ j = JSON.parse(txt); }catch(_){ throw new Error("서버 응답이 JSON이 아님: " + txt); }
-      if(!j.ok) throw new Error(j.message || "API 오류");
-      return j;
-    }
+      // Pinned(상단 고정) 분리
+      const pinnedItems = filtered.filter(item => item.isPinned == 1 || item.level === 'danger');
+      const normalItems = filtered.filter(item => item.isPinned != 1 && item.level !== 'danger');
 
-    function tagHtml_(it){
-      const level = String(it.level||"normal").toLowerCase();
-      const pinned = Number(it.isPinned||0) === 1;
-
-      const tags = [];
-      if(pinned) tags.push('<span class="tag tag--pin">고정</span>');
-
-      if(level === 'danger') tags.push('<span class="tag tag--bad">필독</span>');
-      else if(level === 'warn') tags.push('<span class="tag tag--warn">중요</span>');
-      else tags.push('<span class="tag">일반</span>');
-
-      return tags.join(' ');
-    }
-
-    let __items = [];
-    let __filter = 'all';
-    let __limit = 20;
-
-    async function load_(){
-      document.getElementById('empty').style.display = 'none';
-
-      const user = getSessionUser_();
-      const writer = user && canWrite_(user.role);
-
-      // 작성 버튼
-      const btnNew = document.getElementById('btnNew');
-      btnNew.style.display = writer ? 'inline-flex' : 'none';
-      btnNew.onclick = ()=> location.href = "./notice-editor.html";
-
-      const j = await apiGet_({ mode:'listAnnouncements', limit: String(__limit) });
-      __items = Array.isArray(j.items) ? j.items : [];
-      document.getElementById('countPill').textContent = `표시 ${__items.length}건`;
-      render_();
-    }
-
-    function render_(){
-      const q = (document.getElementById('q').value || '').trim().toLowerCase();
-      let items = __items.slice();
-
-      // filter
-      if(__filter === 'pin') items = items.filter(x=>Number(x.isPinned||0)===1);
-      if(['danger','warn','normal'].includes(__filter)) items = items.filter(x=>String(x.level||'normal').toLowerCase() === __filter);
-
-      // search
-      if(q){
-        items = items.filter(x=>{
-          const t = String(x.title||'').toLowerCase();
-          const a = String(x.authorEmpNo||'').toLowerCase();
-          return t.includes(q) || a.includes(q);
-        });
+      // 렌더링 - Pinned
+      if (pinnedItems.length > 0 && currentTab !== 'draft' && currentTab !== 'archived') {
+          pinnedItems.forEach(item => pinnedRoot.appendChild(createPinnedCard(item)));
       }
 
-      const ul = document.getElementById('list');
-      ul.innerHTML = '';
-
-      if(!items.length){
-        document.getElementById('empty').style.display = 'block';
-        return;
+      // 렌더링 - Normal
+      if (normalItems.length === 0 && pinnedItems.length === 0) {
+          normalRoot.innerHTML = `<div class="empty-state">조건에 맞는 공지사항이 없습니다.</div>`;
+      } else {
+          normalItems.forEach(item => normalRoot.appendChild(createNormalRow(item)));
       }
+  }
 
-      const user = getSessionUser_();
-      const isAdmin = user && String(user.role||'').toUpperCase() === 'ADMIN';
+  function getBadgeHtml(level, status) {
+      if (status === 'draft') return `<span class="badge badge-draft">임시저장</span>`;
+      if (status === 'archived') return `<span class="badge badge-normal">종료됨</span>`;
+      
+      if (level === 'danger') return `<span class="badge badge-danger">🚨 필독</span>`;
+      if (level === 'warn') return `<span class="badge badge-warn">⚠️ 중요</span>`;
+      return `<span class="badge badge-normal">안내</span>`;
+  }
 
+  function createPinnedCard(item) {
+      const card = document.createElement('div');
+      card.className = 'pinned-card';
+      
+      // notice.html 상세 페이지로 이동 (ID 파라미터 전달)
+      card.onclick = () => location.href = `notice.html?id=${item.noticeId}`;
 
-      items.forEach(it=>{
-        const isAuthor = user && String(it.authorEmpNo||'').trim() === String(user.empNo||'').trim();
-        const canEditThis = !!(isAdmin || isAuthor);
-        const li = document.createElement('li');
-        li.className = 'row';
-        li.style.cursor = 'pointer';
+      const dateStr = (item.createdAt || "").split(' ')[0];
+      const previewText = (item.body || "").replace(/<[^>]*>?/gm, '').slice(0, 80) + "...";
 
-        const updated = String(it.updatedAt || '').slice(0,16);
-        const period = [
-          it.startAt ? `시작 ${escapeHtml(it.startAt)}` : '',
-          it.endAt ? `종료 ${escapeHtml(it.endAt)}` : ''
-        ].filter(Boolean).join(' · ');
-
-        li.innerHTML = `
-          <div class="row-left">
-            <div class="row-title">${escapeHtml(it.title || '')}</div>
-            <div class="row-meta">
-              <span>${escapeHtml(updated || '')}</span>
-              <span>작성 ${escapeHtml(it.authorEmpNo || '')}</span>
-              ${period ? `<span>· ${period}</span>` : ''}
-              <span>· 댓글 ${Number(it.commentCount||0)}</span>
-            </div>
+      card.innerHTML = `
+          <div style="margin-bottom: 12px;">${getBadgeHtml(item.level, item.status)}</div>
+          <div class="notice-title" style="font-size: 1.25rem; margin-bottom: 8px;">${item.title}</div>
+          <div class="notice-preview" style="margin-bottom: 20px;">${previewText}</div>
+          
+          <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px dashed #fca5a5; padding-top:12px;">
+              <span class="meta-date">📅 ${dateStr}</span>
+              <div style="display:flex; gap:12px;">
+                  <span class="meta-stat" style="color:#ef4444;">👁️ ${item.viewCount || 0}</span>
+                  <span class="meta-stat" style="color:#ef4444;">💬 ${item.commentCount || 0}</span>
+              </div>
           </div>
-          <div class="actions">
-            ${tagHtml_(it)}
-            ${canEditThis ? `<button class="linkbtn" data-edit="1" type="button">수정</button>` : ''}
+      `;
+      return card;
+  }
+
+  function createNormalRow(item) {
+      const row = document.createElement('div');
+      row.className = 'notice-item';
+      
+      row.onclick = () => location.href = `notice.html?id=${item.noticeId}`;
+
+      const dateStr = (item.createdAt || "").split(' ')[0];
+      const previewText = (item.body || "").replace(/<[^>]*>?/gm, '').slice(0, 60) + "...";
+
+      row.innerHTML = `
+          <div class="notice-info-left">
+              ${getBadgeHtml(item.level, item.status)}
+              <div style="min-width: 0; flex: 1;">
+                  <div class="notice-title">${item.title}</div>
+                  <div class="notice-preview">${previewText}</div>
+              </div>
           </div>
-        `;
-
-        li.addEventListener('click', ()=>{
-          location.href = "./notice.html?id=" + encodeURIComponent(String(it.noticeId||''));
-        });
-
-        const editBtn = li.querySelector('[data-edit="1"]');
-        if(editBtn){
-          editBtn.addEventListener('click', (ev)=>{
-            ev.stopPropagation();
-            location.href = "./notice-editor.html?id=" + encodeURIComponent(String(it.noticeId||''));
-          });
-        }
-
-        ul.appendChild(li);
-      });
-    }
-
-    function wire_(){
-      document.querySelectorAll('[data-filter]').forEach(btn=>{
-        btn.addEventListener('click', ()=>{
-          document.querySelectorAll('[data-filter]').forEach(x=>x.classList.remove('is-on'));
-          btn.classList.add('is-on');
-          __filter = btn.getAttribute('data-filter');
-          render_();
-        });
-      });
-
-      document.getElementById('q').addEventListener('input', render_);
-
-      document.getElementById('btnReload').addEventListener('click', ()=>{
-        load_().catch(err=>alert(err.message||String(err)));
-      });
-
-      document.getElementById('btnMore').addEventListener('click', ()=>{
-        __limit = Math.min(__limit + 20, 100);
-        load_().catch(err=>alert(err.message||String(err)));
-      });
-    }
-
-    (function init(){
-      mountShell_();
-      wire_();
-      load_().catch(err=>{
-        document.getElementById('countPill').textContent = '로딩 실패';
-        alert(err.message || String(err));
-      });
-    })();
-  </script>
+          <div class="notice-info-right">
+              <span class="meta-date">${dateStr}</span>
+              <span class="meta-stat" title="조회수">👁️ ${item.viewCount || 0}</span>
+              <span class="meta-stat" title="댓글수">💬 ${item.commentCount || 0}</span>
+          </div>
+      `;
+      return row;
+  }
+  // 👇 </script> 닫히기 바로 위에 아래 함수를 통째로 추가합니다 👇
+  (function showVersion() {
+      const el = document.getElementById("sysVersion");
+      if (!el) return;
+      
+      const d = new Date(document.lastModified);
+      const pad = (n) => String(n).padStart(2, '0');
+      
+      const versionTag = `${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())}_${pad(d.getHours())}:${pad(d.getMinutes())} [Board-Update]`;
+      
+      el.textContent = `Version: ${versionTag}`;
+  })();
+</script>
 </body>
 </html>
