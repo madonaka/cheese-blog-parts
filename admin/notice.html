@@ -10,6 +10,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tinymce/6.8.2/tinymce.min.js" referrerpolicy="origin"></script>
 
   <script>
+    // ✅ API V2.0 주소 연결
     window.CHEESE_ADMIN_API_BASE = "https://script.google.com/macros/s/AKfycbyE0uUpF2VdePr6AC6VcK7UOI4y5zvkUfMHlGHEiNKiGiiAjSzr172140GtV5MpiwzaSg/exec";
     window.CURRENT_USER_EMP_NO = "CL-ADMIN";
     window.CURRENT_USER_NAME = "관리자";
@@ -61,12 +62,12 @@
 
     <section class="admin-content">
       <div class="dashboard-layout">
-        <div class="sys-version-small" id="sysVersion">Verifying...</div>
+        <div class="sys-version-small" id="sysVersion">Verifying Content...</div>
 
         <div id="view-wrapper" style="display:none;">
           <div class="view-header">
             <div id="view-category" class="view-category"></div>
-            <h2 id="view-title" class="view-title">데이터를 불러오는 중입니다...</h2>
+            <h2 id="view-title" class="view-title">로딩 중...</h2>
             <div class="view-meta">
               <span id="view-author">--</span>
               <span class="meta-sep">|</span>
@@ -122,16 +123,23 @@
 </div>
 
 <script>
+  // URL에서 파라미터(id)를 가져옵니다.
   const urlParams = new URLSearchParams(window.location.search);
-  const targetNoticeId = urlParams.get('id');
+  const targetNoticeId = urlParams.get('id') || urlParams.get('noticeId');
+  
   let currentNotice = null;
   let currentComments = [];
 
   document.addEventListener('DOMContentLoaded', initPage);
 
   async function initPage() {
-    if (!targetNoticeId) { showEditMode(true); } 
-    else { showViewMode(); await loadNoticeData(); }
+    // 새 글 작성 모드인지 조회 모드인지 판단
+    if (!targetNoticeId || targetNoticeId === "null") {
+      showEditMode(true);
+    } else {
+      showViewMode();
+      await loadNoticeData();
+    }
   }
 
   function showViewMode() {
@@ -142,6 +150,7 @@
   function showEditMode(isNew = false) {
     document.getElementById('view-wrapper').style.display = 'none';
     document.getElementById('edit-wrapper').style.display = 'block';
+    if(isNew) document.getElementById('edit-page-title').textContent = "새 공지 작성";
     initTinyMCE();
   }
 
@@ -155,36 +164,50 @@
     });
   }
 
-  // ✅ [수정 핵심] 대소문자 무관하게 값을 가져오는 유틸
+  // 데이터 필드명 매칭 유틸리티
   function getV(obj, key) {
     if(!obj) return "";
     const foundKey = Object.keys(obj).find(k => k.toLowerCase() === key.toLowerCase());
     return foundKey ? obj[foundKey] : "";
   }
 
+  // ✅ 핵심 수정 부분: 데이터를 불러오고 'notice' 포장지를 뜯습니다.
   async function loadNoticeData() {
-    if(typeof showAdminLoading==='function') showAdminLoading("데이터를 가져오는 중...");
+    if(typeof showAdminLoading==='function') showAdminLoading("공지 불러오는 중...");
     try {
       const qId = String(targetNoticeId || "").trim();
-      const res = await fetch(`${window.CHEESE_ADMIN_API_BASE}?mode=getAnnouncement&id=${qId}&noticeId=${qId}`);
+      
+      // API V2.0은 파라미터로 'noticeId'를 요구하므로 맞춰서 전송합니다.
+      const fetchUrl = `${window.CHEESE_ADMIN_API_BASE}?mode=getAnnouncement&noticeId=${qId}`;
+      const res = await fetch(fetchUrl);
       const json = await res.json();
       
-      // 서버에서 어떤 키로 주든 무조건 추출
-      const data = json.announcement || json.data || json.item || (json.ok ? json : null);
+      console.log("DEBUG - 서버 응답:", json);
 
-      if(data && typeof data === 'object') {
-        currentNotice = data;
+      // ✅ API V2.0의 응답 구조인 json.notice 를 최우선으로 찾습니다.
+      const noticeItem = json.notice || json.announcement || json.data || json.item;
+
+      if(json.ok && noticeItem && typeof noticeItem === 'object') {
+        currentNotice = noticeItem;
         renderNotice();
         await loadComments();
-        fetch(window.CHEESE_ADMIN_API_BASE, { method:'POST', body: JSON.stringify({ mode:'incrementNoticeView', id: qId, noticeId: qId }) }).catch(e=>{});
+        
+        // 조회수 증가
+        fetch(window.CHEESE_ADMIN_API_BASE, { 
+            method:'POST', 
+            body: JSON.stringify({ mode:'incrementNoticeView', noticeId: qId }) 
+        }).catch(e=>{});
+
       } else {
-        alert("해당 공지를 찾을 수 없습니다. (ID: " + qId + ")");
+        alert("게시글 데이터를 찾을 수 없습니다.\n(서버 메시지: " + (json.message || "원인 불명") + ")");
         location.href = 'board.html';
       }
     } catch(e) {
-      console.error(e);
-      alert("서버 통신 오류가 발생했습니다.");
-    } finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); }
+      console.error("통신 에러:", e);
+      alert("서버 통신 중 오류가 발생했습니다.");
+    } finally { 
+      if(typeof hideAdminLoading==='function') hideAdminLoading(); 
+    }
   }
 
   function renderNotice() {
@@ -198,7 +221,9 @@
     document.getElementById('view-author').textContent = getV(currentNotice, 'authorName') || getV(currentNotice, 'authorEmpNo') || "관리자";
     document.getElementById('view-date').textContent = String(getV(currentNotice, 'createdAt') || "--.--.--").substring(0, 16);
     document.getElementById('view-count').textContent = getV(currentNotice, 'viewCount') || 0;
-    document.getElementById('view-body').innerHTML = getV(currentNotice, 'body') || getV(currentNotice, 'content') || "";
+    
+    const bodyText = getV(currentNotice, 'body') || getV(currentNotice, 'content') || "";
+    document.getElementById('view-body').innerHTML = bodyText;
   }
 
   function enterEditMode() {
@@ -233,16 +258,17 @@
     try {
       const res = await fetch(window.CHEESE_ADMIN_API_BASE, { method:'POST', body: JSON.stringify(payload) });
       const json = await res.json();
-      location.href = `notice.html?id=${json.noticeId || json.id || targetNoticeId}`;
+      const newId = json.noticeId || json.id || targetNoticeId;
+      location.href = `notice.html?id=${newId}`;
     } catch(e) { alert("저장 실패"); }
     finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); }
   }
 
   async function loadComments() {
     try {
-      const res = await fetch(`${window.CHEESE_ADMIN_API_BASE}?mode=listComments&id=${targetNoticeId}&noticeId=${targetNoticeId}`);
+      const res = await fetch(`${window.CHEESE_ADMIN_API_BASE}?mode=listComments&noticeId=${targetNoticeId}`);
       const json = await res.json();
-      currentComments = json.comments || json.data || [];
+      currentComments = json.comments || json.items || json.data || [];
       renderComments();
     } catch(e) { console.error(e); }
   }
@@ -274,7 +300,7 @@
     div.className = `comment-item ${isReply ? 'is-reply' : ''}`;
     const cId = getV(c, 'commentId') || getV(c, 'id');
     div.innerHTML = `
-      <div class="comment-user"><span class="user-name">${getV(c, 'authorName') || "익명"}</span><span class="comment-date">${getV(c, 'createdAt')}</span></div>
+      <div class="comment-user"><span class="user-name">${getV(c, 'authorName') || getV(c, 'authorEmpNo') || "익명"}</span><span class="comment-date">${getV(c, 'createdAt')}</span></div>
       <div class="comment-text">${getV(c, 'body')}</div>
       <div class="comment-btns">
         ${!isReply ? `<button class="btn-comment-sm" onclick="toggleReplyForm('${cId}')">답글</button>` : ''}
@@ -295,7 +321,7 @@
     if(!text.trim()) return alert("내용을 입력하세요.");
     const payload = { mode: 'addComment', noticeId: targetNoticeId, parentCommentId: parentId, body: text, authorEmpNo: window.CURRENT_USER_EMP_NO, authorName: window.CURRENT_USER_NAME };
     try {
-      const res = await fetch(window.CHEESE_ADMIN_API_BASE, { method:'POST', body: JSON.stringify(payload) });
+      await fetch(window.CHEESE_ADMIN_API_BASE, { method:'POST', body: JSON.stringify(payload) });
       document.getElementById(inputId).value = "";
       if(parentId) toggleReplyForm(parentId);
       await loadComments();
@@ -315,7 +341,7 @@
       if (!el) return;
       const d = new Date(document.lastModified);
       const pad = (n) => String(n).padStart(2, '0');
-      el.textContent = `Ver: ${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())}_${pad(d.getHours())}:${pad(d.getMinutes())} [Stable-Final]`;
+      el.textContent = `Ver: ${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())}_${pad(d.getHours())}:${pad(d.getMinutes())} [Final-Fix]`;
   })();
 </script>
 </body>
