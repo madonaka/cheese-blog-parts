@@ -178,34 +178,83 @@
     });
   }
 
-  // ✅ 데이터를 불러오는 로직 강화 (id, noticeId 동시 대응 및 모든 응답 키 체크)
+ // ✅ 데이터를 불러오는 로직 강화 (어떤 형식으로 데이터가 오든 무조건 잡아냅니다)
   async function loadNoticeData() {
     if(typeof showAdminLoading==='function') showAdminLoading("불러오는 중...");
     try {
+      // 1. API 호출 (id와 noticeId 파라미터 두 가지 모두 보냄)
       const queryId = targetNoticeId;
       const res = await fetch(`${window.CHEESE_ADMIN_API_BASE}?mode=getAnnouncement&id=${queryId}&noticeId=${queryId}`);
       const json = await res.json();
       
-      // 서버에서 어떤 키로 데이터를 줄지 모르니 모두 체크
-      const data = json.announcement || json.data || json.item || json.result;
+      console.log("서버 응답 원본:", json); // 디버깅용
 
-      if(data && (data.title || data.id || data.noticeId)) {
-        currentNotice = data;
-        renderNotice();
-        await loadComments();
-        // 조회수 증가는 오류가 나도 본문 로딩을 막지 않게 분리
-        fetch(window.CHEESE_ADMIN_API_BASE, { 
-          method:'POST', 
-          body: JSON.stringify({ mode:'incrementNoticeView', id: queryId, noticeId: queryId }) 
-        }).catch(e => console.log("조회수 증가 skip"));
-      } else {
-        alert("해당 게시글을 찾을 수 없습니다.");
-        location.href = 'board.html';
+      // 2. 서버 응답 결과 확인 (ok 또는 success 여부)
+      if(json.ok || json.result === "success" || json.announcement || json.data) {
+        
+        // 3. 데이터 본체(알맹이) 추출 (여러가지 키값 대응)
+        const data = json.announcement || json.data || json.item || json.result || json;
+
+        // 4. 데이터가 존재한다면 렌더링 진행
+        if(data && typeof data === 'object') {
+          currentNotice = data;
+          renderNotice();
+          await loadComments();
+          
+          // 조회수 증가 (실패해도 본문 로딩을 막지 않음)
+          fetch(window.CHEESE_ADMIN_API_BASE, { 
+            method:'POST', 
+            body: JSON.stringify({ mode:'incrementNoticeView', id: queryId, noticeId: queryId }) 
+          }).catch(e => {});
+          
+          return; // 성공적으로 로드됨
+        }
       }
+      
+      // 데이터를 찾지 못한 경우
+      throw new Error("Data not found");
+
     } catch(e) { 
-      console.error(e);
-      alert("데이터 로드 중 오류가 발생했습니다.");
-    } finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); }
+      console.error("상세 에러:", e);
+      alert("해당 게시글을 찾을 수 없습니다. (ID: " + targetNoticeId + ")");
+      location.href = 'board.html';
+    } finally { 
+      if(typeof hideAdminLoading==='function') hideAdminLoading(); 
+    }
+  }
+
+  // ✅ 데이터 화면 렌더링 (대소문자 구분 없이 필드명을 찾습니다)
+  function renderNotice() {
+    if(!currentNotice) return;
+    
+    // 필드명 헬퍼 함수 (title, Title, TITLE 등 대응)
+    const getVal = (obj, key) => {
+        const foundKey = Object.keys(obj).find(k => k.toLowerCase() === key.toLowerCase());
+        return foundKey ? obj[foundKey] : "";
+    };
+
+    const l = String(getVal(currentNotice, 'level')).toLowerCase();
+    const cat = document.getElementById('view-category');
+    
+    if (l === 'danger') cat.innerHTML = '<span class="m-badge bg-danger">필독</span>';
+    else if (l === 'warn') cat.innerHTML = '<span class="m-badge bg-primary">중요</span>';
+    else cat.textContent = '공지';
+
+    document.getElementById('view-title').textContent = getVal(currentNotice, 'title') || "제목 없음";
+    
+    // 작성자 표시 (authorName, authorEmpNo 등 대응)
+    const author = getVal(currentNotice, 'authorName') || getVal(currentNotice, 'authorEmpNo') || "관리자";
+    document.getElementById('view-author').textContent = author;
+    
+    // 날짜 표시
+    const date = getVal(currentNotice, 'createdAt') || getVal(currentNotice, 'updatedAt') || "--.--.--";
+    document.getElementById('view-date').textContent = String(date).substring(0, 16);
+    
+    document.getElementById('view-count').textContent = getVal(currentNotice, 'viewCount') || 0;
+    
+    // 본문 표시 (body, content 등 대응)
+    const contentHtml = getVal(currentNotice, 'body') || getVal(currentNotice, 'content') || "";
+    document.getElementById('view-body').innerHTML = contentHtml;
   }
 
   function renderNotice() {
