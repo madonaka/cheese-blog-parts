@@ -202,20 +202,35 @@
   async function loadNoticeData() {
     if(typeof showAdminLoading==='function') showAdminLoading("불러오는 중...");
     try {
+      // API 호출
       const res = await fetch(`${window.CHEESE_ADMIN_API_BASE}?mode=getAnnouncement&id=${targetNoticeId}`);
       const json = await res.json();
-      const data = json.announcement || json.data;
-      if(data) {
+      
+      // 데이터 추출 시도 (여러 경로 대응)
+      // json.announcement 또는 json.data 또는 json.item 등 시트 API 설정에 따라 다를 수 있음
+      const data = json.announcement || json.data || json.item || (json.ok && json.result);
+
+      if(data && (data.noticeId || data.id)) {
         currentNotice = data;
         renderNotice();
         await loadComments();
-        // 조회수 증가
-        fetch(window.CHEESE_ADMIN_API_BASE, { method:'POST', body: JSON.stringify({ mode:'incrementNoticeView', id: targetNoticeId }) });
+        
+        // 조회수 증가 (비동기 처리)
+        fetch(window.CHEESE_ADMIN_API_BASE, { 
+          method:'POST', 
+          body: JSON.stringify({ mode:'incrementNoticeView', id: targetNoticeId }) 
+        }).catch(e => console.log("조회수 증가 실패", e));
+        
       } else {
-        alert("글을 찾을 수 없습니다.");
+        // 데이터가 비어있거나 형식이 안 맞을 때
+        console.error("받은 데이터 형식:", json);
+        alert("해당 게시글을 찾을 수 없거나 데이터 형식이 맞지 않습니다.");
         location.href = 'board.html';
       }
-    } catch(e) { console.error(e); }
+    } catch(e) { 
+      console.error("통신 에러:", e);
+      alert("서버와 통신 중 오류가 발생했습니다.");
+    }
     finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); }
   }
 
