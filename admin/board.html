@@ -9,7 +9,6 @@
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 
   <script>
-    // ✅ API 주소
     window.CHEESE_ADMIN_API_BASE = "https://script.google.com/macros/s/AKfycbyE0uUpF2VdePr6AC6VcK7UOI4y5zvkUfMHlGHEiNKiGiiAjSzr172140GtV5MpiwzaSg/exec";
   </script>
   <script src="./admin-common.js" defer></script>
@@ -33,7 +32,6 @@
     .view-tab-btn.active { color: var(--primary); }
     .view-tab-btn.active::after { content: ''; position: absolute; bottom: 0; left: 0; width: 100%; height: 2px; background: var(--primary); }
 
-    /* 게시판 리스트 스타일 */
     .board-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; table-layout: fixed; }
     .board-table th { background: #f1f1f1; border-bottom: 1px solid #ccc; padding: 10px 5px; font-weight: 700; color: #444; text-align: center; }
     .board-table td { padding: 10px 5px; border-bottom: 1px solid var(--line-color); text-align: center; color: var(--text-dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -129,10 +127,11 @@
   
   let currentTab = 'all';
   let currentPage = 1;
-  const itemsPerPage = 10; 
+  const itemsPerPage = 10; // 👈 한 페이지당 보여줄 게시글 수 (수정 가능)
 
   document.addEventListener('DOMContentLoaded', loadAnnouncements);
 
+  // 유틸 함수들
   function getV(obj, ...keys) {
       if (!obj) return "";
       for (let key of keys) {
@@ -145,28 +144,22 @@
       return "";
   }
 
-  // ✅ 날짜 텍스트를 강제로 00.00 형식으로 변환 (해결됨!)
   function forceFormatDate(dateVal) {
       if (!dateVal) return '--.--';
       const raw = String(dateVal).trim();
       const match = raw.match(/(\d{4})[-/.\s년]+(\d{1,2})[-/.\s월]+(\d{1,2})/);
       if (match) return `${match[2].padStart(2, '0')}.${match[3].padStart(2, '0')}`; 
-      
       const d = new Date(raw);
       if (!isNaN(d.getTime())) return `${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
-      
       return raw.substring(0, 5);
   }
 
-  // ✅ [NEW] 조회수 악착 탐색기: 숫자 외 문자가 있어도 숫자만 뽑고, 에러 이름(#num!)까지 뒤짐
   function findViewCount(item) {
       let v = getV(item, 'viewCount', 'view_count', 'views', '조회수', '조회', '읽음', '#num!', 'num');
-      
       if (v !== "") {
           let parsed = parseInt(String(v).replace(/[^0-9]/g, ''), 10);
           if (!isNaN(parsed)) return parsed;
       }
-
       for (let k of Object.keys(item)) {
           if (/(view|조회|hit|num)/i.test(String(k))) {
               let parsed = parseInt(String(item[k]).replace(/[^0-9]/g, ''), 10);
@@ -176,15 +169,12 @@
       return 0; 
   }
 
-  // ✅ [NEW] 댓글수 악착 탐색기 (조회수와 동일)
   function findCommentCount(item) {
       let c = getV(item, 'commentCount', '댓글수', '댓글');
-      
       if (c !== "") {
           let parsed = parseInt(String(c).replace(/[^0-9]/g, ''), 10);
           if (!isNaN(parsed)) return parsed;
       }
-
       for (let k of Object.keys(item)) {
           if (/(comment|댓글)/i.test(String(k))) {
               let parsed = parseInt(String(item[k]).replace(/[^0-9]/g, ''), 10);
@@ -197,7 +187,6 @@
   function findDateStr(item) {
       let d = getV(item, 'createdAt', 'created_at', '생성일시', '작성일', '날짜', '등록일', 'startAt');
       if (d !== "") return forceFormatDate(d);
-
       for (let k of Object.keys(item)) {
           if (/(date|time|at|일|시|날짜)/i.test(k)) {
               if (/^\d{4}[-/.]/.test(String(item[k]))) return forceFormatDate(item[k]);
@@ -232,6 +221,7 @@
       renderBoard();
   }
 
+  // ✅ 페이징 로직 핵심 (고정글 + 일반글 합쳐서 10개로 컷팅)
   function renderBoard() {
       const body = document.getElementById('notice-list-body');
       const empty = document.getElementById('empty-msg');
@@ -239,6 +229,7 @@
 
       const keyword = document.getElementById('search-keyword').value.toLowerCase().trim();
 
+      // 1. 유효 데이터 필터링
       let filtered = g_announcements.filter(item => {
           const status = String(getV(item, 'status', '상태') || '').trim().toLowerCase();
           const level = String(getV(item, 'level', '중요도') || '').trim().toLowerCase();
@@ -252,36 +243,64 @@
           return true;
       });
 
-      filtered.sort((a, b) => {
+      // 2. 고정글(Pinned)과 일반글(Normal) 완벽 분리
+      const pinnedItems = [];
+      const normalItems = [];
+
+      filtered.forEach(item => {
+          const isPinned = (getV(item, 'isPinned', '상단고정') == 1 || String(getV(item, 'level', '중요도')).toLowerCase() === 'danger');
+          if (isPinned && currentTab !== 'draft') {
+              pinnedItems.push(item);
+          } else {
+              normalItems.push(item);
+          }
+      });
+
+      // 3. 최신순 정렬
+      const sortByDateDesc = (a, b) => {
           const dateA = new Date(getV(a, 'createdAt', '생성일시', '작성일') || 0);
           const dateB = new Date(getV(b, 'createdAt', '생성일시', '작성일') || 0);
           return dateB - dateA;
-      });
+      };
+      pinnedItems.sort(sortByDateDesc);
+      normalItems.sort(sortByDateDesc);
 
-      const pinnedItems = filtered.filter(item => getV(item, 'isPinned', '상단고정') == 1 || String(getV(item, 'level', '중요도')).toLowerCase() === 'danger');
-      const normalItems = filtered.filter(item => !(getV(item, 'isPinned', '상단고정') == 1 || String(getV(item, 'level', '중요도')).toLowerCase() === 'danger'));
+      // 4. 리스트 병합 (항상 고정글이 위로 오도록)
+      const finalItems = [...pinnedItems, ...normalItems];
 
-      if (filtered.length === 0) { 
+      // 빈 데이터 처리
+      if (finalItems.length === 0) { 
           empty.style.display = 'block'; 
           document.getElementById('pagination-root').innerHTML = '';
           return; 
       }
 
-      const totalPages = Math.ceil(normalItems.length / itemsPerPage) || 1;
+      // 5. 페이징 계산 (총 갯수 기준)
+      const totalPages = Math.ceil(finalItems.length / itemsPerPage) || 1;
       if (currentPage > totalPages) currentPage = totalPages;
 
       const startIndex = (currentPage - 1) * itemsPerPage;
-      const pageNormalItems = normalItems.slice(startIndex, startIndex + itemsPerPage);
+      // 화면에 보여줄 딱 10개의 데이터만 슬라이싱
+      const pageItems = finalItems.slice(startIndex, startIndex + itemsPerPage);
 
-      if (currentPage === 1 && currentTab !== 'draft') {
-          pinnedItems.forEach(item => body.appendChild(createRow(item, true, '📌')));
-      }
-
-      pageNormalItems.forEach((item, idx) => {
-          const displayNum = normalItems.length - startIndex - idx; 
-          body.appendChild(createRow(item, false, displayNum));
+      // 6. 화면 렌더링
+      pageItems.forEach((item) => {
+          // 이 아이템이 고정글 배열에 속하는지 확인
+          const isPinned = pinnedItems.includes(item);
+          
+          let displayNum = '';
+          if (isPinned) {
+              displayNum = '📌';
+          } else {
+              // 일반글이라면, 일반글 전체 목록에서의 진짜 번호를 찾아 부여
+              const normalIdx = normalItems.indexOf(item);
+              displayNum = normalItems.length - normalIdx; 
+          }
+          
+          body.appendChild(createRow(item, isPinned, displayNum));
       });
 
+      // 7. 페이징 버튼 생성
       renderPagination(totalPages);
   }
 
@@ -290,7 +309,6 @@
       row.className = `notice-row ${isPinned ? 'is-pinned' : ''}`;
       
       const isDanger = String(getV(item, 'level', '중요도')).toLowerCase() === 'danger';
-      
       const dateStr = findDateStr(item);
       const viewCount = findViewCount(item);
       const commentCount = findCommentCount(item);
@@ -318,10 +336,12 @@
       return row;
   }
 
+  // ✅ 페이징 버튼 렌더링 (1페이지 뿐이어도 무조건 표시됨)
   function renderPagination(totalPages) {
       const pRoot = document.getElementById('pagination-root');
       pRoot.innerHTML = '';
-      if (totalPages <= 1) return;
+      
+      // 글이 하나라도 있으면 최소 [ 1 ] 버튼은 항상 보이게 설정
 
       if (currentPage > 1) {
           const prevBtn = document.createElement('button');
@@ -353,7 +373,7 @@
       if (!el) return;
       const d = new Date(document.lastModified);
       const pad = (n) => String(n).padStart(2, '0');
-      el.textContent = `Ver: ${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())}_${pad(d.getHours())}:${pad(d.getMinutes())} [ViewCount-Fix]`;
+      el.textContent = `Ver: ${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())}_${pad(d.getHours())}:${pad(d.getMinutes())} [True-Pagination]`;
   })();
 </script>
 </body>
