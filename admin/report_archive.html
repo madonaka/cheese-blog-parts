@@ -9,7 +9,7 @@
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
   <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
   
-  <script src="https://cdn.tiny.cloud/1/no-api-key/tinymce/6/tinymce.min.js" referrerpolicy="origin"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tinymce/6.8.2/tinymce.min.js" referrerpolicy="origin"></script>
 
   <script>
     // ✅ 서버 API 주소
@@ -259,7 +259,6 @@
 </div>
 
 <script>
-  // ✅ 사이드바 메뉴 활성화 인식용 변수
   window.CHEESE_ADMIN_ACTIVE_PAGE = "report_archive"; 
   
   let g_docs = [];
@@ -267,27 +266,27 @@
   let g_goals = [];
   let g_tasks = [];
   
-  // 전역 변수
   let CURRENT_EDITING_SCHEDULE_EL = null; 
   let CURRENT_IDEA_MODE = 'new'; 
 
   document.addEventListener('DOMContentLoaded', () => {
-    // ✅ TinyMCE 초기화
+    // ✅ TinyMCE 설정 (plugins 추가 및 toolbar 깔끔하게)
     tinymce.init({
       selector: '#doc-content',
       height: 600,
-      language: 'ko_KR', // 한글 언어 설정
-      plugins: 'advlist autolink lists link image charmap preview anchor pagebreak searchreplace wordcount visualblocks visualchars code fullscreen insertdatetime media nonbreaking table emoticons template help',
-      toolbar: 'undo redo | blocks fontfamily fontsize | bold italic underline strikethrough | alignleft aligncenter alignright alignjustify | outdent indent | numlist bullist | forecolor backcolor removeformat | table | link image media | code fullscreen',
+      language: 'ko_KR', 
+      // 플러그인에 표(table) 포함
+      plugins: 'advlist autolink lists link image charmap preview anchor searchreplace visualblocks code fullscreen insertdatetime media table help wordcount',
+      // 툴바 설정
+      toolbar: 'undo redo | blocks fontfamily fontsize | bold italic underline strikethrough | alignleft aligncenter alignright alignjustify | outdent indent | numlist bullist | forecolor backcolor removeformat | table | link image | code fullscreen',
       menubar: false,
       branding: false,
       font_family_formats: 'Pretendard=Pretendard,sans-serif; 맑은 고딕=Malgun Gothic,sans-serif; 돋움=Dotum,sans-serif; 굴림=Gulim,sans-serif; Arial=arial,helvetica,sans-serif;',
       valid_elements: '*[*]',
       extended_valid_elements: '*[*]',
-      verify_html: false, // HTML 구조가 날아가는 것을 방지
+      verify_html: false, 
       setup: function (editor) {
         editor.on('init', function () {
-          // 에디터 렌더링이 완료된 후 데이터 로드 실행
           const todayStr = new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0];
           document.getElementById('report-base-date').value = todayStr;
           loadAllData();
@@ -344,14 +343,10 @@
     });
   }
 
-  // ==========================================
-  // [NEW] 일론 머스크 스타일 자동 보고서 로직 (타임머신 진척률 적용)
-  // ==========================================
   function generateAutoReport(rangeType) {
     const baseDateStr = document.getElementById('report-base-date').value;
     if (!baseDateStr) { alert("보고서 기준일을 선택해 주세요."); return; }
     
-    // 기준 날짜 설정 (해당일의 23:59:59 까지 포함)
     const targetEndDate = new Date(baseDateStr); targetEndDate.setHours(23,59,59,999);
     let startDate = new Date(baseDateStr); startDate.setHours(0,0,0,0);
     
@@ -373,7 +368,6 @@
 
     const activeBigGoals = g_goals.filter(g => g['유형'] === '큰 목표' && g['상태'] !== '완료');
     
-    // ✅ “생성/실현/수정”을 분리
     let ideaCreateLogs = [], ideaRealizeLogs = [];
     let bugCreateLogs = [], bugFixLogs = [];
     let publishLogs = [];
@@ -381,56 +375,33 @@
     let doneLogs = [];
     let postCount = 0;
 
-    // ✅ 버그 아이템 ID 목록(로그의 관련ID로 "수정된 버그" 추출)
     const BUG_IDS = new Set(
       (g_tasks || [])
         .filter(t => (t['유형'] || t['type'] || '') === '버그')
         .map(t => t.ID)
     );
     
-    function getTag(log){
-      return (log['태그'] || log['tags'] || "").toString().trim();
-    }
-    function getTitle(log){
-      return (log['제목'] || log['title'] || "").toString();
-    }
-    function getContent(log){
-      return (log['내용'] || log['content'] || "").toString();
-    }
+    function getTag(log){ return (log['태그'] || log['tags'] || "").toString().trim(); }
+    function getTitle(log){ return (log['제목'] || log['title'] || "").toString(); }
+    function getContent(log){ return (log['내용'] || log['content'] || "").toString(); }
     function extractAfterLabel(text, label) {
       if (!text) return "";
       const idx = text.indexOf(label);
       if (idx === -1) return "";
       return text.slice(idx + label.length).trim();
     }
-	    function getRelatedId(log){
-	      return (
-	        log['관련_목표ID'] ||
-	        log['relatedId'] ||
-	        log['관련ID'] ||
-	        log['관련_작업ID'] ||
-	        log['related_id'] ||
-	        ""
-	      ).toString().trim();
-	    }
-    
+    function getRelatedId(log){
+      return (log['관련_목표ID'] || log['relatedId'] || log['관련ID'] || log['관련_작업ID'] || log['related_id'] || "").toString().trim();
+    }
     function pickMeaningTitle(log) {
       const title = getTitle(log).trim();
       const content = getContent(log);
-    
-      // ✅ todo_manage 자동로그 포맷: "…\n제목: xxx"
       const byTitleLabel = extractAfterLabel(content, "제목:");
       if (byTitleLabel) return byTitleLabel;
-    
-      // ✅ 완료 로그 포맷: "…\n작업명: xxx"
       const byWorkLabel = extractAfterLabel(content, "작업명:");
       if (byWorkLabel) return byWorkLabel;
-    
-      // ✅ 목표 로그 포맷: "…\n목표명: xxx"
       const byGoalLabel = extractAfterLabel(content, "목표명:");
       if (byGoalLabel) return byGoalLabel;
-    
-      // ✅ 일반 케이스: 제목에서 앞에 이모지/태그만 과도하면 정리
       return title || content.replace(/\n/g, " ").trim();
     }
 
@@ -438,66 +409,28 @@
       const tag = getTag(log);
       const title = getTitle(log);
       const content = getContent(log);
-	      const relId = getRelatedId(log);
+      const relId = getRelatedId(log);
     
-      // ✅ todo_manage 자동로그 커버
-      const isIdeaCreate =
-        tag === '아이디어' || tag === 'Idea' ||
-        title.includes('💡') || content.includes('새로운 아이디어가 추가되었습니다.');
-    
-      const isBugCreate =
-        tag === '버그' || tag === 'BugReport' ||
-        title.includes('🐞') || title.includes('버그') ||
-        content.includes('🐞 버그 리포트 생성됨:');
-    
-	      const isPublishBase = (tag === 'Publish');
-		  const isReportTag = /(^|[,\s])report($|[,\s])/i.test(tag);
-			
-	      // ✅ 아이디어 실현
-	      const isIdeaRealize =
-	        tag === 'Realization' ||
-	        title.includes('아이디어 실현') ||
-	        title.includes('🚀') ||
-	        content.includes('아이디어가 구체적인 작업으로 변환');
-
-      // ✅ 초안 저장 제외, "발행"만 포함
+      const isIdeaCreate = tag === '아이디어' || tag === 'Idea' || title.includes('💡') || content.includes('새로운 아이디어가 추가되었습니다.');
+      const isBugCreate = tag === '버그' || tag === 'BugReport' || title.includes('🐞') || title.includes('버그') || content.includes('🐞 버그 리포트 생성됨:');
+      const isPublishBase = (tag === 'Publish');
+      const isReportTag = /(^|[,\s])report($|[,\s])/i.test(tag);
+      const isIdeaRealize = tag === 'Realization' || title.includes('아이디어 실현') || title.includes('🚀') || content.includes('아이디어가 구체적인 작업으로 변환');
       const publishText = (title + "\n" + content);
-      const isRealPublish =
-        isPublishBase &&
-        /발행/.test(publishText) &&
-        !/초안|수정|업데이트/.test(publishText);
-      
+      const isRealPublish = isPublishBase && /발행/.test(publishText) && !/초안|수정|업데이트/.test(publishText);
       const isPublish = isRealPublish;
     
-	      if (isIdeaCreate) { ideaCreateLogs.push(log); return; }
-	      if (isIdeaRealize){ ideaRealizeLogs.push(log); return; }
-	      if (isBugCreate)  { bugCreateLogs.push(log);  return; }
-    
-	      if (isPublish) {
-			postCount++;
-			publishLogs.push(log);
-			return;
-		  }
+      if (isIdeaCreate) { ideaCreateLogs.push(log); return; }
+      if (isIdeaRealize){ ideaRealizeLogs.push(log); return; }
+      if (isBugCreate)  { bugCreateLogs.push(log);  return; }
+      if (isPublish) { postCount++; publishLogs.push(log); return; }
+      if (isReportTag) { reportTagLogs.push(log); return; }
 
-		 // ✅ report 태그
-		 if (isReportTag) {
-		   reportTagLogs.push(log);
-		   return;
-	      }
-
-	      // ✅ 수정된 버그
-	      const isBugFix =
-	        BUG_IDS.has(relId) && (
-	          tag === 'Done' || tag === '완료' ||
-	          title.includes('완료') || title.includes('해결') || title.includes('Fix') ||
-	          content.includes('완료') || content.includes('해결')
-	        );
-	      if (isBugFix) { bugFixLogs.push(log); return; }
-    
+      const isBugFix = BUG_IDS.has(relId) && (tag === 'Done' || tag === '완료' || title.includes('완료') || title.includes('해결') || title.includes('Fix') || content.includes('완료') || content.includes('해결'));
+      if (isBugFix) { bugFixLogs.push(log); return; }
       doneLogs.push(log);
     });
 
-    // 1. Signal (핵심 목표) - 진척률 계산 시 targetEndDate 전달
     let signalHtml = `<ul style="padding-left: 20px; margin: 0; color: #333; line-height: 1.6;">`;
     if (activeBigGoals.length > 0) {
         activeBigGoals.forEach(bg => {
@@ -520,7 +453,6 @@
     }
     signalHtml += `</ul>`;
 
-    // 2. Bottlenecks
     let bottleneckHtml = `<ul style="padding-left: 20px; margin: 0; color: #b91c1c; line-height: 1.6;">`;
     let riskCount = 0;
     const autoRisks = analyzeProjectRisks(activeBigGoals, targetEndDate);
@@ -538,25 +470,21 @@
         </li>`;
       riskCount++;
     }
-	    // ✅ 수정된 버그(기준일 내 "완료/해결" 처리된 버그)
-	    if (bugFixLogs.length > 0) {
-	      bottleneckHtml += `
-	        <li style="margin-bottom:6px; color:#16a34a; list-style:none;">
-	          ✅ <b>수정 완료:</b> ${bugFixLogs.length}건
-	          <div style="margin-top:6px; padding-left:14px; color:#14532d; font-weight:600;">
-	            ${bugFixLogs.slice(0,5).map(b => `- ${pickMeaningTitle(b)}`).join('<br/>')}
-	            ${bugFixLogs.length > 5 ? `<br/>...외 ${bugFixLogs.length-5}건` : ``}
-	          </div>
-	        </li>`;
-	      riskCount++;
-	    }
+    if (bugFixLogs.length > 0) {
+      bottleneckHtml += `
+        <li style="margin-bottom:6px; color:#16a34a; list-style:none;">
+          ✅ <b>수정 완료:</b> ${bugFixLogs.length}건
+          <div style="margin-top:6px; padding-left:14px; color:#14532d; font-weight:600;">
+            ${bugFixLogs.slice(0,5).map(b => `- ${pickMeaningTitle(b)}`).join('<br/>')}
+            ${bugFixLogs.length > 5 ? `<br/>...외 ${bugFixLogs.length-5}건` : ``}
+          </div>
+        </li>`;
+      riskCount++;
+    }
     if (riskCount === 0) bottleneckHtml = `<div style="text-align:center; color:#10b981; padding:20px;">✨ <b>No Bottlenecks</b><br>현재 식별된 지연 요소가 없습니다.</div>`;
     else bottleneckHtml += `</ul>`;
 
-    // 3. Velocity
     let velocityHtml = `<ul style="padding-left: 20px; margin: 0; color: #333; line-height: 1.6;">`;
-    
-    // ✅ Shipped
     if (publishLogs.length > 0) {
       velocityHtml += `
         <li style="margin-bottom:6px; color:#2563eb; font-weight:800; list-style:none;">
@@ -568,8 +496,6 @@
         </li>
       `;
     }
-    
-    // ✅ Innovation (아이디어)
     if (ideaCreateLogs.length > 0) {
       velocityHtml += `
         <li style="margin-bottom:6px; color:#ea580c; font-weight:800; list-style:none;">
@@ -581,41 +507,34 @@
         </li>
       `;
     }
-	    // ✅ Realized (실현된 아이디어)
-	    if (ideaRealizeLogs.length > 0) {
-	      velocityHtml += `
-	        <li style="margin-bottom:6px; color:#16a34a; font-weight:800; list-style:none;">
-	          🚀 <b>Innovation</b> 아이디어 ${ideaRealizeLogs.length}건 실현
-	          <div style="margin-top:6px; padding-left:14px; color:#1e293b; font-weight:600;">
-	            ${ideaRealizeLogs.slice(0,5).map(i => `- ${pickMeaningTitle(i)}`).join('<br/>')}
-	            ${ideaRealizeLogs.length > 5 ? `<br/>...외 ${ideaRealizeLogs.length-5}건` : ``}
-	          </div>
-	        </li>
-	      `;
-	    }
-
-		// ✅ Report 태그
-		if (reportTagLogs.length > 0) {
-		  velocityHtml += `
-		    <li style="margin-bottom:6px; color:#0f172a; font-weight:800; list-style:none;">
-		      🏷️ <b>Report</b> 꼭 기록할 사항 ${reportTagLogs.length}건
-		      <div style="margin-top:6px; padding-left:14px; color:#1e293b; font-weight:600;">
-		        ${reportTagLogs.slice(0,5).map(r => `- ${pickMeaningTitle(r)}`).join('<br/>')}
-		        ${reportTagLogs.length > 5 ? `<br/>...외 ${reportTagLogs.length-5}건` : ``}
-		      </div>
-		    </li>
-		  `;
-		}
-	  
-	    if (publishLogs.length === 0 && ideaCreateLogs.length === 0 && ideaRealizeLogs.length === 0) {
-	      velocityHtml += `<li style="color:#94a3b8;">금일 기록된 성과(포스팅/아이디어)가 없습니다.</li>`;
-	    }
+    if (ideaRealizeLogs.length > 0) {
+      velocityHtml += `
+        <li style="margin-bottom:6px; color:#16a34a; font-weight:800; list-style:none;">
+          🚀 <b>Innovation</b> 아이디어 ${ideaRealizeLogs.length}건 실현
+          <div style="margin-top:6px; padding-left:14px; color:#1e293b; font-weight:600;">
+            ${ideaRealizeLogs.slice(0,5).map(i => `- ${pickMeaningTitle(i)}`).join('<br/>')}
+            ${ideaRealizeLogs.length > 5 ? `<br/>...외 ${ideaRealizeLogs.length-5}건` : ``}
+          </div>
+        </li>
+      `;
+    }
+    if (reportTagLogs.length > 0) {
+      velocityHtml += `
+        <li style="margin-bottom:6px; color:#0f172a; font-weight:800; list-style:none;">
+          🏷️ <b>Report</b> 꼭 기록할 사항 ${reportTagLogs.length}건
+          <div style="margin-top:6px; padding-left:14px; color:#1e293b; font-weight:600;">
+            ${reportTagLogs.slice(0,5).map(r => `- ${pickMeaningTitle(r)}`).join('<br/>')}
+            ${reportTagLogs.length > 5 ? `<br/>...외 ${reportTagLogs.length-5}건` : ``}
+          </div>
+        </li>
+      `;
+    }
+    if (publishLogs.length === 0 && ideaCreateLogs.length === 0 && ideaRealizeLogs.length === 0) {
+      velocityHtml += `<li style="color:#94a3b8;">금일 기록된 성과(포스팅/아이디어)가 없습니다.</li>`;
+    }
     velocityHtml += `</ul>`;
 
-
-    // 4. Algorithm
     let algoHtml = `<ul style="padding-left: 20px; margin: 0; color: #333; line-height: 1.6;">`;
-
     algoHtml += `<li style="margin-bottom:6px;"><b>⚡ Optimization (효율화):</b><br/>(반복 작업 제거 또는 자동화 할 부분 작성)</li>
     <li><b>⏩ Next Critical Path (내일 할 일):</b><br/>(목표 달성을 위해 반드시 처리해야 할 1순위 작업)</li></ul>`;
 
@@ -638,15 +557,16 @@
     openDocModal(null, titlePrefix, htmlTemplate, '보고서');
   }
 
-  // ✅ TinyMCE용 모달 열기 로직
   async function openDocModal(docId = null, defaultTitle = "", defaultHtml = "", defaultType = "보고서") {
     const modal = document.getElementById('doc-modal');
     modal.classList.add('open');
     document.getElementById('doc-form').reset();
     document.getElementById('doc-drive-id').value = ""; 
     
-    // 에디터 텍스트 비우기
-    if(tinymce.get('doc-content')) tinymce.get('doc-content').setContent('');
+    // ✅ TinyMCE 내용 비우기 (에디터가 로드된 상태인지 확인)
+    if(tinymce.get('doc-content')) {
+        tinymce.get('doc-content').setContent('');
+    }
 
     const header = modal.querySelector('.modal-header-custom');
     const titleEl = document.getElementById('doc-modal-title');
@@ -686,11 +606,13 @@
                 try {
                     const res = await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify({ mode: "getReportContent", fileId: fileId }) });
                     const json = await res.json();
-                    if(json.result === "success") tinymce.get('doc-content').setContent(json.content);
+                    if(json.result === "success" && tinymce.get('doc-content')) {
+                        tinymce.get('doc-content').setContent(json.content);
+                    }
                 } catch(e) { alert("파일 로드 실패"); } 
                 finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); }
             } else {
-                tinymce.get('doc-content').setContent(doc['상세내용'] || "");
+                if(tinymce.get('doc-content')) tinymce.get('doc-content').setContent(doc['상세내용'] || "");
             }
         }
     } else {
@@ -698,11 +620,10 @@
         document.getElementById('doc-id').value = "";
         document.getElementById('doc-title').value = defaultTitle;
         document.getElementById('doc-type').value = defaultType;
-        if(defaultHtml) tinymce.get('doc-content').setContent(defaultHtml);
+        if(defaultHtml && tinymce.get('doc-content')) tinymce.get('doc-content').setContent(defaultHtml);
     }
   }
 
-  // ✅ TinyMCE용 저장 처리
   document.getElementById('doc-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const btn = document.getElementById('btn-save-doc');
@@ -713,8 +634,8 @@
         const docId = document.getElementById('doc-id').value;
         const title = document.getElementById('doc-title').value;
         const type = document.getElementById('doc-type').value;
-        // TinyMCE 내용 가져오기
-        const contentHtml = tinymce.get('doc-content').getContent();
+        // ✅ TinyMCE 내용 가져오기
+        const contentHtml = tinymce.get('doc-content') ? tinymce.get('doc-content').getContent() : "";
         const driveId = document.getElementById('doc-drive-id').value;
         const now = new Date().toISOString().split('T')[0];
 
@@ -762,20 +683,16 @@
 
   function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
-  // ✅ TinyMCE용 프린트
   function printReport() {
-    const content = tinymce.get('doc-content').getContent();
+    const content = tinymce.get('doc-content') ? tinymce.get('doc-content').getContent() : "";
     const printWindow = window.open('', '_blank');
     printWindow.document.write(`<html><head><title>${document.getElementById('doc-title').value}</title><style>body{font-family:'Pretendard',sans-serif;padding:40px;}table{width:100%;border-collapse:collapse;border:2px solid #cbd5e1}td{border:1px solid #cbd5e1;padding:20px;}</style></head><body>${content}<script>window.onload=function(){window.print();setTimeout(function(){window.close();},100);}<\/script></body></html>`);
     printWindow.document.close();
   }
 
-  // ==========================================
-  // [최종 수정] 이미지 저장 함수 (TinyMCE)
-  // ==========================================
   async function saveAsImage() {
     const title = document.getElementById('doc-title').value || "report";
-    const contentHtml = tinymce.get('doc-content').getContent();
+    const contentHtml = tinymce.get('doc-content') ? tinymce.get('doc-content').getContent() : "";
     
     if (!contentHtml || contentHtml === "<p><br></p>" || contentHtml === "") { 
         alert("저장할 내용이 없습니다."); 
@@ -880,7 +797,6 @@
       document.getElementById('idea-select-modal').classList.add('open');
   }
 
-  // ✅ TinyMCE용 아이디어 삽입
   function confirmIdeaSelection() {
       const checkboxes = document.querySelectorAll('.idea-chk:checked');
       if (checkboxes.length === 0) { alert("선택된 아이디어가 없습니다."); return; }
@@ -897,7 +813,8 @@
               const desc = idea['상세내용'] || "내용 없음";
               insertHtml += `<div style="margin-bottom:16px; padding:16px; background:#fff7ed; border-left:4px solid #ea580c; border-radius:4px;"><h4 style="margin:0 0 8px 0; color:#c2410c;">💡 ${idea['제목']}</h4><div style="font-size:0.95rem; color:#431407; line-height:1.6;">${desc}</div></div><br/>`;
           });
-          tinymce.get('doc-content').insertContent(insertHtml);
+          // ✅ TinyMCE 커서 위치에 삽입
+          if(tinymce.get('doc-content')) tinymce.get('doc-content').insertContent(insertHtml);
       } else {
           generateProposalFromIdeas(selectedIdeas);
       }
@@ -955,7 +872,6 @@
       addScheduleRow("3단계", "최종 마감", "2026-02-10", "2026-02-14");
   }
 
-  // ✅ TinyMCE용 일정표 삽입
   function insertSmartSchedule() {
     const startMonthVal = document.getElementById('sch-start-month').value;
     const projectName = document.getElementById('sch-project-name').value;
@@ -1026,29 +942,32 @@
     `;
 
     if (CURRENT_EDITING_SCHEDULE_EL) {
-        // 이미 렌더링된 요소는 DOMParser로 치환 (복잡하므로 덮어쓰기 권장)
-        const currentCode = tinymce.get('doc-content').getContent();
-        const parser = new DOMParser(); const doc = parser.parseFromString(currentCode, 'text/html');
-        const oldSection = Array.from(doc.querySelectorAll('.schedule-section')).find(el => el.getAttribute('data-config') === CURRENT_EDITING_SCHEDULE_EL.getAttribute('data-config'));
-        if(oldSection) {
-            const tempDiv = doc.createElement('div'); tempDiv.innerHTML = scheduleHtml; oldSection.replaceWith(tempDiv);
-            tinymce.get('doc-content').setContent(doc.body.innerHTML);
+        if(tinymce.get('doc-content')) {
+            const currentCode = tinymce.get('doc-content').getContent();
+            const parser = new DOMParser(); const doc = parser.parseFromString(currentCode, 'text/html');
+            const oldSection = Array.from(doc.querySelectorAll('.schedule-section')).find(el => el.getAttribute('data-config') === CURRENT_EDITING_SCHEDULE_EL.getAttribute('data-config'));
+            if(oldSection) {
+                const tempDiv = doc.createElement('div'); tempDiv.innerHTML = scheduleHtml; oldSection.replaceWith(tempDiv);
+                tinymce.get('doc-content').setContent(doc.body.innerHTML);
+            }
         }
         CURRENT_EDITING_SCHEDULE_EL = null;
     } 
     else {
-        const currentCode = tinymce.get('doc-content').getContent();
-        if (currentCode.includes('id="schedule-placeholder"')) {
-            const parser = new DOMParser(); const doc = parser.parseFromString(currentCode, 'text/html');
-            const placeholder = doc.getElementById('schedule-placeholder');
-            if (placeholder) {
-                const tempDiv = doc.createElement('div'); tempDiv.innerHTML = scheduleHtml; placeholder.replaceWith(tempDiv);
-                tinymce.get('doc-content').setContent(doc.body.innerHTML);
+        if(tinymce.get('doc-content')) {
+            const currentCode = tinymce.get('doc-content').getContent();
+            if (currentCode.includes('id="schedule-placeholder"')) {
+                const parser = new DOMParser(); const doc = parser.parseFromString(currentCode, 'text/html');
+                const placeholder = doc.getElementById('schedule-placeholder');
+                if (placeholder) {
+                    const tempDiv = doc.createElement('div'); tempDiv.innerHTML = scheduleHtml; placeholder.replaceWith(tempDiv);
+                    tinymce.get('doc-content').setContent(doc.body.innerHTML);
+                } else {
+                    tinymce.get('doc-content').insertContent(scheduleHtml);
+                }
             } else {
                 tinymce.get('doc-content').insertContent(scheduleHtml);
             }
-        } else {
-            tinymce.get('doc-content').insertContent(scheduleHtml);
         }
     }
     
