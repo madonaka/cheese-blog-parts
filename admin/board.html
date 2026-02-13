@@ -35,12 +35,12 @@
 
     /* 게시판 리스트 스타일 */
     .board-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; table-layout: fixed; }
-    .board-table th { background: #f1f1f1; border-bottom: 1px solid #ccc; padding: 10px 5px; font-weight: 700; color: #444; }
+    .board-table th { background: #f1f1f1; border-bottom: 1px solid #ccc; padding: 10px 5px; font-weight: 700; color: #444; text-align: center; }
     .board-table td { padding: 10px 5px; border-bottom: 1px solid var(--line-color); text-align: center; color: var(--text-dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     
     .col-id { width: 50px; }
     .col-title { text-align: left !important; width: auto; }
-    .col-date { width: 70px; color: var(--text-gray); font-size: 0.85rem; }
+    .col-date { width: 65px; color: var(--text-gray); font-size: 0.85rem; }
     .col-view { width: 50px; color: var(--text-gray); font-size: 0.85rem; }
 
     .notice-row:hover { background: #f8f9fa; }
@@ -62,12 +62,12 @@
     .page-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
     .page-btn:hover:not(.active) { background: #f1f5f9; }
 
-    /* 모바일 대응: 날짜/조회수 숨기지 않고 폰트만 줄임 */
     @media (max-width: 600px) {
       .col-id { display: none; }
-      .board-table th:nth-child(1), .board-table td:nth-child(1) { display: none; } 
+      .board-table th:nth-child(1), .board-table td:nth-child(1) { display: none; }
       .col-date { width: 50px; font-size: 0.75rem; padding: 10px 2px; }
       .col-view { width: 40px; font-size: 0.75rem; padding: 10px 2px; }
+      .title-text { font-size: 0.9rem; }
       .page-header h2 { font-size: 1.1rem; }
     }
     
@@ -133,19 +133,69 @@
 
   document.addEventListener('DOMContentLoaded', loadAnnouncements);
 
-  // ✅ [가장 중요한 핵심] 눈에 보이지 않는 공백과 대소문자를 모두 무시하고 데이터를 찾아내는 만능 함수
+  // ✅ 데이터 추출 함수: 공백/대소문자 무시 + 0(숫자) 값 보존
   function getV(obj, ...keys) {
       if (!obj) return "";
       for (let key of keys) {
-          // 찾고자 하는 키값의 공백 제거 및 소문자화
           const target = String(key).toLowerCase().replace(/[\s_]/g, '');
-          // 실제 데이터 객체의 키값들을 변환해서 비교
           const foundKey = Object.keys(obj).find(k => String(k).toLowerCase().replace(/[\s_]/g, '') === target);
+          // 0이나 false도 유효한 값으로 취급하여 반환
           if (foundKey && obj[foundKey] !== undefined && obj[foundKey] !== null && obj[foundKey] !== "") {
               return obj[foundKey];
           }
       }
       return "";
+  }
+
+  // ✅ 날짜 텍스트를 강제로 00.00 형식으로 변환하는 강력한 함수
+  function forceFormatDate(dateVal) {
+      if (!dateVal) return '--.--';
+      const raw = String(dateVal).trim();
+      
+      // 1. "2025-12-14", "2025/12/14", "2025년 12월 14일" 등 매칭
+      const match = raw.match(/(\d{4})[-/.\s년]+(\d{1,2})[-/.\s월]+(\d{1,2})/);
+      if (match) {
+          return `${match[2].padStart(2, '0')}.${match[3].padStart(2, '0')}`; // 12.14 반환
+      }
+      
+      // 2. 혹시 영문 웹 표준 날짜 형식(Sun Dec 14...)으로 올 경우 처리
+      const d = new Date(raw);
+      if (!isNaN(d.getTime())) {
+          return `${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+      }
+      
+      // 3. 다 실패하면 앞의 글자만 강제 출력
+      return raw.substring(0, 5);
+  }
+
+  // ✅ 조회수 자동 탐색기 (헤더 이름이 바뀌었을 경우를 대비해 값의 타입과 유사 키워드로 찾음)
+  function findViewCount(item) {
+      // 1순위: 지정된 이름들
+      let v = getV(item, 'viewCount', 'view_count', 'views', '조회수', '조회', '읽음');
+      if (v !== "") return parseInt(v) || 0;
+
+      // 2순위: 혹시 키 이름에 'view'나 '조회'가 들어간 숫자 필드가 있다면 억지로 찾음
+      for (let k of Object.keys(item)) {
+          if (/(view|조회|hit)/i.test(k) && typeof item[k] === 'number') {
+              return item[k];
+          }
+      }
+      return 0; // 시트에 아예 비어있으면 0 반환
+  }
+
+  // ✅ 날짜 자동 탐색기
+  function findDateStr(item) {
+      // 1순위: 지정된 이름들
+      let d = getV(item, 'createdAt', 'created_at', '생성일시', '작성일', '날짜', '등록일', 'startAt');
+      if (d !== "") return forceFormatDate(d);
+
+      // 2순위: '일'이나 'date'가 들어간 필드 중 날짜 형태(2025...)를 띠는 값 찾기
+      for (let k of Object.keys(item)) {
+          if (/(date|time|at|일|시|날짜)/i.test(k)) {
+              if (/^\d{4}[-/.]/.test(String(item[k]))) return forceFormatDate(item[k]);
+          }
+      }
+      return '--.--';
   }
 
   async function loadAnnouncements() {
@@ -180,7 +230,6 @@
       body.innerHTML = ''; empty.style.display = 'none';
 
       const keyword = document.getElementById('search-keyword').value.toLowerCase().trim();
-      const now = new Date();
 
       let filtered = g_announcements.filter(item => {
           const status = String(getV(item, 'status', '상태') || '').trim().toLowerCase();
@@ -195,9 +244,11 @@
           return true;
       });
 
+      // 정렬 (최신순)
       filtered.sort((a, b) => {
-          const dateA = new Date(getV(a, 'createdAt', '생성일시', '작성일', '날짜') || 0);
-          const dateB = new Date(getV(b, 'createdAt', '생성일시', '작성일', '날짜') || 0);
+          // 정렬을 위해 원본 날짜 데이터를 임시로 찾음
+          const dateA = new Date(getV(a, 'createdAt', '생성일시', '작성일') || 0);
+          const dateB = new Date(getV(b, 'createdAt', '생성일시', '작성일') || 0);
           return dateB - dateA;
       });
 
@@ -234,24 +285,15 @@
       
       const isDanger = String(getV(item, 'level', '중요도')).toLowerCase() === 'danger';
       
-      // ✅ 1. 여러 이름으로 올 수 있는 날짜 데이터를 모두 찾습니다.
-      const cDate = getV(item, 'createdAt', 'created_at', '생성일시', '작성일', '날짜', '등록일');
-      const isNew = cDate ? (new Date() - new Date(cDate)) < (24 * 60 * 60 * 1000) : false;
+      // ✅ 해결 파트: 강력한 자동 탐색기로 날짜와 조회수 추출
+      const dateStr = findDateStr(item);
+      const viewCount = findViewCount(item);
       
-      // 날짜 포맷팅 로직 (어떤 형태든 YYYY-MM-DD 로 찾아서 잘라냄)
-      let dateStr = '--.--';
-      if (cDate) {
-          const match = String(cDate).match(/(\d{4})[-/.]\s*(\d{1,2})[-/.]\s*(\d{1,2})/);
-          if(match) {
-              dateStr = `${match[2].padStart(2, '0')}.${match[3].padStart(2, '0')}`; // 12.14 형식 고정
-          } else {
-              dateStr = String(cDate).substring(0, 10);
-          }
-      }
+      // 'N(새글)' 아이콘 표시 로직 (최근 24시간)
+      const rawDateVal = getV(item, 'createdAt', '생성일시', '작성일');
+      const isNew = rawDateVal ? (new Date() - new Date(rawDateVal)) < (24 * 60 * 60 * 1000) : false;
       
-      // ✅ 2. 조회수/댓글수도 여러 이름에 대비합니다.
       const id = getV(item, 'noticeId', 'id');
-      const viewCount = getV(item, 'viewCount', 'view_count', '조회수', '조회') || 0;
       const commentCount = getV(item, 'commentCount', '댓글수', '댓글') || 0;
       const title = getV(item, 'title', '제목') || '(제목 없음)';
 
@@ -307,7 +349,7 @@
       if (!el) return;
       const d = new Date(document.lastModified);
       const pad = (n) => String(n).padStart(2, '0');
-      el.textContent = `Ver: ${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())} [Final-Board-Fix]`;
+      el.textContent = `Ver: ${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())}_${pad(d.getHours())}:${pad(d.getMinutes())} [Final-Data-Sync]`;
   })();
 </script>
 </body>
