@@ -317,13 +317,87 @@
     finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); }
   }
 
+// ✅ 1. 댓글 로드 (새로고침 없이 실시간 반영을 위한 캐시 방지 적용)
   async function loadComments() {
     try {
-      const res = await fetch(`${window.CHEESE_ADMIN_API_BASE}?mode=listComments&noticeId=${targetNoticeId}`);
+      // 🚨 [핵심] 구글 서버가 예전 데이터를 보여주지 못하도록 주소 끝에 '현재 시간'을 몰래 붙여 무조건 최신 데이터를 강제 호출합니다.
+      const timestamp = new Date().getTime();
+      const res = await fetch(`${window.CHEESE_ADMIN_API_BASE}?mode=listComments&noticeId=${targetNoticeId}&_t=${timestamp}`);
       const json = await res.json();
       currentComments = json.comments || json.items || json.data || [];
       renderComments();
-    } catch(e) { console.error(e); }
+    } catch(e) { console.error("댓글 로드 실패:", e); }
+  }
+
+  // ✅ 2. 댓글 등록 (알럿창 추가 & 서버 저장 완벽 대기)
+  async function submitComment(parentId = "") {
+    const inputId = parentId ? `reply-text-${parentId}` : 'new-comment-body';
+    const text = document.getElementById(inputId).value;
+    
+    if(!text.trim()) return alert("내용을 입력하세요.");
+    
+    // 🚨 [핵심] 요청하신 등록 확인 알럿창 추가!
+    if(!confirm("댓글을 등록하시겠습니까?")) return;
+
+    const payload = { 
+      mode: 'addComment', 
+      noticeId: targetNoticeId, 
+      parentCommentId: parentId, 
+      body: text, 
+      authorEmpNo: window.CURRENT_USER_EMP_NO, 
+      authorName: window.CURRENT_USER_NAME 
+    };
+
+    // 로딩 화면을 띄워 중복 클릭 방지
+    if(typeof showAdminLoading==='function') showAdminLoading("댓글 등록 중...");
+    
+    try {
+      const res = await fetch(window.CHEESE_ADMIN_API_BASE, { 
+          method:'POST', 
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' }, 
+          body: JSON.stringify(payload) 
+      });
+      
+      // 🚨 [핵심] 서버가 시트에 저장을 '완전히 끝마쳤다'고 응답할 때까지 확실하게 기다립니다.
+      const json = await res.json(); 
+
+      if(json.ok || json.result === "success") {
+          document.getElementById(inputId).value = ""; // 입력창 비우기
+          if(parentId) toggleReplyForm(parentId);      // 답글 창 닫기
+          
+          // 새로고침(F5) 없이 즉시 최신 댓글 리스트만 싹 다시 그려줍니다!
+          await loadComments();
+      } else {
+          alert("서버 오류로 댓글이 등록되지 않았습니다.");
+      }
+    } catch(e) { 
+      alert("댓글 등록에 실패했습니다."); 
+    } finally {
+      if(typeof hideAdminLoading==='function') hideAdminLoading();
+    }
+  }
+
+  // ✅ 3. 댓글 삭제 (실시간 반영되도록 동기화)
+  async function deleteComment(id) {
+    if(!confirm("댓글을 삭제하시겠습니까?")) return;
+    
+    if(typeof showAdminLoading==='function') showAdminLoading("삭제 중...");
+    try {
+      const res = await fetch(window.CHEESE_ADMIN_API_BASE, { 
+          method:'POST', 
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' }, 
+          body: JSON.stringify({ mode:'setCommentStatus', commentId: id, status:'deleted' }) 
+      });
+      
+      await res.json(); // 삭제 처리가 완전히 끝날 때까지 대기
+      
+      // 새로고침 없이 즉시 화면에서 지워짐!
+      await loadComments();
+    } catch(e) { 
+      alert("삭제 실패"); 
+    } finally {
+      if(typeof hideAdminLoading==='function') hideAdminLoading();
+    }
   }
 
   function renderComments() {
@@ -367,27 +441,6 @@
   }
 
   function toggleReplyForm(id) { const f = document.getElementById(`reply-form-${id}`); if(f) f.style.display = f.style.display === 'none' ? 'block' : 'none'; }
-
-  async function submitComment(parentId = "") {
-    const inputId = parentId ? `reply-text-${parentId}` : 'new-comment-body';
-    const text = document.getElementById(inputId).value;
-    if(!text.trim()) return alert("내용을 입력하세요.");
-    const payload = { mode: 'addComment', noticeId: targetNoticeId, parentCommentId: parentId, body: text, authorEmpNo: window.CURRENT_USER_EMP_NO, authorName: window.CURRENT_USER_NAME };
-    try {
-      await fetch(window.CHEESE_ADMIN_API_BASE, { method:'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) });
-      document.getElementById(inputId).value = "";
-      if(parentId) toggleReplyForm(parentId);
-      await loadComments();
-    } catch(e) { alert("댓글 등록 실패"); }
-  }
-
-  async function deleteComment(id) {
-    if(!confirm("댓글을 삭제하시겠습니까?")) return;
-    try {
-      await fetch(window.CHEESE_ADMIN_API_BASE, { method:'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ mode:'setCommentStatus', commentId: id, status:'deleted' }) });
-      await loadComments();
-    } catch(e) { alert("삭제 실패"); }
-  }
 
   (function showVersion() {
       const el = document.getElementById("sysVersion");
