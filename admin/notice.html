@@ -291,6 +291,7 @@
     finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); }
   }
 
+// ✅ 글 저장 함수 수정 (댓글 허용 옵션 추가)
   async function saveNotice(status) {
     const title = document.getElementById('edit-title').value.trim();
     const body = tinymce.get('notice-editor').getContent();
@@ -299,17 +300,23 @@
     const payload = {
       mode: 'upsertAnnouncement',
       noticeId: targetNoticeId || "",
-      title: title, body: body,
+      title: title, 
+      body: body,
       level: document.getElementById('edit-level').value,
       isPinned: document.getElementById('edit-pinned').checked ? 1 : 0,
       status: status, 
-      // 🚨 [핵심 5] DB 저장 시 무조건 로그인한 유저의 "사번(EMP_NO)"을 기준으로 저장합니다!
-      authorEmpNo: window.CURRENT_USER_EMP_NO 
+      authorEmpNo: window.CURRENT_USER_EMP_NO,
+      // 🚨 [핵심 해결] 앞으로 저장되는 모든 글은 무조건 댓글 허용(1)으로 설정합니다!
+      allowComments: 1 
     };
 
     if(typeof showAdminLoading==='function') showAdminLoading("저장 중...");
     try {
-      const res = await fetch(window.CHEESE_ADMIN_API_BASE, { method:'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) });
+      const res = await fetch(window.CHEESE_ADMIN_API_BASE, { 
+          method:'POST', 
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' }, 
+          body: JSON.stringify(payload) 
+      });
       const json = await res.json();
       const newId = json.noticeId || json.id || targetNoticeId;
       location.href = `notice.html?id=${newId}`;
@@ -330,13 +337,10 @@
   }
 
   // ✅ 2. 댓글 등록 (알럿창 추가 & 서버 저장 완벽 대기)
-  async function submitComment(parentId = "") {
+async function submitComment(parentId = "") {
     const inputId = parentId ? `reply-text-${parentId}` : 'new-comment-body';
     const text = document.getElementById(inputId).value;
-    
     if(!text.trim()) return alert("내용을 입력하세요.");
-    
-    // 🚨 [핵심] 요청하신 등록 확인 알럿창 추가!
     if(!confirm("댓글을 등록하시겠습니까?")) return;
 
     const payload = { 
@@ -348,30 +352,25 @@
       authorName: window.CURRENT_USER_NAME 
     };
 
-    // 로딩 화면을 띄워 중복 클릭 방지
     if(typeof showAdminLoading==='function') showAdminLoading("댓글 등록 중...");
-    
     try {
       const res = await fetch(window.CHEESE_ADMIN_API_BASE, { 
           method:'POST', 
           headers: { 'Content-Type': 'text/plain;charset=utf-8' }, 
           body: JSON.stringify(payload) 
       });
-      
-      // 🚨 [핵심] 서버가 시트에 저장을 '완전히 끝마쳤다'고 응답할 때까지 확실하게 기다립니다.
       const json = await res.json(); 
 
       if(json.ok || json.result === "success") {
-          document.getElementById(inputId).value = ""; // 입력창 비우기
-          if(parentId) toggleReplyForm(parentId);      // 답글 창 닫기
-          
-          // 새로고침(F5) 없이 즉시 최신 댓글 리스트만 싹 다시 그려줍니다!
+          document.getElementById(inputId).value = ""; 
+          if(parentId) toggleReplyForm(parentId);      
           await loadComments();
       } else {
-          alert("서버 오류로 댓글이 등록되지 않았습니다.");
+          // 🚨 두루뭉술한 "서버 오류" 대신, 서버가 보낸 정확한 거절 사유를 알려줍니다.
+          alert("댓글 등록 실패: " + (json.message || "원인 불명"));
       }
     } catch(e) { 
-      alert("댓글 등록에 실패했습니다."); 
+      alert("서버와의 통신에 실패했습니다."); 
     } finally {
       if(typeof hideAdminLoading==='function') hideAdminLoading();
     }
