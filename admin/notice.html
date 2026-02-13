@@ -172,19 +172,14 @@
   }
 
   // ✅ 핵심 수정 부분: 데이터를 불러오고 'notice' 포장지를 뜯습니다.
-  async function loadNoticeData() {
+async function loadNoticeData() {
     if(typeof showAdminLoading==='function') showAdminLoading("공지 불러오는 중...");
     try {
       const qId = String(targetNoticeId || "").trim();
-      
-      // API V2.0은 파라미터로 'noticeId'를 요구하므로 맞춰서 전송합니다.
       const fetchUrl = `${window.CHEESE_ADMIN_API_BASE}?mode=getAnnouncement&noticeId=${qId}`;
       const res = await fetch(fetchUrl);
       const json = await res.json();
-      
-      console.log("DEBUG - 서버 응답:", json);
 
-      // ✅ API V2.0의 응답 구조인 json.notice 를 최우선으로 찾습니다.
       const noticeItem = json.notice || json.announcement || json.data || json.item;
 
       if(json.ok && noticeItem && typeof noticeItem === 'object') {
@@ -192,14 +187,18 @@
         renderNotice();
         await loadComments();
         
-        // 조회수 증가
+        // 🚨 [핵심 해결 3] 조회수 증가 요청 시 구글 API의 보안 차단(CORS)을 피하는 헤더 추가
         fetch(window.CHEESE_ADMIN_API_BASE, { 
-            method:'POST', 
-            body: JSON.stringify({ mode:'incrementNoticeView', noticeId: qId }) 
-        }).catch(e=>{});
+            method: 'POST', 
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // 안전한 통신 타입
+            body: JSON.stringify({ mode: 'incrementNoticeView', noticeId: qId }) 
+        })
+        .then(r => r.json())
+        .then(data => console.log("👀 조회수 증가 결과:", data)) // F12 콘솔에서 증가 확인 가능!
+        .catch(e => console.error("조회수 증가 에러:", e));
 
       } else {
-        alert("게시글 데이터를 찾을 수 없습니다.\n(서버 메시지: " + (json.message || "원인 불명") + ")");
+        alert("게시글 데이터를 찾을 수 없습니다.");
         location.href = 'board.html';
       }
     } catch(e) {
