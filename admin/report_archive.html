@@ -1297,58 +1297,72 @@ function formatMMDD(dateObj) {
       return issues;
   }
 
-  // ✨ 엑셀/표 연속 붙여넣기 처리 함수
-function handleTablePaste(e) {
-  // 기본 붙여넣기 동작 차단
-  e.preventDefault(); 
-  
-  // 클립보드 데이터 텍스트로 가져오기
-  let pasteData = (e.clipboardData || window.clipboardData).getData('text');
-  if (!pasteData) return;
-
-  // 엑셀 데이터는 탭(\t)으로 열이, 줄바꿈(\n)으로 행이 구분됨
-  const rows = pasteData.trim().split('\n');
-  
-  // 첫 행이 헤더(단계, 작업 내용 등)라면 무시할지 묻기 (선택 사항)
-  let startIndex = 0;
-  if (rows.length > 0 && rows[0].includes('단계') && rows[0].includes('작업 내용')) {
-      startIndex = 1; 
-  }
-
-  // 기존 빈 행이 하나 있다면 삭제 (깔끔하게 붙여넣기 위해)
-  const tbody = document.getElementById('sch-input-list');
-  const existingRows = tbody.querySelectorAll('tr');
-  if (existingRows.length === 1 && !existingRows[0].querySelector('.sch-task').value) {
-      existingRows[0].remove();
-  }
-
-  // 한 줄씩 파싱해서 행 추가
-  for (let i = startIndex; i < rows.length; i++) {
-      const cols = rows[i].split('\t').map(c => c.trim());
-      
-      // 엑셀 컬럼 순서: 0:단계, 1:작업내용, 2:시작일, 3:종료일, 4:결과물
-      const cat = cols[0] || "";
-      const task = cols[1] || "";
-      
-      // 날짜 포맷 변환 (ex: "01/28" -> "2026-01-28")
-      let sDate = cols[2] || "";
-      let eDate = cols[3] || "";
-      const year = document.getElementById('sch-start-month').value.split('-')[0] || new Date().getFullYear();
-      
-      if (sDate.includes('/')) {
-          const parts = sDate.split('/');
-          sDate = `${year}-${parts[0].padStart(2,'0')}-${parts[1].padStart(2,'0')}`;
-      }
-      if (eDate.includes('/')) {
-          const parts = eDate.split('/');
-          eDate = `${year}-${parts[0].padStart(2,'0')}-${parts[1].padStart(2,'0')}`;
-      }
-
-      const output = cols[4] || "";
-
-      addScheduleRow(cat, task, sDate, eDate, output);
-  }
-}
+	// ✨ 엑셀/표 연속 붙여넣기 처리 함수
+	function handleTablePaste(e) {
+	  // 클립보드 데이터 텍스트로 가져오기
+	  let pasteData = (e.clipboardData || window.clipboardData).getData('text');
+	  if (!pasteData) return;
+	
+	  // 🌟 [추가된 핵심 로직] 탭(\t) 문자가 없으면 단일 텍스트 복사이므로 기본 붙여넣기 허용 후 종료!
+	  if (!pasteData.includes('\t')) {
+	      return; 
+	  }
+	
+	  // 탭(\t)이 포함된 다중 표 데이터일 때만 기본 붙여넣기 동작을 막음
+	  e.preventDefault(); 
+	
+	  // 엑셀 데이터는 탭(\t)으로 열이, 줄바꿈(\n)으로 행이 구분됨
+	  const rows = pasteData.trim().split('\n');
+	  
+	  // 첫 행이 헤더(단계, 작업 내용 등)라면 무시할지 묻기 (선택 사항)
+	  let startIndex = 0;
+	  if (rows.length > 0 && rows[0].includes('단계') && rows[0].includes('작업 내용')) {
+	      startIndex = 1; 
+	  }
+	
+	  // 현재 커서가 있는 입력창과 그 부모 행(tr) 찾기
+	  let currentRow = e.target.closest('tr');
+	  const tbody = document.getElementById('sch-input-list');
+	
+	  // 기존 빈 행이 하나 있다면 삭제 (깔끔하게 붙여넣기 위해) - 단, 현재 커서가 있는 행은 지우지 않음
+	  const existingRows = tbody.querySelectorAll('tr');
+	  if (existingRows.length === 1 && existingRows[0] !== currentRow && !existingRows[0].querySelector('.sch-task').value) {
+	      existingRows[0].remove();
+	  }
+	
+	  // 한 줄씩 파싱해서 행 추가
+	  for (let i = startIndex; i < rows.length; i++) {
+	      const cols = rows[i].split('\t').map(c => c.trim());
+	      
+	      // 엑셀 컬럼 순서: 0:단계, 1:작업내용, 2:시작일, 3:종료일, 4:결과물
+	      const cat = cols[0] || "";
+	      const task = cols[1] || "";
+	      
+	      // 날짜 포맷 변환 (ex: "01/28" -> "2026-01-28")
+	      let sDate = cols[2] || "";
+	      let eDate = cols[3] || "";
+	      const year = document.getElementById('sch-start-month').value.split('-')[0] || new Date().getFullYear();
+	      
+	      if (sDate.includes('/')) {
+	          const parts = sDate.split('/');
+	          sDate = `${year}-${parts[0].padStart(2,'0')}-${parts[1].padStart(2,'0')}`;
+	      }
+	      if (eDate.includes('/')) {
+	          const parts = eDate.split('/');
+	          eDate = `${year}-${parts[0].padStart(2,'0')}-${parts[1].padStart(2,'0')}`;
+	      }
+	
+	      const output = cols[4] || "";
+	
+	      // 🌟 [수정된 로직] 현재 커서 위치를 기준으로 그 아래에 새 행 추가
+	      addScheduleRow(cat, task, sDate, eDate, output, currentRow);
+	      
+	      // 방금 추가된 행을 다음 번 추가 시의 기준으로 설정 (차곡차곡 아래로 쌓이도록)
+	      if (currentRow && currentRow.nextSibling) {
+	          currentRow = currentRow.nextSibling;
+	      }
+	  }
+	}
   
   (function showVersion() {
     const el = document.getElementById("sysVersion");
