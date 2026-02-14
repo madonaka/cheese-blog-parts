@@ -631,6 +631,10 @@
         <div class="modal-footer-custom">
           <div id="footer-left-actions">
             <button type="button" class="btn-delete-custom" id="btn-delete-modal" onclick="deleteFromModal()" style="display:none;">🗑️ 삭제하기</button>
+            
+            <button type="button" id="btn-close-project" class="btn-save-custom" style="background-color: #1d4ed8; color: white; display: none; margin-left: 8px;" onclick="closeProjectWithAI(document.getElementById('id').value)">
+              🎯 프로젝트 마감 (AI)
+            </button>
           </div>
 
           <div style="display: flex; gap: 12px;">
@@ -2058,6 +2062,125 @@ document.getElementById('todo-form').addEventListener('submit', async (e) => {
       if (endEl) endEl.value = "";
       renderLogs();
   }
+</script>
+<script>
+// 임시 저장용 변수
+window.tempCompletionData = null;
+window.tempClosingGoalId = null;
+
+// 1. 버튼 누르면 AI 보고서 생성 요청
+async function closeProjectWithAI(goalId) {
+    if(!confirm("이 프로젝트를 마감하고 AI 성과 보고서를 작성하시겠습니까?")) return;
+    
+    // 로딩창 띄우기 (기존 함수 재활용 혹은 alert)
+    if(typeof showAdminLoading==='function') showAdminLoading("AI가 흩어진 데이터를 모아 성과 보고서를 작성 중입니다... 📝");
+    else alert("AI 보고서 작성 중... 잠시만 기다려주세요.");
+
+    try {
+        const res = await fetch(window.CHEESE_ADMIN_API_BASE, {
+            method: "POST",
+            body: JSON.stringify({ mode: "generateCompletionReport", goalId: goalId })
+        });
+        const json = await res.json();
+        
+        if(json.result === "success") {
+            window.tempCompletionData = json.data;
+            window.tempClosingGoalId = json.goalId;
+            renderCompletionReport(json.data);
+        } else alert("보고서 생성 실패: " + json.msg);
+    } catch(e) { alert("통신 오류 발생"); }
+    finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); }
+}
+
+// 2. 완성된 보고서를 화면에 예쁘게 그리기 (가상의 모달 생성)
+function renderCompletionReport(data) {
+    const formatToSubBullets = (text) => {
+        if (!text) return "";
+        let resultHtml = "";
+        const lines = text.split('\n');
+        lines.forEach(line => {
+            const match = line.match(/^-\s*\[(.*?)\](.*)/);
+            if (match) {
+                resultHtml += `<div style="margin-top:8px;"><b>${match[1]}:</b></div>`;
+                resultHtml += `<li style="margin-bottom:4px; margin-left: 20px;">${match[2].trim()}</li>`;
+            } else if (line.trim().startsWith('-')) {
+                resultHtml += `<li style="margin-bottom:4px; margin-left: 20px;">${line.substring(1).trim()}</li>`;
+            } else if(line.trim()) {
+                resultHtml += `<div style="margin-top:4px;">${line}</div>`;
+            }
+        });
+        return resultHtml;
+    };
+
+    let scheduleHtml = "잔여 항목이 없어 완벽하게 종료되었습니다. 🎉";
+    let btnText = "✨ 확정 및 프로젝트 마감 (100% 완료)";
+    
+    if (data.followup_schedule && data.followup_schedule.length > 0) {
+        btnText = "🚀 마감 확정 및 [잔여 항목] 후속 프로젝트 자동 생성";
+        scheduleHtml = `<table style="width:100%; border-collapse:collapse; text-align:left; border: 1px solid #cbd5e1; margin-top:10px;">
+            <tr style="background:#f1f5f9;"><th style="padding:8px; border: 1px solid #cbd5e1;">공정</th><th style="padding:8px; border: 1px solid #cbd5e1;">작업명</th><th style="padding:8px; border: 1px solid #cbd5e1;">일정</th></tr>`;
+        data.followup_schedule.forEach(t => {
+            scheduleHtml += `<tr><td style="padding:8px; border: 1px solid #cbd5e1; font-size:0.9rem;">${t.category}</td><td style="padding:8px; border: 1px solid #cbd5e1; font-weight:bold;">${t.task_name}</td><td style="padding:8px; border: 1px solid #cbd5e1; font-size:0.85rem;">${t.start_date} ~ ${t.end_date}</td></tr>`;
+        });
+        scheduleHtml += "</table>";
+    }
+
+    const htmlTemplate = `
+    <div id="ai-completion-modal" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:99999; display:flex; justify-content:center; align-items:center;">
+        <div style="background:#fff; width:90%; max-width:900px; max-height:90vh; overflow-y:auto; border-radius:12px; box-shadow:0 10px 25px rgba(0,0,0,0.2); padding: 30px;">
+            <h2 style="color:#1d4ed8; text-align:center; border-bottom:2px solid #bfdbfe; padding-bottom:15px;">📊 ${data.title}</h2>
+            <table style="width:100%; border-collapse:collapse; margin-top:20px; border:2px solid #cbd5e1;">
+                <tr>
+                    <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f8fafc;">
+                        <h3 style="color:#2563eb; margin:0 0 10px 0;">1. 총평 및 달성률</h3>
+                        <div>${formatToSubBullets(data.executive_summary)}</div>
+                    </td>
+                    <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;">
+                        <h3 style="color:#16a34a; margin:0 0 10px 0;">2. 주요 성과 (Achievements)</h3>
+                        <div>${formatToSubBullets(data.achievements)}</div>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;">
+                        <h3 style="color:#dc2626; margin:0 0 10px 0;">3. 미완료 항목 원인 분석</h3>
+                        <div>${formatToSubBullets(data.unfinished_analysis)}</div>
+                    </td>
+                    <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fefce8;">
+                        <h3 style="color:#d97706; margin:0 0 10px 0;">4. 후속 조치 계획</h3>
+                        <div>${formatToSubBullets(data.followup_strategy)}</div>
+                    </td>
+                </tr>
+            </table>
+            <div style="margin-top:20px; padding:20px; background:#f1f5f9; border-radius:8px;">
+                <h3 style="color:#475569; margin:0 0 10px 0;">💡 AI 제안: 미완료 항목 스핀오프 (후속 일정)</h3>
+                ${scheduleHtml}
+            </div>
+            <div style="text-align:center; margin-top:30px; display:flex; gap:10px; justify-content:center;">
+                <button onclick="document.getElementById('ai-completion-modal').remove()" style="padding:12px 24px; border:none; border-radius:8px; background:#94a3b8; color:#fff; cursor:pointer; font-weight:bold;">취소</button>
+                <button onclick="saveCompletionReport()" style="padding:12px 24px; border:none; border-radius:8px; background:#2563eb; color:#fff; cursor:pointer; font-weight:bold;">${btnText}</button>
+            </div>
+        </div>
+    </div>`;
+    document.body.insertAdjacentHTML('beforeend', htmlTemplate);
+}
+
+// 3. 확정 및 저장
+async function saveCompletionReport() {
+    if(typeof showAdminLoading==='function') showAdminLoading("프로젝트 마감 및 후속 처리 중입니다... 💾");
+    try {
+        const res = await fetch(window.CHEESE_ADMIN_API_BASE, {
+            method: "POST",
+            body: JSON.stringify({ mode: "saveCompletionReport", goalId: window.tempClosingGoalId, rData: window.tempCompletionData })
+        });
+        const json = await res.json();
+        if(json.result === "success") {
+            alert("✨ 성공적으로 마감되었습니다!\n잔여 항목이 있다면 목표 트리에 '새 프로젝트'로 추가되었습니다.");
+            document.getElementById('ai-completion-modal').remove();
+            if(typeof loadAllData === 'function') await loadAllData(); // 화면 새로고침
+        } else alert("저장 실패: " + json.msg);
+    } catch(e) { alert("통신 오류 발생"); }
+    finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); }
+}
 </script>
 </body>
 </html>
