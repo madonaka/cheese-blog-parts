@@ -1302,38 +1302,62 @@ function renderAIToEditor(aiData) {
     const today = new Date();
     const dateStr = `${today.getFullYear()}.${today.getMonth()+1}.${today.getDate()}`;
     
+    // 🚨 [추가] AI의 텍스트를 예쁜 글머리 기호(List)와 볼드체로 변환해 주는 헬퍼 함수
+    const formatToBullet = (text) => {
+        if (!text) return "";
+        let listItems = text.split('\n').map(line => {
+            let cleanLine = line.trim();
+            if (!cleanLine) return "";
+            
+            // "- [키워드] 내용" 형태를 <li><b>[키워드]</b> 내용</li> 로 변환
+            const match = cleanLine.match(/^-\s*\[(.*?)\](.*)/);
+            if (match) {
+                return `<li style="margin-bottom:6px;"><b>[${match[1]}]</b> ${match[2]}</li>`;
+            }
+            // 그냥 "-" 로 시작하는 줄
+            if (cleanLine.startsWith('-')) {
+                return `<li style="margin-bottom:6px;">${cleanLine.substring(1).trim()}</li>`;
+            }
+            return `<li style="margin-bottom:6px;">${cleanLine}</li>`;
+        }).join('');
+        
+        return `<ul style="padding-left:20px; margin:0; line-height:1.6; color:#333;">${listItems}</ul>`;
+    };
+
     let htmlTemplate = `
     <div style="font-family:'Pretendard','Malgun Gothic',sans-serif; max-width:900px; margin:0 auto; color:#1e293b;">
-        <h2 style="text-align:center; color:#7c3aed; margin-bottom:12px; font-size:1.8rem;">[기획서] ${aiData.title || "AI 생성 프로젝트"}</h2>
+        <h2 style="text-align:center; color:#7c3aed; margin-bottom:12px; font-size:1.8rem; letter-spacing:-0.5px;">[기획서] ${aiData.title || "AI 생성 프로젝트"}</h2>
         <div style="text-align:right; margin-bottom:16px; font-size:0.9rem; color:#64748b;">작성일: ${dateStr} / 작성자: AI Assistant</div>
         <table style="width:100%; border-collapse:collapse; table-layout:fixed; border:2px solid #cbd5e1;">
             <tr>
                 <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;">
                     <h3 style="margin:0 0 12px 0; color:#7c3aed; font-size:1.15rem; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">1. 기획 배경 및 목적</h3>
-                    <div style="font-size:1rem; color:#333; line-height:1.6;">${(aiData.background_purpose||"").replace(/\n/g, '<br>')}</div>
+                    <div style="font-size:1rem;">${formatToBullet(aiData.background_purpose)}</div>
                 </td>
                 <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f8fafc;">
                     <h3 style="margin:0 0 12px 0; color:#7c3aed; font-size:1.15rem; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">2. 현상 및 핵심 문제점</h3>
-                    <div style="font-size:1rem; color:#333; line-height:1.6;">${(aiData.current_issue||"").replace(/\n/g, '<br>')}</div>
+                    <div style="font-size:1rem;">${formatToBullet(aiData.current_issue)}</div>
                 </td>
             </tr>
             <tr>
                 <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f8fafc;">
                     <h3 style="margin:0 0 12px 0; color:#7c3aed; font-size:1.15rem; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">3. 해결 방안 및 핵심 전략</h3>
-                    <div style="font-size:1rem; color:#333; line-height:1.6;">${(aiData.strategy||"").replace(/\n/g, '<br>')}</div>
+                    <div style="font-size:1rem;">${formatToBullet(aiData.strategy)}</div>
                 </td>
                 <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;">
                     <h3 style="margin:0 0 12px 0; color:#7c3aed; font-size:1.15rem; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">4. 기대 효과 및 소요 예산</h3>
-                    <div style="font-size:1rem; color:#333; line-height:1.6;">${(aiData.roi||"").replace(/\n/g, '<br>')}</div>
+                    <div style="font-size:1rem;">${formatToBullet(aiData.roi)}</div>
                 </td>
             </tr>
         </table>
+        
+        <div id="schedule-placeholder" style="margin-top:30px;"></div>
     </div>`;
 
     // 에디터 열기 (미리보기)
     openDocModal(null, aiData.title, htmlTemplate, '기획서');
 
-    // 🚨 모달 하단에 [DB 확정 저장] 전용 버튼을 임시로 끼워 넣기
+    // 모달 하단에 [DB 확정 저장] 전용 버튼 끼워 넣기
     const footer = document.querySelector('#doc-modal .modal-footer-custom');
     if(footer) {
         let oldBtn = document.getElementById('ai-confirm-btn');
@@ -1345,7 +1369,7 @@ function renderAIToEditor(aiData) {
         confirmBtn.style.cssText = 'background: #7c3aed; color: #fff; font-weight: bold; border: none; padding: 10px 20px; margin-right: auto;';
         confirmBtn.innerHTML = '✨ 이대로 DB 확정 및 일정 생성';
         confirmBtn.onclick = confirmAndSaveAIProposal;
-        footer.insertBefore(confirmBtn, footer.firstChild); // 제일 왼쪽에 배치
+        footer.insertBefore(confirmBtn, footer.firstChild); 
     }
 
     // 일정표(Gantt) 자동 삽입 트리거
