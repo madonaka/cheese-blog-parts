@@ -281,100 +281,8 @@
     </div>
   </div>
 </div>
-<script>
-function openAIPromptModal() {
-    document.getElementById('ai-prompt-input').value = "";
-    document.getElementById('ai-prompt-modal').classList.add('open');
-}
 
-async function requestAIProposal() {
-    const promptText = document.getElementById('ai-prompt-input').value.trim();
-    if(!promptText) { alert("기획 내용을 자유롭게 적어주세요!"); return; }
 
-    closeModal('ai-prompt-modal');
-    if(typeof showAdminLoading==='function') showAdminLoading("AI가 기획서와 세부 일정을 쪼개는 중입니다... 🤖✨");
-
-    try {
-        const res = await fetch(window.CHEESE_ADMIN_API_BASE, {
-            method: "POST",
-            body: JSON.stringify({ mode: "generateProposal", rawIdea: promptText })
-        });
-        const json = await res.json();
-        
-        if(json.result === "success") {
-            // 할 일(task_master) 목록 갱신
-            await loadAllData(); 
-            
-            // 🚨 앱 스크립트에서 json.data 로 데이터를 내려준다고 가정하고 화면에 즉시 렌더링
-            if(json.data) {
-                renderAIToEditor(json.data);
-            } else {
-                alert("✨ 세부 일정이 [할 일] DB에 자동 등록되었습니다!\n(화면 렌더링을 원하시면 앱 스크립트 리턴에 data 속성을 추가해야 합니다.)");
-            }
-        } else {
-            alert("AI 생성 실패: " + json.msg);
-        }
-    } catch(e) {
-        console.error(e); alert("통신 오류가 발생했습니다.");
-    } finally {
-        if(typeof hideAdminLoading==='function') hideAdminLoading();
-    }
-}
-
-// AI 데이터를 기존 기획서 양식과 자동 일정표(Auto-Gantt)에 꽂아 넣는 함수
-function renderAIToEditor(aiData) {
-    const today = new Date();
-    const dateStr = `${today.getFullYear()}.${today.getMonth()+1}.${today.getDate()}`;
-    
-    // 1. 텍스트 바인딩
-    let htmlTemplate = `
-    <div style="font-family:'Pretendard','Malgun Gothic',sans-serif; max-width:900px; margin:0 auto; color:#1e293b;">
-        <h2 style="text-align:center; color:#7c3aed; margin-bottom:12px; font-size:1.8rem;">[기획서] ${aiData.title || "AI 생성 프로젝트"}</h2>
-        <div style="text-align:right; margin-bottom:16px; font-size:0.9rem; color:#64748b;">작성일: ${dateStr} / 작성자: AI Assistant</div>
-        
-        <table style="width:100%; border-collapse:collapse; table-layout:fixed; border:2px solid #cbd5e1;">
-            <tr>
-                <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;">
-                    <h3 style="margin:0 0 12px 0; color:#7c3aed; font-size:1.15rem; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">1. 기획 배경 및 목적 (Why)</h3>
-                    <div style="font-size:1rem; color:#333; line-height:1.6;">${(aiData.background_purpose||"").replace(/\n/g, '<br>')}</div>
-                </td>
-                <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f8fafc;">
-                    <h3 style="margin:0 0 12px 0; color:#7c3aed; font-size:1.15rem; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">2. 현상 및 핵심 문제점 (What)</h3>
-                    <div style="font-size:1rem; color:#333; line-height:1.6;">${(aiData.current_issue||"").replace(/\n/g, '<br>')}</div>
-                </td>
-            </tr>
-            <tr>
-                <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f8fafc;">
-                    <h3 style="margin:0 0 12px 0; color:#7c3aed; font-size:1.15rem; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">3. 해결 방안 및 핵심 전략 (How)</h3>
-                    <div style="font-size:1rem; color:#333; line-height:1.6;">${(aiData.strategy||"").replace(/\n/g, '<br>')}</div>
-                </td>
-                <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;">
-                    <h3 style="margin:0 0 12px 0; color:#7c3aed; font-size:1.15rem; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">4. 기대 효과 및 소요 예산 (ROI)</h3>
-                    <div style="font-size:1rem; color:#333; line-height:1.6;">${(aiData.roi||"").replace(/\n/g, '<br>')}</div>
-                </td>
-            </tr>
-        </table>
-        <div id="schedule-placeholder" style="margin-top:30px;"></div>
-    </div>`;
-
-    // 에디터 열기
-    openDocModal(null, aiData.title, htmlTemplate, '기획서');
-
-    // 2. 일정표(Gantt) 자동 삽입 트리거
-    if(aiData.schedule && aiData.schedule.length > 0) {
-        document.getElementById('sch-start-month').value = aiData.schedule[0].start_date.substring(0, 7);
-        document.getElementById('sch-project-name').value = aiData.title;
-        document.getElementById('sch-input-list').innerHTML = ""; 
-        
-        aiData.schedule.forEach(task => {
-            addScheduleRow("AI 생성", task.task_name, task.start_date, task.end_date, "");
-        });
-        
-        // 0.5초 뒤 자동 생성 함수 호출 (화면 랜더링 보장)
-        setTimeout(() => { insertSmartSchedule(); }, 500); 
-    }
-}
-</script>
 <script>
   window.CHEESE_ADMIN_ACTIVE_PAGE = "report_archive"; 
   
@@ -1351,6 +1259,132 @@ function handleTablePaste(e) {
     el.style.color = "#3b82f6";
     el.style.fontWeight = "bold";
   })();
+</script>
+	
+<script>
+// 🚨 AI가 만든 데이터를 임시 보관할 전역 변수
+window.tempAIProposalData = null;
+
+function openAIPromptModal() {
+    document.getElementById('ai-prompt-input').value = "";
+    document.getElementById('ai-prompt-modal').classList.add('open');
+}
+
+async function requestAIProposal() {
+    const promptText = document.getElementById('ai-prompt-input').value.trim();
+    if(!promptText) { alert("기획 내용을 적어주세요!"); return; }
+
+    closeModal('ai-prompt-modal');
+    if(typeof showAdminLoading==='function') showAdminLoading("AI가 기획서를 작성 중입니다... 🤖✨");
+
+    try {
+        const res = await fetch(window.CHEESE_ADMIN_API_BASE, {
+            method: "POST",
+            body: JSON.stringify({ mode: "generateProposal", rawIdea: promptText })
+        });
+        const json = await res.json();
+        
+        if(json.result === "success") {
+            // 성공 시 임시 변수에 저장하고 '미리보기' 화면 띄우기
+            window.tempAIProposalData = json.data;
+            renderAIToEditor(json.data);
+        } else {
+            alert("AI 생성 실패: " + json.msg);
+        }
+    } catch(e) {
+        console.error(e); alert("통신 오류가 발생했습니다.");
+    } finally {
+        if(typeof hideAdminLoading==='function') hideAdminLoading();
+    }
+}
+
+function renderAIToEditor(aiData) {
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}.${today.getMonth()+1}.${today.getDate()}`;
+    
+    let htmlTemplate = `
+    <div style="font-family:'Pretendard','Malgun Gothic',sans-serif; max-width:900px; margin:0 auto; color:#1e293b;">
+        <h2 style="text-align:center; color:#7c3aed; margin-bottom:12px; font-size:1.8rem;">[기획서] ${aiData.title || "AI 생성 프로젝트"}</h2>
+        <div style="text-align:right; margin-bottom:16px; font-size:0.9rem; color:#64748b;">작성일: ${dateStr} / 작성자: AI Assistant</div>
+        <table style="width:100%; border-collapse:collapse; table-layout:fixed; border:2px solid #cbd5e1;">
+            <tr>
+                <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;">
+                    <h3 style="margin:0 0 12px 0; color:#7c3aed; font-size:1.15rem; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">1. 기획 배경 및 목적</h3>
+                    <div style="font-size:1rem; color:#333; line-height:1.6;">${(aiData.background_purpose||"").replace(/\n/g, '<br>')}</div>
+                </td>
+                <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f8fafc;">
+                    <h3 style="margin:0 0 12px 0; color:#7c3aed; font-size:1.15rem; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">2. 현상 및 핵심 문제점</h3>
+                    <div style="font-size:1rem; color:#333; line-height:1.6;">${(aiData.current_issue||"").replace(/\n/g, '<br>')}</div>
+                </td>
+            </tr>
+            <tr>
+                <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f8fafc;">
+                    <h3 style="margin:0 0 12px 0; color:#7c3aed; font-size:1.15rem; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">3. 해결 방안 및 핵심 전략</h3>
+                    <div style="font-size:1rem; color:#333; line-height:1.6;">${(aiData.strategy||"").replace(/\n/g, '<br>')}</div>
+                </td>
+                <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;">
+                    <h3 style="margin:0 0 12px 0; color:#7c3aed; font-size:1.15rem; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">4. 기대 효과 및 소요 예산</h3>
+                    <div style="font-size:1rem; color:#333; line-height:1.6;">${(aiData.roi||"").replace(/\n/g, '<br>')}</div>
+                </td>
+            </tr>
+        </table>
+    </div>`;
+
+    // 에디터 열기 (미리보기)
+    openDocModal(null, aiData.title, htmlTemplate, '기획서');
+
+    // 🚨 모달 하단에 [DB 확정 저장] 전용 버튼을 임시로 끼워 넣기
+    const footer = document.querySelector('#doc-modal .modal-footer-custom');
+    if(footer) {
+        let oldBtn = document.getElementById('ai-confirm-btn');
+        if(oldBtn) oldBtn.remove();
+        
+        let confirmBtn = document.createElement('button');
+        confirmBtn.id = 'ai-confirm-btn';
+        confirmBtn.className = 'btn';
+        confirmBtn.style.cssText = 'background: #7c3aed; color: #fff; font-weight: bold; border: none; padding: 10px 20px; margin-right: auto;';
+        confirmBtn.innerHTML = '✨ 이대로 DB 확정 및 일정 생성';
+        confirmBtn.onclick = confirmAndSaveAIProposal;
+        footer.insertBefore(confirmBtn, footer.firstChild); // 제일 왼쪽에 배치
+    }
+
+    // 일정표(Gantt) 자동 삽입 트리거
+    if(aiData.schedule && aiData.schedule.length > 0) {
+        document.getElementById('sch-start-month').value = aiData.schedule[0].start_date.substring(0, 7);
+        document.getElementById('sch-project-name').value = aiData.title;
+        document.getElementById('sch-input-list').innerHTML = ""; 
+        aiData.schedule.forEach(task => addScheduleRow("AI 생성", task.task_name, task.start_date, task.end_date, ""));
+        setTimeout(() => { insertSmartSchedule(); }, 500); 
+    }
+}
+
+// 🚨 사용자가 "DB 확정" 버튼을 눌렀을 때 진짜 저장하는 함수
+async function confirmAndSaveAIProposal() {
+    if(!window.tempAIProposalData) return;
+    
+    if(typeof showAdminLoading==='function') showAdminLoading("DB에 기획서와 일정을 저장하는 중입니다... 💾");
+    
+    try {
+        const res = await fetch(window.CHEESE_ADMIN_API_BASE, {
+            method: "POST",
+            body: JSON.stringify({ mode: "saveProposal", pData: window.tempAIProposalData })
+        });
+        const json = await res.json();
+        
+        if(json.result === "success") {
+            alert("✨ 기획서와 세부 일정이 DB에 완벽하게 저장되었습니다!");
+            closeModal('doc-modal'); // 모달 닫기
+            document.getElementById('ai-confirm-btn')?.remove(); // 버튼 지우기
+            if(typeof loadAllData === 'function') await loadAllData(); // 데이터 새로고침
+        } else {
+            alert("저장 실패: " + json.msg);
+        }
+    } catch(e) {
+        console.error(e); alert("통신 오류가 발생했습니다.");
+    } finally {
+        if(typeof hideAdminLoading==='function') hideAdminLoading();
+    }
+}
 </script>
 </body>
 </html>
