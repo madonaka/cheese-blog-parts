@@ -1302,71 +1302,73 @@ function renderAIToEditor(aiData) {
     const today = new Date();
     const dateStr = `${today.getFullYear()}.${today.getMonth()+1}.${today.getDate()}`;
     
-    // 🚨 [핵심 수정] 텍스트를 고정 설명문(Bold)과 하위 글머리(Sub-bullet)로 완벽하게 쪼개주는 함수
-    const formatToSubBullets = (text) => {
-        if (!text) return "";
-        
-        // 사용자가 요청한 고정 설명문 매핑 사전
-        const headers = {
-            "배경": "배경: 왜 이 기획을 하게 되었는가?",
-            "목적": "목적: 이 기획을 통해 달성하고자 하는 궁극적인 목표는?",
-            "현상": "현재 상황: 현재 업무나 서비스의 상태는 어떠한가?",
-            "문제점": "문제점: 해결해야 할 가장 큰 병목이나 원인은?",
-            "해결방안": "핵심 솔루션: 문제를 어떻게 타개할 것인가?",
-            "실행전략": "실행 전략: 타 부서 협업, 리스크 대비책 등 상세 전략",
-            "기대효과": "정량적 효과: 매출 X% 증대, 리드타임 Y시간 단축 등",
-            "소요예산": "소요 예산: 투입되어야 할 인력 및 예산"
-        };
-
-        let resultHtml = "";
-        let currentList = "";
-
-        const lines = text.split('\n');
-        
-        lines.forEach(line => {
-            let cleanLine = line.trim();
-            if (!cleanLine) return;
-
-            // '- [배경] 내용' 형태를 감지해서 제목과 내용으로 분리
-            const match = cleanLine.match(/^-\s*\[(.*?)\](.*)/);
-            
-            if (match) {
-                // 이전 항목의 글머리기호 리스트 닫기
-                if (currentList !== "") {
-                    resultHtml += `<ul style="padding-left:20px; margin:4px 0 16px 0; line-height:1.6; color:#333;">${currentList}</ul>`;
-                    currentList = "";
-                }
-                
-                let key = match[1].replace(/\s/g, ''); // 공백 제거 (예: "해결 방안" -> "해결방안")
-                let content = match[2].trim();
-                let headerText = headers[key] || `${key}:`; // 사전에 없으면 괄호 안의 글자 그대로 사용
-                
-                // 1. 요청하신 고정 설명문을 볼드체로 출력
-                resultHtml += `<div style="margin-top:8px;"><b>${headerText}</b></div>`;
-                
-                if (content) {
-                    if(content.startsWith('-')) content = content.substring(1).trim();
-                    // 🚨 디테일: AI가 "목적은 ~이다" 라고 중복해서 말하는 앞부분의 군더더기 단어 자동 삭제
-                    content = content.replace(/^(배경은|목적은|현상은|문제점은|핵심 솔루션은|실행 전략은|기대 효과는|소요 예산은)\s*/, '');
-                    currentList += `<li style="margin-bottom:4px;">${content}</li>`;
-                }
-            } else {
-                // [키워드] 없이 내용만 이어지는 줄은 현재 리스트의 하위 항목으로 계속 추가
-                let content = cleanLine;
-                if (content.startsWith('-')) content = content.substring(1).trim();
-                if (content) {
-                    currentList += `<li style="margin-bottom:4px;">${content}</li>`;
-                }
-            }
-        });
-        
-        // 마지막 리스트 닫기
-        if (currentList !== "") {
-            resultHtml += `<ul style="padding-left:20px; margin:4px 0 8px 0; line-height:1.6; color:#333;">${currentList}</ul>`;
-        }
-        
-        return resultHtml;
-    };
+	 // 🚨 [핵심 수정] 텍스트를 고정 설명문(Bold)과 하위 글머리(Sub-bullet)로 쪼개고, '중복 제목'을 병합하는 함수
+	const formatToSubBullets = (text) => {
+	    if (!text) return "";
+	    
+	    const headers = {
+	        "배경": "배경: 왜 이 기획을 하게 되었는가?",
+	        "목적": "목적: 이 기획을 통해 달성하고자 하는 궁극적인 목표는?",
+	        "현상": "현재 상황: 현재 업무나 서비스의 상태는 어떠한가?",
+	        "문제점": "문제점: 해결해야 할 가장 큰 병목이나 원인은?",
+	        "해결방안": "핵심 솔루션: 문제를 어떻게 타개할 것인가?",
+	        "실행전략": "실행 전략: 타 부서 협업, 리스크 대비책 등 상세 전략",
+	        "기대효과": "정량적 효과: 매출 X% 증대, 리드타임 Y시간 단축 등",
+	        "소요예산": "소요 예산: 투입되어야 할 인력 및 예산"
+	    };
+	
+	    let resultHtml = "";
+	    let currentList = "";
+	    let currentKey = ""; // 👈 [추가] 방금 출력한 제목이 무엇인지 기억하는 변수
+	
+	    const lines = text.split('\n');
+	    
+	    lines.forEach(line => {
+	        let cleanLine = line.trim();
+	        if (!cleanLine) return;
+	
+	        const match = cleanLine.match(/^-\s*\[(.*?)\](.*)/);
+	        
+	        if (match) {
+	            let key = match[1].replace(/\s/g, ''); // 공백 제거 (예: "해결 방안" -> "해결방안")
+	            let content = match[2].trim();
+	            
+	            // 🚨 이전 줄과 '다른 제목'일 때만 새 제목(Bold)을 출력합니다!
+	            if (key !== currentKey) {
+	                // 이전 항목의 글머리기호 리스트 닫기
+	                if (currentList !== "") {
+	                    resultHtml += `<ul style="padding-left:20px; margin:4px 0 16px 0; line-height:1.6; color:#333;">${currentList}</ul>`;
+	                    currentList = "";
+	                }
+	                
+	                let headerText = headers[key] || `${key}:`; 
+	                resultHtml += `<div style="margin-top:8px;"><b>${headerText}</b></div>`; // 제목 출력
+	                currentKey = key; // 방금 출력한 제목 기억하기
+	            }
+	            
+	            // 내용은 제목 출력 여부와 상관없이 현재 리스트에 계속 추가
+	            if (content) {
+	                if(content.startsWith('-')) content = content.substring(1).trim();
+	                content = content.replace(/^(배경은|목적은|현상은|문제점은|핵심 솔루션은|실행 전략은|기대 효과는|소요 예산은)\s*/, '');
+	                currentList += `<li style="margin-bottom:4px;">${content}</li>`;
+	            }
+	        } else {
+	            // [키워드] 없이 내용만 이어지는 줄은 현재 리스트에 추가
+	            let content = cleanLine;
+	            if (content.startsWith('-')) content = content.substring(1).trim();
+	            if (content) {
+	                currentList += `<li style="margin-bottom:4px;">${content}</li>`;
+	            }
+	        }
+	    });
+	    
+	    // 마지막 리스트 닫기
+	    if (currentList !== "") {
+	        resultHtml += `<ul style="padding-left:20px; margin:4px 0 8px 0; line-height:1.6; color:#333;">${currentList}</ul>`;
+	    }
+	    
+	    return resultHtml;
+	};
 
     let htmlTemplate = `
     <div style="font-family:'Pretendard','Malgun Gothic',sans-serif; max-width:900px; margin:0 auto; color:#1e293b;">
