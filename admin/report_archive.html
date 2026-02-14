@@ -772,7 +772,7 @@
     printWindow.document.close();
   }
 
-  async function saveAsImage() {
+ async function saveAsImage() {
     const title = document.getElementById('doc-title').value || "report";
     const contentHtml = tinymce.get('doc-content') ? tinymce.get('doc-content').getContent() : "";
     
@@ -781,69 +781,41 @@
         return; 
     }
 
+    // 🌟 [개선 1] 전체적인 좌우 밸런스와 폭을 일정하게 잡아주는 컨테이너 생성
     const printContainer = document.createElement('div');
-    printContainer.style.position = 'fixed'; 
-    printContainer.style.top = '0';
+    printContainer.style.position = 'absolute'; // 화면 스크롤에 영향 없도록 독립시킴
+    printContainer.style.top = '-9999px';       // 화면 밖으로 숨김
     printContainer.style.left = '0';
-    printContainer.style.zIndex = '99999'; 
-    printContainer.style.width = '1200px'; 
-    printContainer.style.height = 'auto';
-    printContainer.style.minHeight = '100vh';
-    printContainer.style.padding = '60px'; 
+    printContainer.style.zIndex = '-1'; 
+    printContainer.style.width = '1100px';      // PC 화면과 유사한 최적의 고정 넓이
+    printContainer.style.padding = '50px';      // 여백을 깔끔하게 통일
     printContainer.style.background = '#ffffff';
     printContainer.style.boxSizing = 'border-box';
     
+    // 🌟 [개선 2] 불필요한 강제 스타일을 제거하고, 일정표 삐져나옴 방지 최소한의 CSS만 적용
     printContainer.innerHTML = `
-		<style>
-		  .temp-wrap { 
-		    font-family: 'Arial', 'Malgun Gothic', sans-serif !important; 
-		    color: #1e293b !important; 
-		    line-height: 1.6 !important; 
-		    width: 100% !important;
-		  }
-		
-		  /* ✅ 기본 테이블 스타일 (일반 표용) */
-		  .temp-wrap table { 
-		    width: 100% !important; 
-		    border-collapse: collapse !important; 
-		    border: 2px solid #cbd5e1 !important; 
-		    table-layout: fixed !important; 
-		  }
-		  .temp-wrap td, .temp-wrap th { 
-		    border: 1px solid #cbd5e1 !important; 
-		    padding: 10px !important; 
-		    vertical-align: top !important;
-		    overflow: visible !important; 
-		    position: relative !important;
-		  }
-		
-		  /* ✅ (중요) 스케줄 표는 레이아웃이 민감하니 저장 시 원래 의도대로 복구 */
-		  .temp-wrap .schedule-section table{
-		    border-collapse: collapse !important;
-		    table-layout: fixed !important;
-		  }
-		
-		  /* 스케줄: 헤더/좌측 3칸(구분/Task/결과물)은 패딩 유지 */
-		  .temp-wrap .schedule-section thead th{
-		    padding: 8px !important;
-		  }
-		  .temp-wrap .schedule-section tbody td:nth-child(-n+3){
-		    padding: 6px 10px !important;
-		  }
-		
-		  /* 스케줄: 기간 막대가 들어가는 그리드 셀(4번째 이후)은 padding 0으로 복구 */
-		  .temp-wrap .schedule-section tbody td:nth-child(n+4){
-		    padding: 0 !important;
-		  }
-		  
-			.temp-wrap .schedule-section{
-			  padding-right: 220px !important; /* RIGHT_PAD와 동일하게 */
-			  overflow: visible !important;
-			}
-		 
-		  .temp-wrap * { box-sizing: border-box !important; }
-		  .temp-wrap h1, .temp-wrap h2, .temp-wrap h3, .temp-wrap h4 { margin-top: 0 !important; }
-		</style>
+        <style>
+          .temp-wrap { 
+            font-family: 'Pretendard', 'Malgun Gothic', sans-serif !important; 
+            color: #1e293b !important; 
+            line-height: 1.6 !important; 
+          }
+          .temp-wrap table { border-collapse: collapse !important; }
+          .temp-wrap th, .temp-wrap td { overflow: visible !important; }
+          
+          /* 스케줄 테이블: 날짜 막대 칸은 여백을 없애고, 좌측 텍스트(Task 등) 칸은 여백 유지 */
+          .temp-wrap .schedule-section tbody td:nth-child(-n+3) { padding: 6px 10px !important; }
+          .temp-wrap .schedule-section tbody td:nth-child(n+4) { padding: 0 !important; }
+          
+          /* 일정표 우측 끝에 날짜가 삐져나갈 공간(약 50px) 확보 */
+          .temp-wrap .schedule-section { 
+            padding-right: 50px !important; 
+            overflow: visible !important; 
+          }
+          
+          /* 이미지 캡처 시 보기 싫은 '수정' 버튼 숨기기 */
+          .temp-wrap .btn-edit-schedule { display: none !important; }
+        </style>
 
         <div class="temp-wrap">${contentHtml}</div>
     `;
@@ -853,58 +825,16 @@
     if(typeof showAdminLoading === 'function') showAdminLoading("고화질 이미지 생성 중...");
 
     try {
-		const RIGHT_PAD = 220; // ← 160~260 사이에서 너 상황에 맞게 조절
-		const captureW = Math.max(printContainer.offsetWidth, printContainer.scrollWidth) + RIGHT_PAD;
-		const captureH = Math.max(printContainer.offsetHeight, printContainer.scrollHeight);
-		
-		const canvas = await html2canvas(printContainer, {
-		  scale: 2,
-		  useCORS: true,
-		  backgroundColor: '#ffffff',
-		
-		  // ✅ 핵심: overflow 포함 전체 크기 캡처
-		  width: captureW,
-		  height: captureH,
-		
-		  x: 0, y: 0, scrollX: 0, scrollY: 0,
-		
-		  // ✅ windowWidth/Height도 캡처 크기와 맞추는 게 안정적
-		  windowWidth: captureW,
-		  windowHeight: captureH,
-		
-		onclone: (clonedDoc) => {
-			// ✅ end-date(span left:100%)만 라벨 스타일 조정
-		  clonedDoc.querySelectorAll('.schedule-section span').forEach(sp => {
-		    const st = (sp.getAttribute('style') || '').replace(/\s+/g,'');
-		    if (!st.includes('left:100%')) return; // end-date만
-		
-		    // 🚨 1. 위치 속성 명시 (z-index가 먹히도록 강제)
-		    sp.style.position = 'absolute'; 
-		
-		    // 🚨 2. 가로 위치: 막대기 100% 끝에서 margin으로 8px 띄움
-			sp.style.left = '100%';
-			sp.style.right = 'auto';
-			sp.style.marginLeft = '14px'; // 8 → 14 (필요하면 18~22까지)
-		
-		    // 🚨 3. 세로 위치: transform을 안 쓰는 대신 top과 margin-top으로 강제 중앙 정렬
-		    sp.style.transform = 'none';  // 캡처 라이브러리 버그의 주범 제거!!
-		    sp.style.top = '50%';         
-		    sp.style.marginTop = '-12px'; // 글씨 높이의 절반만큼 위로 끌어올림 (높이에 따라 -10px ~ -14px 조절 가능)
-		
-		    // 🚨 4. 최상단 레이어 고정 및 줄바꿈 방지
-		    sp.style.zIndex = '9999';
-		    sp.style.whiteSpace = 'nowrap';
-		
-		    // 디자인 유지
-		    sp.style.background = 'rgba(255,255,255,0.95)'; // 투명도 살짝 낮춤(글씨 더 잘보이게)
-		    sp.style.padding = '2px 6px'; // 위아래 패딩 살짝 추가
-		    sp.style.borderRadius = '6px';
-		    sp.style.boxShadow = '0 1px 3px rgba(0,0,0,0.2)'; // 그림자 살짝 진하게
-		    sp.style.color = '#475569'; // 글자색 명시 (캡처 시 날아감 방지)
-		  });
-		}
+        // 폰트 및 레이아웃이 완전히 자리 잡을 수 있도록 아주 잠깐(0.3초) 대기
+        await new Promise(r => setTimeout(r, 300));
 
-		});
+        // 🌟 [개선 3] 캡처 라이브러리 버그를 덮으려던 onclone 억지 조작 코드를 전부 삭제!
+        const canvas = await html2canvas(printContainer, {
+          scale: 2, // 2배수 고화질 캡처
+          useCORS: true,
+          backgroundColor: '#ffffff',
+          logging: false // 콘솔창 지저분해지는 것 방지
+        });
 
         const link = document.createElement('a');
         link.href = canvas.toDataURL('image/png');
@@ -915,6 +845,7 @@
         console.error("Image Save Error:", err); 
         alert("이미지 생성 실패: " + err.message); 
     } finally { 
+        // 성공하든 실패하든 임시 컨테이너는 깔끔하게 지우기
         document.body.removeChild(printContainer); 
         if(typeof hideAdminLoading === 'function') hideAdminLoading(); 
     }
