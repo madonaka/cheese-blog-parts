@@ -414,6 +414,7 @@
     let bugCreateLogs = [], bugFixLogs = [];
     let publishLogs = [];
 	let reportTagLogs = []; 
+	let projectTagLogs = [];   // ✅ 프로젝트 마감 로그
     let doneLogs = [];
     let postCount = 0;
 
@@ -446,6 +447,17 @@
       if (byGoalLabel) return byGoalLabel;
       return title || content.replace(/\n/g, " ").trim();
     }
+  function escapeHtml(s){
+	  return (s ?? "").toString()
+	    .replace(/&/g,"&amp;")
+	    .replace(/</g,"&lt;")
+	    .replace(/>/g,"&gt;")
+	    .replace(/"/g,"&quot;")
+	    .replace(/'/g,"&#39;");
+	}
+	function toHtmlWithNewlines(text){
+	  return escapeHtml(text).replace(/\r?\n/g, "<br/>");
+	}
 
     targetLogs.forEach(log => {
       const tag = getTag(log);
@@ -457,6 +469,7 @@
       const isBugCreate = tag === '버그' || tag === 'BugReport' || title.includes('🐞') || title.includes('버그') || content.includes('🐞 버그 리포트 생성됨:');
       const isPublishBase = (tag === 'Publish');
       const isReportTag = /(^|[,\s])report($|[,\s])/i.test(tag);
+	  const isProjectTag = /(^|[,\s])project($|[,\s])/i.test(tag); // ✅ 추가
       const isIdeaRealize = tag === 'Realization' || title.includes('아이디어 실현') || title.includes('🚀') || content.includes('아이디어가 구체적인 작업으로 변환');
       const publishText = (title + "\n" + content);
       const isRealPublish = isPublishBase && /발행/.test(publishText) && !/초안|수정|업데이트/.test(publishText);
@@ -466,6 +479,7 @@
       if (isIdeaRealize){ ideaRealizeLogs.push(log); return; }
       if (isBugCreate)  { bugCreateLogs.push(log);  return; }
       if (isPublish) { postCount++; publishLogs.push(log); return; }
+	  if (isProjectTag) { projectTagLogs.push(log); return; }  // ✅ report보다 위에 두는 걸 추천
       if (isReportTag) { reportTagLogs.push(log); return; }
 
       const isBugFix = BUG_IDS.has(relId) && (tag === 'Done' || tag === '완료' || title.includes('완료') || title.includes('해결') || title.includes('Fix') || content.includes('완료') || content.includes('해결'));
@@ -527,6 +541,26 @@
     else bottleneckHtml += `</ul>`;
 
     let velocityHtml = `<ul style="padding-left: 20px; margin: 0; color: #333; line-height: 1.6;">`;
+	if (projectTagLogs.length > 0) {
+	  velocityHtml += `
+		<li style="margin-bottom:10px; list-style:none;">
+		  <div style="
+			border:2px solid #f59e0b;
+			background:#fffbeb;
+			border-radius:12px;
+			padding:12px 14px;
+			font-weight:900;
+			color:#92400e;
+		  ">
+			🏁 <b>[Project Closed]</b> 프로젝트 마감 ${projectTagLogs.length}건
+			<div style="margin-top:8px; padding-left:10px; color:#1e293b; font-weight:700;">
+			  ${projectTagLogs.slice(0,5).map(p => `- ${pickMeaningTitle(p)}`).join('<br/>')}
+			  ${projectTagLogs.length > 5 ? `<br/>...외 ${projectTagLogs.length-5}건` : ``}
+			</div>
+		  </div>
+		</li>
+	  `;
+	}
     if (publishLogs.length > 0) {
       velocityHtml += `
         <li style="margin-bottom:6px; color:#2563eb; font-weight:800; list-style:none;">
@@ -565,7 +599,13 @@
         <li style="margin-bottom:6px; color:#0f172a; font-weight:800; list-style:none;">
           🏷️ <b>Report</b> 꼭 기록할 사항 ${reportTagLogs.length}건
           <div style="margin-top:6px; padding-left:14px; color:#1e293b; font-weight:600;">
-            ${reportTagLogs.slice(0,5).map(r => `- ${pickMeaningTitle(r)}`).join('<br/>')}
+            ${reportTagLogs.slice(0,5).map(r => {
+			  const t = getTitle(r).trim();
+			  const c = getContent(r).trim();
+			  const header = t ? escapeHtml(t) : "📝 (제목 없음)";
+			  const body = c ? toHtmlWithNewlines(c) : "(내용 없음)";
+			  return `- <b>${header}</b><div style="margin:4px 0 10px 0; padding-left:12px; color:#475569; font-weight:600;">${body}</div>`;
+			}).join('')}
             ${reportTagLogs.length > 5 ? `<br/>...외 ${reportTagLogs.length-5}건` : ``}
           </div>
         </li>
