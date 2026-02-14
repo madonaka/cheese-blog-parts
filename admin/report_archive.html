@@ -1458,6 +1458,124 @@ async function confirmAndSaveAIProposal() {
         if(typeof hideAdminLoading==='function') hideAdminLoading();
     }
 }
+
+// -------------------------------------------------------------
+// 🔥 [신규] 기획서 열람 시 실시간 Todo 리스트(Task) 연동 기능
+// -------------------------------------------------------------
+const originalOpenDocModal = window.openDocModal; // 기존 모달 여는 함수 가로채기(Hook)
+
+window.openDocModal = function(docId, title, content, type) {
+    // 1. 기존 방식대로 기획서 모달을 먼저 엽니다.
+    if(typeof originalOpenDocModal === 'function') {
+        originalOpenDocModal(docId, title, content, type);
+    }
+
+    // 2. 만약 열린 문서가 '기획서'이고, DB에 정식으로 저장된 문서(docId가 존재)라면?
+    // (AI 미리보기 상태일 때는 아직 DB에 없으므로 작동하지 않습니다.)
+    if (type === '기획서' && docId) {
+        const docContent = document.getElementById('doc-content');
+        if(docContent) {
+            // 하단에 Todo 리스트가 들어갈 자리를 미리 만들어 둡니다.
+            const todoContainer = document.createElement('div');
+            todoContainer.id = 'realtime-todo-container';
+            todoContainer.innerHTML = '<div style="text-align:center; padding: 30px; color:#64748b; font-weight:bold;">⏳ 현장의 실시간 진행 현황을 불러오는 중입니다...</div>';
+            docContent.appendChild(todoContainer);
+
+            // 구글 DB에서 최신 데이터 긁어오기 실행!
+            fetchAndRenderRealtimeTodos(docId);
+        }
+    }
+};
+
+async function fetchAndRenderRealtimeTodos(proposalId) {
+    try {
+        // 구글 앱 스크립트 API를 호출해 최신 목표와 할 일 데이터를 가져옵니다.
+        const res = await fetch(window.CHEESE_ADMIN_API_BASE + "?mode=getAllData");
+        const json = await res.json();
+        
+        if(json.result !== "success") throw new Error("데이터 로드 실패");
+        
+        const goals = json.goals || [];
+        const tasks = json.tasks || [];
+        
+        // 1. 이 기획서(proposalId)와 연결된 '중간 목표(공정)' 찾기
+        const relatedMidGoals = goals.filter(g => g['비고'] === proposalId);
+        const midGoalIds = relatedMidGoals.map(g => g['ID']);
+        
+        if (midGoalIds.length === 0) {
+            document.getElementById('realtime-todo-container').innerHTML = ''; 
+            return;
+        }
+        
+        // 2. 그 공정들에 매달린 '실제 할 일(Tasks)' 모두 찾기
+        const relatedTasks = tasks.filter(t => midGoalIds.includes(t['연결_중간목표ID']));
+        
+        // 날짜(기한)가 빠른 순서대로 정렬
+        relatedTasks.sort((a, b) => (a['기한'] || '').localeCompare(b['기한'] || ''));
+
+        // 3. UI/UX 렌더링 (예쁜 표로 그리기)
+        let html = `
+        <div style="margin-top: 50px; padding-top: 25px; border-top: 2px dashed #cbd5e1; font-family:'Pretendard','Malgun Gothic',sans-serif;">
+            <h3 style="color: #4f46e5; margin-bottom: 16px; font-size: 1.3rem; display:flex; align-items:center; gap:8px;">
+                <span>🔥</span> 실제 진행 중인 세부 Todo 리스트 (실시간)
+            </h3>
+        `;
+        
+        if (relatedTasks.length === 0) {
+            html += `<div style="background:#f8fafc; padding:20px; border-radius:8px; color:#64748b; font-size:0.95rem; text-align:center;">
+                        아직 현장에서 추가된 세부 할 일이 없습니다. <br><b>할 일 관리(Todo)</b> 메뉴에서 이 프로젝트에 할 일을 추가해 보세요!
+                     </div>`;
+        } else {
+            html += `
+            <div style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+                <table style="width:100%; border-collapse:collapse; text-align:left;">
+                    <thead>
+                        <tr style="background:#f8fafc; color:#475569; font-size:0.9rem;">
+                            <th style="padding:12px 15px; border-bottom:1px solid #e2e8f0; width: 80px; text-align:center;">상태</th>
+                            <th style="padding:12px 15px; border-bottom:1px solid #e2e8f0;">작업명</th>
+                            <th style="padding:12px 15px; border-bottom:1px solid #e2e8f0; width: 120px;">기한</th>
+                            <th style="padding:12px 15px; border-bottom:1px solid #e2e8f0; width: 250px;">연결된 공정 (중간목표)</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+            
+            relatedTasks.forEach(t => {
+                const status = t['상태'] || '대기';
+                let badgeColor = '#94a3b8'; // 대기(회색)
+                if(status === '진행중') badgeColor = '#3b82f6'; // 파란색
+                if(status === '완료') badgeColor = '#22c55e'; // 초록색
+                
+                // 중간 목표 이름 매핑
+                const parentGoal = relatedMidGoals.find(g => g['ID'] === t['연결_중간목표ID']);
+                const parentName = parentGoal ? parentGoal['제목'] : '-';
+                
+                html += `
+                    <tr style="border-bottom:1px solid #f1f5f9; font-size:0.95rem; background:#fff;">
+                        <td style="padding:12px 15px; text-align:center;">
+                            <span style="background:${badgeColor}; color:#fff; padding:4px 10px; border-radius:12px; font-size:0.8rem; font-weight:bold;">
+                                ${status}
+                            </span>
+                        </td>
+                        <td style="padding:12px 15px; color:#1e293b; font-weight:500;">${t['제목']}</td>
+                        <td style="padding:12px 15px; color:#64748b; font-size:0.9rem;">${t['기한'] || '-'}</td>
+                        <td style="padding:12px 15px; color:#64748b; font-size:0.85rem;">${parentName}</td>
+                    </tr>`;
+            });
+            
+            html += `</tbody></table></div>`;
+        }
+        
+        html += `</div>`;
+        document.getElementById('realtime-todo-container').innerHTML = html;
+        
+    } catch(e) {
+        console.error(e);
+        document.getElementById('realtime-todo-container').innerHTML = `
+            <div style="background:#fee2e2; color:#ef4444; padding:15px; border-radius:8px; text-align:center; margin-top:20px;">
+                ❌ 실시간 데이터를 불러오는 중 오류가 발생했습니다.
+            </div>`;
+    }
+}
 </script>
 </body>
 </html>
