@@ -401,7 +401,11 @@
       </div>
 
       <div class="dashboard-layout">
-        
+        <div style="text-align: right; margin-bottom: 10px;">
+            <button id="btn-toggle-completed" class="btn" onclick="toggleCompletedGoals()" style="background-color: #f1f5f9; color: #475569; border: 1px solid #cbd5e1;">
+                ✅ 완료된 항목 숨기기 (ON)
+            </button>
+        </div>
         <div class="view-tabs">
           <button class="view-tab-btn active" onclick="switchView('card')" id="btn-view-card">🗂 계층형</button>
           <button class="view-tab-btn" onclick="switchView('board')" id="btn-view-board">📋 게시판</button>
@@ -409,7 +413,7 @@
           <button class="view-tab-btn" onclick="switchView('idea')" id="btn-view-idea">💡 아이디어 함</button>
           <button class="view-tab-btn" onclick="switchView('log')" id="btn-view-log">📝 작업 로그</button>
         </div>
-
+        
         <div id="view-card-container"><div id="goal-tree-root"><div class="goal-card" style="padding:40px; text-align:center; color:#94a3b8; background:#f1f5f9;">데이터 로딩 중...</div></div></div>
         
         <div id="view-board-container" style="display:none;">
@@ -2230,6 +2234,46 @@ async function saveCompletionReport() {
     } catch(e) { alert("통신 오류 발생"); }
     finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); }
 }
+
+  // 🚨 [신규] 완료된 항목 숨기기/보기 전역 변수 (기본값: 숨기기)
+window.hideCompleted = true; 
+
+function toggleCompletedGoals() {
+    window.hideCompleted = !window.hideCompleted;
+    const btn = document.getElementById('btn-toggle-completed');
+    if(window.hideCompleted) {
+        btn.innerHTML = "✅ 완료된 항목 숨기기 (ON)";
+        btn.style.backgroundColor = "#f1f5f9";
+    } else {
+        btn.innerHTML = "☑️ 완료된 항목 모두 보기";
+        btn.style.backgroundColor = "#e2e8f0";
+    }
+    // 데이터 다시 그리기 실행
+    if(typeof loadAllData === 'function') loadAllData(); 
+}
+
+// 🚨 [핵심] 기존 서버에서 데이터를 받아올 때, '완료' 상태인 것을 걸러내는 가로채기(Hook)
+const originalFetch = window.fetch;
+window.fetch = async function(...args) {
+    const response = await originalFetch(...args);
+    
+    // API 호출이 getAllData (목록 불러오기) 일 때만 작동
+    if (args[0] && args[0].includes("mode=getAllData")) {
+        const clone = response.clone();
+        try {
+            const data = await clone.json();
+            // hideCompleted가 켜져 있으면 '상태'가 '완료'인 데이터를 강제로 빼버립니다!
+            if (window.hideCompleted && data.goals && data.tasks) {
+                data.goals = data.goals.filter(g => g['상태'] !== '완료');
+                data.tasks = data.tasks.filter(t => t['상태'] !== '완료');
+                
+                // 가로챈 데이터를 새로 포장해서 리턴
+                return new Response(JSON.stringify(data), { status: 200, headers: response.headers });
+            }
+        } catch(e) { console.error(e); }
+    }
+    return response;
+};
 </script>
 </body>
 </html>
