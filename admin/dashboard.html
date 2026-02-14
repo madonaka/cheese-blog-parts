@@ -2,300 +2,375 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <title>대시보드 Cheese Lab Admin</title>
+  <title>대시보드 · Cheese Admin</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-
-  <!-- CSS -->
   <link rel="stylesheet" href="./admin.css" />
-</head>
-<body>
-  <!-- 권한별 접근 제어 -->
-  <script>
-    window.CHEESE_ADMIN_REQUIRED_ROLES = ["EMP", "MGR", "FIN", "ADMIN"];
-  </script>
-  
-  <div class="admin-shell">
-    <!-- 상단 헤더 -->
-    <div id="admin-header-slot"></div>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script> 
+  <style>
+    /* =========================================
+       Modern Dashboard Specific Styles
+       (admin.css의 시스템을 훼손하지 않고 확장)
+    ========================================= */
+    .dash-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem; }
+    .dash-title .t { font-size: 1.5rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.02em; line-height: 1.2; }
+    .dash-title .s { font-size: 0.85rem; color: var(--text-sub); margin-top: 0.25rem; font-weight: 500; }
     
+    .status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; font-size: 0.8rem; font-weight: 600; background: #fff; border: 1px solid var(--border); color: var(--text-sub); box-shadow: 0 1px 2px rgba(0,0,0,0.02); }
+
+    /* Bento Grid Layout */
+    .bento-layout { display: grid; grid-template-columns: repeat(12, 1fr); gap: 1.5rem; align-items: start; }
+    .bento-main { grid-column: span 8; display: flex; flex-direction: column; gap: 1.5rem; }
+    .bento-side { grid-column: span 4; display: flex; flex-direction: column; gap: 1.5rem; }
+
+    /* Custom Card Enhancements */
+    .card { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px -1px rgba(0, 0, 0, 0.02); padding: 1.5rem; border-radius: 1rem; }
+    .card-header { border-bottom: none; padding-bottom: 0; margin-bottom: 1.2rem; }
+    .card-title { font-size: 1.1rem; font-weight: 700; letter-spacing: -0.01em; color: #0f172a; }
+    .card-link { font-size: 0.8rem; color: var(--text-sub); text-decoration: none; font-weight: 600; transition: color 0.2s; }
+    .card-link:hover { color: var(--primary); }
+
+    /* Feed List (Notice, Rejected) */
+    .feed-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.75rem; }
+    .feed-item { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; padding: 0.75rem; border-radius: 0.75rem; background: #f8fafc; border: 1px solid transparent; transition: all 0.2s; }
+    .feed-item:hover { background: #fff; border-color: var(--border); box-shadow: 0 2px 8px rgba(0,0,0,0.04); transform: translateY(-1px); }
+    .feed-content { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
+    .feed-title { font-weight: 600; font-size: 0.9rem; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .feed-meta { font-size: 0.75rem; color: var(--text-sub); }
+
+    /* Tags */
+    .tag { display: inline-flex; padding: 4px 8px; border-radius: 6px; font-size: 0.7rem; font-weight: 700; white-space: nowrap; }
+    .tag.warn { background: #fef3c7; color: #d97706; }
+    .tag.bad { background: #fee2e2; color: #dc2626; }
+    .tag.info { background: #e0e7ff; color: #4f46e5; }
+    .tag.ok { background: #dcfce7; color: #16a34a; }
+
+    /* Modern Goal Tree (Notion Style) */
+    .goal-group { border: 1px solid var(--border); border-radius: 0.75rem; margin-bottom: 1rem; background: #fff; overflow: hidden; transition: border-color 0.2s; }
+    .goal-group:hover { border-color: #cbd5e1; }
+    .goal-header { padding: 1rem 1.2rem; display: flex; justify-content: space-between; align-items: center; background: #f8fafc; cursor: pointer; border-bottom: 1px solid transparent; }
+    .goal-group.is-open .goal-header { border-bottom-color: var(--border); }
+    .goal-header-title { font-weight: 700; font-size: 0.95rem; color: #0f172a; display: flex; align-items: center; gap: 0.5rem; }
+    .goal-header-title::before { content: '🎯'; font-size: 1.1rem; }
+    .goal-date { font-size: 0.75rem; color: var(--text-sub); background: #f1f5f9; padding: 2px 8px; border-radius: 4px; border: 1px solid #e2e8f0; }
+
+    .mid-goal { border-top: 1px dashed var(--border); }
+    .mid-goal:first-child { border-top: none; }
+    .mid-header { padding: 0.75rem 1.2rem; font-size: 0.85rem; font-weight: 700; color: #475569; background: #fff; display: flex; align-items: center; gap: 0.4rem; }
+    .mid-header::before { content: '↳'; color: #94a3b8; }
+
+    /* Task List (Clean Minimalist) */
+    .task-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 1.2rem 0.6rem 2.5rem; font-size: 0.9rem; transition: background 0.15s; }
+    .task-item:hover { background: #f8fafc; }
+    .task-item:last-child { padding-bottom: 1rem; }
+    
+    .checkbox { width: 18px; height: 18px; border: 2px solid #cbd5e1; border-radius: 6px; cursor: pointer; position: relative; transition: all 0.2s; flex-shrink: 0; }
+    .checkbox:hover { border-color: var(--primary); }
+    .checkbox.done { background: var(--primary); border-color: var(--primary); }
+    .checkbox.done::after { content: ''; position: absolute; left: 5px; top: 2px; width: 4px; height: 8px; border: solid white; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+    .task-text { color: #334155; font-weight: 500; flex: 1; }
+    .task-text.done { color: #94a3b8; text-decoration: line-through; }
+
+    /* Idea Cards */
+    .idea-card { padding: 1rem; border: 1px solid var(--border); border-radius: 0.75rem; margin-bottom: 0.75rem; cursor: pointer; transition: all 0.2s; background: #fff; position: relative; overflow: hidden; }
+    .idea-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: #a855f7; }
+    .idea-card:hover { transform: translateX(2px); border-color: #d8b4fe; box-shadow: 0 4px 12px rgba(168,85,247,0.08); }
+    .idea-title { font-weight: 700; font-size: 0.9rem; margin-bottom: 0.4rem; color: #1e293b; }
+    .idea-desc { font-size: 0.8rem; color: #64748b; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+    /* Skeleton */
+    .shimmer { background: #f1f5f9; border-radius: 8px; overflow: hidden; position: relative; }
+    .shimmer::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.6), transparent); animation: load 1.2s infinite; }
+    @keyframes load { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+
+    @media (max-width: 1024px) {
+      .bento-main, .bento-side { grid-column: span 12; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="admin-shell">
+    <div id="admin-header-slot"></div>
+
     <div class="admin-main">
-      <!-- 좌측 네비게이션 -->
       <aside id="admin-menu-slot" class="admin-sidebar"></aside>
 
-      <!-- 오른쪽 컨텐츠 영역 -->
       <main>
-        <!-- 1) 대시보드 -->
-        <section
-          id="section-dashboard"
-          class="admin-section active"
-          data-section="dashboard"
-        >
-          <div class="card">
-            <div class="card-header">
-              <div>
-                <div class="card-title">요약</div>
-                <div class="card-subtitle">
-                  구글 시트에서 불러온 퀴즈 세트 통계와 최근 기록을 한눈에 보는 화면
-                </div>
-              </div>
-              <button class="btn btn-primary" id="btn-refresh-all">
-                🔄 전체 새로고침
-              </button>
-            </div>
+        <header class="dash-header">
+          <div class="dash-title">
+            <h1 class="t">대시보드</h1>
+            <p class="s">오늘의 프로젝트 진행 상황과 아이디어를 확인하세요.</p>
+          </div>
+          <div class="status-pill">
+            <span style="display:inline-block; width:8px; height:8px; background:#10b981; border-radius:50%;"></span>
+            <span id="nowPill">데이터 동기화 중...</span>
+          </div>
+        </header>
 
-            <div class="dashboard-grid" id="dashboard-stats">
-              <!-- JS에서 채워 넣음 -->
-            </div>
-            <div class="small-help">
-              ※ 지금은 더미 데이터 기준으로 표시되고 있음.  
-              Apps Script 웹앱 연결 후, 실제 시험 통계로 바꿀 예정.
+        <section class="bento-layout">
+          
+          <div class="bento-main">
+            <div class="card" style="padding: 0; overflow: hidden;">
+              <div class="card-header" style="padding: 1.5rem 1.5rem 0.5rem; display: flex; align-items: center; justify-content: space-between;">
+                <h2 class="card-title">🗂 프로젝트 및 할 일</h2>
+                <a href="./todo_manage.html" class="card-link">전체 관리 →</a>
+              </div>
+              <div style="padding: 0 1.5rem 1.5rem;" id="goalTreeContainer">
+                <div class="shimmer" style="height: 120px; width: 100%; margin-bottom: 1rem;"></div>
+                <div class="shimmer" style="height: 80px; width: 100%;"></div>
+              </div>
             </div>
           </div>
 
-          <div class="card">
-            <div class="card-header">
-              <div>
-                <div class="card-title">최근 등록된 examKey</div>
-                <div class="card-subtitle">
-                  자주 사용하는 연습문제 세트만 간단히 확인
-                </div>
+          <div class="bento-side">
+            <div class="card">
+              <div class="card-header">
+                <h2 class="card-title">📌 공지사항</h2>
+                <a href="./board.html" class="card-link">더보기 →</a>
               </div>
-              <button
-                class="btn btn-ghost"
-                data-target="quizzes"
-                data-jump-nav
-              >
-                ➜ 퀴즈 세트 관리로 이동
-              </button>
+              <ul class="feed-list" id="noticeList">
+                <li class="feed-item"><div class="shimmer" style="height:40px; width:100%;"></div></li>
+              </ul>
             </div>
 
-            <div class="table-wrapper">
-              <table class="admin-table" id="dashboard-recent-table">
-                <thead>
-                  <tr>
-                    <th>examKey</th>
-                    <th>제목</th>
-                    <th>분류</th>
-                    <th>문항 수</th>
-                    <th>최근 수정</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <!-- JS에서 채움 -->
-                </tbody>
-              </table>
+            <div class="card">
+              <div class="card-header">
+                <h2 class="card-title">💡 아이디어 뱅크</h2>
+                <a href="./todo_manage.html" class="card-link">전체보기 →</a>
+              </div>
+              <div id="ideaBoxContainer">
+                <div class="shimmer" style="height:80px; width:100%; margin-bottom:0.75rem;"></div>
+                <div class="shimmer" style="height:80px; width:100%;"></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <h2 class="card-title">🚨 반려된 요청</h2>
+                <a href="./my-requests.html?filter=rejected" class="card-link">내역 보기 →</a>
+              </div>
+              <ul class="feed-list" id="myRejectedList">
+                <li style="font-size:0.85rem; color:var(--text-sub); padding:0.5rem 0;">데이터 로딩 중...</li>
+              </ul>
             </div>
           </div>
+
         </section>
-
-        <!-- 2) 퀴즈 세트 관리 -->
-        <section
-          id="section-quizzes"
-          class="admin-section"
-          data-section="quizzes"
-        >
-          <div class="card">
-            <div class="card-header">
-              <div>
-                <div class="card-title">퀴즈 세트 목록</div>
-                <div class="card-subtitle">
-                  구글 시트에 있는 examKey / 제목 / 시트 탭 등을 한눈에 관리
-                </div>
-              </div>
-              <button class="btn btn-primary" id="btn-reload-quizzes">
-                🔄 목록 새로고침
-              </button>
-            </div>
-
-            <div class="field-row">
-              <div class="field">
-                <label for="filter-period">시대 / 카테고리 필터</label>
-                <select id="filter-period">
-                  <option value="">전체</option>
-                  <option value="한국사-통사">한국사 통사</option>
-                  <option value="한국사-근현대">한국사 근현대</option>
-                  <option value="일본사">일본사</option>
-                  <!-- 필요하면 여기 계속 추가 -->
-                </select>
-              </div>
-              <div class="field">
-                <label for="filter-search">검색 (examKey / 제목)</label>
-                <input
-                  type="text"
-                  id="filter-search"
-                  placeholder="예: khs-era-01 / 시대 순서"
-                />
-              </div>
-            </div>
-
-            <div class="table-wrapper">
-              <table class="admin-table" id="quiz-table">
-                <thead>
-                  <tr>
-                    <th style="min-width: 120px;">examKey</th>
-                    <th style="min-width: 180px;">제목</th>
-                    <th>시대·분류</th>
-                    <th>출제 개수</th>
-                    <th>시트 탭 이름</th>
-                    <th>비고</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <!-- JS에서 렌더링 -->
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-header">
-              <div>
-                <div class="card-title">선택한 examKey 빠른 복붙용</div>
-                <div class="card-subtitle">
-                  블로그 포스트용 `.cheese-quiz` HTML 코드를 바로 복사해서 사용
-                </div>
-              </div>
-              <button class="btn" id="btn-copy-snippet">
-                📋 코드 복사
-              </button>
-            </div>
-
-            <div class="field">
-              <label for="snippet-output">삽입용 HTML 코드</label>
-              <textarea
-                id="snippet-output"
-                spellcheck="false"
-              ></textarea>
-              <div class="small-help">
-                시험 세트 행을 클릭하면 위 코드가 자동으로 갱신됨.  
-                필요에 따라 `data-limit`, `data-period` 속성을 수정해서 사용.
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- 3) 도구/설정 화면 -->
-        <section
-          id="section-tools"
-          class="admin-section"
-          data-section="tools"
-        >
-          <div class="card">
-            <div class="card-header">
-              <div>
-                <div class="card-title">연결 정보</div>
-                <div class="card-subtitle">
-                  Apps Script 웹앱 / 스프레드시트 ID 등 관리자용 메모 공간
-                </div>
-              </div>
-            </div>
-
-            <div class="field-row">
-              <div class="field">
-                <label>퀴즈 조회용 Apps Script URL</label>
-                <input
-                  type="text"
-                  id="config-api-base"
-                  placeholder="https://script.google.com/macros/s/XXXXX/exec"
-                />
-                <div class="small-help">
-                  실제로는 코드 안의 <code>CHEESE_ADMIN_API_BASE</code> 상수와
-                  일치해야 함.  
-                  <br />여기는 메모/참고용 입력 필드.
-                </div>
-              </div>
-            </div>
-
-            <p class="danger-text">
-              ※ 이 페이지는 순수 프론트엔드이기 때문에,
-              <strong>시트 수정/삭제 같은 기능은 현재 포함되어 있지 않음</strong>.  
-              수정/삭제는 스프레드시트 자체에서 하거나,  
-              나중에 별도 보호된 웹앱(인증 포함)을 만든 뒤 연결하는 편이 안전함.
-            </p>
-          </div>
-        </section>
-        <section class="admin-section" data-section="tools">
-  <h2 class="admin-section-title">도구 · 설정</h2>
-
-  <div class="admin-card">
-    <div class="admin-card-header">
-      <h3 class="admin-card-title">퀴즈 API 테스트</h3>
-      <p class="admin-card-desc">
-        Apps Script 웹앱 URL과 파라미터를 넣고 실제로 어떤 JSON이 나오는지 확인하는 도구입니다.
-      </p>
-    </div>
-
-    <form id="quiz-test-form" class="admin-form-grid">
-      <label class="admin-field">
-        <span class="admin-label">API URL</span>
-        <input
-          id="quiz-api-url"
-          type="text"
-          class="admin-input"
-          value="https://script.google.com/macros/s/AKfycbwuvooqtlk6c_Nv2_VgforohP5twqTLWGu5j8uf56D3qvKsUnioAhfbkNdTKIsQaaQF/exec"
-        />
-      </label>
-
-      <label class="admin-field">
-        <span class="admin-label">limit</span>
-        <input
-          id="quiz-limit"
-          type="number"
-          class="admin-input"
-          value="5"
-          min="1"
-          max="50"
-        />
-      </label>
-
-      <label class="admin-field">
-        <span class="admin-label">period</span>
-        <input
-          id="quiz-period"
-          type="text"
-          class="admin-input"
-          placeholder="예: 한국사-통사"
-        />
-      </label>
-
-      <label class="admin-field">
-        <span class="admin-label">topic</span>
-        <input
-          id="quiz-topic"
-          type="text"
-          class="admin-input"
-          placeholder="예: 시대순서"
-        />
-      </label>
-
-      <div class="admin-field admin-field-full">
-        <button type="submit" class="admin-button primary">
-          테스트 호출
-        </button>
-      </div>
-    </form>
-
-    <pre id="quiz-test-result" class="admin-code-preview">
-// 위에서 '테스트 호출'을 누르면
-// 여기 JSON 결과가 표시됩니다.
-    </pre>
-  </div>
-</section>
       </main>
     </div>
   </div>
 
-<!-- 페이지별 제목/뱃지 설정 -->
-<script>
-  window.CHEESE_ADMIN_PAGE_SUBTITLE = "대시보드";
-  window.CHEESE_ADMIN_PAGE_BADGE    = "dashboard";
-  window.CHEESE_ADMIN_ACTIVE_PAGE = "dashboard";
-</script>
-<script>
-  window.CHEESE_ADMIN_API_BASE =
-    "https://script.google.com/macros/s/AKfycbwuvooqtlk6c_Nv2_VgforohP5twqTLWGu5j8uf56D3qvKsUnioAhfbkNdTKIsQaaQF/exec";
-</script>
-<script src="./admin-common.js"></script>
-  
+  <script src="./admin-common.js"></script>
+  <script>
+    const DASHBOARD_API = 'https://script.google.com/macros/s/AKfycbyE0uUpF2VdePr6AC6VcK7UOI4y5zvkUfMHlGHEiNKiGiiAjSzr172140GtV5MpiwzaSg/exec';
+    const TODO_API = "https://script.google.com/macros/s/AKfycbwn1TrLeSIAe570LRWMJxRzx88u3LQYF38Kme9WhMd-YQsrMsSggrNy3I_2SGKGXTpS/exec";
+
+    function pad2(n){ return String(n).padStart(2,'0'); }
+    function ymd(d){ return d.getFullYear()+'. '+pad2(d.getMonth()+1)+'. '+pad2(d.getDate()); }
+    function hm(d){ return pad2(d.getHours())+':'+pad2(d.getMinutes()); }
+    function escapeHtml(s){ return String(s ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'","&#039;"); }
+    
+    function setNow(){ 
+        const now = new Date(); 
+        document.getElementById('nowPill').innerHTML = `최근 동기화: ${hm(now)}`; 
+    }
+
+    function mountShell(){
+      if(window.renderAdminHeader) window.renderAdminHeader({ mountId:'admin-header-slot', badgeText:'dashboard', subtitle:'통합 대시보드' });
+      if(window.renderAdminMenu) window.renderAdminMenu({ mountId:'admin-menu-slot', active:'dashboard' });
+    }
+
+    async function toggleStatus(id, newStatus, element) {
+        if(!confirm(newStatus === '완료' ? '이 작업을 완료 처리하시겠습니까?' : '완료를 취소하시겠습니까?')) return;
+        
+        // Optimistic UI Update (부드러운 시각적 피드백)
+        const textEl = element.nextElementSibling;
+        if(newStatus === '완료') {
+            element.classList.add('done');
+            textEl.classList.add('done');
+        } else {
+            element.classList.remove('done');
+            textEl.classList.remove('done');
+        }
+
+        try {
+            await fetch(TODO_API, { method: "POST", body: JSON.stringify({ mode: "updateStatus", id: id, status: newStatus }) });
+            loadDashboard(); 
+        } catch (e) {
+            console.error("Status update failed", e);
+            alert("상태 업데이트에 실패했습니다.");
+            loadDashboard(); // 롤백
+        }
+    }
+
+    function renderNotices(items){
+      const ul = document.getElementById('noticeList');
+      ul.innerHTML = '';
+      if(!items || !items.length){ ul.innerHTML = '<li style="font-size:0.85rem; color:#64748b;">등록된 공지사항이 없습니다.</li>'; return; }
+      items.slice(0,3).forEach(it=>{
+        const title = it.title || '';
+        const date = it.date || (it.updatedAt ? String(it.updatedAt).slice(0,10) : '');
+        const level = (it.level || '').toLowerCase();
+        
+        let tagHtml = '<span class="tag info">안내</span>';
+        if(level === 'danger') tagHtml = '<span class="tag bad">필독</span>';
+        if(level === 'warn') tagHtml = '<span class="tag warn">중요</span>';
+
+        const li = document.createElement('li'); 
+        li.className = 'feed-item';
+        if(it.noticeId) { li.style.cursor='pointer'; li.onclick=()=>location.href=`./notice.html?id=${it.noticeId}`; }
+        
+        li.innerHTML = `
+          <div class="feed-content">
+            <div class="feed-title">${escapeHtml(title)}</div>
+            <div class="feed-meta">${escapeHtml(date.replace(/-/g, '.'))}</div>
+          </div>
+          <div>${tagHtml}</div>
+        `;
+        ul.appendChild(li);
+      });
+    }
+
+    function renderMyRejected(items){
+      const ul = document.getElementById('myRejectedList');
+      ul.innerHTML = '';
+      if(!items || !items.length){ ul.innerHTML = '<li style="font-size:0.85rem; color:#64748b;">최근 반려된 결재/요청이 없습니다. 🎉</li>'; return; }
+      items.slice(0,3).forEach(it=>{
+        const li = document.createElement('li'); 
+        li.className = 'feed-item';
+        li.innerHTML = `
+          <div class="feed-content">
+            <div class="feed-title">${escapeHtml(it.title)}</div>
+            <div class="feed-meta">${escapeHtml(it.date||'')}</div>
+          </div>
+          <div><span class="tag bad">반려</span></div>
+        `;
+        ul.appendChild(li);
+      });
+    }
+
+    // 🚀 모던화된 Goal & Task Tree Widget
+    function renderGoalTreeWidget(goals, tasks) {
+      const root = document.getElementById('goalTreeContainer');
+      root.innerHTML = "";
+      
+      const bigGoals = goals.filter(g => g['유형'] === '큰 목표');
+      if(bigGoals.length === 0) {
+        root.innerHTML = '<div style="font-size:0.9rem; color:#64748b; text-align:center; padding: 2rem 0;">등록된 프로젝트 목표가 없습니다.</div>';
+        return;
+      }
+
+      bigGoals.forEach(bg => {
+        const card = document.createElement('div'); 
+        card.className = "goal-group is-open"; // 기본적으로 열림 상태
+        
+        // Header
+        const header = document.createElement('div');
+        header.className = "goal-header";
+        header.onclick = () => {
+            card.classList.toggle('is-open');
+            body.style.display = card.classList.contains('is-open') ? 'block' : 'none';
+        };
+
+        const dateHtml = bg['마감일'] ? `<span class="goal-date">~${bg['마감일'].split('T')[0].replace(/-/g, '.')}</span>` : '';
+        header.innerHTML = `
+            <div class="goal-header-title">${escapeHtml(bg['제목'])}</div>
+            ${dateHtml}
+        `;
+        card.appendChild(header);
+
+        // Body
+        const body = document.createElement('div');
+        
+        const midGoals = goals.filter(m => m['상위ID'] === bg.ID);
+        if(midGoals.length > 0) {
+            midGoals.forEach(mg => {
+                const midWrapper = document.createElement('div');
+                midWrapper.className = "mid-goal";
+                midWrapper.innerHTML = `<div class="mid-header">${escapeHtml(mg['제목'])}</div>`;
+
+                const mgTasks = tasks.filter(t => String(t['연결_중간목표ID']).includes(mg.ID) && t['유형'] !== '아이디어');
+                
+                if (mgTasks.length > 0) {
+                    mgTasks.forEach(t => {
+                        const isDone = t['상태'] === '완료';
+                        const taskRow = document.createElement('div');
+                        taskRow.className = "task-item";
+                        taskRow.innerHTML = `
+                            <div class="checkbox ${isDone ? 'done' : ''}" 
+                                 onclick="event.stopPropagation(); toggleStatus('${t.ID}','${isDone ? '대기' : '완료'}', this)"></div>
+                            <div class="task-text ${isDone ? 'done' : ''}">${escapeHtml(t['제목'])}</div>
+                        `;
+                        midWrapper.appendChild(taskRow);
+                    });
+                } else {
+                    midWrapper.insertAdjacentHTML('beforeend', '<div style="padding: 0.5rem 1.2rem 0.5rem 2.5rem; font-size:0.8rem; color:#94a3b8;">등록된 할 일이 없습니다.</div>');
+                }
+                body.appendChild(midWrapper);
+            });
+        } else {
+            body.innerHTML = '<div style="padding:1rem 1.2rem; font-size:0.85rem; color:#64748b;">하위 목표가 없습니다.</div>';
+        }
+        
+        card.appendChild(body);
+        root.appendChild(card);
+      });
+    }
+
+    function renderIdeaWidget(tasks) {
+      const root = document.getElementById('ideaBoxContainer');
+      root.innerHTML = "";
+      
+      const ideas = tasks.filter(t => t['유형'] === '아이디어' && t['상태'] !== '완료');
+      if(ideas.length === 0) {
+        root.innerHTML = '<div style="font-size:0.85rem; color:#64748b;">등록된 아이디어가 없습니다.</div>';
+        return;
+      }
+
+      ideas.reverse().slice(0, 3).forEach(item => {
+        const card = document.createElement('div'); 
+        card.className = "idea-card";
+        const plainText = (item['상세내용'] || "").replace(/<[^>]*>?/gm, '').slice(0, 60);
+
+        card.innerHTML = `
+            <div class="idea-title">${escapeHtml(item['제목'])}</div>
+            <div class="idea-desc">${escapeHtml(plainText) || '내용 없음...'}</div>
+        `;
+        card.onclick = () => location.href = './todo_manage.html'; 
+        root.appendChild(card);
+      });
+    }
+
+    async function loadDashboard(){
+      try {
+        const res = await fetch(DASHBOARD_API + '?mode=listAnnouncements&limit=3');
+        const json = await res.json();
+        if (json && json.ok && Array.isArray(json.items)) {
+          renderNotices(json.items.map(x => ({ title:x.title, date:x.createdAt?.slice(0,10), level:x.level, noticeId:x.noticeId })));
+        } else { renderNotices([]); }
+      } catch (e) { console.warn('공지 로드 실패', e); renderNotices([]); }
+
+      try {
+        const res = await fetch(TODO_API + '?mode=getAllData');
+        const json = await res.json();
+        if(json.result === "success") {
+            renderGoalTreeWidget(json.goals||[], json.tasks||[]);
+            renderIdeaWidget(json.tasks||[]);
+        }
+      } catch(e) { 
+          console.warn('할일 데이터 로드 실패', e);
+          document.getElementById('goalTreeContainer').innerHTML = '<div style="color:#ef4444; font-size:0.9rem; padding:1rem;">데이터 로드에 실패했습니다.</div>';
+      }
+      renderMyRejected([]); 
+      setNow();
+    }
+
+    (function init(){
+      setNow(); 
+      setInterval(setNow, 1000*60); // 1분마다 갱신
+      mountShell();
+      loadDashboard();
+    })();
+  </script>
 </body>
 </html>
