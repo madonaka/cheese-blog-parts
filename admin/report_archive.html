@@ -1302,26 +1302,70 @@ function renderAIToEditor(aiData) {
     const today = new Date();
     const dateStr = `${today.getFullYear()}.${today.getMonth()+1}.${today.getDate()}`;
     
-    // 🚨 [추가] AI의 텍스트를 예쁜 글머리 기호(List)와 볼드체로 변환해 주는 헬퍼 함수
-    const formatToBullet = (text) => {
+    // 🚨 [핵심 수정] 텍스트를 고정 설명문(Bold)과 하위 글머리(Sub-bullet)로 완벽하게 쪼개주는 함수
+    const formatToSubBullets = (text) => {
         if (!text) return "";
-        let listItems = text.split('\n').map(line => {
-            let cleanLine = line.trim();
-            if (!cleanLine) return "";
-            
-            // "- [키워드] 내용" 형태를 <li><b>[키워드]</b> 내용</li> 로 변환
-            const match = cleanLine.match(/^-\s*\[(.*?)\](.*)/);
-            if (match) {
-                return `<li style="margin-bottom:6px;"><b>[${match[1]}]</b> ${match[2]}</li>`;
-            }
-            // 그냥 "-" 로 시작하는 줄
-            if (cleanLine.startsWith('-')) {
-                return `<li style="margin-bottom:6px;">${cleanLine.substring(1).trim()}</li>`;
-            }
-            return `<li style="margin-bottom:6px;">${cleanLine}</li>`;
-        }).join('');
         
-        return `<ul style="padding-left:20px; margin:0; line-height:1.6; color:#333;">${listItems}</ul>`;
+        // 사용자가 요청한 고정 설명문 매핑 사전
+        const headers = {
+            "배경": "배경: 왜 이 기획을 하게 되었는가?",
+            "목적": "목적: 이 기획을 통해 달성하고자 하는 궁극적인 목표는?",
+            "현상": "현재 상황: 현재 업무나 서비스의 상태는 어떠한가?",
+            "문제점": "문제점: 해결해야 할 가장 큰 병목이나 원인은?",
+            "해결방안": "핵심 솔루션: 문제를 어떻게 타개할 것인가?",
+            "실행전략": "실행 전략: 타 부서 협업, 리스크 대비책 등 상세 전략",
+            "기대효과": "정량적 효과: 매출 X% 증대, 리드타임 Y시간 단축 등",
+            "소요예산": "소요 예산: 투입되어야 할 인력 및 예산"
+        };
+
+        let resultHtml = "";
+        let currentList = "";
+
+        const lines = text.split('\n');
+        
+        lines.forEach(line => {
+            let cleanLine = line.trim();
+            if (!cleanLine) return;
+
+            // '- [배경] 내용' 형태를 감지해서 제목과 내용으로 분리
+            const match = cleanLine.match(/^-\s*\[(.*?)\](.*)/);
+            
+            if (match) {
+                // 이전 항목의 글머리기호 리스트 닫기
+                if (currentList !== "") {
+                    resultHtml += `<ul style="padding-left:20px; margin:4px 0 16px 0; line-height:1.6; color:#333;">${currentList}</ul>`;
+                    currentList = "";
+                }
+                
+                let key = match[1].replace(/\s/g, ''); // 공백 제거 (예: "해결 방안" -> "해결방안")
+                let content = match[2].trim();
+                let headerText = headers[key] || `${key}:`; // 사전에 없으면 괄호 안의 글자 그대로 사용
+                
+                // 1. 요청하신 고정 설명문을 볼드체로 출력
+                resultHtml += `<div style="margin-top:8px;"><b>${headerText}</b></div>`;
+                
+                if (content) {
+                    if(content.startsWith('-')) content = content.substring(1).trim();
+                    // 🚨 디테일: AI가 "목적은 ~이다" 라고 중복해서 말하는 앞부분의 군더더기 단어 자동 삭제
+                    content = content.replace(/^(배경은|목적은|현상은|문제점은|핵심 솔루션은|실행 전략은|기대 효과는|소요 예산은)\s*/, '');
+                    currentList += `<li style="margin-bottom:4px;">${content}</li>`;
+                }
+            } else {
+                // [키워드] 없이 내용만 이어지는 줄은 현재 리스트의 하위 항목으로 계속 추가
+                let content = cleanLine;
+                if (content.startsWith('-')) content = content.substring(1).trim();
+                if (content) {
+                    currentList += `<li style="margin-bottom:4px;">${content}</li>`;
+                }
+            }
+        });
+        
+        // 마지막 리스트 닫기
+        if (currentList !== "") {
+            resultHtml += `<ul style="padding-left:20px; margin:4px 0 8px 0; line-height:1.6; color:#333;">${currentList}</ul>`;
+        }
+        
+        return resultHtml;
     };
 
     let htmlTemplate = `
@@ -1332,21 +1376,21 @@ function renderAIToEditor(aiData) {
             <tr>
                 <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;">
                     <h3 style="margin:0 0 12px 0; color:#7c3aed; font-size:1.15rem; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">1. 기획 배경 및 목적</h3>
-                    <div style="font-size:1rem;">${formatToBullet(aiData.background_purpose)}</div>
+                    <div style="font-size:1rem;">${formatToSubBullets(aiData.background_purpose)}</div>
                 </td>
                 <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f8fafc;">
                     <h3 style="margin:0 0 12px 0; color:#7c3aed; font-size:1.15rem; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">2. 현상 및 핵심 문제점</h3>
-                    <div style="font-size:1rem;">${formatToBullet(aiData.current_issue)}</div>
+                    <div style="font-size:1rem;">${formatToSubBullets(aiData.current_issue)}</div>
                 </td>
             </tr>
             <tr>
                 <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f8fafc;">
                     <h3 style="margin:0 0 12px 0; color:#7c3aed; font-size:1.15rem; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">3. 해결 방안 및 핵심 전략</h3>
-                    <div style="font-size:1rem;">${formatToBullet(aiData.strategy)}</div>
+                    <div style="font-size:1rem;">${formatToSubBullets(aiData.strategy)}</div>
                 </td>
                 <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;">
                     <h3 style="margin:0 0 12px 0; color:#7c3aed; font-size:1.15rem; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">4. 기대 효과 및 소요 예산</h3>
-                    <div style="font-size:1rem;">${formatToBullet(aiData.roi)}</div>
+                    <div style="font-size:1rem;">${formatToSubBullets(aiData.roi)}</div>
                 </td>
             </tr>
         </table>
@@ -1354,10 +1398,8 @@ function renderAIToEditor(aiData) {
         <div id="schedule-placeholder" style="margin-top:30px;"></div>
     </div>`;
 
-    // 에디터 열기 (미리보기)
     openDocModal(null, aiData.title, htmlTemplate, '기획서');
 
-    // 모달 하단에 [DB 확정 저장] 전용 버튼 끼워 넣기
     const footer = document.querySelector('#doc-modal .modal-footer-custom');
     if(footer) {
         let oldBtn = document.getElementById('ai-confirm-btn');
@@ -1372,7 +1414,6 @@ function renderAIToEditor(aiData) {
         footer.insertBefore(confirmBtn, footer.firstChild); 
     }
 
-    // 일정표(Gantt) 자동 삽입 트리거
     if(aiData.schedule && aiData.schedule.length > 0) {
         document.getElementById('sch-start-month').value = aiData.schedule[0].start_date.substring(0, 7);
         document.getElementById('sch-project-name').value = aiData.title;
@@ -1381,7 +1422,6 @@ function renderAIToEditor(aiData) {
         setTimeout(() => { insertSmartSchedule(); }, 500); 
     }
 }
-
 // 🚨 사용자가 "DB 확정" 버튼을 눌렀을 때 진짜 저장하는 함수
 async function confirmAndSaveAIProposal() {
     if(!window.tempAIProposalData) return;
