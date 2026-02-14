@@ -816,7 +816,7 @@
 
 function renderGoalTree() {
     const root = document.getElementById('goal-tree-root'); root.innerHTML = "";
-    const bigGoals = g_goals.filter(g => g['유형'] === '큰 목표');
+    const bigGoals = g_goals.filter(g => g['유형'] === '큰 목표' && (!window.hideCompleted || g['상태'] !== '완료'));
     if(bigGoals.length===0) { root.innerHTML = `<div style="padding:40px;text-align:center;color:#94a3b8;">데이터 없음</div>`; return; }
     
     bigGoals.forEach(bg => {
@@ -866,7 +866,7 @@ function renderGoalTree() {
       body.className = "mid-goal-group";
       body.style.display = "none"; 
 
-      const midGoals = g_goals.filter(m => m['상위ID'] === bg.ID);
+      const midGoals = g_goals.filter(m => m['상위ID'] === bg.ID && (!window.hideCompleted || m['상태'] !== '완료'));
       midGoals.forEach(mg => {
         const midItem = document.createElement('div'); 
         midItem.className = "mid-goal-item"; 
@@ -928,7 +928,12 @@ function renderGoalTree() {
         const taskList = document.createElement('div'); 
         taskList.className = "task-list";
         const tasks = g_tasks.filter(t => String(t['연결_중간목표ID']||"").includes(mg.ID) && t['유형'] !== '아이디어' && t['유형'] !== '버그');        
-        if(tasks.length > 0) tasks.forEach(t => taskList.appendChild(createTaskRow(t)));
+        if(tasks.length > 0) {
+          tasks.forEach(t => {
+              if (window.hideCompleted && t['상태'] === '완료') return;
+              taskList.appendChild(createTaskRow(t));
+          });
+        }
         else if(relatedIdeas.length === 0) taskList.innerHTML = `<div style="padding:15px;color:#cbd5e1;font-size:0.85rem;">할 일 없음</div>`;
         
         contentWrapper.appendChild(taskList);
@@ -2252,28 +2257,7 @@ function toggleCompletedGoals() {
     if(typeof loadAllData === 'function') loadAllData(); 
 }
 
-// 🚨 [핵심] 기존 서버에서 데이터를 받아올 때, '완료' 상태인 것을 걸러내는 가로채기(Hook)
-const originalFetch = window.fetch;
-window.fetch = async function(...args) {
-    const response = await originalFetch(...args);
-    
-    // API 호출이 getAllData (목록 불러오기) 일 때만 작동
-    if (args[0] && args[0].includes("mode=getAllData")) {
-        const clone = response.clone();
-        try {
-            const data = await clone.json();
-            // hideCompleted가 켜져 있으면 '상태'가 '완료'인 데이터를 강제로 빼버립니다!
-            if (window.hideCompleted && data.goals && data.tasks) {
-                data.goals = data.goals.filter(g => g['상태'] !== '완료');
-                data.tasks = data.tasks.filter(t => t['상태'] !== '완료');
-                
-                // 가로챈 데이터를 새로 포장해서 리턴
-                return new Response(JSON.stringify(data), { status: 200, headers: response.headers });
-            }
-        } catch(e) { console.error(e); }
-    }
-    return response;
-};
+
 </script>
 </body>
 </html>
