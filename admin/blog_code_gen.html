@@ -497,6 +497,55 @@
     </div>
   </div>
 
+<div class="bcg-modal-backdrop" id="aiModal" hidden style="display:none" aria-hidden="true">
+    <div class="bcg-modal" style="width:840px; max-height:90vh;" role="dialog" aria-modal="true">
+      <div class="bcg-modal-head">
+        <h3 class="bcg-modal-title">✨ AI 블로그 글 자동 작성</h3>
+        <span class="bcg-right"></span>
+        <button class="bcg-btn bcg-mini" type="button" id="aiModalCloseBtn">닫기</button>
+      </div>
+      <div class="bcg-modal-body">
+         <div class="bcg-split" style="gap:20px;">
+           <div style="display:flex; flex-direction:column; gap:12px;">
+              <div class="bcg-field" style="display:flex; flex-direction:column; gap:6px;">
+                  <span class="bcg-label">주제 (선택)</span>
+                  <input class="bcg-input" id="aiTopic" placeholder="예: 숙종의 환국 정치 요약">
+              </div>
+              <div class="bcg-field" style="display:flex; flex-direction:column; gap:6px;">
+                  <span class="bcg-label">문체 / 톤앤매너</span>
+                  <select class="bcg-select" id="aiTone">
+                      <option value="흥미진진한, 유머러스한, 시선을 끄는">유머러스/흥미진진 (스토리텔링)</option>
+                      <option value="친근한, 블로거 스타일, 이모지 사용">친근한 블로거풍 (소통, 이모지)</option>
+                      <option value="전문가다운, 신뢰감 있는">전문가풍 (신뢰감, 논리적)</option>
+                      <option value="핵심만 간결하게, 요약형">간결/요약형 (정보 전달 중심)</option>
+                  </select>
+              </div>
+              <div class="bcg-field" style="display:flex; flex-direction:column; gap:6px;">
+                  <span class="bcg-label">참고할 기존 글 (유사도 회피용)</span>
+                  <textarea class="bcg-textarea" id="aiRefText" style="min-height:100px;" placeholder="유사도를 피해 다시 쓸 원문이나 참고 자료를 붙여넣으세요..."></textarea>
+              </div>
+              <div class="bcg-field" style="display:flex; flex-direction:column; gap:6px;">
+                  <span class="bcg-label">내 의견 / 핵심 강조점</span>
+                  <textarea class="bcg-textarea" id="aiOpinion" style="min-height:80px;" placeholder="이 부분은 꼭 강조해주고, 내 생각은 이렇다는 걸 포함해줘..."></textarea>
+              </div>
+              <button class="bcg-btn bcg-btn--dark" type="button" id="aiGenerateBtn" style="justify-content:center; padding:12px; margin-top:4px;">🚀 AI 생성 시작</button>
+           </div>
+           
+           <div style="display:flex; flex-direction:column; gap:12px; height:100%;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <span class="bcg-label">생성된 결과 (자유롭게 수정 가능)</span>
+              </div>
+              <textarea class="bcg-textarea" id="aiOutput" style="flex:1; min-height:380px; background:#f8fafc; border-color:#cbd5e1;" placeholder="생성된 글이 여기에 표시됩니다."></textarea>
+           </div>
+         </div>
+      </div>
+      <div class="bcg-modal-foot">
+        <button class="bcg-btn bcg-mini" type="button" id="aiRegenerateBtn" style="display:none;">🔄 재생성</button>
+        <button class="bcg-btn bcg-mini bcg-btn--primary" type="button" id="aiApplyBtn">본문에 반영하기</button>
+      </div>
+    </div>
+  </div>
+  
   <div class="bcg-toast" id="toast"></div>
   <script src="./admin-common.js"></script>
 
@@ -1142,11 +1191,14 @@
                 <div style="display:flex; flex-direction:column; gap:6px; width:100%;">
                   <span class="bcg-label">본문</span>
                   <div style="display:flex; flex-direction:column; gap:10px; margin:10px 0;">
-                    <div style="display:flex; gap:8px; align-items:center;">
+                  <div style="display:flex; gap:8px; align-items:center;">
                       <button class="bcg-btn bcg-mini" type="button" data-fmt="bold">굵게</button>
                       <button class="bcg-btn bcg-mini" type="button" data-fmt="br">줄바꿈</button>
                       <button class="bcg-btn bcg-mini" type="button" data-fmt="table">표</button>
                       <button class="bcg-btn bcg-mini" type="button" data-fmt="footnote" style="color:#2563eb; border-color:#bfdbfe; background:#eff6ff;">주석(Fn)</button>
+                      
+                      <div style="width:1px; height:14px; background:rgba(15,23,42,0.1); margin:0 4px;"></div>
+                      <button class="bcg-btn bcg-mini" type="button" data-fmt="ai" style="color:#9333ea; border-color:#e9d5ff; background:#faf5ff;">✨ AI 글쓰기</button>
                     </div>
                     
                     <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
@@ -1354,6 +1406,11 @@
             const fmt = btn.getAttribute("data-fmt");
             if (!fmt) return;
             ensureAllowTagsOn_();
+
+            if (fmt === "ai") {
+              openAiModal(bodyEl);
+              return;
+            }
             
             if (fmt === "footnote") {
               const noteContent = prompt("주석 내용을 입력해주세요.\n(번호는 관리자 페이지에서 자동으로 매겨집니다)");
@@ -1437,6 +1494,106 @@
 
       if (window.opener) setTimeout(() => window.opener.postMessage({ type: 'CH_CODE_GEN_READY' }, '*'), 100);
 
+
+      /* ==========================
+         AI 자동 작성 Logic (Server 연결)
+      ========================== */
+      // 🚨 주의: 본인의 포스트 관리 배포 URL로 변경하세요.
+      const CHEESE_ADMIN_API_BASE = "https://script.google.com/macros/s/본인의_앱스스크립트_ID/exec";
+
+      const aiModal = document.getElementById("aiModal");
+      const aiTopic = document.getElementById("aiTopic");
+      const aiTone = document.getElementById("aiTone");
+      const aiRefText = document.getElementById("aiRefText");
+      const aiOpinion = document.getElementById("aiOpinion");
+      const aiOutput = document.getElementById("aiOutput");
+      const aiGenerateBtn = document.getElementById("aiGenerateBtn");
+      const aiRegenerateBtn = document.getElementById("aiRegenerateBtn");
+      const aiApplyBtn = document.getElementById("aiApplyBtn");
+
+      let activeAiBodyCtx = null;
+
+      window.openAiModal = function(bodyEl) {
+          activeAiBodyCtx = bodyEl;
+          aiRefText.value = "";
+          aiOpinion.value = "";
+          aiOutput.value = "";
+          aiRegenerateBtn.style.display = "none";
+          aiModal.hidden = false;
+          aiModal.style.display = 'flex';
+      };
+
+      function closeAiModal() {
+          aiModal.hidden = true;
+          aiModal.style.display = 'none';
+          activeAiBodyCtx = null;
+      }
+
+      document.getElementById("aiModalCloseBtn").onclick = closeAiModal;
+      aiModal.onclick = (e) => { if(e.target === aiModal) closeAiModal(); };
+
+      async function requestAiGeneration() {
+          const topic = aiTopic.value.trim();
+          const tone = aiTone.value;
+          const refText = aiRefText.value.trim();
+          const opinion = aiOpinion.value.trim();
+
+          if (!refText && !opinion && !topic) {
+              alert("주제, 참고할 글, 내 의견 중 하나 이상은 입력해주세요!");
+              return;
+          }
+
+          aiGenerateBtn.disabled = true;
+          aiRegenerateBtn.disabled = true;
+          aiOutput.value = "서버에서 AI가 글을 작성하고 있습니다... ⏳\n(약 5~15초 소요)";
+
+          // 기존 서버 로직과 호환되도록 URLSearchParams(Form 데이터) 사용
+          const formData = new URLSearchParams();
+          formData.append('mode', 'generateAI');
+          formData.append('topic', topic);
+          formData.append('tone', tone);
+          formData.append('refText', refText);
+          formData.append('opinion', opinion);
+
+          try {
+              const response = await fetch(CHEESE_ADMIN_API_BASE, {
+                  method: 'POST',
+                  body: formData
+              });
+              
+              const data = await response.json();
+
+              if (data.ok) {
+                  aiOutput.value = data.text;
+                  aiRegenerateBtn.style.display = "inline-flex";
+              } else {
+                  aiOutput.value = "생성 오류: " + data.message;
+              }
+          } catch (error) {
+              aiOutput.value = "통신 에러가 발생했습니다: " + error.message;
+          } finally {
+              aiGenerateBtn.disabled = false;
+              aiRegenerateBtn.disabled = false;
+          }
+      }
+
+      aiGenerateBtn.onclick = requestAiGeneration;
+      aiRegenerateBtn.onclick = requestAiGeneration;
+
+      aiApplyBtn.onclick = () => {
+          const resultText = aiOutput.value.trim();
+          if (!resultText) {
+              alert("반영할 내용이 없습니다.");
+              return;
+          }
+          if (activeAiBodyCtx) {
+              insertAtSelection(activeAiBodyCtx, resultText + "\n\n");
+              activeAiBodyCtx.dispatchEvent(new Event("input"));
+              showToast("✨ AI 생성 글이 본문에 반영되었어!");
+          }
+          closeAiModal();
+      };
+      
       const pad2 = n => String(n).padStart(2, '0');
       (function showVersion(){
         const el = document.getElementById("sysVersion");
