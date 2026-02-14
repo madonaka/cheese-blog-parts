@@ -131,6 +131,7 @@
                 <span style="font-size:0.8rem; font-weight:700; color:#ea580c;">PLANNING</span>
                 <button class="btn-gen" style="background:#fff7ed; color:#ea580c; border-color:#fed7aa;" onclick="generateProposalTemplate()">💡 1-Page 기획서</button>
                 <button class="btn-gen" style="background:#fff7ed; color:#c2410c; border-color:#fed7aa;" onclick="openIdeaSelector('new')">✨ 아이디어로 기획</button>
+				<button class="btn-gen" style="background:#f5f3ff; color:#7c3aed; border-color:#ddd6fe;" onclick="openAIPromptModal()">🤖 AI 자동 기획</button>
             </div>
             
             <div style="flex:1;"></div>
@@ -263,6 +264,117 @@
   </div>
 </div>
 
+
+<div id="ai-prompt-modal" class="custom-modal">
+  <div class="modal-box" style="width: 500px; max-width: 90vw; background: #fff; border-radius: 16px;">
+    <div class="modal-header-custom" style="background:#f5f3ff; border-bottom:1px solid #ddd6fe;">
+      <span class="modal-title-custom" style="color:#7c3aed;">🤖 AI 기획서 자동 생성</span>
+      <button type="button" class="btn" onclick="closeModal('ai-prompt-modal')" style="background:transparent; border:none; font-size:1.2rem; cursor:pointer;">✕</button>
+    </div>
+    <div class="modal-body-custom" style="padding: 20px;">
+      <label class="input-label" style="color:#6b7280; font-size:0.95rem;">어떤 프로젝트를 기획하고 싶으신가요?</label>
+      <textarea id="ai-prompt-input" class="styled-textarea" style="height: 120px; margin-top: 8px;" placeholder="예: 티스토리 데이터를 워드프레스로 옮길 건데, SEO 유실이 걱정되고 3월 초까지 끝내야 해."></textarea>
+    </div>
+    <div class="modal-footer-custom">
+      <button type="button" class="btn" onclick="closeModal('ai-prompt-modal')" style="padding:10px 20px; border-radius:8px; border:1px solid #e2e8f0; background:#fff; font-weight:600; cursor:pointer;">취소</button>
+      <button type="button" class="btn" onclick="requestAIProposal()" style="padding:10px 20px; border-radius:8px; border:none; background:#7c3aed; color:#fff; font-weight:700; cursor:pointer; box-shadow:0 4px 6px -1px rgba(124, 58, 237, 0.4);">✨ 마법 부리기</button>
+    </div>
+  </div>
+</div>
+<script>
+function openAIPromptModal() {
+    document.getElementById('ai-prompt-input').value = "";
+    document.getElementById('ai-prompt-modal').classList.add('open');
+}
+
+async function requestAIProposal() {
+    const promptText = document.getElementById('ai-prompt-input').value.trim();
+    if(!promptText) { alert("기획 내용을 자유롭게 적어주세요!"); return; }
+
+    closeModal('ai-prompt-modal');
+    if(typeof showAdminLoading==='function') showAdminLoading("AI가 기획서와 세부 일정을 쪼개는 중입니다... 🤖✨");
+
+    try {
+        const res = await fetch(window.CHEESE_ADMIN_API_BASE, {
+            method: "POST",
+            body: JSON.stringify({ mode: "generateProposal", rawIdea: promptText })
+        });
+        const json = await res.json();
+        
+        if(json.result === "success") {
+            // 할 일(task_master) 목록 갱신
+            await loadAllData(); 
+            
+            // 🚨 앱 스크립트에서 json.data 로 데이터를 내려준다고 가정하고 화면에 즉시 렌더링
+            if(json.data) {
+                renderAIToEditor(json.data);
+            } else {
+                alert("✨ 세부 일정이 [할 일] DB에 자동 등록되었습니다!\n(화면 렌더링을 원하시면 앱 스크립트 리턴에 data 속성을 추가해야 합니다.)");
+            }
+        } else {
+            alert("AI 생성 실패: " + json.msg);
+        }
+    } catch(e) {
+        console.error(e); alert("통신 오류가 발생했습니다.");
+    } finally {
+        if(typeof hideAdminLoading==='function') hideAdminLoading();
+    }
+}
+
+// AI 데이터를 기존 기획서 양식과 자동 일정표(Auto-Gantt)에 꽂아 넣는 함수
+function renderAIToEditor(aiData) {
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}.${today.getMonth()+1}.${today.getDate()}`;
+    
+    // 1. 텍스트 바인딩
+    let htmlTemplate = `
+    <div style="font-family:'Pretendard','Malgun Gothic',sans-serif; max-width:900px; margin:0 auto; color:#1e293b;">
+        <h2 style="text-align:center; color:#7c3aed; margin-bottom:12px; font-size:1.8rem;">[기획서] ${aiData.title || "AI 생성 프로젝트"}</h2>
+        <div style="text-align:right; margin-bottom:16px; font-size:0.9rem; color:#64748b;">작성일: ${dateStr} / 작성자: AI Assistant</div>
+        
+        <table style="width:100%; border-collapse:collapse; table-layout:fixed; border:2px solid #cbd5e1;">
+            <tr>
+                <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;">
+                    <h3 style="margin:0 0 12px 0; color:#7c3aed; font-size:1.15rem; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">1. 기획 배경 및 목적 (Why)</h3>
+                    <div style="font-size:1rem; color:#333; line-height:1.6;">${(aiData.background_purpose||"").replace(/\n/g, '<br>')}</div>
+                </td>
+                <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f8fafc;">
+                    <h3 style="margin:0 0 12px 0; color:#7c3aed; font-size:1.15rem; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">2. 현상 및 핵심 문제점 (What)</h3>
+                    <div style="font-size:1rem; color:#333; line-height:1.6;">${(aiData.current_issue||"").replace(/\n/g, '<br>')}</div>
+                </td>
+            </tr>
+            <tr>
+                <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f8fafc;">
+                    <h3 style="margin:0 0 12px 0; color:#7c3aed; font-size:1.15rem; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">3. 해결 방안 및 핵심 전략 (How)</h3>
+                    <div style="font-size:1rem; color:#333; line-height:1.6;">${(aiData.strategy||"").replace(/\n/g, '<br>')}</div>
+                </td>
+                <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;">
+                    <h3 style="margin:0 0 12px 0; color:#7c3aed; font-size:1.15rem; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">4. 기대 효과 및 소요 예산 (ROI)</h3>
+                    <div style="font-size:1rem; color:#333; line-height:1.6;">${(aiData.roi||"").replace(/\n/g, '<br>')}</div>
+                </td>
+            </tr>
+        </table>
+        <div id="schedule-placeholder" style="margin-top:30px;"></div>
+    </div>`;
+
+    // 에디터 열기
+    openDocModal(null, aiData.title, htmlTemplate, '기획서');
+
+    // 2. 일정표(Gantt) 자동 삽입 트리거
+    if(aiData.schedule && aiData.schedule.length > 0) {
+        document.getElementById('sch-start-month').value = aiData.schedule[0].start_date.substring(0, 7);
+        document.getElementById('sch-project-name').value = aiData.title;
+        document.getElementById('sch-input-list').innerHTML = ""; 
+        
+        aiData.schedule.forEach(task => {
+            addScheduleRow("AI 생성", task.task_name, task.start_date, task.end_date, "");
+        });
+        
+        // 0.5초 뒤 자동 생성 함수 호출 (화면 랜더링 보장)
+        setTimeout(() => { insertSmartSchedule(); }, 500); 
+    }
+}
+</script>
 <script>
   window.CHEESE_ADMIN_ACTIVE_PAGE = "report_archive"; 
   
