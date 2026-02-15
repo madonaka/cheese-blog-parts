@@ -1384,7 +1384,7 @@ function openAIPromptModal() {
     document.getElementById('ai-prompt-modal').classList.add('open');
 }
 
-// 🌟 [수정] AI 기획서 요청 & 어제 코드(기존 에디터/일정표) 완벽 재활용
+// 🌟 [안전 보완] AI 기획서 요청 & 에러 방지(예외 처리) 완벽 대응
 async function requestAIProposal() {
     const promptText = document.getElementById('ai-prompt-input').value.trim();
     if(!promptText) { alert("기획 내용을 적어주세요!"); return; }
@@ -1400,20 +1400,25 @@ async function requestAIProposal() {
         const json = await res.json();
         
         if(json.result === "success") {
-            const data = json.data;
+            const data = json.data || {};
             
-            // 1. 기존의 '빈 문서 작성 창'을 엽니다 (기획서 테마로 세팅)
+            // 🚨 데이터 임시 저장 필수!
+            window.tempAIProposalData = data; 
+            
             openDocModal(null, data.title || "AI 자동 생성 기획서", "", "기획서");
 
-            // 2. 서버가 넘겨준 줄바꿈(\n)을 html(<br>)로 변환하여 기존 에디터에 깔끔하게 삽입!
-			 // 🚨 점(•) 형태의 깔끔한 리스트로 포맷팅 (가독성 극대화)
-            const formatLines = (text) => text ? text.split('\n').map(l => {
-                let c = l.trim();
-                if(c.startsWith('-')) c = c.substring(1).trim();
-                return '• ' + c;
-            }).join('<br>') : "내용 없음";
+            // 🚨 [방어 1] AI가 텍스트가 아닌 배열(Array)로 응답해도 에러 없이 처리하는 강력한 포맷팅 함수
+            const formatLines = (text) => {
+                if (!text) return "내용 없음";
+                if (Array.isArray(text)) text = text.join('\n'); // AI가 배열로 줬다면 문자로 합침
+                return String(text).split('\n').map(l => {
+                    let c = l.trim();
+                    if(c.startsWith('-')) c = c.substring(1).trim();
+                    return c ? '• ' + c : '';
+                }).filter(l => l !== '').join('<br>');
+            };
             
-            // 🌟 [여기 수정!] 일반 기획서 템플릿과 동일한 4분할 표(Table) 구조로 완벽 교체!
+            // 일반 기획서 템플릿과 동일한 4분할 표(Table) 구조
             const editorContent = `
             <div style="font-family:'Pretendard','Malgun Gothic',sans-serif; max-width:900px; margin:0 auto; color:#1e293b;">
                 <table style="width:100%; border-collapse:collapse; table-layout:fixed; border:2px solid #cbd5e1;">
@@ -1446,28 +1451,31 @@ async function requestAIProposal() {
                 tinymce.get('doc-content').setContent(editorContent);
             }
 
-            // 3. 기존의 '일정표 만들기 팝업(schedule-maker-modal)'의 로직을 그대로 재활용하여 일정 세팅!
-            if(data.schedule && data.schedule.length > 0) {
-                document.getElementById('sch-start-month').value = data.schedule[0].start_date.substring(0, 7);
+            // 🚨 [방어 2] AI가 일정을 안 주거나 start_date를 빼먹었을 때 뻗지 않도록 예외 처리
+            let hasSchedule = Array.isArray(data.schedule) && data.schedule.length > 0;
+            if(hasSchedule) {
+                const firstTask = data.schedule[0];
+                const sDate = (firstTask && firstTask.start_date) ? String(firstTask.start_date) : new Date().toISOString();
+                
+                document.getElementById('sch-start-month').value = sDate.substring(0, 7);
                 document.getElementById('sch-project-name').value = data.title || "기획 일정";
                 document.getElementById('sch-input-list').innerHTML = ""; 
                 
                 data.schedule.forEach(task => {
-                    // 어제 잘 작동했던 addScheduleRow 함수를 그대로 호출합니다.
-                    addScheduleRow(task.category || "", task.task_name, task.start_date, task.end_date, task.output || "");
+                    addScheduleRow(task.category || "", task.task_name || "작업", task.start_date || "", task.end_date || "", task.output || "");
                 });
-                
-                // 0.5초 뒤, 어제 만들어둔 마법의 함수를 통해 에디터 본문에 예쁜 갠트차트를 밀어 넣습니다.
                 setTimeout(() => { insertSmartSchedule(); }, 500); 
             }
-			// 🚨 [여기 수정!] 보라색 버튼 띄우면서 기본 저장 버튼 숨기기
+
+            // 🚨 보라색 버튼 띄우기 및 기본 버튼 숨기기
             const footer = document.querySelector('#doc-modal .modal-footer-custom');
             if(footer) {
                 let oldBtn = document.getElementById('ai-confirm-btn');
                 if(oldBtn) oldBtn.remove(); // 기존에 있으면 지우기
-                
-                // 기본 파란색 저장 버튼 숨기기 (중복 클릭 및 혼동 방지)
-                document.getElementById('btn-save-doc').style.display = 'none';
+
+                // 🚨 [방어 3] 기본 저장 버튼 숨기기 안전하게 처리
+                const btnSaveDoc = document.getElementById('btn-save-doc');
+                if (btnSaveDoc) btnSaveDoc.style.display = 'none';
 
                 let confirmBtn = document.createElement('button');
                 confirmBtn.id = 'ai-confirm-btn';
@@ -1479,16 +1487,16 @@ async function requestAIProposal() {
                 footer.insertBefore(confirmBtn, footer.firstChild); 
             }
 
-            // 4. 완료 안내!
             setTimeout(() => {
-                alert("✨ AI가 기획안과 일정표를 작성했습니다!\n에디터에서 본문을 자유롭게 수정하거나, 표 우측 상단의 '✏️ 수정' 버튼을 눌러 일정을 조정하세요.");
+                alert("✨ AI가 기획안과 일정표를 작성했습니다!\n본문을 수정하거나 일정을 조정한 뒤, 하단의 [✨ 기획안 확정] 버튼을 누르면 대시보드에 세팅됩니다.");
             }, 600);
 
         } else {
             alert("AI 생성 실패: " + json.msg);
         }
     } catch(e) {
-        console.error(e); alert("통신 오류가 발생했습니다.");
+        console.error("AI Proposal Error:", e); 
+        alert("통신 오류가 발생했습니다. (데이터 포맷 분석 중 에러)");
     } finally {
         hideAILoading();
     }
