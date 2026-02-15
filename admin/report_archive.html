@@ -1345,6 +1345,7 @@ function openAIPromptModal() {
     document.getElementById('ai-prompt-modal').classList.add('open');
 }
 
+// --- 🌟 수정: AI 기획서 생성 요청 및 기존 에디터 연동 ---
 async function requestAIProposal() {
     const rawIdea = document.getElementById('ai-prompt-input').value.trim();
     if (!rawIdea) {
@@ -1352,9 +1353,7 @@ async function requestAIProposal() {
         return;
     }
 
-    document.getElementById('ai-prompt-modal').classList.remove('open');
-    
-    // 🚀 수정: 기존 showAdminLoading 대신 AI 전용 로딩 호출 ('proposal' 모드)
+    // 모달은 닫지 않고 로딩창만 띄움
     showAILoading('proposal');
 
     try {
@@ -1365,15 +1364,36 @@ async function requestAIProposal() {
         const json = await res.json();
         
         if (json.result === "success") {
-            window.tempProposalData = json.data;
-            renderAIProposalPreview(json.data); // 미리보기 화면 함수
+            const data = json.data;
+            
+            // 1. 기존 기획서 제목 입력칸에 제목 넣기
+            document.getElementById('report-title').value = data.title || "";
+            
+            // 2. TinyMCE 에디터에 AI가 만든 본문 채워넣기 (HTML 포맷)
+            const editorContent = `
+                <h2>1. 기획 배경 및 목적</h2><p>${data.background_purpose.replace(/\n/g, '<br>')}</p>
+                <h2>2. 현상 및 핵심 문제점</h2><p>${data.current_issue.replace(/\n/g, '<br>')}</p>
+                <h2>3. 해결 방안 및 핵심 전략</h2><p>${data.strategy.replace(/\n/g, '<br>')}</p>
+                <h2>4. 기대 효과 및 소요 예산</h2><p>${data.roi.replace(/\n/g, '<br>')}</p>
+            `;
+            if (tinymce.get('report-editor')) {
+                tinymce.get('report-editor').setContent(editorContent);
+            }
+
+            // 3. 기존 일정표(Schedule) 리스트에 AI 일정 채워넣기
+            g_tempSchedule = data.schedule || [];
+            renderScheduleList(); // 기존에 구현되어 있는 일정표 렌더링 함수 호출
+
+            // 4. 로딩 종료 후 AI 프롬프트 입력창 닫기 (이제 본문 에디터에서 수정 가능)
+            document.getElementById('ai-prompt-modal').classList.remove('open');
+            alert("✨ AI가 스핀오프 기획안과 일정을 에디터에 채워 넣었습니다. 내용을 자유롭게 수정한 후 'DB 확정' 버튼을 눌러주세요.");
+
         } else {
             alert("AI 기획서 생성 실패: " + json.msg);
         }
     } catch(e) {
         alert("통신 오류 발생: " + e.toString());
     } finally {
-        // 🚀 수정: 로딩 끄기
         hideAILoading();
     }
 }
