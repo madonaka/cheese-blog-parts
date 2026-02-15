@@ -316,36 +316,28 @@
       valid_elements: '*[*]',
       extended_valid_elements: '*[*]',
       verify_html: false, 
-	  setup: function (editor) {
+setup: function (editor) {
         editor.on('init', function () {
           const todayStr = new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0];
           document.getElementById('report-base-date').value = todayStr;
           loadAllData();
-			
-		// 🚀 스핀오프 연동 처리 로직 (기존 모달 활용)
+
+          // 🚀 [추가] 스핀오프 자동 실행: 바통을 넘겨받아 즉시 AI 요청
           setTimeout(() => {
               const spinoffPrompt = sessionStorage.getItem('autoSpinoffPrompt');
               if (spinoffPrompt) {
                   sessionStorage.removeItem('autoSpinoffPrompt');
-                  
-                  // 기존 AI 프롬프트 모달을 열고 텍스트를 채움
                   document.getElementById('ai-prompt-input').value = spinoffPrompt;
-                  document.getElementById('ai-prompt-modal').classList.add('open');
-                  
-                  // 바로 AI에게 작성을 요청함
-                  requestAIProposal(); 
+                  if (typeof requestAIProposal === 'function') requestAIProposal(); 
               }
-          }, 800); // 텍스트 에디터가 완전히 로딩될 때까지 0.8초 여유를 줌
+          }, 800);
         });
         
-        // 🚨 [추가된 부분] TinyMCE 안에서 '수정' 버튼 클릭 시 밖으로 신호 보내기
         editor.on('click', function(e) {
-		  const btn = editor.dom.getParent(e.target, '.btn-edit-schedule');
+          const btn = editor.dom.getParent(e.target, '.btn-edit-schedule');
           if (btn) {
             const wrapper = editor.dom.getParent(btn, '.schedule-section');
-            if (wrapper) {
-              window.editEmbeddedSchedule(wrapper);
-            }
+            if (wrapper) window.editEmbeddedSchedule(wrapper);
           }
         });
       }
@@ -1336,365 +1328,9 @@ function formatMMDD(dateObj) {
 </script>
 	
 <script>
-// 🚨 AI가 만든 데이터를 임시 보관할 전역 변수
-window.tempAIProposalData = null;
-
-function openAIPromptModal() {
-    document.getElementById('ai-prompt-input').value = "";
-    document.getElementById('ai-prompt-modal').classList.add('open');
-}
-
-// --- 🌟 수정: AI 기획서 생성 요청 및 기존 에디터 연동 ---
-async function requestAIProposal() {
-    const rawIdea = document.getElementById('ai-prompt-input').value.trim();
-    if (!rawIdea) {
-        alert("아이디어나 요구사항을 입력해주세요.");
-        return;
-    }
-
-    // 모달은 닫지 않고 로딩창만 띄움
-    showAILoading('proposal');
-
-    try {
-        const res = await fetch(window.CHEESE_ADMIN_API_BASE, {
-            method: "POST",
-            body: JSON.stringify({ mode: "generateProposal", rawIdea: rawIdea })
-        });
-        const json = await res.json();
-        
-		if (json.result === "success") {
-            const data = json.data;
-            
-            // ✅ 어떤 ID를 쓰더라도 제목 입력칸을 찾아 안전하게 값을 넣습니다.
-            const titleInput = document.getElementById('report-title') || document.getElementById('doc-title') || document.querySelector('input[type="text"]');
-            if(titleInput) {
-                titleInput.value = data.title || "";
-            } else {
-                console.warn("제목 입력칸을 찾지 못했습니다.");
-            }
-            
-            // 2. TinyMCE 에디터에 AI가 만든 본문 채워넣기 (HTML 포맷)
-            const editorContent = `
-                <h2>1. 기획 배경 및 목적</h2><p>${data.background_purpose.replace(/\n/g, '<br>')}</p>
-                <h2>2. 현상 및 핵심 문제점</h2><p>${data.current_issue.replace(/\n/g, '<br>')}</p>
-                <h2>3. 해결 방안 및 핵심 전략</h2><p>${data.strategy.replace(/\n/g, '<br>')}</p>
-                <h2>4. 기대 효과 및 소요 예산</h2><p>${data.roi.replace(/\n/g, '<br>')}</p>
-            `;
-            if (tinymce.get('report-editor')) {
-                tinymce.get('report-editor').setContent(editorContent);
-            }
-
-            // 3. 기존 일정표(Schedule) 리스트에 AI 일정 채워넣기
-            g_tempSchedule = data.schedule || [];
-            renderScheduleList(); // 기존에 구현되어 있는 일정표 렌더링 함수 호출
-
-            // 4. 로딩 종료 후 AI 프롬프트 입력창 닫기 (이제 본문 에디터에서 수정 가능)
-            document.getElementById('ai-prompt-modal').classList.remove('open');
-            alert("✨ AI가 스핀오프 기획안과 일정을 에디터에 채워 넣었습니다. 내용을 자유롭게 수정한 후 'DB 확정' 버튼을 눌러주세요.");
-
-        } else {
-            alert("AI 기획서 생성 실패: " + json.msg);
-        }
-    } catch(e) {
-        alert("통신 오류 발생: " + e.toString());
-    } finally {
-        hideAILoading();
-    }
-}
-
-function renderAIToEditor(aiData) {
-    const today = new Date();
-    const dateStr = `${today.getFullYear()}.${today.getMonth()+1}.${today.getDate()}`;
-    
-	 // 🚨 [핵심 수정] 텍스트를 고정 설명문(Bold)과 하위 글머리(Sub-bullet)로 쪼개고, '중복 제목'을 병합하는 함수
-	const formatToSubBullets = (text) => {
-	    if (!text) return "";
-	    
-	    const headers = {
-	        "배경": "배경: 왜 이 기획을 하게 되었는가?",
-	        "목적": "목적: 이 기획을 통해 달성하고자 하는 궁극적인 목표는?",
-	        "현상": "현재 상황: 현재 업무나 서비스의 상태는 어떠한가?",
-	        "문제점": "문제점: 해결해야 할 가장 큰 병목이나 원인은?",
-	        "해결방안": "핵심 솔루션: 문제를 어떻게 타개할 것인가?",
-	        "실행전략": "실행 전략: 타 부서 협업, 리스크 대비책 등 상세 전략",
-	        "기대효과": "정량적 효과: 매출 X% 증대, 리드타임 Y시간 단축 등",
-	        "소요예산": "소요 예산: 투입되어야 할 인력 및 예산"
-	    };
-	
-	    let resultHtml = "";
-	    let currentList = "";
-	    let currentKey = ""; // 👈 [추가] 방금 출력한 제목이 무엇인지 기억하는 변수
-	
-	    const lines = text.split('\n');
-	    
-	    lines.forEach(line => {
-	        let cleanLine = line.trim();
-	        if (!cleanLine) return;
-	
-	        const match = cleanLine.match(/^-\s*\[(.*?)\](.*)/);
-	        
-	        if (match) {
-	            let key = match[1].replace(/\s/g, ''); // 공백 제거 (예: "해결 방안" -> "해결방안")
-	            let content = match[2].trim();
-	            
-	            // 🚨 이전 줄과 '다른 제목'일 때만 새 제목(Bold)을 출력합니다!
-	            if (key !== currentKey) {
-	                // 이전 항목의 글머리기호 리스트 닫기
-	                if (currentList !== "") {
-	                    resultHtml += `<ul style="padding-left:20px; margin:4px 0 16px 0; line-height:1.6; color:#333;">${currentList}</ul>`;
-	                    currentList = "";
-	                }
-	                
-	                let headerText = headers[key] || `${key}:`; 
-	                resultHtml += `<div style="margin-top:8px;"><b>${headerText}</b></div>`; // 제목 출력
-	                currentKey = key; // 방금 출력한 제목 기억하기
-	            }
-	            
-	            // 내용은 제목 출력 여부와 상관없이 현재 리스트에 계속 추가
-	            if (content) {
-	                if(content.startsWith('-')) content = content.substring(1).trim();
-	                content = content.replace(/^(배경은|목적은|현상은|문제점은|핵심 솔루션은|실행 전략은|기대 효과는|소요 예산은)\s*/, '');
-	                currentList += `<li style="margin-bottom:4px;">${content}</li>`;
-	            }
-	        } else {
-	            // [키워드] 없이 내용만 이어지는 줄은 현재 리스트에 추가
-	            let content = cleanLine;
-	            if (content.startsWith('-')) content = content.substring(1).trim();
-	            if (content) {
-	                currentList += `<li style="margin-bottom:4px;">${content}</li>`;
-	            }
-	        }
-	    });
-	    
-	    // 마지막 리스트 닫기
-	    if (currentList !== "") {
-	        resultHtml += `<ul style="padding-left:20px; margin:4px 0 8px 0; line-height:1.6; color:#333;">${currentList}</ul>`;
-	    }
-	    
-	    return resultHtml;
-	};
-
-    let htmlTemplate = `
-    <div style="font-family:'Pretendard','Malgun Gothic',sans-serif; max-width:900px; margin:0 auto; color:#1e293b;">
-        <h2 style="text-align:center; color:#7c3aed; margin-bottom:12px; font-size:1.8rem; letter-spacing:-0.5px;">[기획서] ${aiData.title || "AI 생성 프로젝트"}</h2>
-        <div style="text-align:right; margin-bottom:16px; font-size:0.9rem; color:#64748b;">작성일: ${dateStr} / 작성자: AI Assistant</div>
-        <table style="width:100%; border-collapse:collapse; table-layout:fixed; border:2px solid #cbd5e1;">
-            <tr>
-                <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;">
-                    <h3 style="margin:0 0 12px 0; color:#7c3aed; font-size:1.15rem; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">1. 기획 배경 및 목적</h3>
-                    <div style="font-size:1rem;">${formatToSubBullets(aiData.background_purpose)}</div>
-                </td>
-                <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f8fafc;">
-                    <h3 style="margin:0 0 12px 0; color:#7c3aed; font-size:1.15rem; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">2. 현상 및 핵심 문제점</h3>
-                    <div style="font-size:1rem;">${formatToSubBullets(aiData.current_issue)}</div>
-                </td>
-            </tr>
-            <tr>
-                <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f8fafc;">
-                    <h3 style="margin:0 0 12px 0; color:#7c3aed; font-size:1.15rem; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">3. 해결 방안 및 핵심 전략</h3>
-                    <div style="font-size:1rem;">${formatToSubBullets(aiData.strategy)}</div>
-                </td>
-                <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;">
-                    <h3 style="margin:0 0 12px 0; color:#7c3aed; font-size:1.15rem; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">4. 기대 효과 및 소요 예산</h3>
-                    <div style="font-size:1rem;">${formatToSubBullets(aiData.roi)}</div>
-                </td>
-            </tr>
-        </table>
-        
-        <div id="schedule-placeholder" style="margin-top:30px;"></div>
-    </div>`;
-
-    openDocModal(null, aiData.title, htmlTemplate, '기획서');
-
-    const footer = document.querySelector('#doc-modal .modal-footer-custom');
-    if(footer) {
-        let oldBtn = document.getElementById('ai-confirm-btn');
-        if(oldBtn) oldBtn.remove();
-        
-        let confirmBtn = document.createElement('button');
-        confirmBtn.id = 'ai-confirm-btn';
-        confirmBtn.className = 'btn';
-        confirmBtn.style.cssText = 'background: #7c3aed; color: #fff; font-weight: bold; border: none; padding: 10px 20px; margin-right: auto;';
-        confirmBtn.innerHTML = '✨ 이대로 DB 확정 및 일정 생성';
-        confirmBtn.onclick = confirmAndSaveAIProposal;
-        footer.insertBefore(confirmBtn, footer.firstChild); 
-    }
-
-	// (기존 코드) 일정표(Gantt) 자동 삽입 트리거
-    if(aiData.schedule && aiData.schedule.length > 0) {
-        document.getElementById('sch-start-month').value = aiData.schedule[0].start_date.substring(0, 7);
-        document.getElementById('sch-project-name').value = aiData.title;
-        document.getElementById('sch-input-list').innerHTML = ""; 
-        
-        aiData.schedule.forEach(task => {
-            // 🌟 수정 1: AI가 보낸 카테고리가 빈칸("")이면 억지로 채우지 않고 빈칸 그대로 통과시킵니다. (하위 작업으로 인식되게 함)
-            const categoryName = task.category || ""; 
-            
-            // 🌟 수정 2: AI가 작성한 산출물(output) 데이터도 파라미터로 함께 넘겨줍니다.
-            addScheduleRow(categoryName, task.task_name, task.start_date, task.end_date, task.output || "");
-        });
-        
-        setTimeout(() => { insertSmartSchedule(); }, 500); 
-    }
-}
-// 🚨 사용자가 "DB 확정" 버튼을 눌렀을 때 진짜 저장하는 함수
-async function confirmAndSaveAIProposal() {
-    if(!window.tempAIProposalData) return;
-    
-    if(typeof showAdminLoading==='function') showAdminLoading("DB에 기획서와 일정을 저장하는 중입니다... 💾");
-    
-    try {
-        const res = await fetch(window.CHEESE_ADMIN_API_BASE, {
-            method: "POST",
-            body: JSON.stringify({ mode: "saveProposal", pData: window.tempAIProposalData })
-        });
-        const json = await res.json();
-        
-        if(json.result === "success") {
-            alert("✨ 기획서와 세부 일정이 DB에 완벽하게 저장되었습니다!");
-            closeModal('doc-modal'); // 모달 닫기
-            document.getElementById('ai-confirm-btn')?.remove(); // 버튼 지우기
-            if(typeof loadAllData === 'function') await loadAllData(); // 데이터 새로고침
-        } else {
-            alert("저장 실패: " + json.msg);
-        }
-    } catch(e) {
-        console.error(e); alert("통신 오류가 발생했습니다.");
-    } finally {
-        if(typeof hideAdminLoading==='function') hideAdminLoading();
-    }
-}
-
-// -------------------------------------------------------------
-// 🔥 [신규] 기획서 열람 시 실시간 Todo 리스트(Task) 연동 기능
-// -------------------------------------------------------------
-const originalOpenDocModal = window.openDocModal; // 기존 모달 여는 함수 가로채기(Hook)
-
-window.openDocModal = function(docId, title, content, type) {
-    // 1. 기존 방식대로 기획서 모달을 먼저 엽니다.
-    if(typeof originalOpenDocModal === 'function') {
-        originalOpenDocModal(docId, title, content, type);
-    }
-
-    // 🚨 [핵심 추가] 혹시 예전에 열어둔 다른 문서의 Todo 표가 남아있다면 깔끔하게 지우기 (중복 방지)
-    const oldContainer = document.getElementById('realtime-todo-container');
-    if (oldContainer) oldContainer.remove();
-
-    // 2. 만약 열린 문서가 '기획서'이고, DB에 정식으로 저장된 문서라면?
-    if (type === '기획서' && docId) {
-        // 🚨 [핵심 수정] 에디터(textarea) 안이 아니라, "모달 본문 영역(modal-body-custom)"을 찾아서 그 맨 밑에 붙입니다!
-        const modalBody = document.querySelector('#doc-modal .modal-body-custom');
-        
-        if (modalBody) {
-            const todoContainer = document.createElement('div');
-            todoContainer.id = 'realtime-todo-container';
-            todoContainer.style.marginTop = "20px"; // 에디터와 간격 띄우기
-            todoContainer.innerHTML = '<div style="text-align:center; padding: 30px; color:#64748b; font-weight:bold;">⏳ 현장의 실시간 진행 현황을 불러오는 중입니다...</div>';
-            
-            // 모달 본문 스크롤 영역 맨 아래에 Todo 표 삽입
-            modalBody.appendChild(todoContainer);
-
-            // 구글 DB에서 최신 데이터 긁어오기 실행!
-            fetchAndRenderRealtimeTodos(docId);
-        }
-    }
-};
-
-async function fetchAndRenderRealtimeTodos(proposalId) {
-    try {
-        // 구글 앱 스크립트 API를 호출해 최신 목표와 할 일 데이터를 가져옵니다.
-        const res = await fetch(window.CHEESE_ADMIN_API_BASE + "?mode=getAllData");
-        const json = await res.json();
-        
-        if(json.result !== "success") throw new Error("데이터 로드 실패");
-        
-        const goals = json.goals || [];
-        const tasks = json.tasks || [];
-        
-        // 1. 이 기획서(proposalId)와 연결된 '중간 목표(공정)' 찾기
-        const relatedMidGoals = goals.filter(g => g['비고'] === proposalId);
-        const midGoalIds = relatedMidGoals.map(g => g['ID']);
-        
-        if (midGoalIds.length === 0) {
-            document.getElementById('realtime-todo-container').innerHTML = ''; 
-            return;
-        }
-        
-        // 2. 그 공정들에 매달린 '실제 할 일(Tasks)' 모두 찾기
-        const relatedTasks = tasks.filter(t => midGoalIds.includes(t['연결_중간목표ID']));
-        
-        // 날짜(기한)가 빠른 순서대로 정렬
-        relatedTasks.sort((a, b) => (a['기한'] || '').localeCompare(b['기한'] || ''));
-
-        // 3. UI/UX 렌더링 (예쁜 표로 그리기)
-        let html = `
-        <div style="margin-top: 50px; padding-top: 25px; border-top: 2px dashed #cbd5e1; font-family:'Pretendard','Malgun Gothic',sans-serif;">
-            <h3 style="color: #4f46e5; margin-bottom: 16px; font-size: 1.3rem; display:flex; align-items:center; gap:8px;">
-                <span>🔥</span> 실제 진행 중인 세부 Todo 리스트 (실시간)
-            </h3>
-        `;
-        
-        if (relatedTasks.length === 0) {
-            html += `<div style="background:#f8fafc; padding:20px; border-radius:8px; color:#64748b; font-size:0.95rem; text-align:center;">
-                        아직 현장에서 추가된 세부 할 일이 없습니다. <br><b>할 일 관리(Todo)</b> 메뉴에서 이 프로젝트에 할 일을 추가해 보세요!
-                     </div>`;
-        } else {
-            html += `
-            <div style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
-                <table style="width:100%; border-collapse:collapse; text-align:left;">
-                    <thead>
-                        <tr style="background:#f8fafc; color:#475569; font-size:0.9rem;">
-                            <th style="padding:12px 15px; border-bottom:1px solid #e2e8f0; width: 80px; text-align:center;">상태</th>
-                            <th style="padding:12px 15px; border-bottom:1px solid #e2e8f0;">작업명</th>
-                            <th style="padding:12px 15px; border-bottom:1px solid #e2e8f0; width: 120px;">기한</th>
-                            <th style="padding:12px 15px; border-bottom:1px solid #e2e8f0; width: 250px;">연결된 공정 (중간목표)</th>
-                        </tr>
-                    </thead>
-                    <tbody>`;
-            
-            relatedTasks.forEach(t => {
-                const status = t['상태'] || '대기';
-                let badgeColor = '#94a3b8'; // 대기(회색)
-                if(status === '진행중') badgeColor = '#3b82f6'; // 파란색
-                if(status === '완료') badgeColor = '#22c55e'; // 초록색
-                
-                // 중간 목표 이름 매핑
-                const parentGoal = relatedMidGoals.find(g => g['ID'] === t['연결_중간목표ID']);
-                const parentName = parentGoal ? parentGoal['제목'] : '-';
-                
-                html += `
-                    <tr style="border-bottom:1px solid #f1f5f9; font-size:0.95rem; background:#fff;">
-                        <td style="padding:12px 15px; text-align:center;">
-                            <span style="background:${badgeColor}; color:#fff; padding:4px 10px; border-radius:12px; font-size:0.8rem; font-weight:bold;">
-                                ${status}
-                            </span>
-                        </td>
-                        <td style="padding:12px 15px; color:#1e293b; font-weight:500;">${t['제목']}</td>
-                        <td style="padding:12px 15px; color:#64748b; font-size:0.9rem;">${t['기한'] || '-'}</td>
-                        <td style="padding:12px 15px; color:#64748b; font-size:0.85rem;">${parentName}</td>
-                    </tr>`;
-            });
-            
-            html += `</tbody></table></div>`;
-        }
-        
-        html += `</div>`;
-        document.getElementById('realtime-todo-container').innerHTML = html;
-        
-    } catch(e) {
-        console.error(e);
-        document.getElementById('realtime-todo-container').innerHTML = `
-            <div style="background:#fee2e2; color:#ef4444; padding:15px; border-radius:8px; text-align:center; margin-top:20px;">
-                ❌ 실시간 데이터를 불러오는 중 오류가 발생했습니다.
-            </div>`;
-    }
-}
-
-// --- 🌟 신규: AI 전용 동적 로딩 애니메이션 ---
+// 🌟 [추가] 멋진 AI 전용 동적 로딩 함수
 let aiLoaderInterval;
-
 function showAILoading(mode) {
-    // 모드에 따라 텍스트 배열 분리 (3.5초마다 바뀔 텍스트들)
     const steps = mode === "report" ? [
         "📂 기존 기획안 및 작업 로그 수집 중...",
         "⚖️ 기획 대비 실제 진행률 비교 분석 중...",
@@ -1702,16 +1338,14 @@ function showAILoading(mode) {
         "🚀 다음 프로젝트를 위한 Action Item 구성 중...",
         "⏳ 잠시만 더 기다려주세요 (AI 쿨타임 조정 중일 수 있습니다)..."
     ] : [
-        "🧠 사용자 아이디어 및 요구사항 분석 중...",
+        "🧠 사용자 아이디어 및 회고 데이터 분석 중...",
         "🎯 문제점 진단 및 핵심 전략 도출 중...",
         "📅 최적의 애자일(Agile) 일정표 수립 중...",
-        "📝 세부 하위 할 일(Task) 쪼개기 진행 중...",
+        "📝 세부 공정 및 Task 쪼개기 진행 중...",
         "⏳ 잠시만 더 기다려주세요 (AI 쿨타임 조정 중일 수 있습니다)..."
     ];
 
     let stepIndex = 0;
-
-    // 세련된 다크 테마 로딩 오버레이 HTML
     const loaderHtml = `
     <div id="ai-dynamic-loader-overlay" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15, 23, 42, 0.85); z-index:999999; display:flex; justify-content:center; align-items:center; font-family:'Pretendard', sans-serif; backdrop-filter: blur(4px);">
         <div style="background: #1e293b; padding: 40px 50px; border-radius: 20px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); text-align: center; border: 1px solid #334155; min-width: 340px;">
@@ -1720,164 +1354,167 @@ function showAILoading(mode) {
             </div>
             <style>@keyframes ai-spin { 100% { transform: rotate(360deg); } }</style>
             <h2 style="margin:0 0 16px 0; font-size:1.4rem; color:#f8fafc; font-weight:700;">✨ AI 프로세스 진행 중</h2>
-            <div id="ai-loader-text" style="font-size:1.05rem; color:#94a3b8; font-weight:500; min-height:28px; transition: opacity 0.4s ease-in-out;">
-                ${steps[0]}
-            </div>
+            <div id="ai-loader-text" style="font-size:1.05rem; color:#94a3b8; font-weight:500; transition: opacity 0.4s ease-in-out;">${steps[0]}</div>
         </div>
     </div>`;
 
-    if(document.getElementById('ai-dynamic-loader-overlay')) {
-        document.getElementById('ai-dynamic-loader-overlay').remove();
-    }
+    if(document.getElementById('ai-dynamic-loader-overlay')) document.getElementById('ai-dynamic-loader-overlay').remove();
     document.body.insertAdjacentHTML('beforeend', loaderHtml);
 
-    // 3.5초마다 텍스트를 부드럽게 변경
     aiLoaderInterval = setInterval(() => {
         stepIndex++;
         if (stepIndex < steps.length) {
             const textEl = document.getElementById('ai-loader-text');
-            if (textEl) {
-                textEl.style.opacity = 0; // 페이드 아웃
-                setTimeout(() => {
-                    textEl.innerHTML = steps[stepIndex];
-                    textEl.style.opacity = 1; // 페이드 인
-                }, 400);
-            }
-        } else {
-            clearInterval(aiLoaderInterval); // 마지막 문장에서 정지
-        }
+            if (textEl) { textEl.style.opacity = 0; setTimeout(() => { textEl.innerHTML = steps[stepIndex]; textEl.style.opacity = 1; }, 400); }
+        } else clearInterval(aiLoaderInterval);
     }, 3500); 
 }
-// 🌟 [신규 추가] AI가 만든 기획서를 화면에 예쁘게 띄워주는 미리보기 함수
-function renderAIProposalPreview(data) {
-    // 배열 또는 텍스트의 줄바꿈을 글머리 기호(•)로 변환하는 헬퍼 함수
-    const formatBullets = (text) => {
-        if (!text) return "<span style='color:#94a3b8;'>내용 없음</span>";
-        return text.split('\n').map(line => {
-            let clean = line.trim();
-            if(!clean) return "";
-            if (clean.startsWith('-')) clean = clean.substring(1).trim();
-            return `<div style="margin-bottom:6px; padding-left:14px; text-indent:-14px; line-height:1.5; color:#475569;">• ${clean}</div>`;
-        }).join('');
-    };
-
-    // 일정표(Schedule)를 테이블 행으로 변환
-    let scheduleHtml = "";
-    if (data.schedule && data.schedule.length > 0) {
-        data.schedule.forEach(task => {
-            const isMidGoal = task.category && task.category.trim() !== "";
-            if (isMidGoal) {
-                // 상위 공정 (중간 목표)
-                scheduleHtml += `
-                <tr style="background:#f8fafc; border-top:2px solid #e2e8f0;">
-                    <td style="padding:12px 10px; font-weight:bold; color:#7c3aed;">${task.category}</td>
-                    <td style="padding:12px 10px; font-weight:bold; color:#1e293b;">${task.task_name}</td>
-                    <td style="padding:12px 10px; color:#475569; font-size:0.9rem;">${task.start_date} ~ ${task.end_date}</td>
-                    <td style="padding:12px 10px; color:#059669; font-weight:bold; font-size:0.9rem;">${task.output || '-'}</td>
-                </tr>`;
-            } else {
-                // 하위 할 일 (Task)
-                scheduleHtml += `
-                <tr style="border-top:1px dashed #e2e8f0;">
-                    <td style="padding:8px 10px; color:#94a3b8; text-align:center;">↳</td>
-                    <td style="padding:8px 10px; color:#475569;">${task.task_name}</td>
-                    <td style="padding:8px 10px; color:#64748b; font-size:0.85rem;">${task.start_date} ~ ${task.end_date}</td>
-                    <td style="padding:8px 10px; color:#64748b; font-size:0.85rem;">${task.output || '-'}</td>
-                </tr>`;
-            }
-        });
-    } else {
-        scheduleHtml = "<tr><td colspan='4' style='padding:20px; text-align:center; color:#94a3b8;'>생성된 일정이 없습니다.</td></tr>";
-    }
-
-    const htmlTemplate = `
-    <div id="ai-proposal-preview-modal" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:99999; display:flex; justify-content:center; align-items:center;">
-        <div style="background:#fff; width:95%; max-width:1000px; max-height:95vh; overflow-y:auto; border-radius:16px; box-shadow:0 10px 25px rgba(0,0,0,0.2); padding:40px;">
-            
-            <h2 style="color:#7c3aed; text-align:center; margin-bottom:8px; font-size:1.8rem;">✨ AI 기획서 미리보기 (검수)</h2>
-            <h3 style="color:#1e293b; text-align:center; margin-top:0;">${data.title}</h3>
-            
-            <p style="text-align:center; color:#64748b; font-size:0.95rem; margin-bottom:30px; font-weight:bold;">
-                👀 아래 기획안과 일정을 검토하신 후 확정 버튼을 누르면, 목표 트리에 정식으로 세팅됩니다!
-            </p>
-
-            <table style="width:100%; border-collapse:collapse; margin-bottom:30px; border:2px solid #e2e8f0;">
-                <tr>
-                    <td style="width:50%; vertical-align:top; border:1px solid #e2e8f0; padding:20px; background:#f8fafc;">
-                        <h3 style="color:#7c3aed; margin:0 0 12px 0; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">1. 기획 배경 및 목적</h3>
-                        ${formatBullets(data.background_purpose)}
-                    </td>
-                    <td style="width:50%; vertical-align:top; border:1px solid #e2e8f0; padding:20px; background:#fff;">
-                        <h3 style="color:#7c3aed; margin:0 0 12px 0; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">2. 현상 및 핵심 문제점</h3>
-                        ${formatBullets(data.current_issue)}
-                    </td>
-                </tr>
-                <tr>
-                    <td style="width:50%; vertical-align:top; border:1px solid #e2e8f0; padding:20px; background:#fff;">
-                        <h3 style="color:#7c3aed; margin:0 0 12px 0; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">3. 해결 방안 및 핵심 전략</h3>
-                        ${formatBullets(data.strategy)}
-                    </td>
-                    <td style="width:50%; vertical-align:top; border:1px solid #e2e8f0; padding:20px; background:#f8fafc;">
-                        <h3 style="color:#7c3aed; margin:0 0 12px 0; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">4. 기대 효과 및 소요 예산</h3>
-                        ${formatBullets(data.roi)}
-                    </td>
-                </tr>
-            </table>
-
-            <h3 style="color:#1e293b; margin-bottom:12px;">📅 5. 자동 생성된 애자일(Agile) 일정표</h3>
-            <table style="width:100%; border-collapse:collapse; border:1px solid #e2e8f0; margin-bottom:30px; text-align:left;">
-                <tr style="background:#f1f5f9; border-bottom:2px solid #cbd5e1;">
-                    <th style="padding:12px; width:20%;">공정 카테고리</th>
-                    <th style="padding:12px; width:40%;">세부 작업명</th>
-                    <th style="padding:12px; width:25%;">권장 일정</th>
-                    <th style="padding:12px; width:15%;">산출물</th>
-                </tr>
-                ${scheduleHtml}
-            </table>
-            
-            <div style="text-align:center; display:flex; gap:12px; justify-content:center;">
-                <button onclick="document.getElementById('ai-proposal-preview-modal').remove()" style="padding:14px 24px; border:none; border-radius:8px; background:#94a3b8; color:#fff; cursor:pointer; font-weight:bold; font-size:1rem;">❌ 취소 (다시 생성하기)</button>
-                <button onclick="confirmAndSaveProposal()" style="padding:14px 24px; border:none; border-radius:8px; background:#7c3aed; color:#fff; cursor:pointer; font-weight:bold; font-size:1rem; box-shadow: 0 4px 6px rgba(124, 58, 237, 0.2);">✨ 이대로 DB 확정 및 일정 생성</button>
-            </div>
-        </div>
-    </div>`;
-    document.body.insertAdjacentHTML('beforeend', htmlTemplate);
-}
-
-// 🌟 [신규 추가] 사용자가 검수 후 승인한 기획서를 서버로 전송하여 진짜 저장하는 함수
-async function confirmAndSaveProposal() {
-    // 공통 로딩창이 report_archive에 있다면 호출
-    if(typeof showAILoading === 'function') showAILoading('report');
-    else if(typeof showAdminLoading === 'function') showAdminLoading("기획서를 정식 등록하고 일정을 생성 중입니다... 💾");
-    
-    try {
-        const res = await fetch(window.CHEESE_ADMIN_API_BASE, {
-            method: "POST",
-            body: JSON.stringify({ mode: "saveProposal", pData: window.tempProposalData })
-        });
-        const json = await res.json();
-        
-        if (json.result === "success") {
-            alert("✨ 성공적으로 기획서가 저장되고 일정이 세팅되었습니다!\n(목표 관리 탭에서 확인하세요.)");
-            document.getElementById('ai-proposal-preview-modal').remove();
-            
-            // 데이터 새로고침 (아카이브 리스트 갱신)
-            if (typeof loadAllData === 'function') await loadAllData(); 
-        } else {
-            alert("기획서 저장 실패: " + json.msg);
-        }
-    } catch(e) {
-        alert("통신 오류 발생: " + e.toString());
-    } finally {
-        if(typeof hideAILoading === 'function') hideAILoading();
-        else if(typeof hideAdminLoading === 'function') hideAdminLoading();
-    }
-}
-	
 function hideAILoading() {
     if(aiLoaderInterval) clearInterval(aiLoaderInterval);
     const overlay = document.getElementById('ai-dynamic-loader-overlay');
     if (overlay) overlay.remove();
+}
+
+function openAIPromptModal() {
+    document.getElementById('ai-prompt-input').value = "";
+    document.getElementById('ai-prompt-modal').classList.add('open');
+}
+
+// 🌟 [수정] AI 기획서 요청 & 어제 코드(기존 에디터/일정표) 완벽 재활용
+async function requestAIProposal() {
+    const promptText = document.getElementById('ai-prompt-input').value.trim();
+    if(!promptText) { alert("기획 내용을 적어주세요!"); return; }
+
+    closeModal('ai-prompt-modal');
+    showAILoading('proposal'); // 멋진 다크 로딩 화면 띄우기
+
+    try {
+        const res = await fetch(window.CHEESE_ADMIN_API_BASE, {
+            method: "POST",
+            body: JSON.stringify({ mode: "generateProposal", rawIdea: promptText })
+        });
+        const json = await res.json();
+        
+        if(json.result === "success") {
+            const data = json.data;
+            
+            // 1. 기존의 '빈 문서 작성 창'을 엽니다 (기획서 테마로 세팅)
+            openDocModal(null, data.title || "AI 자동 생성 기획서", "", "기획서");
+
+            // 2. 서버가 넘겨준 줄바꿈(\n)을 html(<br>)로 변환하여 기존 에디터에 깔끔하게 삽입!
+            const formatLines = (text) => text ? text.split('\n').map(l => l.trim()).filter(l => l).join('<br>') : "내용 없음";
+            
+            const editorContent = `
+                <h2 style="color: #ea580c; border-bottom: 2px solid #fed7aa; padding-bottom: 5px;">1. 기획 배경 및 목적 (Why)</h2>
+                <p style="line-height:1.6; color:#333;">${formatLines(data.background_purpose)}</p>
+                <h2 style="color: #ea580c; border-bottom: 2px solid #fed7aa; padding-bottom: 5px;">2. 현상 및 핵심 문제점 (What)</h2>
+                <p style="line-height:1.6; color:#333;">${formatLines(data.current_issue)}</p>
+                <h2 style="color: #ea580c; border-bottom: 2px solid #fed7aa; padding-bottom: 5px;">3. 해결 방안 및 핵심 전략 (How)</h2>
+                <p style="line-height:1.6; color:#333;">${formatLines(data.strategy)}</p>
+                <h2 style="color: #ea580c; border-bottom: 2px solid #fed7aa; padding-bottom: 5px;">4. 기대 효과 및 소요 예산 (ROI)</h2>
+                <p style="line-height:1.6; color:#333;">${formatLines(data.roi)}</p>
+                <div id="schedule-placeholder"></div>
+            `;
+            if (tinymce.get('doc-content')) {
+                tinymce.get('doc-content').setContent(editorContent);
+            }
+
+            // 3. 기존의 '일정표 만들기 팝업(schedule-maker-modal)'의 로직을 그대로 재활용하여 일정 세팅!
+            if(data.schedule && data.schedule.length > 0) {
+                document.getElementById('sch-start-month').value = data.schedule[0].start_date.substring(0, 7);
+                document.getElementById('sch-project-name').value = data.title || "기획 일정";
+                document.getElementById('sch-input-list').innerHTML = ""; 
+                
+                data.schedule.forEach(task => {
+                    // 어제 잘 작동했던 addScheduleRow 함수를 그대로 호출합니다.
+                    addScheduleRow(task.category || "", task.task_name, task.start_date, task.end_date, task.output || "");
+                });
+                
+                // 0.5초 뒤, 어제 만들어둔 마법의 함수를 통해 에디터 본문에 예쁜 갠트차트를 밀어 넣습니다.
+                setTimeout(() => { insertSmartSchedule(); }, 500); 
+            }
+
+            // 4. 완료 안내!
+            setTimeout(() => {
+                alert("✨ AI가 기획안과 일정표를 작성했습니다!\n에디터에서 본문을 자유롭게 수정하거나, 표 우측 상단의 '✏️ 수정' 버튼을 눌러 일정을 조정하세요.");
+            }, 600);
+
+        } else {
+            alert("AI 생성 실패: " + json.msg);
+        }
+    } catch(e) {
+        console.error(e); alert("통신 오류가 발생했습니다.");
+    } finally {
+        hideAILoading();
+    }
+}
+
+// -------------------------------------------------------------
+// 🔥 기획서 열람 시 실시간 Todo 리스트(Task) 연동 기능 (어제 코드와 동일)
+// -------------------------------------------------------------
+const originalOpenDocModal = window.openDocModal;
+
+window.openDocModal = function(docId, title, content, type) {
+    if(typeof originalOpenDocModal === 'function') {
+        originalOpenDocModal(docId, title, content, type);
+    }
+    const oldContainer = document.getElementById('realtime-todo-container');
+    if (oldContainer) oldContainer.remove();
+
+    if (type === '기획서' && docId) {
+        const modalBody = document.querySelector('#doc-modal .modal-body-custom');
+        if (modalBody) {
+            const todoContainer = document.createElement('div');
+            todoContainer.id = 'realtime-todo-container';
+            todoContainer.style.marginTop = "20px"; 
+            todoContainer.innerHTML = '<div style="text-align:center; padding: 30px; color:#64748b; font-weight:bold;">⏳ 현장의 실시간 진행 현황을 불러오는 중입니다...</div>';
+            modalBody.appendChild(todoContainer);
+            fetchAndRenderRealtimeTodos(docId);
+        }
+    }
+};
+
+async function fetchAndRenderRealtimeTodos(proposalId) {
+    try {
+        const res = await fetch(window.CHEESE_ADMIN_API_BASE + "?mode=getAllData");
+        const json = await res.json();
+        if(json.result !== "success") throw new Error("데이터 로드 실패");
+        
+        const goals = json.goals || [];
+        const tasks = json.tasks || [];
+        
+        const relatedMidGoals = goals.filter(g => g['비고'] === proposalId);
+        const midGoalIds = relatedMidGoals.map(g => g['ID']);
+        if (midGoalIds.length === 0) {
+            document.getElementById('realtime-todo-container').innerHTML = ''; 
+            return;
+        }
+        
+        const relatedTasks = tasks.filter(t => midGoalIds.includes(t['연결_중간목표ID']));
+        relatedTasks.sort((a, b) => (a['기한'] || '').localeCompare(b['기한'] || ''));
+
+        let html = `<div style="margin-top: 50px; padding-top: 25px; border-top: 2px dashed #cbd5e1; font-family:'Pretendard','Malgun Gothic',sans-serif;"><h3 style="color: #4f46e5; margin-bottom: 16px; font-size: 1.3rem; display:flex; align-items:center; gap:8px;"><span>🔥</span> 실제 진행 중인 세부 Todo 리스트 (실시간)</h3>`;
+        
+        if (relatedTasks.length === 0) {
+            html += `<div style="background:#f8fafc; padding:20px; border-radius:8px; color:#64748b; font-size:0.95rem; text-align:center;">아직 현장에서 추가된 세부 할 일이 없습니다. <br><b>할 일 관리(Todo)</b> 메뉴에서 이 프로젝트에 할 일을 추가해 보세요!</div>`;
+        } else {
+            html += `<div style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;"><table style="width:100%; border-collapse:collapse; text-align:left;"><thead><tr style="background:#f8fafc; color:#475569; font-size:0.9rem;"><th style="padding:12px 15px; border-bottom:1px solid #e2e8f0; width: 80px; text-align:center;">상태</th><th style="padding:12px 15px; border-bottom:1px solid #e2e8f0;">작업명</th><th style="padding:12px 15px; border-bottom:1px solid #e2e8f0; width: 120px;">기한</th><th style="padding:12px 15px; border-bottom:1px solid #e2e8f0; width: 250px;">연결된 공정 (중간목표)</th></tr></thead><tbody>`;
+            
+            relatedTasks.forEach(t => {
+                const status = t['상태'] || '대기';
+                let badgeColor = status === '진행중' ? '#3b82f6' : (status === '완료' ? '#22c55e' : '#94a3b8');
+                const parentGoal = relatedMidGoals.find(g => g['ID'] === t['연결_중간목표ID']);
+                const parentName = parentGoal ? parentGoal['제목'] : '-';
+                
+                html += `<tr style="border-bottom:1px solid #f1f5f9; font-size:0.95rem; background:#fff;"><td style="padding:12px 15px; text-align:center;"><span style="background:${badgeColor}; color:#fff; padding:4px 10px; border-radius:12px; font-size:0.8rem; font-weight:bold;">${status}</span></td><td style="padding:12px 15px; color:#1e293b; font-weight:500;">${t['제목']}</td><td style="padding:12px 15px; color:#64748b; font-size:0.9rem;">${t['기한'] || '-'}</td><td style="padding:12px 15px; color:#64748b; font-size:0.85rem;">${parentName}</td></tr>`;
+            });
+            html += `</tbody></table></div>`;
+        }
+        html += `</div>`;
+        document.getElementById('realtime-todo-container').innerHTML = html;
+    } catch(e) {
+        document.getElementById('realtime-todo-container').innerHTML = `<div style="background:#fee2e2; color:#ef4444; padding:15px; border-radius:8px; text-align:center; margin-top:20px;">❌ 실시간 데이터를 불러오는 중 오류가 발생했습니다.</div>`;
+    }
 }
 </script>
 </body>
