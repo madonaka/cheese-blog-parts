@@ -2148,29 +2148,26 @@ let retroResolve = null;
 
 function openRetroModal() {
     return new Promise((resolve) => {
-        document.getElementById('retro-input-text').value = ""; // 창 열 때 초기화
+        document.getElementById('retro-input-text').value = ""; 
         document.getElementById('retro-modal').classList.add('open');
-        retroResolve = resolve; // 확인/취소 버튼 누를 때까지 대기
+        retroResolve = resolve; 
     });
 }
 
 function closeRetroModal() {
     document.getElementById('retro-modal').classList.remove('open');
-    if(retroResolve) retroResolve(null); // 취소 시 null 반환
+    if(retroResolve) retroResolve(null); 
 }
 
 function submitRetroModal() {
     const text = document.getElementById('retro-input-text').value.trim();
     document.getElementById('retro-modal').classList.remove('open');
-    if(retroResolve) retroResolve(text); // 입력된 텍스트 반환
+    if(retroResolve) retroResolve(text); 
 }
 
-// --- 🌟 수정: AI 마감 메인 함수 ---
+// --- 🌟 수정: AI 마감 메인 함수 (완료된 팩트 리스트 수신) ---
 async function closeProjectWithAI(goalId) {
-    // 기존의 prompt() 대신 예쁜 커스텀 모달을 띄우고 대기합니다.
     const retrospective = await openRetroModal();
-
-    // 사용자가 취소 버튼을 누르거나 창을 닫으면 중단
     if (retrospective === null) return; 
 
     if(typeof showAdminLoading==='function') showAdminLoading("AI가 기획-실행-회고를 입체적으로 분석 중입니다... 📝");
@@ -2190,32 +2187,43 @@ async function closeProjectWithAI(goalId) {
         if(json.result === "success") {
             window.tempCompletionData = json.data;
             window.tempClosingGoalId = json.goalId;
-            renderCompletionReport(json.data);
+            window.tempCompletedList = json.completedList; // 🚀 완료 팩트 데이터 저장
+            renderCompletionReport(json.data, json.completedList);
         } else alert("보고서 생성 실패: " + json.msg);
     } catch(e) { alert("통신 오류 발생"); }
     finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); }
 }
 
-
-// --- 🌟 수정: 최신 데이터 추출 포맷에 맞춘 렌더링 함수 ---
-function renderCompletionReport(data) {
-    const formatToSubBullets = (text) => {
-        if (!text) return "<span style='color:#94a3b8;'>분석 데이터 없음</span>";
-        let resultHtml = "";
-        const lines = text.split('\n');
-        lines.forEach(line => {
-            const match = line.match(/^-\s*\[(.*?)\](.*)/);
-            if (match) {
-                resultHtml += `<div style="margin-top:8px;"><b>${match[1]}:</b></div>`;
-                resultHtml += `<li style="margin-bottom:4px; margin-left: 20px;">${match[2].trim()}</li>`;
-            } else if (line.trim().startsWith('-')) {
-                resultHtml += `<li style="margin-bottom:4px; margin-left: 20px;">${line.substring(1).trim()}</li>`;
-            } else if(line.trim()) {
-                resultHtml += `<div style="margin-top:4px;">${line}</div>`;
-            }
-        });
-        return resultHtml;
+// --- 🌟 수정: 최신 UI 디자인 (완료 팩트 + 기획vs실제 테이블) ---
+function renderCompletionReport(data, completedList = []) {
+    const makeList = (arr) => {
+        if (!arr || arr.length === 0) return "<li style='color:#94a3b8;'>내용 없음</li>";
+        return arr.map(item => `<li style="margin-bottom:8px; line-height:1.5; color:#475569;">${item}</li>`).join('');
     };
+
+    let completedHtml = "";
+    if (completedList && completedList.length > 0) {
+        completedHtml = completedList.map(t => 
+            `<div style="padding: 10px 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.95rem; color: #1e293b; font-weight: 500;">
+                ✅ ${t.name} <span style="color: #64748b; font-size: 0.8rem; float: right; margin-top: 2px;">(목표 기한: ${t.date})</span>
+            </div>`
+        ).join('');
+    } else {
+        completedHtml = "<div style='color:#94a3b8; padding:10px;'>기록된 완료 항목이 없습니다.</div>";
+    }
+
+    let planActualHtml = "";
+    if (data.plan_vs_actual && data.plan_vs_actual.length > 0) {
+        data.plan_vs_actual.forEach(item => {
+            planActualHtml += `
+            <tr style="border-bottom: 1px solid #e2e8f0; transition: background 0.2s;">
+                <td style="padding: 14px; border-right: 1px solid #e2e8f0; font-weight: 800; color: #334155; background: #f8fafc; width: 15%;">${item.focus}</td>
+                <td style="padding: 14px; border-right: 1px dashed #cbd5e1; color: #475569; width: 28%;">${item.plan}</td>
+                <td style="padding: 14px; border-right: 1px solid #e2e8f0; color: #475569; width: 28%;">${item.actual}</td>
+                <td style="padding: 14px; color: #2563eb; font-weight: 700; width: 29%; background: #eff6ff;">${item.insight}</td>
+            </tr>`;
+        });
+    }
 
     let scheduleHtml = "잔여 항목이 없어 완벽하게 종료되었습니다. 🎉";
     let btnText = "✨ 확정 및 프로젝트 마감";
@@ -2232,47 +2240,60 @@ function renderCompletionReport(data) {
 
   const htmlTemplate = `
     <div id="ai-completion-modal" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:99999; display:flex; justify-content:center; align-items:center;">
-        <div style="background:#fff; width:90%; max-width:900px; max-height:90vh; overflow-y:auto; border-radius:12px; box-shadow:0 10px 25px rgba(0,0,0,0.2); padding: 30px;">
+        <div style="background:#fff; width:95%; max-width:1000px; max-height:95vh; overflow-y:auto; border-radius:16px; box-shadow:0 10px 25px rgba(0,0,0,0.2); padding: 40px;">
             
-            <h2 style="color:#1e293b; text-align:center; margin-bottom: 8px;">📊 프로젝트 입체 분석 결과</h2>
-            <h3 style="color:#475569; text-align:center; margin-top:0;">${data.title}</h3>
+            <h2 style="color:#1d4ed8; text-align:center; margin-bottom: 8px; font-size: 1.8rem;">📊 프로젝트 입체 분석 리포트</h2>
+            <h3 style="color:#475569; text-align:center; margin-top:0; font-weight: 600;">${data.title}</h3>
             
-            <div style="text-align:center; color:#64748b; font-size:0.95rem; font-weight:bold; border-bottom:2px solid #e2e8f0; padding-bottom:15px; margin-bottom:20px;">
+            <div style="text-align:center; color:#64748b; font-size:0.95rem; font-weight:800; border-bottom:2px solid #bfdbfe; padding-bottom:20px; margin-bottom:30px;">
                 🗓️ 진행 기간: ${data.period || "기간 정보 없음"}
             </div>
 
-            <table style="width:100%; border-collapse:collapse; margin-top:10px; border:2px solid #cbd5e1;">
-                <tr>
-                    <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f8fafc;">
-                        <h3 style="color:#2563eb; margin:0 0 10px 0;">⚖️ 1. 기획 vs 실제 진행 분석</h3>
-                        <div style="font-size:0.9rem; color:#475569;">${formatToSubBullets(data.time_analysis)}</div>
-                    </td>
-                    <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;">
-                        <h3 style="color:#16a34a; margin:0 0 10px 0;">💡 2. 지식 자산 (성공 패턴/노하우)</h3>
-                        <div style="font-size:0.9rem; color:#475569;">${formatToSubBullets(data.knowledge_assets)}</div>
-                    </td>
+            <h3 style="color:#0f172a; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">📌 1. 수행 완료 내역 (Fact Check)</h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; margin-bottom: 30px; background: #f1f5f9; padding: 20px; border-radius: 12px;">
+                ${completedHtml}
+            </div>
+
+            <h3 style="color:#0f172a; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">⚖️ 2. 기획 vs 실제 진행 분석 (Plan vs Actual)</h3>
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 30px; border: 1px solid #cbd5e1; font-size: 0.95rem;">
+                <tr style="background:#e2e8f0; border-bottom: 2px solid #94a3b8; text-align: left;">
+                    <th style="padding: 12px 14px;">분석 영역</th>
+                    <th style="padding: 12px 14px; color: #475569;">📝 초기 기획 (Plan)</th>
+                    <th style="padding: 12px 14px; color: #059669;">🎯 실제 결과 (Actual)</th>
+                    <th style="padding: 12px 14px; color: #1d4ed8;">💡 인사이트 (Insight)</th>
                 </tr>
+                ${planActualHtml}
+            </table>
+
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 30px;">
                 <tr>
-                    <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;">
-                        <h3 style="color:#dc2626; margin:0 0 10px 0;">⚠️ 3. 잔여 리스크 및 한계점</h3>
-                        <div style="font-size:0.9rem; color:#475569;">${formatToSubBullets(data.residual_risks)}</div>
+                    <td style="width:50%; vertical-align:top; padding-right: 20px;">
+                        <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 20px; height: 100%;">
+                            <h3 style="color:#16a34a; margin:0 0 16px 0; border-bottom:2px solid #86efac; padding-bottom:8px;">💡 3. 지식 자산 (성공 패턴)</h3>
+                            <ul style="padding-left: 20px; margin: 0;">${makeList(data.knowledge_assets)}</ul>
+                        </div>
                     </td>
-                    <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fefce8;">
-                        <h3 style="color:#d97706; margin:0 0 10px 0;">🚀 4. Action Items (다음 스텝 보완)</h3>
-                        <div style="font-size:0.9rem; color:#475569;">${formatToSubBullets(data.action_items)}</div>
+                    <td style="width:50%; vertical-align:top; padding-left: 20px;">
+                        <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 12px; padding: 20px; height: 100%;">
+                            <h3 style="color:#dc2626; margin:0 0 16px 0; border-bottom:2px solid #fca5a5; padding-bottom:8px;">⚠️ 4. 잔여 리스크 및 한계</h3>
+                            <ul style="padding-left: 20px; margin: 0;">${makeList(data.residual_risks)}</ul>
+                        </div>
                     </td>
                 </tr>
             </table>
             
-            <div style="margin-top:20px; padding:20px; background:#f1f5f9; border-radius:8px;">
-                <h3 style="color:#475569; margin:0 0 10px 0;">🛡️ 후속 보완을 위한 자동 스핀오프 일정</h3>
+            <div style="background:#f8fafc; border: 1px solid #e2e8f0; border-radius:12px; padding: 20px;">
+                <h3 style="color:#0f172a; margin:0 0 16px 0;">🚀 5. Action Items (다음 스텝 보완)</h3>
+                <ul style="padding-left: 20px; margin-bottom: 20px;">${makeList(data.action_items)}</ul>
+                
+                <h4 style="color:#475569; margin:0 0 10px 0; border-top: 1px dashed #cbd5e1; padding-top: 16px;">🛡️ 후속 보완을 위한 자동 스핀오프 일정</h4>
                 ${scheduleHtml}
             </div>
             
-            <div id="ai-modal-btn-area" style="text-align:center; margin-top:30px; display:flex; gap:10px; justify-content:center;">
-                <button onclick="document.getElementById('ai-completion-modal').remove()" style="padding:12px 24px; border:none; border-radius:8px; background:#94a3b8; color:#fff; cursor:pointer; font-weight:bold;">취소</button>
-                <button onclick="downloadReportAsImage()" style="padding:12px 24px; border:1px solid #cbd5e1; border-radius:8px; background:#fff; color:#475569; cursor:pointer; font-weight:bold;">📸 이미지로 저장</button>
-                <button onclick="saveCompletionReport()" style="padding:12px 24px; border:none; border-radius:8px; background:#2563eb; color:#fff; cursor:pointer; font-weight:bold;">${btnText}</button>
+            <div id="ai-modal-btn-area" style="text-align:center; margin-top:30px; display:flex; gap:12px; justify-content:center;">
+                <button onclick="document.getElementById('ai-completion-modal').remove()" style="padding:14px 28px; border:none; border-radius:8px; background:#94a3b8; color:#fff; cursor:pointer; font-weight:bold; font-size:1rem;">취소</button>
+                <button onclick="downloadReportAsImage()" style="padding:14px 28px; border:1px solid #cbd5e1; border-radius:8px; background:#fff; color:#475569; cursor:pointer; font-weight:bold; font-size:1rem; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">📸 이미지로 저장</button>
+                <button onclick="saveCompletionReport()" style="padding:14px 28px; border:none; border-radius:8px; background:#2563eb; color:#fff; cursor:pointer; font-weight:bold; font-size:1rem; box-shadow: 0 4px 6px rgba(37,99,235,0.2);">${btnText}</button>
             </div>
         </div>
     </div>`;
@@ -2281,41 +2302,40 @@ function renderCompletionReport(data) {
 
 // 🚨 [신규] 보고서를 예쁜 PNG 이미지로 찰칵! 다운로드 하는 함수
 function downloadReportAsImage() {
-    const modalContent = document.querySelector('#ai-completion-modal > div'); // 하얀색 팝업 본문
-    const btnArea = document.getElementById('ai-modal-btn-area'); // 버튼 영역
+    const modalContent = document.querySelector('#ai-completion-modal > div'); 
+    const btnArea = document.getElementById('ai-modal-btn-area'); 
     
-    // 1. 캡처하기 전에 하단 버튼들은 캡처 안 되게 잠깐 숨깁니다.
     const originalDisplay = btnArea.style.display;
     btnArea.style.display = 'none';
     
-    // 2. 찰칵! 캡처 실행 (화질을 2배로 선명하게)
     html2canvas(modalContent, { scale: 2 }).then(canvas => {
-        // 이미지 파일로 다운로드
         const link = document.createElement('a');
-        const safeTitle = window.tempCompletionData.title.replace(/\[완료보고서\]\s*/, '').replace(/[^a-zA-Z0-9가-힣]/g, '_');
-        link.download = `[성과보고서]_${safeTitle}.png`;
+        const safeTitle = window.tempCompletionData.title.replace(/\[분석완료\]\s*/, '').replace(/[^a-zA-Z0-9가-힣]/g, '_');
+        link.download = `[분석리포트]_${safeTitle}.png`;
         link.href = canvas.toDataURL("image/png");
         link.click();
-        
-        // 3. 캡처 끝났으니 버튼들을 다시 보여줍니다.
         btnArea.style.display = originalDisplay;
     });
 }
 
-// 3. 확정 및 저장 (기존과 동일)
+// --- 🌟 수정: 저장 함수 (팩트 데이터 같이 서버로 전송) ---
 async function saveCompletionReport() {
-    // ... 기존 내용 그대로 유지 ...
     if(typeof showAdminLoading==='function') showAdminLoading("프로젝트 마감 및 후속 처리 중입니다... 💾");
     try {
         const res = await fetch(window.CHEESE_ADMIN_API_BASE, {
             method: "POST",
-            body: JSON.stringify({ mode: "saveCompletionReport", goalId: window.tempClosingGoalId, rData: window.tempCompletionData })
+            body: JSON.stringify({ 
+                mode: "saveCompletionReport", 
+                goalId: window.tempClosingGoalId, 
+                rData: window.tempCompletionData,
+                completedList: window.tempCompletedList 
+            })
         });
         const json = await res.json();
         if(json.result === "success") {
             alert("✨ 성공적으로 마감되었습니다!\n잔여 항목이 있다면 목표 트리에 '새 프로젝트'로 추가되었습니다.");
             document.getElementById('ai-completion-modal').remove();
-            if(typeof loadAllData === 'function') await loadAllData(); // 화면 새로고침
+            if(typeof loadAllData === 'function') await loadAllData(); 
         } else alert("저장 실패: " + json.msg);
     } catch(e) { alert("통신 오류 발생"); }
     finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); }
@@ -2338,7 +2358,30 @@ function toggleCompletedGoals() {
     if(typeof loadAllData === 'function') loadAllData(); 
 }
 
-
 </script>
+<div id="retro-modal" class="modal-overlay" style="z-index: 3000;">
+  <div class="modal-box" style="width: 90%; max-width: 500px;">
+    
+    <div class="modal-header-custom" style="padding: 20px 24px;">
+      <span class="modal-title-custom" style="font-size: 1.3rem;">🏁 프로젝트 마감 및 회고</span>
+    </div>
+
+    <div class="modal-body-custom" style="padding: 24px;">
+      <p style="color: #475569; font-size: 0.95rem; line-height: 1.6; margin-bottom: 16px; margin-top: 0;">
+        이번 프로젝트를 진행하며 가장 힘들었던 점, 기술적/사업적 깨달음, 혹은 다음 스텝을 위한 <b>'솔직한 회고'</b>를 자유롭게 적어주세요.
+        <br><span style="font-size: 0.85rem; color: #3b82f6;">(AI가 기존 기획안, 실행 로그와 함께 3차원 입체 분석을 진행합니다.)</span>
+      </p>
+      
+      <textarea id="retro-input-text" class="styled-input" style="width: 100%; height: 140px; resize: vertical; line-height: 1.5;" placeholder="예: 초기 기획과 달리 이미지 처리에 시간을 너무 많이 뺏겼다. 다음엔 이 부분을 공통 모듈화 해야겠다."></textarea>
+    </div>
+
+    <div class="modal-footer-custom" style="padding: 16px 24px; justify-content: flex-end !important; gap: 10px;">
+      <button type="button" class="btn-close-custom" onclick="closeRetroModal()">취소</button>
+      <button type="button" class="btn-save-custom" style="background: #2563eb;" onclick="submitRetroModal()">🚀 분석 시작하기</button>
+    </div>
+
+  </div>
+</div>
+      
 </body>
 </html>
