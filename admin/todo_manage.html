@@ -2288,20 +2288,43 @@ function renderCompletionReport(data, completedList = []) {
     </div>`;
     document.body.insertAdjacentHTML('beforeend', htmlTemplate);
 }
-// 🚨 [신규] 보고서를 예쁜 PNG 이미지로 찰칵! 다운로드 하는 함수
+// 🚨 [수정] 보고서를 예쁜 PNG 이미지로 찰칵! (스크롤 짤림 방지 적용)
 function downloadReportAsImage() {
     const modalContent = document.querySelector('#ai-completion-modal > div'); 
     const btnArea = document.getElementById('ai-modal-btn-area'); 
     
+    // 1. 사진에 버튼이 안 나오게 임시 숨김
     const originalDisplay = btnArea.style.display;
     btnArea.style.display = 'none';
     
-    html2canvas(modalContent, { scale: 2 }).then(canvas => {
+    // 2. 🚀 스크롤 아래 내용이 짤리지 않도록 모달 높이 제한을 임시 해제하여 쫙 펼침
+    const originalMaxHeight = modalContent.style.maxHeight;
+    const originalOverflow = modalContent.style.overflowY;
+    modalContent.style.maxHeight = 'none';
+    modalContent.style.overflowY = 'visible';
+
+    // 3. 화면 최상단으로 임시 스크롤 (중간에서 캡처 시 위쪽이 하얗게 짤리는 버그 방지)
+    const originalScrollY = window.scrollY;
+    window.scrollTo(0, 0);
+
+    // 4. 찰칵! 사진 찍기
+    html2canvas(modalContent, { 
+        scale: 2, // 고화질
+        useCORS: true,
+        scrollY: 0,
+        windowHeight: modalContent.scrollHeight // 늘어난 전체 높이만큼 캔버스 영역 확보
+    }).then(canvas => {
+        // 다운로드 처리
         const link = document.createElement('a');
         const safeTitle = window.tempCompletionData.title.replace(/\[분석완료\]\s*/, '').replace(/[^a-zA-Z0-9가-힣]/g, '_');
         link.download = `[분석리포트]_${safeTitle}.png`;
         link.href = canvas.toDataURL("image/png");
         link.click();
+        
+        // 5. 사진 찍기가 끝났으니 원래 화면 상태(높이, 스크롤, 버튼)로 완벽하게 원상 복구
+        modalContent.style.maxHeight = originalMaxHeight;
+        modalContent.style.overflowY = originalOverflow;
+        window.scrollTo(0, originalScrollY);
         btnArea.style.display = originalDisplay;
     });
 }
