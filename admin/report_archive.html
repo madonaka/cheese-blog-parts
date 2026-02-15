@@ -1435,41 +1435,99 @@ async function requestAIProposal() {
             const data = json.data || {};
             openDocModal(null, data.title || "AI 자동 생성 기획서", "", "기획서");
 
-            const formatLines = (text) => {
-                if (!text) return "내용 없음";
+            // 🌟 [완벽 복구] AI가 기호를 섞어 쓰더라도 태그를 완벽하게 분리해 내는 무적의 포맷팅 함수!
+            const formatToSubBullets = (text) => {
+                if (!text) return '내용 없음';
                 if (Array.isArray(text)) text = text.join('\n');
-                return String(text).split('\n').map(l => {
-                    let c = l.trim();
-                    if(c.startsWith('-')) c = c.substring(1).trim();
-                    return c ? '• ' + c : '';
-                }).filter(l => l !== '').join('<br>');
+                
+                // 원하시는 예쁜 소제목 매핑
+                const headers = {
+                    '배경': '배경: 왜 이 기획을 하게 되었는가?',
+                    '목적': '목적: 이 기획을 통해 달성하고자 하는 궁극적인 목표는?',
+                    '현상': '현재 상황: 현재 업무나 서비스의 상태는 어떠한가?',
+                    '문제점': '문제점: 해결해야 할 가장 큰 병목이나 원인은?',
+                    '해결방안': '핵심 솔루션: 문제를 어떻게 타개할 것인가?',
+                    '실행전략': '실행 전략: 타 부서 협업, 리스크 대비책 등 상세 전략',
+                    '기대효과': '정량적 효과: 매출 X% 증대, 리드타임 Y시간 단축 등',
+                    '소요예산': '소요 예산: 투입되어야 할 인력 및 예산'
+                };
+
+                let resultHtml = '';
+                let currentKey = '';
+                let currentList = '';
+
+                String(text).split('\n').forEach(line => {
+                    let cleanLine = line.trim();
+                    if (!cleanLine) return;
+
+                    // 💡 정규식: 앞에 -, *, •, 공백 등 뭐가 오든 키워드만 완벽하게 캐치!
+                    const match = cleanLine.match(/^[-\*\•\s]*\[(.*?)\](.*)/);
+                    
+                    if (match) {
+                        let key = match[1].replace(/\s/g, ''); 
+                        let content = match[2].trim();
+                        
+                        // 1. 새로운 키워드가 등장하면, 닫혀있던 리스트를 붙이고 새 소제목(Bold) 출력
+                        if (key !== currentKey) {
+                            if (currentList !== '') {
+                                resultHtml += `<ul style='padding-left:20px; margin:4px 0 16px 0; line-height:1.6; color:#475569;'>${currentList}</ul>`;
+                                currentList = '';
+                            }
+                            let headerText = headers[key] || `${key}:`; 
+                            resultHtml += `<div style='margin-top:8px; color:#1e293b;'><b>${headerText}</b></div>`;
+                            currentKey = key;
+                        }
+                        
+                        // 2. 내용은 무조건 현재 리스트(li)에 추가
+                        if (content) {
+                            if(content.match(/^[-\*\•]/)) content = content.substring(1).trim();
+                            content = content.replace(/^(배경은|목적은|현상은|문제점은|핵심 솔루션은|실행 전략은|기대 효과는|소요 예산은)\s*/, '');
+                            currentList += `<li style='margin-bottom:4px;'>${content}</li>`;
+                        }
+                    } else {
+                        // 태그 없이 내용만 이어지는 줄도 리스트에 추가
+                        let content = cleanLine;
+                        if(content.match(/^[-\*\•]/)) content = content.substring(1).trim();
+                        if (content) {
+                            currentList += `<li style='margin-bottom:4px;'>${content}</li>`;
+                        }
+                    }
+                });
+                
+                // 마지막에 남은 리스트 닫아주기
+                if (currentList !== '') {
+                    resultHtml += `<ul style='padding-left:20px; margin:4px 0 8px 0; line-height:1.6; color:#475569;'>${currentList}</ul>`;
+                }
+                
+                return resultHtml || '내용 없음';
             };
             
+            // 🌟 4분할 표 레이아웃 + formatToSubBullets 적용 완료
             const editorContent = `
-            <div style="font-family:'Pretendard','Malgun Gothic',sans-serif; max-width:900px; margin:0 auto; color:#1e293b;">
-                <table style="width:100%; border-collapse:collapse; table-layout:fixed; border:2px solid #cbd5e1;">
+            <div style='font-family:'Pretendard','Malgun Gothic',sans-serif; max-width:900px; margin:0 auto; color:#1e293b;'>
+                <table style='width:100%; border-collapse:collapse; table-layout:fixed; border:2px solid #cbd5e1;'>
                     <tr>
-                        <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;">
-                            <h3 style="margin:0 0 12px 0; color:#ea580c; font-size:1.15rem; border-bottom:2px solid #fed7aa; padding-bottom:8px;">1. 기획 배경 및 목적 (Why)</h3>
-                            <div style="font-size:1rem; color:#333; line-height:1.8;">${formatLines(data.background_purpose)}</div>
+                        <td style='width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;'>
+                            <h3 style='margin:0 0 12px 0; color:#ea580c; font-size:1.15rem; border-bottom:2px solid #fed7aa; padding-bottom:8px;'>1. 기획 배경 및 목적 (Why)</h3>
+                            <div style='font-size:1rem; color:#333; line-height:1.6;'>${formatToSubBullets(data.background_purpose)}</div>
                         </td>
-                        <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f8fafc;">
-                            <h3 style="margin:0 0 12px 0; color:#ea580c; font-size:1.15rem; border-bottom:2px solid #fed7aa; padding-bottom:8px;">2. 현상 및 핵심 문제점 (What)</h3>
-                            <div style="font-size:1rem; color:#333; line-height:1.8;">${formatLines(data.current_issue)}</div>
+                        <td style='width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f8fafc;'>
+                            <h3 style='margin:0 0 12px 0; color:#ea580c; font-size:1.15rem; border-bottom:2px solid #fed7aa; padding-bottom:8px;'>2. 현상 및 핵심 문제점 (What)</h3>
+                            <div style='font-size:1rem; color:#333; line-height:1.6;'>${formatToSubBullets(data.current_issue)}</div>
                         </td>
                     </tr>
                     <tr>
-                        <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f8fafc;">
-                            <h3 style="margin:0 0 12px 0; color:#ea580c; font-size:1.15rem; border-bottom:2px solid #fed7aa; padding-bottom:8px;">3. 해결 방안 및 핵심 전략 (How)</h3>
-                            <div style="font-size:1rem; color:#333; line-height:1.6;">${formatLines(data.strategy)}</div>
+                        <td style='width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f8fafc;'>
+                            <h3 style='margin:0 0 12px 0; color:#ea580c; font-size:1.15rem; border-bottom:2px solid #fed7aa; padding-bottom:8px;'>3. 해결 방안 및 핵심 전략 (How)</h3>
+                            <div style='font-size:1rem; color:#333; line-height:1.6;'>${formatToSubBullets(data.strategy)}</div>
                         </td>
-                        <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;">
-                            <h3 style="margin:0 0 12px 0; color:#ea580c; font-size:1.15rem; border-bottom:2px solid #fed7aa; padding-bottom:8px;">4. 기대 효과 및 소요 예산 (ROI)</h3>
-                            <div style="font-size:1rem; color:#333; line-height:1.8;">${formatLines(data.roi)}</div>
+                        <td style='width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;'>
+                            <h3 style='margin:0 0 12px 0; color:#ea580c; font-size:1.15rem; border-bottom:2px solid #fed7aa; padding-bottom:8px;'>4. 기대 효과 및 소요 예산 (ROI)</h3>
+                            <div style='font-size:1rem; color:#333; line-height:1.6;'>${formatToSubBullets(data.roi)}</div>
                         </td>
                     </tr>
                 </table>
-                <div id="schedule-placeholder"></div>
+                <div id='schedule-placeholder'></div>
             </div>
             `;
             
