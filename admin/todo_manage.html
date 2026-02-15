@@ -2194,7 +2194,7 @@ async function closeProjectWithAI(goalId) {
     finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); }
 }
 
-// --- 🌟 수정: 최신 UI 디자인 (완료 팩트 + 기획vs실제 테이블) ---
+// --- 🌟 수정: 최신 UI 디자인 (마감/스핀오프 2가지 선택 버튼 적용) ---
 function renderCompletionReport(data, completedList = []) {
     const makeList = (arr) => {
         if (!arr || arr.length === 0) return "<li style='color:#94a3b8;'>내용 없음</li>";
@@ -2223,19 +2223,6 @@ function renderCompletionReport(data, completedList = []) {
                 <td style="padding: 14px; color: #2563eb; font-weight: 700; width: 29%; background: #eff6ff;">${item.insight}</td>
             </tr>`;
         });
-    }
-
-    let scheduleHtml = "잔여 항목이 없어 완벽하게 종료되었습니다. 🎉";
-    let btnText = "✨ 확정 및 프로젝트 마감";
-    
-    if (data.followup_schedule && data.followup_schedule.length > 0) {
-        btnText = "🚀 마감 확정 및 [보완/방어] 자동 스핀오프";
-        scheduleHtml = `<table style="width:100%; border-collapse:collapse; text-align:left; border: 1px solid #cbd5e1; margin-top:10px;">
-            <tr style="background:#f1f5f9;"><th style="padding:8px; border: 1px solid #cbd5e1;">영역</th><th style="padding:8px; border: 1px solid #cbd5e1;">대응 작업명</th><th style="padding:8px; border: 1px solid #cbd5e1;">권장 일정</th></tr>`;
-        data.followup_schedule.forEach(t => {
-            scheduleHtml += `<tr><td style="padding:8px; border: 1px solid #cbd5e1; font-size:0.9rem;">${t.category}</td><td style="padding:8px; border: 1px solid #cbd5e1; font-weight:bold;">${t.task_name}</td><td style="padding:8px; border: 1px solid #cbd5e1; font-size:0.85rem;">${t.start_date} ~ ${t.end_date}</td></tr>`;
-        });
-        scheduleHtml += "</table>";
     }
 
   const htmlTemplate = `
@@ -2284,22 +2271,20 @@ function renderCompletionReport(data, completedList = []) {
             
             <div style="background:#f8fafc; border: 1px solid #e2e8f0; border-radius:12px; padding: 20px;">
                 <h3 style="color:#0f172a; margin:0 0 16px 0;">🚀 5. Action Items (다음 스텝 보완)</h3>
-                <ul style="padding-left: 20px; margin-bottom: 20px;">${makeList(data.action_items)}</ul>
-                
-                <h4 style="color:#475569; margin:0 0 10px 0; border-top: 1px dashed #cbd5e1; padding-top: 16px;">🛡️ 후속 보완을 위한 자동 스핀오프 일정</h4>
-                ${scheduleHtml}
+                <ul style="padding-left: 20px; margin-bottom: 0;">${makeList(data.action_items)}</ul>
             </div>
             
-            <div id="ai-modal-btn-area" style="text-align:center; margin-top:30px; display:flex; gap:12px; justify-content:center;">
-                <button onclick="document.getElementById('ai-completion-modal').remove()" style="padding:14px 28px; border:none; border-radius:8px; background:#94a3b8; color:#fff; cursor:pointer; font-weight:bold; font-size:1rem;">취소</button>
-                <button onclick="downloadReportAsImage()" style="padding:14px 28px; border:1px solid #cbd5e1; border-radius:8px; background:#fff; color:#475569; cursor:pointer; font-weight:bold; font-size:1rem; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">📸 이미지로 저장</button>
-                <button onclick="saveCompletionReport()" style="padding:14px 28px; border:none; border-radius:8px; background:#2563eb; color:#fff; cursor:pointer; font-weight:bold; font-size:1rem; box-shadow: 0 4px 6px rgba(37,99,235,0.2);">${btnText}</button>
+            <div id="ai-modal-btn-area" style="text-align:center; margin-top:30px; display:flex; gap:12px; justify-content:center; flex-wrap:wrap;">
+                <button onclick="document.getElementById('ai-completion-modal').remove()" style="padding:14px 24px; border:none; border-radius:8px; background:#94a3b8; color:#fff; cursor:pointer; font-weight:bold; font-size:1rem;">취소</button>
+                <button onclick="downloadReportAsImage()" style="padding:14px 24px; border:1px solid #cbd5e1; border-radius:8px; background:#fff; color:#475569; cursor:pointer; font-weight:bold; font-size:1rem;">📸 이미지 저장</button>
+                <div style="width:2px; background:#e2e8f0; margin:0 10px;"></div>
+                <button onclick="saveCompletionReport(false)" style="padding:14px 24px; border:none; border-radius:8px; background:#10b981; color:#fff; cursor:pointer; font-weight:bold; font-size:1rem; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.2);">✨ 그냥 마감만 하기</button>
+                <button onclick="saveCompletionReport(true)" style="padding:14px 24px; border:none; border-radius:8px; background:#2563eb; color:#fff; cursor:pointer; font-weight:bold; font-size:1rem; box-shadow: 0 4px 6px rgba(37,99,235,0.2);">🚀 마감 & 스핀오프 기획서 자동작성</button>
             </div>
         </div>
     </div>`;
     document.body.insertAdjacentHTML('beforeend', htmlTemplate);
 }
-
 // 🚨 [신규] 보고서를 예쁜 PNG 이미지로 찰칵! 다운로드 하는 함수
 function downloadReportAsImage() {
     const modalContent = document.querySelector('#ai-completion-modal > div'); 
@@ -2318,9 +2303,9 @@ function downloadReportAsImage() {
     });
 }
 
-// --- 🌟 수정: 저장 함수 (팩트 데이터 같이 서버로 전송) ---
-async function saveCompletionReport() {
-    if(typeof showAdminLoading==='function') showAdminLoading("프로젝트 마감 및 후속 처리 중입니다... 💾");
+// --- 🌟 수정: 저장 함수 (스핀오프 선택 시 프롬프트 생성 후 아카이브 탭으로 이동) ---
+async function saveCompletionReport(isSpinoff) {
+    if(typeof showAdminLoading==='function') showAdminLoading("마감 처리 중입니다... 💾");
     try {
         const res = await fetch(window.CHEESE_ADMIN_API_BASE, {
             method: "POST",
@@ -2328,19 +2313,41 @@ async function saveCompletionReport() {
                 mode: "saveCompletionReport", 
                 goalId: window.tempClosingGoalId, 
                 rData: window.tempCompletionData,
-                completedList: window.tempCompletedList 
+                completedList: window.tempCompletedList,
+                skipSpinoff: true // 기존의 멍청한 껍데기 생성 백엔드 로직은 무조건 무시!
             })
         });
         const json = await res.json();
         if(json.result === "success") {
-            alert("✨ 성공적으로 마감되었습니다!\n잔여 항목이 있다면 목표 트리에 '새 프로젝트'로 추가되었습니다.");
             document.getElementById('ai-completion-modal').remove();
-            if(typeof loadAllData === 'function') await loadAllData(); 
+
+            if (isSpinoff) {
+                // 스핀오프 선택 시: 이전 프로젝트의 리스크를 담은 완벽한 프롬프트 생성
+                const data = window.tempCompletionData;
+                const projectName = data.title.replace(/\[분석완료\]\s*/, '');
+                
+                // 데이터 배열이 비어있을 경우를 대비한 안전 처리
+                const risks = data.residual_risks || [];
+                const actions = data.action_items || [];
+                
+                const promptText = `방금 성공적으로 마감한 '${projectName}' 프로젝트의 후속 스핀오프(보완) 기획서를 작성해줘.\n\n[이전 프로젝트에서 발견된 리스크 및 한계점]:\n${risks.join('\n')}\n\n[이를 해결하기 위한 Action Items]:\n${actions.join('\n')}\n\n위의 한계점들을 완벽하게 방어하고 시스템을 한 단계 업그레이드하기 위한 구체적인 새 프로젝트 기획과 세부 일정표를 제안해줘.`;
+                
+                // 브라우저 세션에 임시 저장
+                sessionStorage.setItem('autoSpinoffPrompt', promptText);
+                
+                alert("보고서가 저장되었습니다. ✨\n스핀오프 기획서 생성을 위해 '문서 아카이브'로 자동 이동합니다.");
+                
+                // 아카이브 페이지로 화면 전환 (Cheese Lab 구조상 파라미터로 탭 전환)
+                window.location.href = "?page=report_archive";
+            } else {
+                // 단순 마감 시
+                alert("✨ 성공적으로 마감 및 보고서가 저장되었습니다!");
+                if(typeof loadAllData === 'function') await loadAllData(); 
+            }
         } else alert("저장 실패: " + json.msg);
     } catch(e) { alert("통신 오류 발생"); }
     finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); }
 }
-
   // 🚨 [신규] 완료된 항목 숨기기/보기 전역 변수 (기본값: 숨기기)
 window.hideCompleted = true; 
 
