@@ -1724,7 +1724,132 @@ function showAILoading(mode) {
         }
     }, 3500); 
 }
+// 🌟 [신규 추가] AI가 만든 기획서를 화면에 예쁘게 띄워주는 미리보기 함수
+function renderAIProposalPreview(data) {
+    // 배열 또는 텍스트의 줄바꿈을 글머리 기호(•)로 변환하는 헬퍼 함수
+    const formatBullets = (text) => {
+        if (!text) return "<span style='color:#94a3b8;'>내용 없음</span>";
+        return text.split('\n').map(line => {
+            let clean = line.trim();
+            if(!clean) return "";
+            if (clean.startsWith('-')) clean = clean.substring(1).trim();
+            return `<div style="margin-bottom:6px; padding-left:14px; text-indent:-14px; line-height:1.5; color:#475569;">• ${clean}</div>`;
+        }).join('');
+    };
 
+    // 일정표(Schedule)를 테이블 행으로 변환
+    let scheduleHtml = "";
+    if (data.schedule && data.schedule.length > 0) {
+        data.schedule.forEach(task => {
+            const isMidGoal = task.category && task.category.trim() !== "";
+            if (isMidGoal) {
+                // 상위 공정 (중간 목표)
+                scheduleHtml += `
+                <tr style="background:#f8fafc; border-top:2px solid #e2e8f0;">
+                    <td style="padding:12px 10px; font-weight:bold; color:#7c3aed;">${task.category}</td>
+                    <td style="padding:12px 10px; font-weight:bold; color:#1e293b;">${task.task_name}</td>
+                    <td style="padding:12px 10px; color:#475569; font-size:0.9rem;">${task.start_date} ~ ${task.end_date}</td>
+                    <td style="padding:12px 10px; color:#059669; font-weight:bold; font-size:0.9rem;">${task.output || '-'}</td>
+                </tr>`;
+            } else {
+                // 하위 할 일 (Task)
+                scheduleHtml += `
+                <tr style="border-top:1px dashed #e2e8f0;">
+                    <td style="padding:8px 10px; color:#94a3b8; text-align:center;">↳</td>
+                    <td style="padding:8px 10px; color:#475569;">${task.task_name}</td>
+                    <td style="padding:8px 10px; color:#64748b; font-size:0.85rem;">${task.start_date} ~ ${task.end_date}</td>
+                    <td style="padding:8px 10px; color:#64748b; font-size:0.85rem;">${task.output || '-'}</td>
+                </tr>`;
+            }
+        });
+    } else {
+        scheduleHtml = "<tr><td colspan='4' style='padding:20px; text-align:center; color:#94a3b8;'>생성된 일정이 없습니다.</td></tr>";
+    }
+
+    const htmlTemplate = `
+    <div id="ai-proposal-preview-modal" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:99999; display:flex; justify-content:center; align-items:center;">
+        <div style="background:#fff; width:95%; max-width:1000px; max-height:95vh; overflow-y:auto; border-radius:16px; box-shadow:0 10px 25px rgba(0,0,0,0.2); padding:40px;">
+            
+            <h2 style="color:#7c3aed; text-align:center; margin-bottom:8px; font-size:1.8rem;">✨ AI 기획서 미리보기 (검수)</h2>
+            <h3 style="color:#1e293b; text-align:center; margin-top:0;">${data.title}</h3>
+            
+            <p style="text-align:center; color:#64748b; font-size:0.95rem; margin-bottom:30px; font-weight:bold;">
+                👀 아래 기획안과 일정을 검토하신 후 확정 버튼을 누르면, 목표 트리에 정식으로 세팅됩니다!
+            </p>
+
+            <table style="width:100%; border-collapse:collapse; margin-bottom:30px; border:2px solid #e2e8f0;">
+                <tr>
+                    <td style="width:50%; vertical-align:top; border:1px solid #e2e8f0; padding:20px; background:#f8fafc;">
+                        <h3 style="color:#7c3aed; margin:0 0 12px 0; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">1. 기획 배경 및 목적</h3>
+                        ${formatBullets(data.background_purpose)}
+                    </td>
+                    <td style="width:50%; vertical-align:top; border:1px solid #e2e8f0; padding:20px; background:#fff;">
+                        <h3 style="color:#7c3aed; margin:0 0 12px 0; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">2. 현상 및 핵심 문제점</h3>
+                        ${formatBullets(data.current_issue)}
+                    </td>
+                </tr>
+                <tr>
+                    <td style="width:50%; vertical-align:top; border:1px solid #e2e8f0; padding:20px; background:#fff;">
+                        <h3 style="color:#7c3aed; margin:0 0 12px 0; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">3. 해결 방안 및 핵심 전략</h3>
+                        ${formatBullets(data.strategy)}
+                    </td>
+                    <td style="width:50%; vertical-align:top; border:1px solid #e2e8f0; padding:20px; background:#f8fafc;">
+                        <h3 style="color:#7c3aed; margin:0 0 12px 0; border-bottom:2px solid #ddd6fe; padding-bottom:8px;">4. 기대 효과 및 소요 예산</h3>
+                        ${formatBullets(data.roi)}
+                    </td>
+                </tr>
+            </table>
+
+            <h3 style="color:#1e293b; margin-bottom:12px;">📅 5. 자동 생성된 애자일(Agile) 일정표</h3>
+            <table style="width:100%; border-collapse:collapse; border:1px solid #e2e8f0; margin-bottom:30px; text-align:left;">
+                <tr style="background:#f1f5f9; border-bottom:2px solid #cbd5e1;">
+                    <th style="padding:12px; width:20%;">공정 카테고리</th>
+                    <th style="padding:12px; width:40%;">세부 작업명</th>
+                    <th style="padding:12px; width:25%;">권장 일정</th>
+                    <th style="padding:12px; width:15%;">산출물</th>
+                </tr>
+                ${scheduleHtml}
+            </table>
+            
+            <div style="text-align:center; display:flex; gap:12px; justify-content:center;">
+                <button onclick="document.getElementById('ai-proposal-preview-modal').remove()" style="padding:14px 24px; border:none; border-radius:8px; background:#94a3b8; color:#fff; cursor:pointer; font-weight:bold; font-size:1rem;">❌ 취소 (다시 생성하기)</button>
+                <button onclick="confirmAndSaveProposal()" style="padding:14px 24px; border:none; border-radius:8px; background:#7c3aed; color:#fff; cursor:pointer; font-weight:bold; font-size:1rem; box-shadow: 0 4px 6px rgba(124, 58, 237, 0.2);">✨ 이대로 DB 확정 및 일정 생성</button>
+            </div>
+        </div>
+    </div>`;
+    document.body.insertAdjacentHTML('beforeend', htmlTemplate);
+}
+
+// 🌟 [신규 추가] 사용자가 검수 후 승인한 기획서를 서버로 전송하여 진짜 저장하는 함수
+async function confirmAndSaveProposal() {
+    // 공통 로딩창이 report_archive에 있다면 호출
+    if(typeof showAILoading === 'function') showAILoading('report');
+    else if(typeof showAdminLoading === 'function') showAdminLoading("기획서를 정식 등록하고 일정을 생성 중입니다... 💾");
+    
+    try {
+        const res = await fetch(window.CHEESE_ADMIN_API_BASE, {
+            method: "POST",
+            body: JSON.stringify({ mode: "saveProposal", pData: window.tempProposalData })
+        });
+        const json = await res.json();
+        
+        if (json.result === "success") {
+            alert("✨ 성공적으로 기획서가 저장되고 일정이 세팅되었습니다!\n(목표 관리 탭에서 확인하세요.)");
+            document.getElementById('ai-proposal-preview-modal').remove();
+            
+            // 데이터 새로고침 (아카이브 리스트 갱신)
+            if (typeof loadAllData === 'function') await loadAllData(); 
+        } else {
+            alert("기획서 저장 실패: " + json.msg);
+        }
+    } catch(e) {
+        alert("통신 오류 발생: " + e.toString());
+    } finally {
+        if(typeof hideAILoading === 'function') hideAILoading();
+        else if(typeof hideAdminLoading === 'function') hideAdminLoading();
+    }
+}
+	
 function hideAILoading() {
     if(aiLoaderInterval) clearInterval(aiLoaderInterval);
     const overlay = document.getElementById('ai-dynamic-loader-overlay');
