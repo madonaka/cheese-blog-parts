@@ -1384,13 +1384,13 @@ function openAIPromptModal() {
     document.getElementById('ai-prompt-modal').classList.add('open');
 }
 
-// 🌟 [안전 보완] AI 기획서 요청 & 에러 방지(예외 처리) 완벽 대응
+	// 🌟 [안전 보완] AI 기획서 요청 & 에러 방지(예외 처리) 완벽 대응
 async function requestAIProposal() {
     const promptText = document.getElementById('ai-prompt-input').value.trim();
     if(!promptText) { alert("기획 내용을 적어주세요!"); return; }
 
     closeModal('ai-prompt-modal');
-    showAILoading('proposal'); // 멋진 다크 로딩 화면 띄우기
+    if(typeof showAILoading === 'function') showAILoading('proposal');
 
     try {
         const res = await fetch(window.CHEESE_ADMIN_API_BASE, {
@@ -1407,10 +1407,10 @@ async function requestAIProposal() {
             
             openDocModal(null, data.title || "AI 자동 생성 기획서", "", "기획서");
 
-            // 🚨 [방어 1] AI가 텍스트가 아닌 배열(Array)로 응답해도 에러 없이 처리하는 강력한 포맷팅 함수
+            // 🚨 [방어 1] 배열/텍스트 무관하게 처리하는 강력한 포맷팅 함수
             const formatLines = (text) => {
                 if (!text) return "내용 없음";
-                if (Array.isArray(text)) text = text.join('\n'); // AI가 배열로 줬다면 문자로 합침
+                if (Array.isArray(text)) text = text.join('\n');
                 return String(text).split('\n').map(l => {
                     let c = l.trim();
                     if(c.startsWith('-')) c = c.substring(1).trim();
@@ -1451,7 +1451,7 @@ async function requestAIProposal() {
                 tinymce.get('doc-content').setContent(editorContent);
             }
 
-            // 🚨 [방어 2] AI가 일정을 안 주거나 start_date를 빼먹었을 때 뻗지 않도록 예외 처리
+            // 🚨 [방어 2] 일정 렌더링 예외 처리
             let hasSchedule = Array.isArray(data.schedule) && data.schedule.length > 0;
             if(hasSchedule) {
                 const firstTask = data.schedule[0];
@@ -1467,13 +1467,12 @@ async function requestAIProposal() {
                 setTimeout(() => { insertSmartSchedule(); }, 500); 
             }
 
-            // 🚨 보라색 버튼 띄우기 및 기본 버튼 숨기기
+            // 🚨 [핵심 복구] 보라색 버튼 띄우기 (에러 안 남!)
             const footer = document.querySelector('#doc-modal .modal-footer-custom');
             if(footer) {
                 let oldBtn = document.getElementById('ai-confirm-btn');
-                if(oldBtn) oldBtn.remove(); // 기존에 있으면 지우기
+                if(oldBtn) oldBtn.remove(); 
 
-                // 🚨 [방어 3] 기본 저장 버튼 숨기기 안전하게 처리
                 const btnSaveDoc = document.getElementById('btn-save-doc');
                 if (btnSaveDoc) btnSaveDoc.style.display = 'none';
 
@@ -1483,7 +1482,10 @@ async function requestAIProposal() {
                 confirmBtn.className = 'btn';
                 confirmBtn.style.cssText = 'background: #7c3aed; color: #fff; font-weight: bold; border: none; padding: 12px 24px; border-radius:12px; margin-right: auto; box-shadow:0 4px 6px -1px rgba(124,58,237,0.3); cursor:pointer;';
                 confirmBtn.innerHTML = '✨ 기획안 확정 및 목표/할일 자동 세팅';
-                confirmBtn.onclick = confirmAndSaveAIProposal; 
+                
+                // 💥 이 함수가 위에서 지워져서 에러가 났었습니다! 이제 안전하게 연결됩니다.
+                confirmBtn.onclick = window.confirmAndSaveAIProposal; 
+                
                 footer.insertBefore(confirmBtn, footer.firstChild); 
             }
 
@@ -1498,9 +1500,75 @@ async function requestAIProposal() {
         console.error("AI Proposal Error:", e); 
         alert("통신 오류가 발생했습니다. (데이터 포맷 분석 중 에러)");
     } finally {
-        hideAILoading();
+        if(typeof hideAILoading === 'function') hideAILoading();
     }
 }
+
+// ==========================================================
+// 🔥 [절대 지우지 마세요!] DB에 진짜 목표/할일을 생성하는 마법의 저장 함수
+// ==========================================================
+window.confirmAndSaveAIProposal = async function() {
+    if(!window.tempAIProposalData) return;
+
+    // 에디터에서 수정한 일정 역추출
+    let updatedSchedule = window.tempAIProposalData.schedule;
+    if (tinymce.get('doc-content')) {
+        const currentCode = tinymce.get('doc-content').getContent();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(currentCode, 'text/html');
+        const scheduleSection = doc.querySelector('.schedule-section');
+
+        if (scheduleSection) {
+            const configRaw = scheduleSection.getAttribute('data-config');
+            if (configRaw) {
+                const config = JSON.parse(decodeURIComponent(configRaw));
+                updatedSchedule = config.rows.map(r => ({
+                    category: r.cat || "",
+                    task_name: r.task || "",
+                    start_date: r.s || "",
+                    end_date: r.e || "",
+                    output: r.output || ""
+                }));
+            }
+        }
+    }
+
+    const finalTitle = document.getElementById('doc-title').value || window.tempAIProposalData.title;
+    const finalData = {
+        ...window.tempAIProposalData,
+        title: finalTitle,
+        schedule: updatedSchedule
+    };
+
+    if(typeof showAdminLoading==='function') showAdminLoading("DB에 기획서와 일정을 저장하는 중입니다... 💾");
+
+    try {
+        const res = await fetch(window.CHEESE_ADMIN_API_BASE, {
+            method: "POST",
+            body: JSON.stringify({ mode: "saveProposal", pData: finalData })
+        });
+        const json = await res.json();
+
+        if(json.result === "success") {
+            alert("✨ 기획서와 세부 일정이 대시보드에 완벽하게 생성되었습니다!");
+            closeModal('doc-modal');
+            
+            // UI 원상복구
+            document.getElementById('ai-confirm-btn')?.remove(); 
+            const btnSaveDoc = document.getElementById('btn-save-doc');
+            if (btnSaveDoc) btnSaveDoc.style.display = 'block'; 
+            
+            window.tempAIProposalData = null; 
+            if(typeof loadAllData === 'function') await loadAllData();
+        } else {
+            alert("저장 실패: " + json.msg);
+        }
+    } catch(e) {
+        console.error(e); alert("통신 오류가 발생했습니다.");
+    } finally {
+        if(typeof hideAdminLoading==='function') hideAdminLoading();
+    }
+};
 
 // -------------------------------------------------------------
 // 🔥 기획서 열람 시 실시간 Todo 리스트(Task) 연동 기능 (어제 코드와 동일)
