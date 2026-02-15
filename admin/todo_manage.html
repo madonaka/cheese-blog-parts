@@ -2143,19 +2143,37 @@ document.getElementById('todo-form').addEventListener('submit', async (e) => {
 window.tempCompletionData = null;
 window.tempClosingGoalId = null;
 
-// 1. 버튼 누르면 AI 보고서 생성 요청 (한 줄 회고 입력 추가)
-async function closeProjectWithAI(goalId) {
-    // 단순 확인창(confirm) 대신 입력창(prompt)을 띄워서 회고를 받습니다.
-    const retrospective = prompt(
-        "🏁 프로젝트를 마감합니다.\n\n이번 프로젝트를 진행하며 가장 힘들었던 점, 기술적/사업적 깨달음, 혹은 다음 스텝을 위한 '한 줄 회고'를 적어주세요.\n(AI가 이 내용을 바탕으로 실용적인 분석 보고서를 추출합니다.)",
-        ""
-    );
+// --- 🌟 신규: 회고 모달 제어용 변수 및 함수 ---
+let retroResolve = null;
 
-    // 사용자가 취소 버튼을 누르면 중단
+function openRetroModal() {
+    return new Promise((resolve) => {
+        document.getElementById('retro-input-text').value = ""; // 창 열 때 초기화
+        document.getElementById('retro-modal').classList.add('open');
+        retroResolve = resolve; // 확인/취소 버튼 누를 때까지 대기
+    });
+}
+
+function closeRetroModal() {
+    document.getElementById('retro-modal').classList.remove('open');
+    if(retroResolve) retroResolve(null); // 취소 시 null 반환
+}
+
+function submitRetroModal() {
+    const text = document.getElementById('retro-input-text').value.trim();
+    document.getElementById('retro-modal').classList.remove('open');
+    if(retroResolve) retroResolve(text); // 입력된 텍스트 반환
+}
+
+// --- 🌟 수정: AI 마감 메인 함수 ---
+async function closeProjectWithAI(goalId) {
+    // 기존의 prompt() 대신 예쁜 커스텀 모달을 띄우고 대기합니다.
+    const retrospective = await openRetroModal();
+
+    // 사용자가 취소 버튼을 누르거나 창을 닫으면 중단
     if (retrospective === null) return; 
 
-    // 로딩창 띄우기
-    if(typeof showAdminLoading==='function') showAdminLoading("AI가 회고와 작업 로그를 분석하여 데이터를 추출 중입니다... 📝");
+    if(typeof showAdminLoading==='function') showAdminLoading("AI가 기획-실행-회고를 입체적으로 분석 중입니다... 📝");
     else alert("AI 데이터 추출 중... 잠시만 기다려주세요.");
 
     try {
@@ -2164,7 +2182,7 @@ async function closeProjectWithAI(goalId) {
             body: JSON.stringify({ 
                 mode: "generateCompletionReport", 
                 goalId: goalId,
-                retrospective: retrospective // 🚀 백엔드로 입력받은 회고 전달
+                retrospective: retrospective 
             })
         });
         const json = await res.json();
@@ -2178,7 +2196,8 @@ async function closeProjectWithAI(goalId) {
     finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); }
 }
 
-// 2. 실용적 데이터 추출 목적에 맞춘 렌더링 화면
+
+// --- 🌟 수정: 최신 데이터 추출 포맷에 맞춘 렌더링 함수 ---
 function renderCompletionReport(data) {
     const formatToSubBullets = (text) => {
         if (!text) return "<span style='color:#94a3b8;'>분석 데이터 없음</span>";
@@ -2202,7 +2221,7 @@ function renderCompletionReport(data) {
     let btnText = "✨ 확정 및 프로젝트 마감";
     
     if (data.followup_schedule && data.followup_schedule.length > 0) {
-        btnText = "🚀 마감 확정 및 [잔여 리스크] 방어 프로젝트 생성";
+        btnText = "🚀 마감 확정 및 [보완/방어] 자동 스핀오프";
         scheduleHtml = `<table style="width:100%; border-collapse:collapse; text-align:left; border: 1px solid #cbd5e1; margin-top:10px;">
             <tr style="background:#f1f5f9;"><th style="padding:8px; border: 1px solid #cbd5e1;">영역</th><th style="padding:8px; border: 1px solid #cbd5e1;">대응 작업명</th><th style="padding:8px; border: 1px solid #cbd5e1;">권장 일정</th></tr>`;
         data.followup_schedule.forEach(t => {
@@ -2215,7 +2234,7 @@ function renderCompletionReport(data) {
     <div id="ai-completion-modal" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:99999; display:flex; justify-content:center; align-items:center;">
         <div style="background:#fff; width:90%; max-width:900px; max-height:90vh; overflow-y:auto; border-radius:12px; box-shadow:0 10px 25px rgba(0,0,0,0.2); padding: 30px;">
             
-            <h2 style="color:#1e293b; text-align:center; margin-bottom: 8px;">📊 프로젝트 데이터 추출 결과</h2>
+            <h2 style="color:#1e293b; text-align:center; margin-bottom: 8px;">📊 프로젝트 입체 분석 결과</h2>
             <h3 style="color:#475569; text-align:center; margin-top:0;">${data.title}</h3>
             
             <div style="text-align:center; color:#64748b; font-size:0.95rem; font-weight:bold; border-bottom:2px solid #e2e8f0; padding-bottom:15px; margin-bottom:20px;">
@@ -2225,28 +2244,28 @@ function renderCompletionReport(data) {
             <table style="width:100%; border-collapse:collapse; margin-top:10px; border:2px solid #cbd5e1;">
                 <tr>
                     <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f8fafc;">
-                        <h3 style="color:#2563eb; margin:0 0 10px 0;">⏱️ 1. 일정 및 병목(Bottleneck) 분석</h3>
-                        <div style="font-size:0.9rem; color:#475569;">${formatToSubBullets(data.time_analysis || data.executive_summary)}</div>
+                        <h3 style="color:#2563eb; margin:0 0 10px 0;">⚖️ 1. 기획 vs 실제 진행 분석</h3>
+                        <div style="font-size:0.9rem; color:#475569;">${formatToSubBullets(data.time_analysis)}</div>
                     </td>
                     <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;">
-                        <h3 style="color:#16a34a; margin:0 0 10px 0;">💡 2. 지식 자산 (재사용 패턴/템플릿)</h3>
-                        <div style="font-size:0.9rem; color:#475569;">${formatToSubBullets(data.knowledge_assets || data.achievements)}</div>
+                        <h3 style="color:#16a34a; margin:0 0 10px 0;">💡 2. 지식 자산 (성공 패턴/노하우)</h3>
+                        <div style="font-size:0.9rem; color:#475569;">${formatToSubBullets(data.knowledge_assets)}</div>
                     </td>
                 </tr>
                 <tr>
                     <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;">
-                        <h3 style="color:#dc2626; margin:0 0 10px 0;">⚠️ 3. 잔여 리스크 및 시스템 영향도</h3>
-                        <div style="font-size:0.9rem; color:#475569;">${formatToSubBullets(data.residual_risks || data.unfinished_analysis)}</div>
+                        <h3 style="color:#dc2626; margin:0 0 10px 0;">⚠️ 3. 잔여 리스크 및 한계점</h3>
+                        <div style="font-size:0.9rem; color:#475569;">${formatToSubBullets(data.residual_risks)}</div>
                     </td>
                     <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fefce8;">
-                        <h3 style="color:#d97706; margin:0 0 10px 0;">🚀 4. Action Items (다음 스텝)</h3>
-                        <div style="font-size:0.9rem; color:#475569;">${formatToSubBullets(data.action_items || data.followup_strategy)}</div>
+                        <h3 style="color:#d97706; margin:0 0 10px 0;">🚀 4. Action Items (다음 스텝 보완)</h3>
+                        <div style="font-size:0.9rem; color:#475569;">${formatToSubBullets(data.action_items)}</div>
                     </td>
                 </tr>
             </table>
             
             <div style="margin-top:20px; padding:20px; background:#f1f5f9; border-radius:8px;">
-                <h3 style="color:#475569; margin:0 0 10px 0;">🛡️ 잔여 리스크 방어를 위한 후속 자동 일정</h3>
+                <h3 style="color:#475569; margin:0 0 10px 0;">🛡️ 후속 보완을 위한 자동 스핀오프 일정</h3>
                 ${scheduleHtml}
             </div>
             
