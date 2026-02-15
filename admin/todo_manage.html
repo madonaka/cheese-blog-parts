@@ -418,10 +418,15 @@
         
         <div id="view-board-container" style="display:none;">
 
-          <div class="board-toolbar" style="margin-bottom: 16px; display: flex; align-items: center; gap: 12px; background: #f8fafc; padding: 12px 16px; border-radius: 12px; border: 1px solid #e2e8f0;">
+        <div class="board-toolbar" style="margin-bottom: 16px; display: flex; align-items: center; gap: 12px; background: #f8fafc; padding: 12px 16px; border-radius: 12px; border: 1px solid #e2e8f0; flex-wrap: wrap;">
              <span style="font-weight: 700; color: #475569;">🎯 목표 필터:</span>
-             <select id="board-goal-filter" class="styled-input" style="max-width: 300px; padding: 8px 12px; font-weight: 600;" onchange="renderBoardView()">
-                <option value="all">전체 보기 (모든 할 일)</option>
+             
+             <select id="board-filter-big" class="styled-input" style="max-width: 280px; padding: 8px 12px; font-weight: 600;" onchange="onChangeBigGoalFilter()">
+                <option value="all">🏆 전체 큰 목표 (모든 할 일)</option>
+             </select>
+
+             <select id="board-filter-mid" class="styled-input" style="max-width: 280px; padding: 8px 12px; font-weight: 600; display: none;" onchange="renderBoardView()">
+                <option value="all">🚩 전체 중간 목표</option>
              </select>
           </div>
           
@@ -967,23 +972,32 @@ function renderGoalTree() {
         if(c.done) c.done.innerHTML = ""; 
     });
 
-    const filterEl = document.getElementById('board-goal-filter');
-    const filterVal = filterEl ? filterEl.value : 'all';
+    const bigFilterEl = document.getElementById('board-filter-big');
+    const midFilterEl = document.getElementById('board-filter-mid');
+    
+    const bigVal = bigFilterEl ? bigFilterEl.value : 'all';
+    const midVal = midFilterEl ? midFilterEl.value : 'all';
 
     let validTargetIds = [];
-    if (filterVal !== 'all') {
-        const targetGoal = g_goals.find(g => g.ID === filterVal);
-        if (targetGoal) {
-            validTargetIds.push(targetGoal.ID); 
-            if (targetGoal['유형'] === '큰 목표') {
-                g_goals.filter(g => g['상위ID'] === targetGoal.ID).forEach(m => validTargetIds.push(m.ID));
-            }
+
+    // 큰 목표가 선택되었을 때의 필터링 목록 만들기
+    if (bigVal !== 'all') {
+        if (midVal !== 'all') {
+            // 2차로 특정 중간 목표까지 선택된 경우
+            validTargetIds.push(midVal);
+        } else {
+            // 큰 목표만 선택되고 중간 목표는 '전체'인 경우 (해당 큰 목표 하위의 모든 중간 목표 ID 수집)
+            const midGoals = g_goals.filter(g => g['상위ID'] === bigVal);
+            validTargetIds = midGoals.map(m => m.ID);
+            validTargetIds.push(bigVal); // 큰 목표 자체에 직접 연결된 할 일이 있을 경우 대비
         }
     }
 
     const tasks = g_tasks.filter(t => {
         if (t['유형'] === '아이디어' || t['유형'] === '버그') return false;
-        if (filterVal !== 'all') {
+        
+        // 필터가 적용된 경우 검사
+        if (bigVal !== 'all') {
             if (!validTargetIds.includes(t['연결_중간목표ID'])) return false;
         }
         return true;
@@ -2023,34 +2037,69 @@ document.getElementById('todo-form').addEventListener('submit', async (e) => {
       }
   }
 
+// 게시판 필터 셀렉트 박스 업데이트 (초기 로드용)
   function updateBoardFilterOptions() {
-      const select = document.getElementById('board-goal-filter');
-      if (!select) return;
+      const bigSelect = document.getElementById('board-filter-big');
+      if (!bigSelect) return;
 
-      const currentVal = select.value;
-      select.innerHTML = '<option value="all">전체 보기 (모든 할 일)</option>';
+      const currentBig = bigSelect.value;
+      bigSelect.innerHTML = '<option value="all">🏆 전체 큰 목표 (모든 할 일)</option>';
 
+      // 큰 목표만 추출하여 1차 드롭다운 생성
       const bigGoals = g_goals.filter(g => g['유형'] === '큰 목표');
-      
       bigGoals.forEach(bg => {
-          const bgOpt = document.createElement('option');
-          bgOpt.value = bg.ID;
-          bgOpt.textContent = `🏆 [큰 목표] ${bg['제목']}`;
-          bgOpt.style.fontWeight = 'bold';
-          bgOpt.style.color = '#1e293b';
-          select.appendChild(bgOpt);
-
-          const midGoals = g_goals.filter(mg => mg['상위ID'] === bg.ID);
-          midGoals.forEach(mg => {
-              const mgOpt = document.createElement('option');
-              mgOpt.value = mg.ID;
-              mgOpt.innerHTML = `&nbsp;&nbsp;&nbsp;&nbsp; 🚩 [중간] ${mg['제목']}`;
-              select.appendChild(mgOpt);
-          });
+          const opt = document.createElement('option');
+          opt.value = bg.ID;
+          opt.textContent = `🏆 ${bg['제목']}`;
+          bigSelect.appendChild(opt);
       });
 
-      if (Array.from(select.options).some(opt => opt.value === currentVal)) {
-          select.value = currentVal;
+      // 기존 선택값 복원
+      if (Array.from(bigSelect.options).some(opt => opt.value === currentBig)) {
+          bigSelect.value = currentBig;
+      } else {
+          bigSelect.value = 'all';
+      }
+
+      // 연쇄적으로 중간 목표 필터도 업데이트 (초기 로딩 시에는 보드 렌더링 중복을 막기 위해 true 전달)
+      onChangeBigGoalFilter(true);
+  }
+
+  // 1차 드롭다운(큰 목표) 변경 시 2차 드롭다운(중간 목표) 옵션 변경 이벤트
+  function onChangeBigGoalFilter(skipRender = false) {
+      const bigSelect = document.getElementById('board-filter-big');
+      const midSelect = document.getElementById('board-filter-mid');
+      const bigGoalId = bigSelect.value;
+
+      const currentMid = midSelect.value;
+      midSelect.innerHTML = '<option value="all">🚩 전체 중간 목표</option>';
+
+      if (bigGoalId === 'all') {
+          // 큰 목표가 '전체'면 2차 드롭다운 숨김
+          midSelect.style.display = 'none';
+      } else {
+          // 특정 큰 목표가 선택되면 2차 드롭다운 표시 및 하위 중간 목표들로 목록 구성
+          midSelect.style.display = 'inline-block';
+          const midGoals = g_goals.filter(g => g['유형'] === '중간 목표' && g['상위ID'] === bigGoalId);
+          
+          midGoals.forEach(mg => {
+              const opt = document.createElement('option');
+              opt.value = mg.ID;
+              opt.textContent = `🚩 ${mg['제목']}`;
+              midSelect.appendChild(opt);
+          });
+      }
+
+      // 기존 선택값 복원 (큰 목표를 바꿨는데 우연히 ID가 겹치지 않는 한 'all'로 리셋됨)
+      if (Array.from(midSelect.options).some(opt => opt.value === currentMid)) {
+          midSelect.value = currentMid;
+      } else {
+          midSelect.value = 'all';
+      }
+
+      // 화면 업데이트 실행
+      if (!skipRender) {
+          renderBoardView();
       }
   }
 
