@@ -184,6 +184,13 @@
     .im-clean-actions { display: flex; gap: 8px; flex-shrink: 0; }
     .im-btn-icon { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 10px; border: 1px solid #edf1f5; background: #fff; cursor: pointer; color: #4e5968; transition: all 0.2s; }
     .im-btn-icon:hover { background: #f9fafb; border-color: #cbd5e1; }
+
+    /* ✅ 추가된 드래그 앤 드롭 CSS (기존 <style> 태그 안이나 이 위치에 추가) */
+    .im-dropzone { border: 2px dashed #cbd5e1; border-radius: 16px; padding: 32px 20px; text-align: center; background: #f8fafc; cursor: pointer; transition: all 0.2s ease-in-out; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .im-dropzone.dragover { background: #eff6ff; border-color: #3182f6; box-shadow: 0 0 0 4px rgba(49,130,246,0.1); }
+    .im-dropzone p { margin: 8px 0 0 0; color: #64748b; font-size: 15px; font-weight: 600; line-height: 1.5; pointer-events: none; }
+    .im-dropzone .icon { font-size: 32px; pointer-events: none; }
+    .im-dropzone input[type="file"] { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
   </style>
 </head>
 
@@ -227,7 +234,12 @@
         
             <div class="im-row" style="display: grid; grid-template-columns: 1fr; gap: 16px; margin-top: 20px;">
               <div class="im-label">이미지 파일</div>
-              <input id="imgFile" class="im-input" type="file" accept="image/*" style="width: 100%;" />
+              
+              <div id="dropZone" class="im-dropzone">
+                <div class="icon">📸</div>
+                <p>클릭하여 이미지를 선택하거나<br>여기로 드래그 앤 드롭 하세요.</p>
+                <input id="imgFile" type="file" accept="image/*" />
+              </div>
 
               <div id="filePreviewContainer" style="display:none; margin-top:10px; text-align:center; background:#f9fafb; border-radius:16px; padding:20px; border:1px dashed #cbd5e1;">
                 <p class="im-help" style="margin-bottom:10px;">선택된 이미지 미리보기</p>
@@ -1070,6 +1082,47 @@
             panel2.style.pointerEvents = isOrig ? "none" : "auto";
         }
     });
+
+    // ====== ✅ 드래그 앤 드롭 이벤트 리스너 추가 ======
+    const $dropZone = document.getElementById("dropZone");
+
+    if ($dropZone) {
+      // 기본 드래그 앤 드롭 동작(브라우저에서 파일 열림) 방지
+      ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        $dropZone.addEventListener(eventName, preventDefaults, false);
+      });
+
+      function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+
+      // 마우스가 올려져 있을 때 시각적 효과 추가/제거
+      ['dragenter', 'dragover'].forEach(eventName => {
+        $dropZone.addEventListener(eventName, () => $dropZone.classList.add('dragover'), false);
+      });
+
+      ['dragleave', 'drop'].forEach(eventName => {
+        $dropZone.addEventListener(eventName, () => $dropZone.classList.remove('dragover'), false);
+      });
+
+      // 파일 드롭 처리
+      $dropZone.addEventListener('drop', (e) => {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+
+        if (files && files.length > 0) {
+          // DataTransfer 객체를 사용해 input file에 파일 할당
+          const dataTransfer = new DataTransfer();
+          dataTransfer.items.add(files[0]); // 첫 번째 파일만 추가
+          $file.files = dataTransfer.files;
+          
+          // 강제로 change 이벤트를 발생시켜 기존 처리 로직 실행
+          $file.dispatchEvent(new Event('change'));
+        }
+      }, false);
+    }
+    // ==================================================
     
     // ====== 이벤트 리스너 (파일 선택) ======
     $file.addEventListener("change", async () => {
