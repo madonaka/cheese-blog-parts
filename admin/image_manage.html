@@ -191,6 +191,16 @@
     .im-dropzone p { margin: 8px 0 0 0; color: #64748b; font-size: 15px; font-weight: 600; line-height: 1.5; pointer-events: none; }
     .im-dropzone .icon { font-size: 32px; pointer-events: none; }
     .im-dropzone input[type="file"] { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+ 
+  /* ✅ 워터마크용 소형 드래그 앤 드롭 영역 CSS */
+    .im-dropzone-small { 
+      border: 2px dashed #cbd5e1; border-radius: 12px; padding: 12px 16px; 
+      background: #f8fafc; cursor: pointer; transition: all 0.2s; 
+      position: relative; display: flex; align-items: center; justify-content: center; gap: 8px; flex: 1; min-height: 48px;
+    }
+    .im-dropzone-small.dragover { background: #eff6ff; border-color: #3182f6; }
+    .im-dropzone-small p { margin: 0; color: #64748b; font-size: 14px; font-weight: 600; pointer-events: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
+    .im-dropzone-small input[type="file"] { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
   </style>
 </head>
 
@@ -277,9 +287,15 @@
             <p class="im-help">품질, 블러, 워터마크 및 문구 표시 설정을 조정하세요.</p>
         
             <div class="im-row">
-              <div class="im-label">워터마크 PNG</div>
-              <input id="wmFile" class="im-input" type="file" accept="image/png" />
-              <label style="display:flex; gap:8px; align-items:center; cursor:pointer;">
+            <div class="im-label">워터마크 PNG</div>
+              
+              <div id="wmDropZone" class="im-dropzone-small">
+                <span style="font-size: 16px; pointer-events: none;">💧</span>
+                <p>PNG 파일 선택 또는 드래그</p>
+                <input id="wmFile" type="file" accept="image/png" />
+              </div>
+
+              <label style="display:flex; gap:8px; align-items:center; cursor:pointer; margin-left: 8px;">
                 <input id="wmOn" type="checkbox" checked /> 워터마크 적용
               </label>
             </div>
@@ -1164,11 +1180,56 @@
       }
     });
 
+    // ====== ✅ 워터마크 드래그 앤 드롭 이벤트 추가 ======
+    const $wmDropZone = document.getElementById("wmDropZone");
+
+    if ($wmDropZone) {
+      ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        $wmDropZone.addEventListener(eventName, (e) => { e.preventDefault(); e.stopPropagation(); }, false);
+      });
+
+      ['dragenter', 'dragover'].forEach(eventName => {
+        $wmDropZone.addEventListener(eventName, () => $wmDropZone.classList.add('dragover'), false);
+      });
+
+      ['dragleave', 'drop'].forEach(eventName => {
+        $wmDropZone.addEventListener(eventName, () => $wmDropZone.classList.remove('dragover'), false);
+      });
+
+      $wmDropZone.addEventListener('drop', (e) => {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+
+        if (files && files.length > 0) {
+          const dataTransfer = new DataTransfer();
+          dataTransfer.items.add(files[0]);
+          $wmFile.files = dataTransfer.files;
+          
+          // 강제로 change 이벤트를 발생
+          $wmFile.dispatchEvent(new Event('change'));
+        }
+      }, false);
+    }
+    // ====================================================
+
+    // ====== (수정됨) 워터마크 파일 처리 로직 (파일명 표시 추가) ======
     $wmFile.addEventListener("change", async () => {
       const f = $wmFile.files?.[0];
       watermarkImg = f ? await loadFileAsImage(f) : null;
+      
+      // ✅ UI 피드백: 파일이 선택/드롭되면 파일명을 표시해줍니다.
+      if ($wmDropZone) {
+        const textElem = $wmDropZone.querySelector('p');
+        if (f) {
+          textElem.textContent = f.name;
+          textElem.style.color = "#3182f6"; // 파란색으로 변경하여 활성화 알림
+        } else {
+          textElem.textContent = "PNG 파일 선택 또는 드래그";
+          textElem.style.color = "#64748b"; // 원래 색으로 복구
+        }
+      }
     });
-
+    
     // ====== [핵심] 일괄 생성 버튼 (Step 3) ======
     $btnMake.addEventListener("click", async () => {
       if (jobQueue.length === 0) { alert("대기 중인 작업이 없습니다."); return; }
