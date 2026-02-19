@@ -483,6 +483,31 @@
              TAB 0: 새 이벤트 추가
         ========================= -->
         <section id="tab-add" class="tab-panel">
+          <div class="card" style="background:#f0f9ff; border:1px solid #bae6fd; margin-bottom: 14px;">
+            <h2 style="color:#0369a1; margin:0 0 10px;">🤖 AI 뉴스/이미지 분석</h2>
+            <div style="margin-bottom:10px;">
+              <label style="display:block; font-size:0.92rem; font-weight:800; color:#1e293b; margin-bottom:6px;">
+                기사 텍스트 또는 URL을 입력하거나, <strong>이미지를 여기에 붙여넣기(Ctrl+V)</strong> 하세요.
+              </label>
+              <textarea id="ai_input_text"
+                style="width:100%; height:80px; padding:10px; border:1px solid #cbd5e1; border-radius:10px; font-size:0.9rem; outline:none;"
+                placeholder="기사 본문을 복사해 넣거나, 캡처 이미지를 붙여넣으세요..."></textarea>
+
+              <div id="ai_image_preview_area" style="margin-top:8px; display:none;">
+                <span style="font-size:0.8rem; color:#059669; font-weight:bold;">📸 이미지 인식됨 (분석 시 함께 전송됩니다)</span>
+                <div style="margin-top:4px;">
+                  <img id="ai_image_preview" style="max-height:100px; border:1px solid #cbd5e1; border-radius:6px;">
+                  <button onclick="clearAiImage()" class="btn-mini" style="margin-left:6px; cursor:pointer;">삭제</button>
+                </div>
+              </div>
+            </div>
+            <div style="text-align:right;">
+              <button id="btn_ai_analyze" class="btn primary" style="background:#0ea5e9; border-color:#0ea5e9;" onclick="runAiAnalysis()">
+                ⚡ AI 분석 및 변환 실행
+              </button>
+            </div>
+          </div>
+
           <div class="card">
             <h2>새 이벤트 추가 (파이프 여러 줄 붙여넣기: 1행=1이벤트)</h2>
             <p class="desc" style="margin-top:6px;">
@@ -3203,6 +3228,101 @@ if (mn.auto){
       alert("자동 추천 실패: " + (err && err.message ? err.message : String(err)));
     }
   });
+}
+    
+/* =========================================
+   [NEW] AI 분석 관련 로직 (이미지 붙여넣기 + API 호출)
+   ========================================= */
+let currentAiBase64 = null; // 이미지 데이터 담을 변수
+
+// 1. 붙여넣기(Paste) 이벤트 감지
+const aiTextEl = document.getElementById('ai_input_text');
+if(aiTextEl){
+  aiTextEl.addEventListener('paste', function(e){
+    const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf("image") !== -1) {
+        e.preventDefault(); // 이미지는 텍스트상자에 텍스트로 들어가지 않게 방지
+        const blob = items[i].getAsFile();
+        const reader = new FileReader();
+        reader.onload = function(event){
+          currentAiBase64 = event.target.result; // data:image/png;base64,...
+          // 미리보기 표시
+          document.getElementById('ai_image_preview').src = currentAiBase64;
+          document.getElementById('ai_image_preview_area').style.display = 'block';
+        };
+        reader.readAsDataURL(blob);
+      }
+    }
+  });
+}
+
+function clearAiImage(){
+  currentAiBase64 = null;
+  document.getElementById('ai_image_preview').src = "";
+  document.getElementById('ai_image_preview_area').style.display = 'none';
+}
+
+async function runAiAnalysis() {
+  const textVal = document.getElementById('ai_input_text').value.trim();
+
+  if (!textVal && !currentAiBase64) {
+    alert("분석할 텍스트를 입력하거나 이미지를 붙여넣어주세요.");
+    return;
+  }
+
+  const btn = document.getElementById('btn_ai_analyze');
+  const originalBtnText = btn.innerText;
+  btn.disabled = true;
+  btn.innerText = "⏳ AI 분석 중... (최대 20초 소요)";
+
+  try {
+    const payload = {
+      mode: "analyzeArticle",
+      text: textVal,
+      image: currentAiBase64 // 이미지가 없으면 null 전송
+    };
+
+    // API_BASE와 TG_ADMIN_KEY는 기존 코드 상단에 정의된 변수를 사용
+    const params = new URLSearchParams();
+    params.set("mode", "analyzeArticle");
+    if (typeof TG_ADMIN_KEY !== 'undefined' && TG_ADMIN_KEY) {
+       params.set("key", TG_ADMIN_KEY);
+    }
+    
+    const url = `${API_BASE}?${params.toString()}`;
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payload)
+    });
+
+    const json = await res.json();
+
+    if (json.ok) {
+      // 성공 시: 결과 문자열을 기존 'addLine' 입력창에 넣음
+      const targetInput = document.getElementById('addLine');
+      if(targetInput) {
+        targetInput.value = json.result;
+        
+        alert("✅ 분석 완료! \n아래 [입력 라인]에 변환된 데이터가 입력되었습니다.\n내용을 확인하고 '시트에 저장' 버튼을 누르세요.");
+        targetInput.focus();
+        
+        // 미리보기 갱신 트리거
+        targetInput.dispatchEvent(new Event('input'));
+      }
+    } else {
+      throw new Error(json.error || json.detail || "Unknown Error");
+    }
+
+  } catch (err) {
+    alert("AI 분석 실패: " + err.message);
+    console.error(err);
+  } finally {
+    btn.disabled = false;
+    btn.innerText = originalBtnText;
+  }
 }
 </script>
 </body>
