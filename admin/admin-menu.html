@@ -1,307 +1,253 @@
-<!-- admin/admin-menu.html -->
-<nav class="admin-side-nav">
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>E-Book 뷰어 · Cheese Admin</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="./admin.css" />
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script> 
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"></script>
 
-  <!-- ✅ 모바일 드로어 상단(닫기/로그아웃) -->
-  <div class="admin-drawer-top">
-    <button type="button" class="admin-drawer-close" aria-label="메뉴 닫기">
-      &times;
-    </button>
+  <style>
+    /* =========================================
+       E-Book Viewer Specific Styles
+    ========================================= */
+    .dash-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem; }
+    .dash-title .t { font-size: 1.5rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.02em; line-height: 1.2; }
+    .dash-title .s { font-size: 0.85rem; color: var(--text-sub); margin-top: 0.25rem; font-weight: 500; }
+    
+    .status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; font-size: 0.8rem; font-weight: 600; background: #fff; border: 1px solid var(--border); color: var(--text-sub); box-shadow: 0 1px 2px rgba(0,0,0,0.02); }
 
-    <button type="button"
-            class="admin-logout-btn admin-logout-btn--drawer"
-            data-action="logout">
-      로그아웃
-    </button>
+    /* 뷰어 컨테이너 레이아웃 */
+    .ebook-layout { display: flex; flex-direction: column; height: calc(100vh - 180px); min-height: 600px; background: #fff; border-radius: 1rem; border: 1px solid var(--border); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02); overflow: hidden; }
+    
+    /* 상단 툴바 */
+    .ebook-toolbar { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem; background: #f8fafc; border-bottom: 1px solid var(--border); }
+    .toolbar-group { display: flex; align-items: center; gap: 0.75rem; }
+    
+    .tool-btn { padding: 0.5rem 1rem; border: 1px solid #cbd5e1; border-radius: 0.5rem; background: #fff; cursor: pointer; font-size: 0.85rem; font-weight: 600; color: #475569; transition: all 0.2s; display: flex; align-items: center; gap: 0.4rem; }
+    .tool-btn:hover { background: #f1f5f9; border-color: #94a3b8; }
+    .tool-btn.active { background: var(--primary, #3b82f6); color: #fff; border-color: var(--primary, #3b82f6); }
+    
+    /* 파일 업로드 버튼 커스텀 */
+    .file-upload-wrapper { position: relative; overflow: hidden; display: inline-block; }
+    .file-upload-wrapper input[type=file] { font-size: 100px; position: absolute; left: 0; top: 0; opacity: 0; cursor: pointer; height: 100%; }
+    
+    /* 책 정보 표시 */
+    .book-meta { display: flex; flex-direction: column; }
+    .book-title { font-size: 1rem; font-weight: 700; color: #0f172a; margin: 0; }
+    .book-author { font-size: 0.8rem; color: #64748b; margin: 0; }
+
+    /* 메인 뷰어 영역 */
+    .ebook-body { flex: 1; display: flex; position: relative; background: #f1f5f9; transition: background 0.3s; }
+    .nav-btn { width: 50px; background: transparent; border: none; font-size: 2rem; color: #94a3b8; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: color 0.2s, background 0.2s; z-index: 10; }
+    .nav-btn:hover { color: var(--primary, #3b82f6); background: rgba(0,0,0,0.02); }
+    
+    #viewer { flex: 1; height: 100%; position: relative; display: flex; justify-content: center; align-items: center; padding: 1rem 0; box-sizing: border-box; }
+    
+    /* 로딩 인디케이터 */
+    #loading-indicator { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-weight: 700; color: #64748b; display: none; }
+
+    /* 다크 모드 스타일 */
+    .ebook-body.dark-theme { background: #1e293b; }
+    .ebook-body.dark-theme .nav-btn { color: #64748b; }
+    .ebook-body.dark-theme .nav-btn:hover { color: #cbd5e1; background: rgba(255,255,255,0.05); }
+
+    /* EPUB 렌더링 영역 강제 가운데 정렬용 (라이브러리 내부 iframe 감싸기) */
+    .epub-container { width: 100%; max-width: 800px; height: 100%; margin: 0 auto; background: #fff; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05); transition: background 0.3s; }
+    .ebook-body.dark-theme .epub-container { background: #0f172a; box-shadow: none; border-left: 1px solid #334155; border-right: 1px solid #334155; }
+  </style>
+</head>
+
+<body>
+  <div class="admin-shell">
+    <div id="admin-header-slot"></div>
+
+    <div class="admin-main">
+      <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+
+      <main style="position: relative;">
+        <header class="dash-header">
+          <div class="dash-title">
+            <h1 class="t">E-Book 뷰어</h1>
+            <p class="s">EPUB 표준 규격의 전자책 데이터를 읽고 관리합니다.</p>
+          </div>
+          <div class="status-pill">
+            <span style="display:inline-block; width:8px; height:8px; background:#10b981; border-radius:50%;"></span>
+            <span id="nowPill">최근 동기화: -</span>
+          </div>
+        </header>
+
+        <section class="ebook-layout">
+          
+          <div class="ebook-toolbar">
+            <div class="toolbar-group">
+              <div class="file-upload-wrapper">
+                <button class="tool-btn">📂 EPUB 파일 열기</button>
+                <input type="file" id="file-input" accept=".epub" />
+              </div>
+              <div class="book-meta">
+                <div class="book-title" id="meta-title">선택된 책이 없습니다</div>
+                <div class="book-author" id="meta-author">-</div>
+              </div>
+            </div>
+
+            <div class="toolbar-group">
+              <button class="tool-btn" id="btn-zoom-out" title="글자 작게">A-</button>
+              <button class="tool-btn" id="btn-zoom-in" title="글자 크게">A+</button>
+              <div style="width: 1px; height: 20px; background: #cbd5e1; margin: 0 0.5rem;"></div>
+              <button class="tool-btn" id="btn-theme" title="다크 모드 전환">🌙 다크 모드</button>
+            </div>
+          </div>
+
+          <div class="ebook-body" id="ebook-body">
+            <button class="nav-btn" id="prev-btn">‹</button>
+            <div id="viewer">
+                <div id="loading-indicator">책을 불러오는 중입니다...</div>
+            </div>
+            <button class="nav-btn" id="next-btn">›</button>
+          </div>
+
+        </section>
+      </main>
+    </div>
   </div>
 
-  <!-- ✅ 모바일에서만 보이는 사용자 영역 -->
-  <div class="admin-drawer-top">
-    <div class="admin-drawer-user" id="admin-drawer-user"></div>
-  </div>
+  <script src="./admin-common.js"></script>
+  <script>
+    // --- 1. 시스템 공통 유틸리티 ---
+    function pad2(n){ return String(n).padStart(2,'0'); }
+    function hm(d){ return pad2(d.getHours())+':'+pad2(d.getMinutes()); }
+    
+    function setNow(){ 
+        const now = new Date(); 
+        document.getElementById('nowPill').innerHTML = `최근 동기화: ${hm(now)}`; 
+    }
 
-  <!-- =========================
-       대시보드 / 공지
-  ========================== -->
-  <details class="admin-side-group" data-group="dashboard">
-    <summary class="admin-side-group-title">대시보드, 공지</summary>
-    <div class="admin-side-group-body">
-      <a href="./new_dashboard.html"
-         class="admin-side-link"
-         data-page="new_dashboard"
-         data-roles="EMP,MGR,FIN,ADMIN">
-        대시보드
-      </a>
-       <a href="./todo_manage.html"
-         class="admin-side-link"
-         data-page="menu-todo"
-         data-roles="EMP,MGR,FIN,ADMIN">
-        목표 & 할 일
-      </a>
-       <a href="./report_archive.html"
-         class="admin-side-link"
-         data-page="menu-report"
-         data-roles="EMP,MGR,FIN,ADMIN">
-       문서 아카이브
-      </a>
-      <a href="./board.html"
-         class="admin-side-link"
-         data-page="board"
-         data-roles="EMP,MGR,FIN,ADMIN">
-        공지 게시판
-      </a>
-    </div>
-  </details>
-  
-<!-- =========================
-       인사
-  ========================== -->
-  <details class="admin-side-group" data-group="dashboard">
-    <summary class="admin-side-group-title">인사</summary>
-    <div class="admin-side-group-body">
-      <a href="./profile.html"
-         class="admin-side-link"
-         data-page="profile.html"
-         data-roles="EMP,MGR,FIN,ADMIN">
-        내 정보 수정
-      </a>
-      <a href="./user_manage.html"
-         class="admin-side-link"
-         data-page="user_manage.html"
-         data-roles="ADMIN">
-        인사 관리 페이지
-      </a>
-    </div>
-  </details>
-  <!-- =========================
-       급여
-  ========================== -->
-  <details class="admin-side-group" data-group="payroll">
-    <summary class="admin-side-group-title">급여</summary>
-    <div class="admin-side-group-body">
-      <a href="./payroll_step1_run.html"
-         class="admin-side-link"
-         data-page="payroll_step1_run"
-         data-roles="EMP,MGR,FIN,ADMIN">
-        급여정산
-      </a>
+    function mountShell(){
+      if(window.renderAdminHeader) window.renderAdminHeader({ mountId:'admin-header-slot', badgeText:'E-Book', subtitle:'도서 열람' });
+      if(window.renderAdminMenu) window.renderAdminMenu({ mountId:'admin-menu-slot', active:'ebook' }); // active 키는 메뉴 설정에 맞게 변경
+    }
 
-      <a href="./employee-payslips.html"
-         class="admin-side-link"
-         data-page="employee-payslips"
-         data-roles="EMP,MGR,FIN,ADMIN">
-        급여명세서 · 직원 포털
-      </a>
-    </div>
-  </details>
+    // --- 2. Epub.js 제어 로직 ---
+    let book = null;
+    let rendition = null;
+    let currentTheme = 'light';
+    let currentFontSize = 100;
 
-  <!-- =========================
-       예산
-  ========================== -->
-  <details class="admin-side-group" data-group="budget">
-    <summary class="admin-side-group-title">예산</summary>
-    <div class="admin-side-group-body">
-      <a href="./budget_request.html"
-         class="admin-side-link"
-         data-page="budget_request"
-         data-roles="EMP,MGR,FIN,ADMIN">
-        예산 사용 요청
-      </a>
+    // 뷰어 초기화 함수
+    function initViewer() {
+        // 이전 책이 있다면 메모리에서 해제
+        if (book) { book.destroy(); }
+        document.getElementById('viewer').innerHTML = '<div id="loading-indicator">책을 불러오는 중입니다...</div>';
+        document.getElementById('loading-indicator').style.display = 'block';
+    }
 
-      <a href="./budget_my_list.html"
-         class="admin-side-link"
-         data-page="budget_my_list"
-         data-roles="EMP,MGR,FIN,ADMIN">
-        내 예산요청 목록
-      </a>
+    // ArrayBuffer 형식의 파일을 받아 렌더링
+    function loadEpubFromArrayBuffer(arrayBuffer) {
+        initViewer();
 
-      <a href="./budgets_overview.html"
-         class="admin-side-link"
-         data-page="budgets_overview"
-         data-roles="EMP,MGR,FIN,ADMIN">
-        예산 항목/현황
-      </a>
+        book = ePub(arrayBuffer);
+        
+        // 메타데이터(제목, 저자) 추출
+        book.loaded.metadata.then(function(meta){
+            document.getElementById('meta-title').textContent = meta.title || '제목 없음';
+            document.getElementById('meta-author').textContent = meta.creator || '작자 미상';
+        });
 
-      <a href="./approval_admin.html"
-         class="admin-side-link"
-         data-page="approval_admin"
-         data-roles="MGR,FIN,ADMIN">
-        (관리자) 예산 사용/지출 승인
-      </a>
-    </div>
-  </details>
+        // 렌더링 설정
+        rendition = book.renderTo("viewer", {
+            width: "100%",
+            height: "100%",
+            spread: "none", // 기본적으로 1단 보기 (모바일/웹 표준)
+            manager: "continuous",
+            flow: "paginated"
+        });
 
-  <!-- =========================
-       지출
-  ========================== -->
-  <details class="admin-side-group" data-group="expense">
-    <summary class="admin-side-group-title">지출</summary>
-    <div class="admin-side-group-body">
-      <a href="./expense_request.html"
-         class="admin-side-link"
-         data-page="expense_request"
-         data-roles="EMP,MGR,FIN,ADMIN">
-        지출 등록
-      </a>
+        // 커스텀 테마 등록
+        rendition.themes.register("light", { "body": { "background": "#fff", "color": "#333" }});
+        rendition.themes.register("dark", { "body": { "background": "#0f172a", "color": "#cbd5e1" }});
+        
+        // 현재 설정 적용
+        rendition.themes.select(currentTheme);
+        rendition.themes.fontSize(`${currentFontSize}%`);
 
-      <a href="./expense_monthly.html"
-         class="admin-side-link"
-         data-page="expense_monthly"
-         data-roles="EMP,MGR,FIN,ADMIN">
-        월말 지출결의
-      </a>
-    </div>
-  </details>
+        rendition.display().then(() => {
+            document.getElementById('loading-indicator').style.display = 'none';
+        });
 
-  <!-- =========================
-       HR / 증명서
-  ========================== -->
-  <details class="admin-side-group" data-group="hr">
-    <summary class="admin-side-group-title">HR / 증명서</summary>
-    <div class="admin-side-group-body">
-      <a href="./employment-cert.html"
-         class="admin-side-link"
-         data-page="employment_cert"
-         data-roles="ADMIN,MGR">
-        재직증명서
-      </a>
-    </div>
-  </details>
-  <!-- =========================
-       블로그 운영 현행
-  ========================== -->
-  <details class="admin-side-group" data-group="blog_current">
-    <summary class="admin-side-group-title">ChatGPT GPTS</summary>
-    <div class="admin-side-group-body">
-      <a href="https://chatgpt.com/g/g-695dd6fb6ef08191836d53cfc185e92c-juyo-sageon-isyu-nyuseu-weolbyeol-congjeongri-api"
-        target="_blank" rel="noopener noreferrer"
-         class="admin-side-link"
-         data-page="daily_log_export"
-         data-roles="ADMIN,MGR">
-        주요 사건, 이슈, 뉴스 월별 총정리 (기사 변환 APP)
-      </a>
-    </div>
-  </details>
-  
-  <!-- =========================
-       블로그 운영 현행
-  ========================== -->
-  <details class="admin-side-group" data-group="blog_current">
-    <summary class="admin-side-group-title">블로그 운영 현행</summary>
-    ----통합 관리----
-    <a href="./post_manage.html"
-       class="admin-side-link"
-       data-page="post_manage"
-       data-roles="ADMIN,MGR">
-      포스트 관리 툴
-    </a>
-    ----개별 툴----
-    <div class="admin-side-group-body">
-      <a href="./daily_log_export.html"
-         class="admin-side-link"
-         data-page="daily_log_export"
-         data-roles="ADMIN,MGR">
-        주요 사건, 이슈, 뉴스 월별 총정리
-      </a>
+        // 키보드 방향키 넘김 지원
+        rendition.on("keyup", function(e) {
+            if(e.keyCode == 37) rendition.prev();
+            if(e.keyCode == 39) rendition.next();
+        });
+    }
 
-      <a href="./timline-log-export.html"
-         class="admin-side-link"
-         data-page="timline-log-export"
-         data-roles="ADMIN,MGR">
-        한국사+중국사+일본사 연표
-      </a>
+    // --- 3. 이벤트 리스너 등록 ---
+    
+    // 파일 업로드 처리
+    document.getElementById("file-input").addEventListener("change", function(e) {
+        let file = e.target.files[0];
+        if (!file) return;
 
-      <a href="./blog_code_gen.html"
-         class="admin-side-link"
-         data-page="blog_code_gen"
-         data-roles="ADMIN,MGR">
-        블로그 코드 생성기
-      </a>
-      ----공통 기능----
-      <a href="./library_manage.html"
-         class="admin-side-link"
-         data-page="library_manage"
-         data-roles="ADMIN,MGR">
-        템플릿 관리
-      </a>
-      <a href="./navigator_manager.html"
-         class="admin-side-link"
-         data-page="navigator_manager"
-         data-roles="ADMIN,MGR">
-         네비게이터 관리
-      </a>
-      <a href="./image_manage.html"
-         class="admin-side-link"
-         data-page="image_manage"
-         data-roles="ADMIN,MGR">
-        이미지 관리
-      </a>
-    </div>
-  </details>
+        if (window.FileReader) {
+            let reader = new FileReader();
+            reader.onload = function(e) {
+                loadEpubFromArrayBuffer(e.target.result);
+            };
+            reader.readAsArrayBuffer(file);
+        }
+    });
 
-  <!-- =========================
-       블로그 운영 테스트
-  ========================== -->
-  <details class="admin-side-group" data-group="blog_test">
-    <summary class="admin-side-group-title">블로그 운영 테스트</summary>
-    <div class="admin-side-group-body">
-      <a href="./post_manage_test.html"
-         class="admin-side-link"
-         data-page="blog-tools"
-         data-roles="ADMIN,MGR">
-        포스트 관리 툴 테스트
-      </a>
-      <a href="./power_structure.html"
-         class="admin-side-link"
-         data-page="power_structure"
-         data-roles="ADMIN,MGR">
-        정국 구도 시각화 도구
-      </a>
-      <a href="./blog-tools.html"
-         class="admin-side-link"
-         data-page="blog-tools"
-         data-roles="ADMIN,MGR">
-        플래시카드/드래그정렬 생성
-      </a>
+    // 페이지 넘김 버튼
+    document.getElementById("prev-btn").addEventListener("click", () => {
+        if(rendition) rendition.prev();
+    });
+    
+    document.getElementById("next-btn").addEventListener("click", () => {
+        if(rendition) rendition.next();
+    });
 
-      <a href="./blogger-preview.html"
-         class="admin-side-link"
-         data-page="blogger-preview"
-         data-roles="ADMIN,MGR">
-        블로그 관리 툴
-      </a>
+    // 글자 크기 조절
+    document.getElementById("btn-zoom-in").addEventListener("click", () => {
+        if(!rendition) return;
+        currentFontSize += 10;
+        rendition.themes.fontSize(`${currentFontSize}%`);
+    });
 
-      <a href="./post_builder_publish.html"
-         class="admin-side-link"
-         data-page="post_builder_publish"
-         data-roles="ADMIN,MGR">
-        게시글 블록 에디터 + 발행
-      </a>
+    document.getElementById("btn-zoom-out").addEventListener("click", () => {
+        if(!rendition) return;
+        currentFontSize = Math.max(50, currentFontSize - 10);
+        rendition.themes.fontSize(`${currentFontSize}%`);
+    });
 
-      <a href="./events_editor.html"
-         class="admin-side-link"
-         data-page="events_editor"
-         data-roles="ADMIN,MGR">
-        연표에디터
-      </a>
-      <a href="./events.html"
-         class="admin-side-link"
-         data-page="events"
-         data-roles="ADMIN,MGR">
-        연표 목록
-      </a>
-      <a href="./E-book.html"
-         class="admin-side-link"
-         data-page="E-book"
-         data-roles="ADMIN,MGR">
-        E-book
-      </a>
-      <a href="./board_test.html"
-         class="admin-side-link"
-         data-page="board_test.html"
-         data-roles="ADMIN,MGR">
-        board_test.html
-      </a>
-    </div>
-  </details>
+    // 다크 모드 토글
+    document.getElementById("btn-theme").addEventListener("click", function() {
+        const bodyEl = document.getElementById("ebook-body");
+        
+        if (currentTheme === 'light') {
+            currentTheme = 'dark';
+            this.innerHTML = '☀️ 라이트 모드';
+            this.classList.add('active');
+            bodyEl.classList.add('dark-theme');
+        } else {
+            currentTheme = 'light';
+            this.innerHTML = '🌙 다크 모드';
+            this.classList.remove('active');
+            bodyEl.classList.remove('dark-theme');
+        }
 
-</nav>
+        if(rendition) rendition.themes.select(currentTheme);
+    });
+
+    // --- 4. 초기 실행 ---
+    (function init(){
+      setNow(); 
+      setInterval(setNow, 1000*60);
+      mountShell();
+    })();
+  </script>
+</body>
+</html>
