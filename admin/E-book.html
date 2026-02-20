@@ -2,92 +2,96 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <title>텍스트 E-Book 뷰어 · Cheese Admin</title>
+  <title>텍스트 E-Book 관리자 · Cheese Admin</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <link rel="stylesheet" href="./admin.css" />
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script> 
 
   <style>
     /* =========================================
-       Lightweight Text E-Book Viewer Styles
+       E-Book Viewer & Editor Styles
     ========================================= */
     .dash-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem; }
     .dash-title .t { font-size: 1.5rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.02em; line-height: 1.2; }
     .dash-title .s { font-size: 0.85rem; color: var(--text-sub); margin-top: 0.25rem; font-weight: 500; }
-    
     .status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; font-size: 0.8rem; font-weight: 600; background: #fff; border: 1px solid var(--border); color: var(--text-sub); }
 
-    /* 뷰어 전체 레이아웃 */
-    .ebook-layout { display: flex; flex-direction: column; height: calc(100vh - 160px); min-height: 500px; background: #fff; border-radius: 1rem; border: 1px solid var(--border); overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02); }
+    /* 뷰어 기본 레이아웃 */
+    .ebook-layout { display: flex; flex-direction: column; height: calc(100vh - 160px); min-height: 500px; background: #fff; border-radius: 1rem; border: 1px solid var(--border); overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02); position: relative; transition: background 0.3s, border-color 0.3s; }
     
-    /* 상단 툴바 */
-    .ebook-toolbar { display: flex; justify-content: space-between; align-items: center; padding: 1rem; background: #f8fafc; border-bottom: 1px solid var(--border); flex-wrap: wrap; gap: 10px; }
+    /* ⭐ 전체화면 집중 모드 (Fullscreen Overlay) */
+    .ebook-layout.fullscreen { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 9999; border-radius: 0; border: none; margin: 0; box-shadow: none; }
+    body.fullscreen-active { overflow: hidden; /* 배경 스크롤 방지 */ }
+
+    /* 툴바 */
+    .ebook-toolbar { display: flex; justify-content: space-between; align-items: center; padding: 1rem; background: #f8fafc; border-bottom: 1px solid var(--border); flex-wrap: wrap; gap: 10px; transition: background 0.3s, border-color 0.3s; }
     .toolbar-group { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
     
     .tool-btn { padding: 0.5rem 0.8rem; border: 1px solid #cbd5e1; border-radius: 0.5rem; background: #fff; cursor: pointer; font-size: 0.85rem; font-weight: 600; color: #475569; transition: all 0.2s; display: inline-flex; align-items: center; gap: 4px; }
     .tool-btn:hover { background: #f1f5f9; }
-    
+    .tool-btn.primary { background: var(--primary, #3b82f6); color: #fff; border-color: var(--primary, #3b82f6); }
+    .tool-btn.primary:hover { background: #2563eb; }
+    .tool-btn.danger { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
+    .tool-btn.danger:hover { background: #fca5a5; color: #991b1b; }
+
     .file-upload-wrapper { position: relative; overflow: hidden; display: inline-block; }
     .file-upload-wrapper input[type=file] { font-size: 100px; position: absolute; left: 0; top: 0; opacity: 0; cursor: pointer; height: 100%; }
 
-    .book-meta { font-size: 0.95rem; font-weight: 700; color: #0f172a; max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .book-meta { font-size: 1rem; font-weight: 700; color: #0f172a; border: none; background: transparent; padding: 0.2rem 0.5rem; outline: none; border-bottom: 2px solid transparent; transition: all 0.2s; border-radius: 4px; }
+    .book-meta:focus { border-bottom: 2px solid var(--primary, #3b82f6); background: rgba(0,0,0,0.03); }
 
-    /* 뷰어 본문 컨테이너 */
+    /* 본문 영역 */
     .ebook-body { flex: 1; display: flex; position: relative; background: #fdfdfd; transition: background 0.3s; align-items: center; }
-    
-    .nav-btn { width: 50px; height: 100%; background: transparent; border: none; font-size: 2rem; color: #94a3b8; cursor: pointer; z-index: 10; touch-action: manipulation; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
+    .nav-btn { width: 50px; height: 100%; background: transparent; border: none; font-size: 2rem; color: #94a3b8; cursor: pointer; z-index: 10; display: flex; align-items: center; justify-content: center; transition: color 0.2s, background 0.2s; }
     .nav-btn:hover { background: rgba(0,0,0,0.03); color: var(--primary, #3b82f6); }
     
-    /* ⭐ 핵심: CSS 다단 편집(Column) 영역 ⭐ */
-    .viewer-window {
-        flex: 1;
-        height: calc(100% - 40px);
-        margin: 20px 0;
-        overflow-x: hidden; /* 가로 스크롤 숨김 (JS로 제어) */
-        overflow-y: hidden; /* 세로 스크롤 금지 (무조건 옆으로 넘김) */
-        scroll-behavior: smooth; /* 부드러운 페이지 전환 */
-        position: relative;
-    }
-
-    .viewer-content {
-        height: 100%;
-        box-sizing: border-box;
-        /* 핵심 CSS: 컨테이너 너비만큼 1단으로 나누기 */
-        column-width: 100%; 
-        column-gap: 20px; /* 페이지 사이 간격 */
-        column-fill: auto;
-        
-        /* 텍스트 스타일 기본값 */
-        font-size: 16px;
-        line-height: 1.8;
-        color: #333;
-        font-family: 'Gowun Batang', 'Noto Serif KR', serif; /* 명조체 느낌 */
-        padding-bottom: 10px;
-    }
-
-    /* 제목이나 이미지가 페이지 중간에 잘리지 않게 보호 */
-    .viewer-content h1, .viewer-content h2, .viewer-content h3, .viewer-content img {
-        break-inside: avoid;
-    }
-    .viewer-content img { max-width: 100%; height: auto; border-radius: 8px; }
-
-    /* 페이지 표시기 */
+    /* 읽기 모드 (다단 편집) */
+    .viewer-window { flex: 1; height: calc(100% - 40px); margin: 20px 0; overflow: hidden; scroll-behavior: smooth; position: relative; }
+    .viewer-content { height: 100%; box-sizing: border-box; column-width: 100%; column-gap: 20px; column-fill: auto; font-size: 16px; line-height: 1.8; font-family: 'Gowun Batang', serif; color: #333; padding-bottom: 10px; transition: color 0.3s; }
+    .viewer-content p { margin-bottom: 1em; }
+    .viewer-content h1, .viewer-content h2, .viewer-content h3 { break-inside: avoid; }
     .page-indicator { position: absolute; bottom: 10px; width: 100%; text-align: center; font-size: 0.8rem; color: #94a3b8; pointer-events: none; font-family: monospace; }
 
-    /* 다크 모드 */
-    .ebook-body.dark-theme { background: #1e293b; }
-    .ebook-body.dark-theme .viewer-content { color: #cbd5e1; }
-    .ebook-body.dark-theme .nav-btn { color: #64748b; }
+    /* 편집 모드 */
+    .editor-window { flex: 1; height: 100%; padding: 1.5rem; display: none; box-sizing: border-box; background: transparent; }
+    .editor-textarea { width: 100%; height: 100%; resize: none; border: 1px solid #cbd5e1; border-radius: 0.5rem; padding: 1rem; font-size: 15px; line-height: 1.6; font-family: inherit; box-sizing: border-box; outline: none; background: #f8fafc; transition: all 0.3s; }
+    .editor-textarea:focus { border-color: var(--primary, #3b82f6); background: #fff; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
 
-    /* 모바일 대응 */
+    /* ⭐ 완벽한 다크 모드 (툴바 + 본문 모두 적용) */
+    .ebook-layout.dark-theme { background: #0f172a; border-color: #1e293b; }
+    .ebook-layout.dark-theme .ebook-toolbar { background: #1e293b; border-color: #334155; }
+    .ebook-layout.dark-theme .tool-btn { background: #334155; color: #cbd5e1; border-color: #475569; }
+    .ebook-layout.dark-theme .tool-btn:hover { background: #475569; }
+    .ebook-layout.dark-theme .tool-btn.primary { background: var(--primary, #3b82f6); color: #fff; border-color: var(--primary, #3b82f6); }
+    .ebook-layout.dark-theme .book-meta { color: #f8fafc; }
+    .ebook-layout.dark-theme .book-meta:focus { background: rgba(255,255,255,0.05); }
+    .ebook-layout.dark-theme .ebook-body { background: #0f172a; }
+    .ebook-layout.dark-theme .viewer-content { color: #cbd5e1; }
+    .ebook-layout.dark-theme .nav-btn { color: #475569; }
+    .ebook-layout.dark-theme .nav-btn:hover { color: #94a3b8; background: rgba(255,255,255,0.02); }
+    .ebook-layout.dark-theme .editor-textarea { background: #1e293b; color: #cbd5e1; border-color: #334155; }
+    .ebook-layout.dark-theme .editor-textarea:focus { border-color: #64748b; background: #0f172a; }
+
+    /* 목록 모달 */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(2px); z-index: 10000; display: none; align-items: center; justify-content: center; }
+    .modal-overlay.show { display: flex; }
+    .modal-card { background: #fff; width: 90%; max-width: 500px; max-height: 80vh; border-radius: 1rem; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); }
+    .modal-header { padding: 1.2rem 1.5rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: #f8fafc; }
+    .modal-header h3 { margin: 0; font-size: 1.1rem; color: #0f172a; }
+    .close-btn { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #94a3b8; transition: color 0.2s; }
+    .close-btn:hover { color: #ef4444; }
+    .modal-body { flex: 1; overflow-y: auto; padding: 1rem; }
+    .book-list-item { padding: 1rem; border: 1px solid var(--border); border-radius: 0.5rem; margin-bottom: 0.5rem; cursor: pointer; transition: all 0.2s; background: #fff; }
+    .book-list-item:hover { border-color: var(--primary, #3b82f6); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); transform: translateY(-1px); }
+    .book-list-item h4 { margin: 0 0 0.4rem 0; color: #0f172a; font-size: 1rem; }
+    .book-list-item p { margin: 0; font-size: 0.75rem; color: #64748b; }
+
     @media (max-width: 768px) {
-        .nav-btn { display: none; } /* 스와이프로 대체 */
+        .nav-btn { display: none; } 
         .ebook-layout { height: calc(100vh - 120px); border-radius: 0; border: none; }
-        .viewer-window { margin: 10px 0; }
-        .viewer-content { column-gap: 10px; font-size: 15px; } /* 폰트 및 간격 축소 */
+        .book-meta { max-width: 150px; }
     }
   </style>
-  
   <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang&display=swap" rel="stylesheet">
 </head>
 
@@ -100,8 +104,8 @@
       <main style="position: relative; padding: 1rem;">
         <header class="dash-header">
           <div class="dash-title">
-            <h1 class="t">Cheese 텍스트 뷰어</h1>
-            <p class="s">TXT 및 HTML 파일을 자동으로 페이지로 나누어 보여줍니다.</p>
+            <h1 class="t">E-Book 관리자</h1>
+            <p class="s">문서를 열람하고, 내용을 수정 및 관리할 수 있습니다.</p>
           </div>
           <div class="status-pill">
             <span style="display:inline-block; width:8px; height:8px; background:#10b981; border-radius:50%;"></span>
@@ -109,20 +113,25 @@
           </div>
         </header>
 
-        <section class="ebook-layout">
+        <section class="ebook-layout" id="ebook-layout">
           <div class="ebook-toolbar">
             <div class="toolbar-group">
+              <button class="tool-btn" onclick="openBookList()">📚 서재</button>
               <div class="file-upload-wrapper">
-                <button class="tool-btn">📂 TXT / HTML 불러오기</button>
-                <input type="file" id="file-input" accept=".txt, .html, .htm" />
+                <button class="tool-btn">📂 파일 열기</button>
+                <input type="file" id="file-input" accept=".txt, .html" />
               </div>
-              <div class="book-meta" id="meta-title">샘플 문서 읽는 중</div>
+              <input type="text" class="book-meta" id="meta-title" value="" placeholder="문서를 선택하세요" readonly>
             </div>
 
             <div class="toolbar-group">
-              <button class="tool-btn" id="btn-zoom-out">A-</button>
-              <button class="tool-btn" id="btn-zoom-in">A+</button>
-              <button class="tool-btn" id="btn-theme">🌙 모드</button>
+              <button class="tool-btn" id="btn-theme" title="다크 모드">🌙</button>
+              <button class="tool-btn" id="btn-zoom-out" title="글자 축소">A-</button>
+              <button class="tool-btn" id="btn-zoom-in" title="글자 확대">A+</button>
+              <span style="width: 1px; height: 20px; background: #cbd5e1; margin: 0 5px; display: inline-block;" class="divider"></span>
+              <button class="tool-btn" id="btn-edit-toggle">✏️ 편집</button>
+              <button class="tool-btn primary" id="btn-save" onclick="saveBook()">💾 저장</button>
+              <button class="tool-btn danger" id="btn-exit-fs" style="display: none;" onclick="exitFullScreen()">✖ 닫기</button>
             </div>
           </div>
 
@@ -131,78 +140,103 @@
             
             <div class="viewer-window" id="viewer-window">
                 <div class="viewer-content" id="viewer-content">
-                    <h2>환영합니다</h2>
-                    <p>이곳은 순수 CSS 다단 편집(Column) 기능을 활용하여 만들어진 초경량 E-Book 뷰어입니다.</p>
-                    <p>무거운 외부 라이브러리 없이도 텍스트가 화면 높이에 맞춰 자동으로 잘리며, 다음 페이지로 넘어갑니다.</p>
-                    <br>
-                    <h3>사용 방법</h3>
-                    <p>1. 좌측 상단의 <b>[TXT / HTML 불러오기]</b> 버튼을 눌러 로컬 PC에 있는 텍스트 파일을 선택하세요.</p>
-                    <p>2. 내용이 길어지면 자동으로 페이지가 생성됩니다.</p>
-                    <p>3. 마우스 휠, 좌우 버튼, 혹은 모바일 화면 스와이프를 통해 책장을 넘길 수 있습니다.</p>
-                    <br><br><br><br><br><br><br><br><br><br><br><br> <h3>두 번째 페이지입니다.</h3>
-                    <p>성공적으로 화면이 분할되었습니다!</p>
+                    <div style="text-align: center; color: #94a3b8; margin-top: 20%;">
+                        <h3>상단의 [📚 서재] 또는 [📂 파일 열기]를 눌러 문서를 불러오세요.</h3>
+                    </div>
                 </div>
             </div>
 
-            <button class="nav-btn" id="next-btn">›</button>
+            <div class="editor-window" id="editor-window">
+                <textarea class="editor-textarea" id="editor-content" placeholder="이곳에 텍스트를 입력하거나 수정하세요..."></textarea>
+            </div>
 
-            <div class="page-indicator"><span id="current-page">1</span> / <span id="total-pages">1</span></div>
+            <button class="nav-btn" id="next-btn">›</button>
+            <div class="page-indicator" id="page-indicator-ui"><span id="current-page">0</span> / <span id="total-pages">0</span></div>
           </div>
         </section>
+
+        <div class="modal-overlay" id="listModal">
+          <div class="modal-card">
+            <div class="modal-header">
+              <h3>📚 내 서재 (저장된 문서)</h3>
+              <button class="close-btn" onclick="closeBookList()">×</button>
+            </div>
+            <div class="modal-body" id="book-list-container">
+              <div style="text-align:center; padding: 2rem; color:#64748b;">데이터를 불러오는 중입니다...</div>
+            </div>
+          </div>
+        </div>
+
       </main>
     </div>
   </div>
 
   <script src="./admin-common.js"></script>
   <script>
-    // --- 시스템 공통 설정 ---
-    function pad2(n){ return String(n).padStart(2,'0'); }
-    function hm(d){ return pad2(d.getHours())+':'+pad2(d.getMinutes()); }
-    function setNow(){ document.getElementById('nowPill').innerHTML = `최근 동기화: ${hm(new Date())}`; }
+    // 💡 Google Apps Script 배포 URL (이전 단계에서 만든 URL 유지)
+    const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbxnwLsNiKFKEuYytV8R_F6u2vDzxkzwbozB_d6cmzsZsDlVpkx5scRqFaKe2bz4K6lB/exec'; 
+
     function mountShell(){
-      if(window.renderAdminHeader) window.renderAdminHeader({ mountId:'admin-header-slot', badgeText:'E-Book', subtitle:'텍스트 뷰어' });
+      if(window.renderAdminHeader) window.renderAdminHeader({ mountId:'admin-header-slot', badgeText:'E-Book', subtitle:'도서 관리' });
       if(window.renderAdminMenu) window.renderAdminMenu({ mountId:'admin-menu-slot', active:'ebook' });
     }
 
-    // --- 뷰어 제어 로직 ---
+    let currentBookId = null; 
+    let isEditMode = false;
+    let booksData = []; 
+    
+    // --- ⭐ 전체화면 (집중 모드) 제어 ---
+    function enterFullScreen() {
+        const layout = document.getElementById('ebook-layout');
+        const exitBtn = document.getElementById('btn-exit-fs');
+        
+        layout.classList.add('fullscreen');
+        document.body.classList.add('fullscreen-active'); // 뒷배경 스크롤 방지
+        exitBtn.style.display = 'inline-flex';
+        
+        // 제목 입력창 활성화 (문서를 불러왔을 때만 수정 가능하도록)
+        document.getElementById('meta-title').removeAttribute('readonly');
+
+        // 레이아웃 크기가 변했으므로 페이지 재계산
+        setTimeout(calculatePages, 300);
+    }
+
+    function exitFullScreen() {
+        const layout = document.getElementById('ebook-layout');
+        const exitBtn = document.getElementById('btn-exit-fs');
+        
+        layout.classList.remove('fullscreen');
+        document.body.classList.remove('fullscreen-active');
+        exitBtn.style.display = 'none';
+        
+        // 다시 대시보드로 돌아가면 제목 읽기 전용 처리 (선택사항)
+        document.getElementById('meta-title').setAttribute('readonly', true);
+
+        setTimeout(calculatePages, 300);
+    }
+
+    // --- 뷰어 페이징 로직 ---
     const viewerWindow = document.getElementById('viewer-window');
     const viewerContent = document.getElementById('viewer-content');
+    let currentPage = 0, totalPages = 1;
     
-    let currentPage = 0;
-    let totalPages = 1;
-    let currentTheme = 'light';
-    let currentFontSize = 16;
+    function getColumnGap() { return window.innerWidth <= 768 ? 10 : 20; }
     
-    // 모바일에 따른 여백(gap) 설정 맞춤
-    function getColumnGap() {
-        return window.innerWidth <= 768 ? 10 : 20;
-    }
-
-    // 전체 페이지 수 계산
     function calculatePages() {
+        if(isEditMode || !viewerContent.innerHTML.trim()) return; 
         const gap = getColumnGap();
-        // 뷰어의 전체 가로 스크롤 길이 / (화면에 보이는 너비 + 여백)
         const pageWidth = viewerWindow.clientWidth + gap;
         totalPages = Math.ceil((viewerContent.scrollWidth + gap) / pageWidth) || 1;
-        
-        // 글자 크기를 바꾸거나 창 크기를 조절할 때 현재 페이지가 전체 페이지를 넘지 않게 조정
-        if(currentPage >= totalPages) currentPage = totalPages - 1;
-        
+        if(currentPage >= totalPages) currentPage = Math.max(0, totalPages - 1);
         updatePageIndicator();
-        goToPage(currentPage); // 레이아웃 변경 시 현재 페이지 위치 보정
+        goToPage(currentPage);
     }
 
-    // 페이지 이동 함수
     function goToPage(page) {
         if (page < 0) page = 0;
         if (page >= totalPages) page = totalPages - 1;
-        
         currentPage = page;
-        const gap = getColumnGap();
-        const pageWidth = viewerWindow.clientWidth + gap;
-        
-        // CSS Column을 사용하면 스크롤을 이동시키는 것으로 페이지를 넘김
-        viewerWindow.scrollLeft = currentPage * pageWidth;
+        viewerWindow.scrollLeft = currentPage * (viewerWindow.clientWidth + getColumnGap());
         updatePageIndicator();
     }
 
@@ -211,108 +245,178 @@
         document.getElementById('total-pages').innerText = totalPages;
     }
 
-    // --- 이벤트 리스너 ---
+    // --- 편집 모드 / 읽기 모드 전환 ---
+    document.getElementById("btn-edit-toggle").addEventListener("click", function() {
+        isEditMode = !isEditMode;
+        const editorWindow = document.getElementById("editor-window");
+        const editorTextarea = document.getElementById("editor-content");
+        const navBtns = document.querySelectorAll(".nav-btn");
+        const pageUI = document.getElementById("page-indicator-ui");
 
-    // 1. 네비게이션 버튼
-    document.getElementById("prev-btn").addEventListener("click", () => goToPage(currentPage - 1));
-    document.getElementById("next-btn").addEventListener("click", () => goToPage(currentPage + 1));
+        if (isEditMode) {
+            this.innerHTML = "📖 읽기 모드";
+            this.classList.add("primary");
+            viewerWindow.style.display = "none";
+            editorWindow.style.display = "block";
+            navBtns.forEach(btn => btn.style.display = "none");
+            pageUI.style.display = "none";
+            
+            let textRaw = viewerContent.innerHTML.replace(/<p>/g, '').replace(/<\/p>/g, '\n');
+            editorTextarea.value = textRaw;
+        } else {
+            this.innerHTML = "✏️ 편집";
+            this.classList.remove("primary");
+            editorWindow.style.display = "none";
+            viewerWindow.style.display = "block";
+            if(window.innerWidth > 768) navBtns.forEach(btn => btn.style.display = "flex");
+            pageUI.style.display = "block";
 
-    // 2. 키보드 방향키 및 마우스 휠 지원
-    document.addEventListener("keyup", (e) => {
-        if(e.key === "ArrowLeft") goToPage(currentPage - 1);
-        if(e.key === "ArrowRight") goToPage(currentPage + 1);
+            const textFormatted = editorTextarea.value.split('\n').filter(line => line.trim() !== '').map(line => `<p>${line}</p>`).join('');
+            viewerContent.innerHTML = textFormatted;
+            
+            currentPage = 0;
+            setTimeout(calculatePages, 100);
+        }
     });
 
-    // 가로 휠 스크롤 지원 (터치패드용)
-    viewerWindow.addEventListener('wheel', (e) => {
-        // 기본 세로 스크롤 이벤트를 가로 페이지 넘김으로 변환
-        if(Math.abs(e.deltaY) > 20 || Math.abs(e.deltaX) > 20) {
-            e.preventDefault();
-            if(e.deltaY > 0 || e.deltaX > 0) goToPage(currentPage + 1);
-            else goToPage(currentPage - 1);
+    // --- 클라우드 데이터 연동 ---
+    async function fetchBookList() {
+        try {
+            const res = await fetch(GAS_API_URL);
+            const json = await res.json();
+            booksData = json.items || [];
+            renderBookList();
+        } catch (e) {
+            console.error("목록 불러오기 실패", e);
+            document.getElementById('book-list-container').innerHTML = '<div style="color:red; text-align:center;">목록을 불러오지 못했습니다. URL을 확인하세요.</div>';
         }
-    }, { passive: false });
+    }
 
-    // 3. 파일 업로드 (.txt, .html)
+    function renderBookList() {
+        const container = document.getElementById('book-list-container');
+        container.innerHTML = '';
+        if (booksData.length === 0) {
+            container.innerHTML = '<div style="text-align:center; padding:2rem; color:#64748b;">저장된 문서가 없습니다. 새로 등록해보세요!</div>';
+            return;
+        }
+
+        booksData.reverse().forEach(book => {
+            const div = document.createElement('div');
+            div.className = 'book-list-item';
+            div.innerHTML = `<h4>${book.title || '제목 없음'}</h4><p>최종 수정: ${new Date(book.date).toLocaleString()}</p>`;
+            div.onclick = () => loadBookToViewer(book);
+            container.appendChild(div);
+        });
+    }
+
+    function loadBookToViewer(book) {
+        currentBookId = book.id;
+        document.getElementById('meta-title').value = book.title;
+        
+        document.getElementById('editor-content').value = book.content;
+        viewerContent.innerHTML = book.content.split('\n').filter(line => line.trim() !== '').map(line => `<p>${line}</p>`).join('');
+        
+        if(isEditMode) document.getElementById("btn-edit-toggle").click(); 
+        
+        closeBookList();
+        
+        // ⭐ 문서를 불러왔으므로 집중 모드(전체화면) 진입
+        currentPage = 0;
+        enterFullScreen(); 
+    }
+
+    async function saveBook() {
+        const btn = document.getElementById('btn-save');
+        const title = document.getElementById('meta-title').value;
+        let contentToSave = isEditMode ? 
+            document.getElementById('editor-content').value : 
+            viewerContent.innerHTML.replace(/<p>/g, '').replace(/<\/p>/g, '\n');
+
+        if (!title.trim() || !contentToSave.trim()) {
+            alert('제목과 내용을 모두 입력해주세요.'); return;
+        }
+
+        btn.innerText = '저장 중...';
+        btn.disabled = true;
+
+        const payload = { id: currentBookId, title: title, content: contentToSave };
+
+        try {
+            const res = await fetch(GAS_API_URL, { method: "POST", body: JSON.stringify(payload) });
+            const json = await res.json();
+            
+            if (json.result === 'success') {
+                alert('성공적으로 저장되었습니다!');
+                currentBookId = json.id; 
+                fetchBookList(); 
+            }
+        } catch (e) { alert('저장에 실패했습니다.'); } 
+        finally { btn.innerText = '💾 저장'; btn.disabled = false; }
+    }
+
+    function openBookList() { document.getElementById('listModal').classList.add('show'); fetchBookList(); }
+    function closeBookList() { document.getElementById('listModal').classList.remove('show'); }
+
+    // --- 파일 업로드 로직 (로컬 TXT) ---
     document.getElementById("file-input").addEventListener("change", function(e) {
         const file = e.target.files[0];
         if (!file) return;
 
-        document.getElementById('meta-title').textContent = file.name;
+        currentBookId = null; 
+        document.getElementById('meta-title').value = file.name.replace(/\.[^/.]+$/, ""); 
 
         const reader = new FileReader();
         reader.onload = function(e) {
             const content = e.target.result;
+            document.getElementById('editor-content').value = content;
+            viewerContent.innerHTML = content.split('\n').filter(line => line.trim() !== '').map(line => `<p>${line}</p>`).join('');
             
-            // HTML 파일이면 그대로 넣고, TXT 파일이면 줄바꿈을 <br>로 변환
-            if(file.name.toLowerCase().endsWith('.html') || file.name.toLowerCase().endsWith('.htm')) {
-                viewerContent.innerHTML = content;
-            } else {
-                // 텍스트는 <p> 태그로 감싸서 예쁘게 출력
-                const formattedText = content.split('\n').map(line => `<p>${line}</p>`).join('');
-                viewerContent.innerHTML = formattedText;
-            }
+            if(isEditMode) document.getElementById("btn-edit-toggle").click();
             
-            // 내용이 바뀌었으므로 페이지 재계산
-            setTimeout(() => {
-                currentPage = 0;
-                calculatePages();
-            }, 100);
+            // ⭐ 파일이 로드되면 집중 모드(전체화면) 진입
+            currentPage = 0;
+            enterFullScreen();
         };
         reader.readAsText(file);
     });
 
-    // 4. 모바일 터치 스와이프 지원
-    let touchStartX = 0;
-    let touchEndX = 0;
+    // 이벤트 리스너
+    document.getElementById("prev-btn").addEventListener("click", () => goToPage(currentPage - 1));
+    document.getElementById("next-btn").addEventListener("click", () => goToPage(currentPage + 1));
     
-    viewerWindow.addEventListener('touchstart', e => { touchStartX = e.changedTouches[0].screenX; }, {passive: true});
-    viewerWindow.addEventListener('touchend', e => {
-        touchEndX = e.changedTouches[0].screenX;
-        if (touchStartX - touchEndX > 50) goToPage(currentPage + 1); // 왼쪽으로 밀기 (다음장)
-        if (touchEndX - touchStartX > 50) goToPage(currentPage - 1); // 오른쪽으로 밀기 (이전장)
-    }, {passive: true});
+    // 키보드 방향키
+    document.addEventListener("keyup", (e) => {
+        if(document.activeElement.tagName === 'TEXTAREA' || document.activeElement.tagName === 'INPUT') return;
+        if(e.key === "ArrowLeft") goToPage(currentPage - 1);
+        if(e.key === "ArrowRight") goToPage(currentPage + 1);
+    });
 
-    // 5. 글자 크기 조절 및 테마 (페이지 재계산 필수)
+    window.addEventListener('resize', () => { clearTimeout(window.resizeTimer); window.resizeTimer = setTimeout(calculatePages, 200); });
+    
+    let currentFontSize = 16;
     document.getElementById("btn-zoom-in").addEventListener("click", () => {
-        currentFontSize += 2;
-        viewerContent.style.fontSize = `${currentFontSize}px`;
-        setTimeout(calculatePages, 50); // 글자 크기가 변하면 페이지 수도 변함
+        currentFontSize += 2; viewerContent.style.fontSize = `${currentFontSize}px`; setTimeout(calculatePages, 50);
     });
-
     document.getElementById("btn-zoom-out").addEventListener("click", () => {
-        currentFontSize = Math.max(12, currentFontSize - 2);
-        viewerContent.style.fontSize = `${currentFontSize}px`;
-        setTimeout(calculatePages, 50);
+        currentFontSize = Math.max(12, currentFontSize - 2); viewerContent.style.fontSize = `${currentFontSize}px`; setTimeout(calculatePages, 50);
     });
 
+    // ⭐ 다크 모드 토글 (전체 레이아웃에 적용)
     document.getElementById("btn-theme").addEventListener("click", function() {
-        const bodyEl = document.getElementById("ebook-body");
-        if (currentTheme === 'light') {
-            currentTheme = 'dark';
-            this.innerHTML = '☀️ 모드';
-            bodyEl.classList.add('dark-theme');
+        const layoutEl = document.getElementById("ebook-layout");
+        layoutEl.classList.toggle('dark-theme');
+        if (layoutEl.classList.contains('dark-theme')) {
+            this.innerHTML = '☀️';
+            this.title = '라이트 모드';
         } else {
-            currentTheme = 'light';
-            this.innerHTML = '🌙 모드';
-            bodyEl.classList.remove('dark-theme');
+            this.innerHTML = '🌙';
+            this.title = '다크 모드';
         }
     });
 
-    // 창 크기가 조절될 때 (모바일 가로/세로 전환 등) 페이지 수 다시 계산
-    window.addEventListener('resize', () => {
-        clearTimeout(window.resizeTimer);
-        window.resizeTimer = setTimeout(calculatePages, 200);
-    });
-
-    // --- 초기 실행 ---
     (function init(){
-      setNow(); 
-      setInterval(setNow, 1000*60);
       mountShell();
-      
-      // 폰트 로딩 시간을 고려해 약간 지연 후 최초 페이지 계산
-      setTimeout(calculatePages, 300);
+      fetchBookList(); 
     })();
   </script>
 </body>
