@@ -2,53 +2,93 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <title>E-Book 뷰어 · Cheese Admin</title>
+  <title>텍스트 E-Book 뷰어 · Cheese Admin</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <link rel="stylesheet" href="./admin.css" />
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script> 
-  
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"></script>
 
   <style>
-    /* ... (기존 대시보드 스타일 유지) ... */
+    /* =========================================
+       Lightweight Text E-Book Viewer Styles
+    ========================================= */
     .dash-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem; }
     .dash-title .t { font-size: 1.5rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.02em; line-height: 1.2; }
     .dash-title .s { font-size: 0.85rem; color: var(--text-sub); margin-top: 0.25rem; font-weight: 500; }
+    
     .status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; font-size: 0.8rem; font-weight: 600; background: #fff; border: 1px solid var(--border); color: var(--text-sub); }
 
-    /* 뷰어 컨테이너 레이아웃 (모바일 대응) */
-    .ebook-layout { display: flex; flex-direction: column; height: calc(100vh - 160px); min-height: 500px; background: #fff; border-radius: 1rem; border: 1px solid var(--border); overflow: hidden; }
+    /* 뷰어 전체 레이아웃 */
+    .ebook-layout { display: flex; flex-direction: column; height: calc(100vh - 160px); min-height: 500px; background: #fff; border-radius: 1rem; border: 1px solid var(--border); overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02); }
     
-    /* 상단 툴바 (모바일에서 자동 줄바꿈) */
+    /* 상단 툴바 */
     .ebook-toolbar { display: flex; justify-content: space-between; align-items: center; padding: 1rem; background: #f8fafc; border-bottom: 1px solid var(--border); flex-wrap: wrap; gap: 10px; }
     .toolbar-group { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
     
-    .tool-btn { padding: 0.5rem 0.8rem; border: 1px solid #cbd5e1; border-radius: 0.5rem; background: #fff; cursor: pointer; font-size: 0.85rem; font-weight: 600; color: #475569; transition: all 0.2s; }
+    .tool-btn { padding: 0.5rem 0.8rem; border: 1px solid #cbd5e1; border-radius: 0.5rem; background: #fff; cursor: pointer; font-size: 0.85rem; font-weight: 600; color: #475569; transition: all 0.2s; display: inline-flex; align-items: center; gap: 4px; }
     .tool-btn:hover { background: #f1f5f9; }
-    .tool-btn.active { background: #3b82f6; color: #fff; border-color: #3b82f6; }
     
-    .book-meta { display: flex; flex-direction: column; min-width: 120px; }
-    .book-title { font-size: 0.95rem; font-weight: 700; color: #0f172a; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
-    .book-author { font-size: 0.75rem; color: #64748b; margin: 0; }
+    .file-upload-wrapper { position: relative; overflow: hidden; display: inline-block; }
+    .file-upload-wrapper input[type=file] { font-size: 100px; position: absolute; left: 0; top: 0; opacity: 0; cursor: pointer; height: 100%; }
 
-    /* 메인 뷰어 영역 */
-    .ebook-body { flex: 1; display: flex; position: relative; background: #f1f5f9; transition: background 0.3s; overflow: hidden; }
+    .book-meta { font-size: 0.95rem; font-weight: 700; color: #0f172a; max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* 뷰어 본문 컨테이너 */
+    .ebook-body { flex: 1; display: flex; position: relative; background: #fdfdfd; transition: background 0.3s; align-items: center; }
     
-    /* 모바일에서는 네비게이션 버튼을 작게 하거나 숨기고 스와이프를 유도 */
-    .nav-btn { width: 40px; background: transparent; border: none; font-size: 2rem; color: #94a3b8; cursor: pointer; z-index: 10; touch-action: manipulation; }
-    @media (max-width: 768px) {
-        .nav-btn { display: none; } /* 모바일에서는 버튼 숨김 (스와이프로 대체) */
-        .ebook-layout { height: calc(100vh - 120px); border-radius: 0; border-left: none; border-right: none; }
-        .book-title { max-width: 150px; }
+    .nav-btn { width: 50px; height: 100%; background: transparent; border: none; font-size: 2rem; color: #94a3b8; cursor: pointer; z-index: 10; touch-action: manipulation; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
+    .nav-btn:hover { background: rgba(0,0,0,0.03); color: var(--primary, #3b82f6); }
+    
+    /* ⭐ 핵심: CSS 다단 편집(Column) 영역 ⭐ */
+    .viewer-window {
+        flex: 1;
+        height: calc(100% - 40px);
+        margin: 20px 0;
+        overflow-x: hidden; /* 가로 스크롤 숨김 (JS로 제어) */
+        overflow-y: hidden; /* 세로 스크롤 금지 (무조건 옆으로 넘김) */
+        scroll-behavior: smooth; /* 부드러운 페이지 전환 */
+        position: relative;
     }
-    
-    #viewer { flex: 1; height: 100%; position: relative; overflow: hidden; padding: 0 10px; }
-    #loading-indicator { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-weight: 700; color: #64748b; }
+
+    .viewer-content {
+        height: 100%;
+        box-sizing: border-box;
+        /* 핵심 CSS: 컨테이너 너비만큼 1단으로 나누기 */
+        column-width: 100%; 
+        column-gap: 20px; /* 페이지 사이 간격 */
+        column-fill: auto;
+        
+        /* 텍스트 스타일 기본값 */
+        font-size: 16px;
+        line-height: 1.8;
+        color: #333;
+        font-family: 'Gowun Batang', 'Noto Serif KR', serif; /* 명조체 느낌 */
+        padding-bottom: 10px;
+    }
+
+    /* 제목이나 이미지가 페이지 중간에 잘리지 않게 보호 */
+    .viewer-content h1, .viewer-content h2, .viewer-content h3, .viewer-content img {
+        break-inside: avoid;
+    }
+    .viewer-content img { max-width: 100%; height: auto; border-radius: 8px; }
+
+    /* 페이지 표시기 */
+    .page-indicator { position: absolute; bottom: 10px; width: 100%; text-align: center; font-size: 0.8rem; color: #94a3b8; pointer-events: none; font-family: monospace; }
 
     /* 다크 모드 */
     .ebook-body.dark-theme { background: #1e293b; }
+    .ebook-body.dark-theme .viewer-content { color: #cbd5e1; }
+    .ebook-body.dark-theme .nav-btn { color: #64748b; }
+
+    /* 모바일 대응 */
+    @media (max-width: 768px) {
+        .nav-btn { display: none; } /* 스와이프로 대체 */
+        .ebook-layout { height: calc(100vh - 120px); border-radius: 0; border: none; }
+        .viewer-window { margin: 10px 0; }
+        .viewer-content { column-gap: 10px; font-size: 15px; } /* 폰트 및 간격 축소 */
+    }
   </style>
+  
+  <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang&display=swap" rel="stylesheet">
 </head>
 
 <body>
@@ -60,23 +100,23 @@
       <main style="position: relative; padding: 1rem;">
         <header class="dash-header">
           <div class="dash-title">
-            <h1 class="t">E-Book 뷰어</h1>
-            <p class="s">EPUB 표준 규격의 전자책 데이터를 읽고 관리합니다.</p>
+            <h1 class="t">Cheese 텍스트 뷰어</h1>
+            <p class="s">TXT 및 HTML 파일을 자동으로 페이지로 나누어 보여줍니다.</p>
           </div>
           <div class="status-pill">
             <span style="display:inline-block; width:8px; height:8px; background:#10b981; border-radius:50%;"></span>
-            <span id="nowPill">최근 동기화: -</span>
+            <span id="nowPill">준비 완료</span>
           </div>
         </header>
 
         <section class="ebook-layout">
           <div class="ebook-toolbar">
             <div class="toolbar-group">
-              <button class="tool-btn" onclick="loadDefaultBook()">📚 기본 책 로드</button>
-              <div class="book-meta">
-                <div class="book-title" id="meta-title">로딩 중...</div>
-                <div class="book-author" id="meta-author">-</div>
+              <div class="file-upload-wrapper">
+                <button class="tool-btn">📂 TXT / HTML 불러오기</button>
+                <input type="file" id="file-input" accept=".txt, .html, .htm" />
               </div>
+              <div class="book-meta" id="meta-title">샘플 문서 읽는 중</div>
             </div>
 
             <div class="toolbar-group">
@@ -88,10 +128,25 @@
 
           <div class="ebook-body" id="ebook-body">
             <button class="nav-btn" id="prev-btn">‹</button>
-            <div id="viewer">
-                <div id="loading-indicator">책을 불러오는 중입니다...</div>
+            
+            <div class="viewer-window" id="viewer-window">
+                <div class="viewer-content" id="viewer-content">
+                    <h2>환영합니다</h2>
+                    <p>이곳은 순수 CSS 다단 편집(Column) 기능을 활용하여 만들어진 초경량 E-Book 뷰어입니다.</p>
+                    <p>무거운 외부 라이브러리 없이도 텍스트가 화면 높이에 맞춰 자동으로 잘리며, 다음 페이지로 넘어갑니다.</p>
+                    <br>
+                    <h3>사용 방법</h3>
+                    <p>1. 좌측 상단의 <b>[TXT / HTML 불러오기]</b> 버튼을 눌러 로컬 PC에 있는 텍스트 파일을 선택하세요.</p>
+                    <p>2. 내용이 길어지면 자동으로 페이지가 생성됩니다.</p>
+                    <p>3. 마우스 휠, 좌우 버튼, 혹은 모바일 화면 스와이프를 통해 책장을 넘길 수 있습니다.</p>
+                    <br><br><br><br><br><br><br><br><br><br><br><br> <h3>두 번째 페이지입니다.</h3>
+                    <p>성공적으로 화면이 분할되었습니다!</p>
+                </div>
             </div>
+
             <button class="nav-btn" id="next-btn">›</button>
+
+            <div class="page-indicator"><span id="current-page">1</span> / <span id="total-pages">1</span></div>
           </div>
         </section>
       </main>
@@ -100,122 +155,135 @@
 
   <script src="./admin-common.js"></script>
   <script>
-    // 공통 유틸리티
+    // --- 시스템 공통 설정 ---
     function pad2(n){ return String(n).padStart(2,'0'); }
     function hm(d){ return pad2(d.getHours())+':'+pad2(d.getMinutes()); }
     function setNow(){ document.getElementById('nowPill').innerHTML = `최근 동기화: ${hm(new Date())}`; }
     function mountShell(){
-      if(window.renderAdminHeader) window.renderAdminHeader({ mountId:'admin-header-slot', badgeText:'E-Book', subtitle:'도서 열람' });
+      if(window.renderAdminHeader) window.renderAdminHeader({ mountId:'admin-header-slot', badgeText:'E-Book', subtitle:'텍스트 뷰어' });
       if(window.renderAdminMenu) window.renderAdminMenu({ mountId:'admin-menu-slot', active:'ebook' });
     }
 
-    // --- Epub.js 설정 및 전역 변수 ---
-    let book = null;
-    let rendition = null;
+    // --- 뷰어 제어 로직 ---
+    const viewerWindow = document.getElementById('viewer-window');
+    const viewerContent = document.getElementById('viewer-content');
+    
+    let currentPage = 0;
+    let totalPages = 1;
     let currentTheme = 'light';
-    let currentFontSize = 100;
-
-    // 💡 1. 여기에 읽어올 EPUB 파일의 URL 경로를 적어주세요.
-    // 같은 서버에 있는 파일이라면 상대 경로 사용 (예: './books/history-vol1.epub')
-    const DEFAULT_EPUB_URL = "https://s3.amazonaws.com/moby-dick/moby-dick.epub"; // 예시용 공개 파일입니다. 나중에 본인 파일 경로로 바꾸세요.
-
-    // 뷰어 초기화
-    function initViewer() {
-        if (book) { book.destroy(); }
-        document.getElementById('viewer').innerHTML = '<div id="loading-indicator">책을 불러오는 중입니다...</div>';
+    let currentFontSize = 16;
+    
+    // 모바일에 따른 여백(gap) 설정 맞춤
+    function getColumnGap() {
+        return window.innerWidth <= 768 ? 10 : 20;
     }
 
-    // URL에서 EPUB 불러오기 (핵심 기능)
-    function loadEpubFromUrl(url) {
-        initViewer();
-
-        // URL을 통해 파일 로드
-        book = ePub(url);
+    // 전체 페이지 수 계산
+    function calculatePages() {
+        const gap = getColumnGap();
+        // 뷰어의 전체 가로 스크롤 길이 / (화면에 보이는 너비 + 여백)
+        const pageWidth = viewerWindow.clientWidth + gap;
+        totalPages = Math.ceil((viewerContent.scrollWidth + gap) / pageWidth) || 1;
         
-        book.loaded.metadata.then(function(meta){
-            document.getElementById('meta-title').textContent = meta.title || '제목 없음';
-            document.getElementById('meta-author').textContent = meta.creator || '작자 미상';
-        }).catch(err => {
-            document.getElementById('meta-title').textContent = '파일 로드 에러';
-            console.error(err);
-        });
-
-        // 렌더링 방식 설정 (모바일에 맞게 spread: 'none' 처리)
-        rendition = book.renderTo("viewer", {
-            width: "100%",
-            height: "100%",
-            spread: "none", // 화면을 반으로 나누지 않고 한 면씩 출력
-            manager: "continuous",
-            flow: "paginated"
-        });
-
-        // 테마 설정
-        rendition.themes.register("light", { "body": { "background": "transparent", "color": "#333", "padding": "10px" }});
-        rendition.themes.register("dark", { "body": { "background": "transparent", "color": "#cbd5e1", "padding": "10px" }});
+        // 글자 크기를 바꾸거나 창 크기를 조절할 때 현재 페이지가 전체 페이지를 넘지 않게 조정
+        if(currentPage >= totalPages) currentPage = totalPages - 1;
         
-        rendition.themes.select(currentTheme);
-        rendition.themes.fontSize(`${currentFontSize}%`);
-
-        rendition.display().then(() => {
-            const indicator = document.getElementById('loading-indicator');
-            if(indicator) indicator.style.display = 'none';
-            setupSwipeEvents(); // 렌더링 완료 후 스와이프 이벤트 부착
-        });
-
-        // PC 방향키 지원
-        rendition.on("keyup", function(e) {
-            if(e.keyCode == 37) rendition.prev();
-            if(e.keyCode == 39) rendition.next();
-        });
+        updatePageIndicator();
+        goToPage(currentPage); // 레이아웃 변경 시 현재 페이지 위치 보정
     }
 
-    // 기본 책 로드 함수
-    function loadDefaultBook() {
-        loadEpubFromUrl(DEFAULT_EPUB_URL);
+    // 페이지 이동 함수
+    function goToPage(page) {
+        if (page < 0) page = 0;
+        if (page >= totalPages) page = totalPages - 1;
+        
+        currentPage = page;
+        const gap = getColumnGap();
+        const pageWidth = viewerWindow.clientWidth + gap;
+        
+        // CSS Column을 사용하면 스크롤을 이동시키는 것으로 페이지를 넘김
+        viewerWindow.scrollLeft = currentPage * pageWidth;
+        updatePageIndicator();
     }
 
-    // --- 💡 모바일 스와이프 (터치) 기능 구현 ---
-    function setupSwipeEvents() {
-        let touchStartX = 0;
-        let touchEndX = 0;
+    function updatePageIndicator() {
+        document.getElementById('current-page').innerText = currentPage + 1;
+        document.getElementById('total-pages').innerText = totalPages;
+    }
 
-        // Epub.js 내부에 생성된 iframe에 터치 이벤트를 걸어줘야 합니다.
-        rendition.on('touchstart', function(event) {
-            touchStartX = event.changedTouches[0].screenX;
-        });
+    // --- 이벤트 리스너 ---
 
-        rendition.on('touchend', function(event) {
-            touchEndX = event.changedTouches[0].screenX;
-            handleSwipe();
-        });
+    // 1. 네비게이션 버튼
+    document.getElementById("prev-btn").addEventListener("click", () => goToPage(currentPage - 1));
+    document.getElementById("next-btn").addEventListener("click", () => goToPage(currentPage + 1));
 
-        function handleSwipe() {
-            const threshold = 50; // 이 픽셀 이상 움직여야 넘어감
-            if (touchEndX < touchStartX - threshold) {
-                // 왼쪽으로 스와이프 -> 다음 페이지
-                rendition.next();
-            }
-            if (touchEndX > touchStartX + threshold) {
-                // 오른쪽으로 스와이프 -> 이전 페이지
-                rendition.prev();
-            }
+    // 2. 키보드 방향키 및 마우스 휠 지원
+    document.addEventListener("keyup", (e) => {
+        if(e.key === "ArrowLeft") goToPage(currentPage - 1);
+        if(e.key === "ArrowRight") goToPage(currentPage + 1);
+    });
+
+    // 가로 휠 스크롤 지원 (터치패드용)
+    viewerWindow.addEventListener('wheel', (e) => {
+        // 기본 세로 스크롤 이벤트를 가로 페이지 넘김으로 변환
+        if(Math.abs(e.deltaY) > 20 || Math.abs(e.deltaX) > 20) {
+            e.preventDefault();
+            if(e.deltaY > 0 || e.deltaX > 0) goToPage(currentPage + 1);
+            else goToPage(currentPage - 1);
         }
-    }
+    }, { passive: false });
 
-    // --- UI 버튼 이벤트 ---
-    document.getElementById("prev-btn").addEventListener("click", () => { if(rendition) rendition.prev(); });
-    document.getElementById("next-btn").addEventListener("click", () => { if(rendition) rendition.next(); });
+    // 3. 파일 업로드 (.txt, .html)
+    document.getElementById("file-input").addEventListener("change", function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
 
+        document.getElementById('meta-title').textContent = file.name;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const content = e.target.result;
+            
+            // HTML 파일이면 그대로 넣고, TXT 파일이면 줄바꿈을 <br>로 변환
+            if(file.name.toLowerCase().endsWith('.html') || file.name.toLowerCase().endsWith('.htm')) {
+                viewerContent.innerHTML = content;
+            } else {
+                // 텍스트는 <p> 태그로 감싸서 예쁘게 출력
+                const formattedText = content.split('\n').map(line => `<p>${line}</p>`).join('');
+                viewerContent.innerHTML = formattedText;
+            }
+            
+            // 내용이 바뀌었으므로 페이지 재계산
+            setTimeout(() => {
+                currentPage = 0;
+                calculatePages();
+            }, 100);
+        };
+        reader.readAsText(file);
+    });
+
+    // 4. 모바일 터치 스와이프 지원
+    let touchStartX = 0;
+    let touchEndX = 0;
+    
+    viewerWindow.addEventListener('touchstart', e => { touchStartX = e.changedTouches[0].screenX; }, {passive: true});
+    viewerWindow.addEventListener('touchend', e => {
+        touchEndX = e.changedTouches[0].screenX;
+        if (touchStartX - touchEndX > 50) goToPage(currentPage + 1); // 왼쪽으로 밀기 (다음장)
+        if (touchEndX - touchStartX > 50) goToPage(currentPage - 1); // 오른쪽으로 밀기 (이전장)
+    }, {passive: true});
+
+    // 5. 글자 크기 조절 및 테마 (페이지 재계산 필수)
     document.getElementById("btn-zoom-in").addEventListener("click", () => {
-        if(!rendition) return;
-        currentFontSize += 10;
-        rendition.themes.fontSize(`${currentFontSize}%`);
+        currentFontSize += 2;
+        viewerContent.style.fontSize = `${currentFontSize}px`;
+        setTimeout(calculatePages, 50); // 글자 크기가 변하면 페이지 수도 변함
     });
 
     document.getElementById("btn-zoom-out").addEventListener("click", () => {
-        if(!rendition) return;
-        currentFontSize = Math.max(70, currentFontSize - 10);
-        rendition.themes.fontSize(`${currentFontSize}%`);
+        currentFontSize = Math.max(12, currentFontSize - 2);
+        viewerContent.style.fontSize = `${currentFontSize}px`;
+        setTimeout(calculatePages, 50);
     });
 
     document.getElementById("btn-theme").addEventListener("click", function() {
@@ -223,15 +291,18 @@
         if (currentTheme === 'light') {
             currentTheme = 'dark';
             this.innerHTML = '☀️ 모드';
-            this.classList.add('active');
             bodyEl.classList.add('dark-theme');
         } else {
             currentTheme = 'light';
             this.innerHTML = '🌙 모드';
-            this.classList.remove('active');
             bodyEl.classList.remove('dark-theme');
         }
-        if(rendition) rendition.themes.select(currentTheme);
+    });
+
+    // 창 크기가 조절될 때 (모바일 가로/세로 전환 등) 페이지 수 다시 계산
+    window.addEventListener('resize', () => {
+        clearTimeout(window.resizeTimer);
+        window.resizeTimer = setTimeout(calculatePages, 200);
     });
 
     // --- 초기 실행 ---
@@ -240,8 +311,8 @@
       setInterval(setNow, 1000*60);
       mountShell();
       
-      // 페이지 로드가 끝나면 기본 파일(.epub)을 자동으로 불러옵니다.
-      setTimeout(loadDefaultBook, 300); 
+      // 폰트 로딩 시간을 고려해 약간 지연 후 최초 페이지 계산
+      setTimeout(calculatePages, 300);
     })();
   </script>
 </body>
