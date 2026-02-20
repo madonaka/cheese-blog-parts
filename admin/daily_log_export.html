@@ -57,6 +57,29 @@
   }
 
   h1 { font-size: 1.8rem; font-weight: 800; margin-bottom: 8px; letter-spacing: -0.02em; word-break: keep-all; }
+
+  .version-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #e0e7ff; /* 연한 파란색(Primary) 배경 */
+    color: var(--primary);     /* 텍스트 색상 */
+    border: 1px solid #c7d2fe;
+    font-size: 0.85rem;
+    font-weight: 800;
+    padding: 4px 12px;
+    border-radius: 99px;       /* 알약(캡슐) 모양 */
+    white-space: nowrap;
+    letter-spacing: 0.02em;
+    transform: translateY(-2px); /* 시각적인 수직 정렬 미세조정 */
+  }
+  
+  /* 모바일 화면에서는 제목과 배지 여백 조정 */
+  @media (max-width: 768px) {
+    .title-wrapper { gap: 8px !important; margin-bottom: 12px !important; }
+    .version-badge { font-size: 0.75rem; padding: 3px 10px; transform: none; }
+  }
+  
   .desc { color: var(--text-muted); font-size: 0.95rem; margin-bottom: 24px; word-break: keep-all; }
 
   /* =========================================================
@@ -312,6 +335,32 @@
   .close-btn { background: none; border: none; font-size: 1.8rem; cursor: pointer; color: var(--text-muted); line-height: 1; padding: 0; }
   .modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   @media (max-width: 640px) { .modal-grid { grid-template-columns: 1fr; } }
+
+  /* =========================================================
+     검색 필터 영역 반응형 탭 디자인
+  ========================================================= */
+  /* 데스크톱: 탭 버튼 숨기고 기존처럼 나란히 표시 */
+  .filter-tabs { display: none; }
+  .filter-panels { display: flex; gap: 16px; flex-wrap: wrap; width: 100%; }
+  .filter-panel { flex: 1; min-width: 300px; display: block !important; }
+
+  /* 모바일: 탭 버튼 표시하고 선택된 패널만 넓게 표시 */
+  @media (max-width: 768px) {
+    .filter-tabs { display: flex; gap: 8px; margin-bottom: 16px; width: 100%; }
+    .filter-tab-btn {
+      flex: 1; padding: 12px 8px; border-radius: var(--radius-md); border: 1px solid #cbd5e1;
+      background: #fff; font-weight: 800; font-size: 0.9rem; color: var(--text-muted);
+      cursor: pointer; transition: 0.2s; text-align: center; word-break: keep-all;
+    }
+    .filter-tab-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+    
+    .filter-panels { display: block; }
+    .filter-panel { display: none !important; animation: fadeIn 0.2s ease; }
+    .filter-panel.active { display: block !important; }
+    
+    /* 탭이 제목 역할을 하므로 기존 패널 내부 제목은 숨김 처리 */
+    .filter-panel .search-title { display: none; } 
+  }
 </style>
 
 </head>
@@ -323,8 +372,10 @@
     <div class="admin-main">
       <aside id="admin-menu-slot" class="admin-sidebar"></aside>
 
-      <main class="wrap">
-        <h1>주요 사건, 이슈, 뉴스 월별 총정리</h1>
+    <main class="wrap">
+        <div class="title-wrapper" style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px; flex-wrap: wrap;">
+          <h1 style="margin-bottom: 0;">주요 사건, 이슈, 뉴스 월별 총정리</h1>
+          <span id="versionBadge" class="version-badge">업데이트 확인 중...</span>        
         <p class="desc">
           시트 데이터를 블로그에 바로 붙여넣을 수 있는 형태로 변환하고 관리합니다. 워크플로우 순서대로 작업을 진행하세요.
         </p>
@@ -348,17 +399,20 @@
         </div>
       </div>
 
-        <div id="global-filter-wrap">
+      <div id="global-filter-wrap">
           <div class="global-filter-title">추출할 데이터의 날짜/기간 범위를 설정하세요</div>
+          
+          <div class="filter-tabs">
+            <button type="button" class="filter-tab-btn active" data-target="filter-basic">연도, 월, 일 검색</button>
+            <button type="button" class="filter-tab-btn" data-target="filter-advanced">구체적 범위 및 ID 검색</button>
+          </div>
+
           <div class="export-sections">
-            <div style="display: flex; gap: 16px; flex-wrap: wrap;">
-              <div class="search-block" style="flex: 1; min-width: 300px;">
+            <div class="filter-panels">
+              
+              <div id="filter-basic" class="search-block filter-panel active">
                 <div class="search-title">연도, 월, 일 검색</div>
                 <div class="search-grid">
-                  <div class="fg span-4">
-                    <label for="year">연도</label>
-                    <input id="year" type="number" value="2026" />
-                  </div>
                   <div class="fg span-4">
                     <label>월</label>
                     <input id="month" type="hidden" value="1" />
@@ -388,7 +442,7 @@
                 </div>
               </div>
 
-              <div class="search-block" style="flex: 1; min-width: 300px;">
+            <div id="filter-advanced" class="search-block filter-panel">
                 <div class="search-title">구체적 범위 및 ID 검색</div>
                 <div class="search-grid">
                   <div class="fg span-4">
@@ -2303,6 +2357,52 @@
         monthAccordion.removeAttribute('open');
       }
     });
+  }
+/* =========================================
+     모바일 검색 필터 탭 제어 로직
+  ========================================= */
+  const filterTabBtns = document.querySelectorAll('.filter-tab-btn');
+  const filterPanels = document.querySelectorAll('.filter-panel');
+
+  if (filterTabBtns.length > 0) {
+    filterTabBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        // 모든 탭과 패널의 활성화 상태 해제
+        filterTabBtns.forEach(b => b.classList.remove('active'));
+        filterPanels.forEach(p => p.classList.remove('active'));
+        
+        // 클릭한 탭과 연결된 패널만 활성화
+        btn.classList.add('active');
+        const targetId = btn.getAttribute('data-target');
+        const targetPanel = document.getElementById(targetId);
+        if (targetPanel) {
+          targetPanel.classList.add('active');
+        }
+      });
+    });
+  }
+
+  /* =========================================
+     마지막 수정 시간(버전 배지) 자동 표시 로직
+  ========================================= */
+  const versionBadge = document.getElementById('versionBadge');
+  if (versionBadge) {
+    // 브라우저가 인식한 문서의 마지막 수정 시간 가져오기
+    const lastMod = new Date(document.lastModified);
+    
+    // 날짜가 정상적인지 확인 후 포맷팅
+    if (!isNaN(lastMod.getTime())) {
+      const yy = String(lastMod.getFullYear()).slice(-2);
+      const mm = String(lastMod.getMonth() + 1).padStart(2, '0');
+      const dd = String(lastMod.getDate()).padStart(2, '0');
+      const hh = String(lastMod.getHours()).padStart(2, '0');
+      const min = String(lastMod.getMinutes()).padStart(2, '0');
+      
+      // 출력 형식 설정 (예: v26.02.20 15:30)
+      versionBadge.textContent = `v${yy}.${mm}.${dd} ${hh}:${min}`;
+    } else {
+      versionBadge.textContent = "버전 정보 없음";
+    }
   }
 </script>
 </body>
