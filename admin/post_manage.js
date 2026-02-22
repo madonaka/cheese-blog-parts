@@ -141,15 +141,16 @@
       bind("tokenFields");
     })();
     
+    // 💡 이벤트 리스너도 메인 입력창 구역으로만 한정
     function attachDynamicPreviewListeners_(){
-      document.querySelectorAll("[data-slot]").forEach(el=>{
+      document.querySelectorAll("#slotFields [data-slot]").forEach(el=>{
         if (el.__pmPreviewBound) return;
         el.addEventListener("input", scheduleAssemblePreview_);
         el.addEventListener("change", scheduleAssemblePreview_);
         el.__pmPreviewBound = true;
       });
 
-      document.querySelectorAll("[data-token]").forEach(el=>{
+      document.querySelectorAll("#tokenFields [data-token]").forEach(el=>{
         if (el.__pmPreviewBound) return;
         el.addEventListener("input", scheduleAssemblePreview_);
         el.addEventListener("change", scheduleAssemblePreview_);
@@ -1152,10 +1153,16 @@ function extractTokensMetaFromHtml_(html){
         default: return "";
       }
     }
+// ==========================================
+    // 💡 [치명적 버그 수정] 데이터 수집 함수 격리 (선택자 충돌 방지)
+    // 미리보기 모달의 div 태그가 선택되어 데이터가 빈칸으로 덮어씌워지는 대참사를 막기 위해
+    // #slotFields, #tokenFields 내부의 찐 입력창(Textarea/Input)만 엄격하게 타겟팅합니다.
+    // ==========================================
 
     function getSlotValues_(){
       const out = {};
-      document.querySelectorAll("[data-slot]").forEach(el=>{
+      // 🚨 수정됨: 반드시 #slotFields 안에 있는 data-slot만 가져옴!
+      document.querySelectorAll("#slotFields [data-slot]").forEach(el=>{
         const k = el.getAttribute("data-slot");
         if (!k) return;
         out[k] = (el.value || "");
@@ -1165,7 +1172,7 @@ function extractTokensMetaFromHtml_(html){
 
     function setSlotValues_(map){
       const m = map || {};
-      document.querySelectorAll("[data-slot]").forEach(el=>{
+      document.querySelectorAll("#slotFields [data-slot]").forEach(el=>{
         const k = el.getAttribute("data-slot");
         if (!k) return;
         el.value = (m[k] !== undefined && m[k] !== null) ? String(m[k]) : "";
@@ -1174,7 +1181,7 @@ function extractTokensMetaFromHtml_(html){
 
     function getTokenValues_(){
       const out = {};
-      document.querySelectorAll("[data-token]").forEach(el=>{
+      document.querySelectorAll("#tokenFields [data-token]").forEach(el=>{
         const k = el.getAttribute("data-token");
         if (!k) return;
         out[k] = (el.value || "");
@@ -1184,21 +1191,19 @@ function extractTokensMetaFromHtml_(html){
 
     function setTokenValues_(map){
       const m = map || {};
-      document.querySelectorAll("[data-token]").forEach(el=>{
+      document.querySelectorAll("#tokenFields [data-token]").forEach(el=>{
         const k = el.getAttribute("data-token");
         if (!k) return;
         el.value = (m[k] !== undefined && m[k] !== null) ? String(m[k]) : "";
       });
     }
 
-    // ✅ 부분 업데이트(merge)용: map에 있는 토큰만 갱신하고, 나머지는 유지
-    // - IMG_1 입력 후 IMG_2를 자동입력해도 IMG_1이 지워지지 않게 함
     function patchTokenValues_(map){
       const m = map || {};
-      document.querySelectorAll("[data-token]").forEach(el=>{
+      document.querySelectorAll("#tokenFields [data-token]").forEach(el=>{
         const k = el.getAttribute("data-token");
         if (!k) return;
-        if (m[k] === undefined || m[k] === null) return; // ✅ 없는 키는 건드리지 않음
+        if (m[k] === undefined || m[k] === null) return; // 없는 키는 건드리지 않음
         el.value = String(m[k]);
       });
     }
