@@ -3178,7 +3178,7 @@ function clearEditor(){
       }
     };
 
- // [3] 핵심: AI 작성 결과를 템플릿 구조에 맞게 쪼개서 "자동 분배"
+// [3] 핵심: AI 작성 결과를 템플릿 구조에 맞게 쪼개서 "자동 분배" (직접 주입 방식)
     window.applyAiToTarget = function() {
       const outputArea = document.getElementById("aiOutput");
       const resultText = outputArea ? outputArea.value.trim() : "";
@@ -3187,81 +3187,115 @@ function clearEditor(){
         return;
       }
 
-      // 💡 [핵심 버그 수정] 미리보기 모드라면, AI 글을 꽂아넣기 전에 사용자가 미리보기에서 수동으로 타자친 내용을 우선 편집기(Textarea)로 백업(저장)합니다!
+      // 1. 현재 화면이 미리보기 모드인지 확인
       const vPrev = document.getElementById('viewPreview');
       const isPreviewMode = vPrev && vPrev.style.display === 'block';
-      if (isPreviewMode && typeof window.syncPreviewToEdit === 'function') {
-          window.syncPreviewToEdit();
-      }
 
-      // 1. 텍스트 영리하게 쪼개기 (마크다운 H2, H3 헤딩 기준)
+      // 2. 텍스트 영리하게 쪼개기 (소제목 기준 -> 없으면 문단 기준)
       let chunks = resultText.split(/(?=^#{2,3}\s+)/m).map(s => s.trim()).filter(Boolean);
-      
       if (chunks.length <= 1) {
           chunks = resultText.split(/\n\n+/).map(s => s.trim()).filter(Boolean);
       }
 
-      const formatChunk = (text) => {
-          let html = text;
-          html = html.replace(/^###\s+(.*)$/gm, '<h3>$1</h3>');
-          html = html.replace(/^##\s+(.*)$/gm, '<h2>$1</h2>');
-          html = html.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>'); 
-          return html;
-      };
-
-      // 2. 통합 에디터의 모든 BODY 입력칸 가져오기
-      const inputs = Array.from(document.querySelectorAll('#viewEdit .modal-body-input'));
-      if (inputs.length === 0) {
-          alert("편집 가능한 본문(BODY) 슬롯이 없습니다.");
-          return;
-      }
-
-      // 3. 어디서부터 채워넣을지 시작점 찾기
-      let startIndex = 0;
-      if (typeof activeAiTarget !== 'undefined' && activeAiTarget && activeAiTarget.slotName) {
-          startIndex = inputs.findIndex(ta => ta.getAttribute('data-target-slot') === activeAiTarget.slotName);
-          if (startIndex === -1) startIndex = 0;
-      } else {
-          const emptyIdx = inputs.findIndex(ta => ta.value.trim() === '');
-          if (emptyIdx !== -1) startIndex = emptyIdx;
-      }
-
-      // 4. 슬롯들에 순차적으로 분배하기
       let chunkIdx = 0;
-      for (let i = startIndex; i < inputs.length; i++) {
-          if (chunkIdx >= chunks.length) break;
-          
-          const ta = inputs[i];
-          const existing = ta.value.trim();
-          const newContent = formatChunk(chunks[chunkIdx]);
-          
-          if (existing) {
-              ta.value = existing + "\n\n" + newContent;
+
+      // 🌟 [수정 포인트] 미리보기 모드일 땐 화면(HTML)에 즉시 꽂아버림
+      if (isPreviewMode) {
+          const containers = Array.from(document.querySelectorAll('.preview-slot-container'));
+          if (containers.length === 0) return alert("미리보기 슬롯이 없습니다.");
+
+          // 어디부터 넣을지 결정
+          let startIndex = 0;
+          if (typeof activeAiTarget !== 'undefined' && activeAiTarget && activeAiTarget.slotName) {
+              startIndex = containers.findIndex(el => el.getAttribute('data-slot') === activeAiTarget.slotName);
+              if (startIndex === -1) startIndex = 0;
           } else {
-              ta.value = newContent;
+              // 커서가 없었다면 내용이 없는(비어있는) 첫 번째 슬롯 찾기
+              const emptyIdx = containers.findIndex(el => el.textContent.trim() === '');
+              if (emptyIdx !== -1) startIndex = emptyIdx;
           }
-          ta.dispatchEvent(new Event("input", { bubbles: true }));
-          chunkIdx++;
-      }
-      
-      // 5. 빈 슬롯이 모자라서 글이 남았다면 마지막 슬롯에 전부 몰아넣기
-      if (chunkIdx < chunks.length) {
-          const lastTa = inputs[inputs.length - 1];
-          const remaining = chunks.slice(chunkIdx).map(formatChunk).join("\n\n");
-          lastTa.value = lastTa.value.trim() + "\n\n" + remaining;
-          lastTa.dispatchEvent(new Event("input", { bubbles: true }));
+
+          // 순서대로 쏙쏙 분배
+          for (let i = startIndex; i < containers.length; i++) {
+              if (chunkIdx >= chunks.length) break;
+              let html = chunks[chunkIdx]
+                             .replace(/^###\s+(.*)$/gm, '<h3>$1</h3>')
+                             .replace(/^##\s+(.*)$/gm, '<h2>$1</h2>')
+                             .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+                             .replace(/\n/g, '<br>');
+              
+              const el = containers[i];
+              if (el.innerHTML.trim() && el.innerHTML.trim() !== '<br>') {
+                  el.innerHTML += "<br><br>" + html; // 기존 글이 있으면 아래에 추가
+              } else {
+                  el.innerHTML = html; // 비어있으면 덮어쓰기
+              }
+              chunkIdx++;
+          }
+          
+          // 남은 글이 있다면 마지막 슬롯에 몰아넣기
+          if (chunkIdx < chunks.length) {
+              const lastEl = containers[containers.length - 1];
+              let remaining = chunks.slice(chunkIdx).join("\n\n");
+              let html = remaining.replace(/^###\s+(.*)$/gm, '<h3>$1</h3>')
+                                  .replace(/^##\s+(.*)$/gm, '<h2>$1</h2>')
+                                  .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+                                  .replace(/\n/g, '<br>');
+              lastEl.innerHTML += "<br><br>" + html;
+          }
+          
+          // 미리보기에 꽂은 화면을 백그라운드 편집기에 안전하게 저장(역동기화)
+          if (typeof window.syncPreviewToEdit === 'function') window.syncPreviewToEdit();
+
+      } else {
+          // 🌟 [편집 모드] 텍스트에어리어에 바로 주입
+          const inputs = Array.from(document.querySelectorAll('#viewEdit .modal-body-input'));
+          if (inputs.length === 0) return alert("편집 가능한 슬롯이 없습니다.");
+
+          let startIndex = 0;
+          if (typeof activeAiTarget !== 'undefined' && activeAiTarget && activeAiTarget.slotName) {
+              startIndex = inputs.findIndex(ta => ta.getAttribute('data-target-slot') === activeAiTarget.slotName);
+              if (startIndex === -1) startIndex = 0;
+          } else {
+              const emptyIdx = inputs.findIndex(ta => ta.value.trim() === '');
+              if (emptyIdx !== -1) startIndex = emptyIdx;
+          }
+
+          for (let i = startIndex; i < inputs.length; i++) {
+              if (chunkIdx >= chunks.length) break;
+              let raw = chunks[chunkIdx]
+                              .replace(/^###\s+(.*)$/gm, '<h3>$1</h3>')
+                              .replace(/^##\s+(.*)$/gm, '<h2>$1</h2>')
+                              .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+              
+              const ta = inputs[i];
+              if (ta.value.trim()) {
+                  ta.value += "\n\n" + raw;
+              } else {
+                  ta.value = raw;
+              }
+              ta.dispatchEvent(new Event("input", { bubbles: true }));
+              chunkIdx++;
+          }
+
+          if (chunkIdx < chunks.length) {
+              const lastTa = inputs[inputs.length - 1];
+              let remaining = chunks.slice(chunkIdx).join("\n\n");
+              let raw = remaining.replace(/^###\s+(.*)$/gm, '<h3>$1</h3>')
+                                 .replace(/^##\s+(.*)$/gm, '<h2>$1</h2>')
+                                 .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+              lastTa.value += "\n\n" + raw;
+              lastTa.dispatchEvent(new Event("input", { bubbles: true }));
+          }
       }
 
-      // 6. 화면 업데이트: 텍스트에어리어에 넣은 새로운 AI 글을 미리보기 화면으로 즉시 새로고침
-      if (isPreviewMode && typeof renderFullPreview === 'function') {
-          renderFullPreview();
-      }
-
+      // 모달 닫기
       if (typeof closeAiModal === 'function') closeAiModal();
       
+      // 완료 알림
       if (typeof showAlert_ === 'function') {
-          showAlert_(`✨ AI 생성 글이 템플릿에 알맞게 분배되었습니다! (${chunkIdx}개 슬롯 채움)`, "자동 분배 완료", "🚀");
+          showAlert_(`✨ AI 생성 글이 템플릿의 각 빈 공간에 알맞게 분배되었습니다! (${chunkIdx}개 영역 채움)`, "분배 성공", "🚀");
       } else {
-          alert(`✨ AI 생성 글이 템플릿에 자동 분배되었습니다! (${chunkIdx}개 슬롯 채움)`);
+          alert(`✨ AI 생성 글이 템플릿에 알맞게 분배되었습니다!`);
       }
     };
