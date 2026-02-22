@@ -3119,47 +3119,69 @@ function clearEditor(){
       activeAiTarget = null;
     };
 
-    // AI API 호출
+// [2] AI API 호출 (독립형 무결점 버전)
     window.requestAiGeneration = async function() {
-      const topic = $("aiTopic").value.trim();
-      const tone = $("aiTone").value;
-      const refText = $("aiRefText").value.trim();
-      const opinion = $("aiOpinion").value.trim();
-      const length = $("aiLength").value;
+      // 💡 스코프 문제 방지를 위해 $ 대신 표준 DOM API 사용
+      const topic = document.getElementById("aiTopic").value.trim();
+      const tone = document.getElementById("aiTone").value;
+      const refText = document.getElementById("aiRefText").value.trim();
+      const opinion = document.getElementById("aiOpinion").value.trim();
+      const length = document.getElementById("aiLength").value;
 
       if (!refText && !opinion && !topic) {
         alert("주제, 참고할 글, 내 의견 중 하나 이상은 입력해주세요!");
         return;
       }
 
-      $("aiGenerateBtn").disabled = true;
-      $("aiRegenerateBtn").disabled = true;
-      $("aiOutput").value = "서버에서 AI가 글을 작성하고 있습니다... ⏳\n(약 5~15초 소요)";
+      const generateBtn = document.getElementById("aiGenerateBtn");
+      const regenerateBtn = document.getElementById("aiRegenerateBtn");
+      const outputArea = document.getElementById("aiOutput");
+
+      generateBtn.disabled = true;
+      regenerateBtn.disabled = true;
+      outputArea.value = "서버에서 AI가 글을 작성하고 있습니다... ⏳\n(약 5~15초 소요)";
+
+      // 💡 apiPost의 action 충돌을 막기 위해 원본(blog_code_gen.html)과 동일한 통신 규격 강제 적용
+      const formData = new URLSearchParams();
+      formData.append('mode', 'generateAI'); 
+      formData.append('topic', topic);
+      formData.append('tone', tone);
+      formData.append('refText', refText);
+      formData.append('opinion', opinion);
+      formData.append('length', length);
+
+      // 본인의 Apps Script URL
+      const API_URL = "https://script.google.com/macros/s/AKfycbwXqz1uMy3EOrisCEKIe0Fk7yu0P6MQ1ddHDvo7Sr_CPEYY0RHP2GyUBL8YhaBqxnmBJg/exec";
 
       try {
-        setBusy_(true);
-        const data = await apiPost("generateAI", {
-          topic: topic, tone: tone, refText: refText, opinion: opinion, length: length
+        // 내부 함수 유무를 안전하게 체크 후 실행
+        if (typeof setBusy_ === 'function') setBusy_(true);
+        
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            body: formData
         });
+        const data = await response.json();
 
         if (data.ok) {
-          $("aiOutput").value = data.text;
-          $("aiRegenerateBtn").style.display = "inline-flex";
+          outputArea.value = data.text;
+          regenerateBtn.style.display = "inline-flex";
         } else {
-          $("aiOutput").value = "생성 오류: " + data.message;
+          outputArea.value = "생성 오류: " + data.message;
         }
       } catch (error) {
-        $("aiOutput").value = "통신 에러가 발생했습니다: " + error.message;
+        outputArea.value = "통신 에러가 발생했습니다: " + error.message;
       } finally {
-        setBusy_(false);
-        $("aiGenerateBtn").disabled = false;
-        $("aiRegenerateBtn").disabled = false;
+        if (typeof setBusy_ === 'function') setBusy_(false);
+        generateBtn.disabled = false;
+        regenerateBtn.disabled = false;
       }
     };
 
     // [3] 핵심: AI 작성 결과를 템플릿 구조에 맞게 쪼개서 "자동 분배"
     window.applyAiToTarget = function() {
-      const resultText = $("aiOutput").value.trim();
+      const outputArea = document.getElementById("aiOutput");
+      const resultText = outputArea ? outputArea.value.trim() : "";
       if (!resultText) {
         alert("반영할 내용이 없습니다.");
         return;
@@ -3168,17 +3190,15 @@ function clearEditor(){
       // 1. 텍스트 영리하게 쪼개기 (마크다운 H2, H3 헤딩 기준)
       let chunks = resultText.split(/(?=^#{2,3}\s+)/m).map(s => s.trim()).filter(Boolean);
       
-      // 헤딩이 없다면 문단(\n\n) 단위로 쪼갬
-      if (chunks.length === 1) {
+      if (chunks.length <= 1) {
           chunks = resultText.split(/\n\n+/).map(s => s.trim()).filter(Boolean);
       }
 
-      // 마크다운 문법을 HTML로 변환하는 헬퍼
       const formatChunk = (text) => {
           let html = text;
           html = html.replace(/^###\s+(.*)$/gm, '<h3>$1</h3>');
           html = html.replace(/^##\s+(.*)$/gm, '<h2>$1</h2>');
-          html = html.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>'); // 볼드 처리
+          html = html.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>'); 
           return html;
       };
 
@@ -3189,14 +3209,12 @@ function clearEditor(){
           return;
       }
 
-      // 3. 어디서부터 채워넣을지 시작점 찾기
+      // 3. 어디서부터 채워넣을지 시작점 찾기 (안전한 스코프 체킹 추가)
       let startIndex = 0;
-      if (activeAiTarget && activeAiTarget.slotName) {
-          // 사용자가 클릭했던 슬롯부터 시작
+      if (typeof activeAiTarget !== 'undefined' && activeAiTarget && activeAiTarget.slotName) {
           startIndex = inputs.findIndex(ta => ta.getAttribute('data-target-slot') === activeAiTarget.slotName);
           if (startIndex === -1) startIndex = 0;
       } else {
-          // 타겟이 없으면 가장 첫 번째 "비어있는" 슬롯부터 시작
           const emptyIdx = inputs.findIndex(ta => ta.value.trim() === '');
           if (emptyIdx !== -1) startIndex = emptyIdx;
       }
@@ -3210,7 +3228,6 @@ function clearEditor(){
           const existing = ta.value.trim();
           const newContent = formatChunk(chunks[chunkIdx]);
           
-          // 이미 내용이 있다면 줄바꿈 후 이어붙이고, 없으면 그대로 삽입
           if (existing) {
               ta.value = existing + "\n\n" + newContent;
           } else {
@@ -3220,7 +3237,7 @@ function clearEditor(){
           chunkIdx++;
       }
       
-      // 5. 빈 슬롯이 모자라서 글이 남았다면? -> 마지막 슬롯에 전부 몰아넣기
+      // 5. 빈 슬롯이 모자라서 글이 남았다면 마지막 슬롯에 전부 몰아넣기
       if (chunkIdx < chunks.length) {
           const lastTa = inputs[inputs.length - 1];
           const remaining = chunks.slice(chunkIdx).map(formatChunk).join("\n\n");
@@ -3228,12 +3245,18 @@ function clearEditor(){
           lastTa.dispatchEvent(new Event("input", { bubbles: true }));
       }
 
-      // 6. 데이터 동기화 및 화면 업데이트
-      window.syncPreviewToEdit();
-      if (document.getElementById('viewPreview').style.display === 'block') {
+      // 6. 데이터 동기화 및 화면 업데이트 (안전한 호출)
+      if (typeof window.syncPreviewToEdit === 'function') window.syncPreviewToEdit();
+      const vPrev = document.getElementById('viewPreview');
+      if (vPrev && vPrev.style.display === 'block' && typeof renderFullPreview === 'function') {
           renderFullPreview();
       }
 
-      closeAiModal();
-      showAlert_(`✨ AI 생성 글이 템플릿의 빈 공간에 알아서 척척 분배되었습니다! (${chunkIdx}개 슬롯 채움)`, "자동 분배 완료", "🚀");
+      if (typeof closeAiModal === 'function') closeAiModal();
+      
+      if (typeof showAlert_ === 'function') {
+          showAlert_(`✨ AI 생성 글이 템플릿에 알맞게 분배되었습니다! (${chunkIdx}개 슬롯 채움)`, "자동 분배 완료", "🚀");
+      } else {
+          alert(`✨ AI 생성 글이 템플릿에 자동 분배되었습니다! (${chunkIdx}개 슬롯 채움)`);
+      }
     };
