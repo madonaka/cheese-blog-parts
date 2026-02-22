@@ -3178,13 +3178,20 @@ function clearEditor(){
       }
     };
 
-    // [3] 핵심: AI 작성 결과를 템플릿 구조에 맞게 쪼개서 "자동 분배"
+ // [3] 핵심: AI 작성 결과를 템플릿 구조에 맞게 쪼개서 "자동 분배"
     window.applyAiToTarget = function() {
       const outputArea = document.getElementById("aiOutput");
       const resultText = outputArea ? outputArea.value.trim() : "";
       if (!resultText) {
         alert("반영할 내용이 없습니다.");
         return;
+      }
+
+      // 💡 [핵심 버그 수정] 미리보기 모드라면, AI 글을 꽂아넣기 전에 사용자가 미리보기에서 수동으로 타자친 내용을 우선 편집기(Textarea)로 백업(저장)합니다!
+      const vPrev = document.getElementById('viewPreview');
+      const isPreviewMode = vPrev && vPrev.style.display === 'block';
+      if (isPreviewMode && typeof window.syncPreviewToEdit === 'function') {
+          window.syncPreviewToEdit();
       }
 
       // 1. 텍스트 영리하게 쪼개기 (마크다운 H2, H3 헤딩 기준)
@@ -3209,7 +3216,7 @@ function clearEditor(){
           return;
       }
 
-      // 3. 어디서부터 채워넣을지 시작점 찾기 (안전한 스코프 체킹 추가)
+      // 3. 어디서부터 채워넣을지 시작점 찾기
       let startIndex = 0;
       if (typeof activeAiTarget !== 'undefined' && activeAiTarget && activeAiTarget.slotName) {
           startIndex = inputs.findIndex(ta => ta.getAttribute('data-target-slot') === activeAiTarget.slotName);
@@ -3245,10 +3252,8 @@ function clearEditor(){
           lastTa.dispatchEvent(new Event("input", { bubbles: true }));
       }
 
-      // 6. 데이터 동기화 및 화면 업데이트 (안전한 호출)
-      if (typeof window.syncPreviewToEdit === 'function') window.syncPreviewToEdit();
-      const vPrev = document.getElementById('viewPreview');
-      if (vPrev && vPrev.style.display === 'block' && typeof renderFullPreview === 'function') {
+      // 6. 화면 업데이트: 텍스트에어리어에 넣은 새로운 AI 글을 미리보기 화면으로 즉시 새로고침
+      if (isPreviewMode && typeof renderFullPreview === 'function') {
           renderFullPreview();
       }
 
