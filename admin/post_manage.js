@@ -2223,6 +2223,8 @@ function clearEditor(){
               <button class="pm-btn small ghost" style="padding:2px 6px; font-size:11px; font-weight:800; color:#0f172a;" onclick="formatBodyText(this, 'bold')">B 볼드</button>
               <button class="pm-btn small ghost" style="padding:2px 6px; font-size:11px;" onclick="addLinkToBody(this, 'external')">🔗 외부링크</button>
               <button class="pm-btn small ghost" style="padding:2px 6px; font-size:11px;" onclick="addLinkToBody(this, 'internal')">📄 내부링크</button>
+
+              <button class="pm-btn small ghost" style="padding:2px 6px; font-size:11px; color:#7e22ce; font-weight:bold; background:#f3e8ff; border-color:#d8b4fe;" onclick="openAiModalForEditor(this)">✨ AI 글쓰기</button>
             </div>
           </div>
           <textarea class="pm-editor-textarea modal-body-input" 
@@ -2633,7 +2635,8 @@ function clearEditor(){
           <button class="pm-btn small ghost" onclick="applyCustomFormatInPreview('hr')">➖ 구분선</button>
           
           <div style="flex:1;"></div>
-          
+
+          <button class="pm-btn small" style="background:#f3e8ff; color:#7e22ce; border-color:#d8b4fe; font-weight:bold;" onclick="openAiModalForPreview()">✨ AI 글쓰기</button>
           <button class="pm-btn small primary" onclick="insertFootnoteInPreview()">+ 주석 추가 (*?)</button>
         </div>
       `;
@@ -3069,3 +3072,130 @@ function clearEditor(){
       "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
     }[m]));
   }
+
+
+/* ===========================================================
+       ✨ [NEW] 통합 에디터 & 미리보기 연동 AI 글쓰기 로직
+       =========================================================== */
+    let activeAiTarget = null; // { type: 'edit' | 'preview', element: node, range: Range }
+
+    window.openAiModalForEditor = function(btnEl) {
+      const block = btnEl.closest('.pm-editor-block');
+      const textarea = block.querySelector('.modal-body-input');
+      activeAiTarget = { type: 'edit', element: textarea };
+      _showAiModalInit();
+    };
+
+    window.openAiModalForPreview = function() {
+      const sel = window.getSelection();
+      if (!sel.rangeCount) {
+        alert("AI가 작성한 글을 삽입할 미리보기 본문 위치를 클릭해 커서를 두세요.");
+        return;
+      }
+      
+      const range = sel.getRangeAt(0);
+      let container = range.commonAncestorContainer;
+      if (container.nodeType === 3) container = container.parentNode;
+
+      if (!container.closest('.preview-slot-container')) {
+        alert("미리보기 본문 영역 안쪽을 클릭해주세요.");
+        return;
+      }
+
+      activeAiTarget = { type: 'preview', range: range.cloneRange(), element: container.closest('.preview-slot-container') };
+      _showAiModalInit();
+    };
+
+    function _showAiModalInit() {
+      document.getElementById('aiModal').style.display = 'flex';
+      document.getElementById('aiTopic').value = '';
+      document.getElementById('aiRefText').value = '';
+      document.getElementById('aiOpinion').value = '';
+      document.getElementById('aiOutput').value = '';
+      document.getElementById('aiRegenerateBtn').style.display = 'none';
+    }
+
+    window.closeAiModal = function() {
+      document.getElementById('aiModal').style.display = 'none';
+      activeAiTarget = null;
+    };
+
+    window.requestAiGeneration = async function() {
+      const topic = $("aiTopic").value.trim();
+      const tone = $("aiTone").value;
+      const refText = $("aiRefText").value.trim();
+      const opinion = $("aiOpinion").value.trim();
+      const length = $("aiLength").value;
+
+      if (!refText && !opinion && !topic) {
+        alert("주제, 참고할 글, 내 의견 중 하나 이상은 입력해주세요!");
+        return;
+      }
+
+      $("aiGenerateBtn").disabled = true;
+      $("aiRegenerateBtn").disabled = true;
+      $("aiOutput").value = "서버에서 AI가 글을 작성하고 있습니다... ⏳\n(약 5~15초 소요)";
+
+      try {
+        setBusy_(true);
+        // 이미 구현되어 있는 apiPost 함수 재활용!
+        const data = await apiPost("generateAI", {
+          topic: topic,
+          tone: tone,
+          refText: refText,
+          opinion: opinion,
+          length: length
+        });
+
+        if (data.ok) {
+          $("aiOutput").value = data.text;
+          $("aiRegenerateBtn").style.display = "inline-flex";
+        } else {
+          $("aiOutput").value = "생성 오류: " + data.message;
+        }
+      } catch (error) {
+        $("aiOutput").value = "통신 에러가 발생했습니다: " + error.message;
+      } finally {
+        setBusy_(false);
+        $("aiGenerateBtn").disabled = false;
+        $("aiRegenerateBtn").disabled = false;
+      }
+    };
+
+    window.applyAiToTarget = function() {
+      const resultText = $("aiOutput").value.trim();
+      if (!resultText) {
+        alert("반영할 내용이 없습니다.");
+        return;
+      }
+
+      if (activeAiTarget.type === 'edit') {
+        // [1] 편집 모드(textarea)에 적용할 때
+        const ta = activeAiTarget.element;
+        const s = ta.selectionStart;
+        const e = ta.selectionEnd;
+        const text = ta.value;
+        // 커서 위치에 텍스트 삽입 (위아래 줄바꿈 포함)
+        ta.value = text.substring(0, s) + "\n\n" + resultText + "\n\n" + text.substring(e);
+        
+        ta.selectionStart = ta.selectionEnd = s + resultText.length + 4;
+        ta.focus();
+        ta.dispatchEvent(new Event("input", { bubbles:true }));
+
+      } else if (activeAiTarget.type === 'preview') {
+        // [2] 미리보기 모드(WYSIWYG)에 적용할 때
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(activeAiTarget.range);
+        
+        // 브라우저 내장 명령어로 안전하게 삽입
+        const htmlText = "<br><br>" + resultText.replace(/\n/g, '<br>') + "<br><br>";
+        document.execCommand('insertHTML', false, htmlText);
+        
+        window.syncPreviewToEdit();
+      }
+
+      closeAiModal();
+      // 성공 알림
+      showAlert_("✨ AI 생성 글이 본문에 성공적으로 반영되었습니다!", "적용 완료", "🚀");
+    };
