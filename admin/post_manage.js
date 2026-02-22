@@ -3299,3 +3299,43 @@ function clearEditor(){
           alert(`✨ AI 생성 글이 템플릿에 알맞게 분배되었습니다!`);
       }
     };
+/* ===========================================================
+       ✨ [NEW] 작업 ID 누락 시 템플릿 적용 방지 (안전장치)
+       =========================================================== */
+    function initSafeTemplateLock() {
+        // ID 입력창과 템플릿 관련 요소들 찾기
+        const targetIdInput = document.getElementById('targetId');
+        const templateSelect = document.getElementById('templateSelect');
+        // '템플릿 적용' 역할을 하는 버튼 찾기 (id가 없더라도 onclick 속성으로 추적)
+        const applyBtn = document.getElementById('btnApplyTemplate') || document.querySelector('button[onclick*="applyTemplate"]');
+
+        if (!targetIdInput) return; // ID 입력창이 없으면 작동 안 함
+
+        function toggleLock() {
+            // 작업 ID 칸에 글자가 1글자라도 있는지 확인
+            const hasId = targetIdInput.value.trim().length > 0;
+            
+            if (templateSelect) {
+                templateSelect.disabled = !hasId;
+                templateSelect.style.cursor = hasId ? "" : "not-allowed";
+                templateSelect.title = hasId ? "" : "🚨 작업 ID를 먼저 생성/입력해야 템플릿을 선택할 수 있습니다.";
+            }
+            
+            if (applyBtn) {
+                applyBtn.disabled = !hasId;
+                applyBtn.style.cursor = hasId ? "pointer" : "not-allowed";
+                applyBtn.style.opacity = hasId ? "1" : "0.5";
+                applyBtn.title = hasId ? "" : "🚨 작업 ID를 먼저 생성/입력해야 템플릿을 적용할 수 있습니다.";
+            }
+        }
+
+        // 1. 페이지가 로딩될 때 한 번 잠금 상태 체크
+        toggleLock();
+
+        // 2. 사용자가 ID 칸에 타자를 치거나 지울 때 실시간으로 잠금 풀고 잠그기
+        targetIdInput.addEventListener('input', toggleLock);
+        targetIdInput.addEventListener('change', toggleLock);
+    }
+
+    // 기존 렌더링 로직들이 화면을 다 그린 후, 안전하게 잠금 장치를 가동합니다.
+    setTimeout(initSafeTemplateLock, 800);
