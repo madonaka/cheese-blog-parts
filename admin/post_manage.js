@@ -3075,34 +3075,33 @@ function clearEditor(){
 
 
 /* ===========================================================
-       ✨ [NEW] 통합 에디터 & 미리보기 연동 AI 글쓰기 로직
+       ✨ [NEW] AI 글쓰기 & 스마트 자동 분배 (Smart Distribution) 로직
        =========================================================== */
-    let activeAiTarget = null; // { type: 'edit' | 'preview', element: node, range: Range }
+    let activeAiTarget = null; 
 
+    // [1] 편집 모드에서 AI 버튼 클릭 시
     window.openAiModalForEditor = function(btnEl) {
       const block = btnEl.closest('.pm-editor-block');
       const textarea = block.querySelector('.modal-body-input');
-      activeAiTarget = { type: 'edit', element: textarea };
+      const slotName = textarea.getAttribute('data-target-slot');
+      activeAiTarget = { slotName: slotName };
       _showAiModalInit();
     };
 
+    // [2] 미리보기 모드 툴바에서 AI 버튼 클릭 시
     window.openAiModalForPreview = function() {
+      let slotName = null;
       const sel = window.getSelection();
-      if (!sel.rangeCount) {
-        alert("AI가 작성한 글을 삽입할 미리보기 본문 위치를 클릭해 커서를 두세요.");
-        return;
+      
+      // 커서가 놓여있는 곳이 있다면 해당 슬롯을 시작점으로 잡음
+      if (sel.rangeCount > 0) {
+          let container = sel.getRangeAt(0).commonAncestorContainer;
+          if (container.nodeType === 3) container = container.parentNode;
+          const slotEl = container.closest('.preview-slot-container');
+          if (slotEl) slotName = slotEl.getAttribute('data-slot');
       }
       
-      const range = sel.getRangeAt(0);
-      let container = range.commonAncestorContainer;
-      if (container.nodeType === 3) container = container.parentNode;
-
-      if (!container.closest('.preview-slot-container')) {
-        alert("미리보기 본문 영역 안쪽을 클릭해주세요.");
-        return;
-      }
-
-      activeAiTarget = { type: 'preview', range: range.cloneRange(), element: container.closest('.preview-slot-container') };
+      activeAiTarget = { slotName: slotName };
       _showAiModalInit();
     };
 
@@ -3120,6 +3119,7 @@ function clearEditor(){
       activeAiTarget = null;
     };
 
+    // AI API 호출
     window.requestAiGeneration = async function() {
       const topic = $("aiTopic").value.trim();
       const tone = $("aiTone").value;
@@ -3138,13 +3138,8 @@ function clearEditor(){
 
       try {
         setBusy_(true);
-        // 이미 구현되어 있는 apiPost 함수 재활용!
         const data = await apiPost("generateAI", {
-          topic: topic,
-          tone: tone,
-          refText: refText,
-          opinion: opinion,
-          length: length
+          topic: topic, tone: tone, refText: refText, opinion: opinion, length: length
         });
 
         if (data.ok) {
@@ -3162,6 +3157,7 @@ function clearEditor(){
       }
     };
 
+    // [3] 핵심: AI 작성 결과를 템플릿 구조에 맞게 쪼개서 "자동 분배"
     window.applyAiToTarget = function() {
       const resultText = $("aiOutput").value.trim();
       if (!resultText) {
@@ -3169,33 +3165,75 @@ function clearEditor(){
         return;
       }
 
-      if (activeAiTarget.type === 'edit') {
-        // [1] 편집 모드(textarea)에 적용할 때
-        const ta = activeAiTarget.element;
-        const s = ta.selectionStart;
-        const e = ta.selectionEnd;
-        const text = ta.value;
-        // 커서 위치에 텍스트 삽입 (위아래 줄바꿈 포함)
-        ta.value = text.substring(0, s) + "\n\n" + resultText + "\n\n" + text.substring(e);
-        
-        ta.selectionStart = ta.selectionEnd = s + resultText.length + 4;
-        ta.focus();
-        ta.dispatchEvent(new Event("input", { bubbles:true }));
+      // 1. 텍스트 영리하게 쪼개기 (마크다운 H2, H3 헤딩 기준)
+      let chunks = resultText.split(/(?=^#{2,3}\s+)/m).map(s => s.trim()).filter(Boolean);
+      
+      // 헤딩이 없다면 문단(\n\n) 단위로 쪼갬
+      if (chunks.length === 1) {
+          chunks = resultText.split(/\n\n+/).map(s => s.trim()).filter(Boolean);
+      }
 
-      } else if (activeAiTarget.type === 'preview') {
-        // [2] 미리보기 모드(WYSIWYG)에 적용할 때
-        const sel = window.getSelection();
-        sel.removeAllRanges();
-        sel.addRange(activeAiTarget.range);
-        
-        // 브라우저 내장 명령어로 안전하게 삽입
-        const htmlText = "<br><br>" + resultText.replace(/\n/g, '<br>') + "<br><br>";
-        document.execCommand('insertHTML', false, htmlText);
-        
-        window.syncPreviewToEdit();
+      // 마크다운 문법을 HTML로 변환하는 헬퍼
+      const formatChunk = (text) => {
+          let html = text;
+          html = html.replace(/^###\s+(.*)$/gm, '<h3>$1</h3>');
+          html = html.replace(/^##\s+(.*)$/gm, '<h2>$1</h2>');
+          html = html.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>'); // 볼드 처리
+          return html;
+      };
+
+      // 2. 통합 에디터의 모든 BODY 입력칸 가져오기
+      const inputs = Array.from(document.querySelectorAll('#viewEdit .modal-body-input'));
+      if (inputs.length === 0) {
+          alert("편집 가능한 본문(BODY) 슬롯이 없습니다.");
+          return;
+      }
+
+      // 3. 어디서부터 채워넣을지 시작점 찾기
+      let startIndex = 0;
+      if (activeAiTarget && activeAiTarget.slotName) {
+          // 사용자가 클릭했던 슬롯부터 시작
+          startIndex = inputs.findIndex(ta => ta.getAttribute('data-target-slot') === activeAiTarget.slotName);
+          if (startIndex === -1) startIndex = 0;
+      } else {
+          // 타겟이 없으면 가장 첫 번째 "비어있는" 슬롯부터 시작
+          const emptyIdx = inputs.findIndex(ta => ta.value.trim() === '');
+          if (emptyIdx !== -1) startIndex = emptyIdx;
+      }
+
+      // 4. 슬롯들에 순차적으로 분배하기
+      let chunkIdx = 0;
+      for (let i = startIndex; i < inputs.length; i++) {
+          if (chunkIdx >= chunks.length) break;
+          
+          const ta = inputs[i];
+          const existing = ta.value.trim();
+          const newContent = formatChunk(chunks[chunkIdx]);
+          
+          // 이미 내용이 있다면 줄바꿈 후 이어붙이고, 없으면 그대로 삽입
+          if (existing) {
+              ta.value = existing + "\n\n" + newContent;
+          } else {
+              ta.value = newContent;
+          }
+          ta.dispatchEvent(new Event("input", { bubbles: true }));
+          chunkIdx++;
+      }
+      
+      // 5. 빈 슬롯이 모자라서 글이 남았다면? -> 마지막 슬롯에 전부 몰아넣기
+      if (chunkIdx < chunks.length) {
+          const lastTa = inputs[inputs.length - 1];
+          const remaining = chunks.slice(chunkIdx).map(formatChunk).join("\n\n");
+          lastTa.value = lastTa.value.trim() + "\n\n" + remaining;
+          lastTa.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+
+      // 6. 데이터 동기화 및 화면 업데이트
+      window.syncPreviewToEdit();
+      if (document.getElementById('viewPreview').style.display === 'block') {
+          renderFullPreview();
       }
 
       closeAiModal();
-      // 성공 알림
-      showAlert_("✨ AI 생성 글이 본문에 성공적으로 반영되었습니다!", "적용 완료", "🚀");
+      showAlert_(`✨ AI 생성 글이 템플릿의 빈 공간에 알아서 척척 분배되었습니다! (${chunkIdx}개 슬롯 채움)`, "자동 분배 완료", "🚀");
     };
