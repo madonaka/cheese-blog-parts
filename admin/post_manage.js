@@ -1531,8 +1531,15 @@ async function analyzeAndRenderTemplate_(tplId, keepSections = false){
       };
     }
     
-    // ===== UI actions =====
+  // ===== UI actions =====
     async function applyTemplateNew(){
+      // 💡 [개선] 템플릿 적용 전 작업 ID 유무 확실히 체크
+      const id = getTargetId();
+      if (!id || id === "-") {
+        showAlert_("🚨 작업 ID가 비어 있습니다!\n\n먼저 [ID 생성]을 하거나 우측 목록에서 포스트를 불러와주세요.", "ID 필요", "⚠️");
+        return;
+      }
+
       const tplId = $("templateSelect").value;
       if (!tplId) return setStatus("템플릿을 먼저 선택하세요.", false);
 
@@ -1542,16 +1549,13 @@ async function analyzeAndRenderTemplate_(tplId, keepSections = false){
         setStatus("템플릿 적용(새로) 중...", true);
 
         await analyzeAndRenderTemplate_(tplId);
-
         setSlotValues_({});
 
-        // (수정) 현재 화면에 보이는 순서(State) 그대로 조립함
         const out = await assembleHtmlUsingState_(tplId, buildVarsForAssemble_());
         $("html").value = out.html;
         syncCharCount();
 
         setStatus("템플릿 적용 완료(새로). SLOT 입력칸을 채운 뒤 저장하세요.", true);
-
       }catch(e){
         setStatus("템플릿 적용 오류: " + (e?.message || e), false);
         setDebug(String(e && e.stack ? e.stack : e));
@@ -1561,6 +1565,13 @@ async function analyzeAndRenderTemplate_(tplId, keepSections = false){
     }
 
     async function rewrapTemplateKeepBody(){
+      // 💡 [개선] 템플릿 적용 전 작업 ID 유무 확실히 체크
+      const id = getTargetId();
+      if (!id || id === "-") {
+        showAlert_("🚨 작업 ID가 비어 있습니다!\n\n먼저 [ID 생성]을 하거나 우측 목록에서 포스트를 불러와주세요.", "ID 필요", "⚠️");
+        return;
+      }
+
       const tplId = $("templateSelect").value;
       if (!tplId) return setStatus("템플릿을 먼저 선택하세요.", false);
 
@@ -1569,16 +1580,13 @@ async function analyzeAndRenderTemplate_(tplId, keepSections = false){
         hideBanner();
         setStatus("래퍼 재적용(본문 유지) 중...", true);
 
-        // ✅ [핵심] 'true'를 전달하여 현재 섹션 구조(Body 1, 2...)를 유지한 채로 템플릿만 갱신
         await analyzeAndRenderTemplate_(tplId, true);
 
-        // 최종 HTML 조립 및 반영
         const out = await assembleHtmlUsingState_(tplId, buildVarsForAssemble_());
         $("html").value = out.html;
         syncCharCount();
 
         setStatus("래퍼 재적용 완료(본문 유지).", true);
-
       }catch(e){
         setStatus("래퍼 재적용 오류: " + (e?.message || e), false);
         setDebug(String(e && e.stack ? e.stack : e));
@@ -3187,11 +3195,9 @@ function clearEditor(){
         return;
       }
 
-      // 1. 현재 화면이 미리보기 모드인지 확인
       const vPrev = document.getElementById('viewPreview');
       const isPreviewMode = vPrev && vPrev.style.display === 'block';
 
-      // 2. 텍스트 영리하게 쪼개기 (소제목 기준 -> 없으면 문단 기준)
       let chunks = resultText.split(/(?=^#{2,3}\s+)/m).map(s => s.trim()).filter(Boolean);
       if (chunks.length <= 1) {
           chunks = resultText.split(/\n\n+/).map(s => s.trim()).filter(Boolean);
@@ -3199,52 +3205,55 @@ function clearEditor(){
 
       let chunkIdx = 0;
 
-      // 🌟 [수정 포인트] 미리보기 모드일 땐 화면(HTML)에 즉시 꽂아버림
+      // 💡 [개선] 글머리 기호(Bullet List)도 HTML로 예쁘게 변환하도록 정규식 업그레이드
+      const formatChunk = (text) => {
+          let html = text;
+          html = html.replace(/^###\s+(.*)$/gm, '<h3>$1</h3>');
+          html = html.replace(/^##\s+(.*)$/gm, '<h2>$1</h2>');
+          html = html.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+          
+          // 리스트 변환 ( - 항목 또는 * 항목 )
+          html = html.replace(/^[\-\*]\s+(.*)$/gm, '<li style="margin-left:20px; list-style-type:disc;">$1</li>');
+          // 연속된 <li> 태그들을 <ul>로 묶어주기
+          html = html.replace(/(<li[^>]*>.*<\/li>\n?)+/g, '<ul style="margin: 8px 0;">$&</ul>');
+          
+          return html;
+      };
+
+      // 🌟 미리보기 모드일 땐 화면(HTML)에 즉시 꽂아버림
       if (isPreviewMode) {
           const containers = Array.from(document.querySelectorAll('.preview-slot-container'));
           if (containers.length === 0) return alert("미리보기 슬롯이 없습니다.");
 
-          // 어디부터 넣을지 결정
           let startIndex = 0;
           if (typeof activeAiTarget !== 'undefined' && activeAiTarget && activeAiTarget.slotName) {
               startIndex = containers.findIndex(el => el.getAttribute('data-slot') === activeAiTarget.slotName);
               if (startIndex === -1) startIndex = 0;
           } else {
-              // 커서가 없었다면 내용이 없는(비어있는) 첫 번째 슬롯 찾기
               const emptyIdx = containers.findIndex(el => el.textContent.trim() === '');
               if (emptyIdx !== -1) startIndex = emptyIdx;
           }
 
-          // 순서대로 쏙쏙 분배
           for (let i = startIndex; i < containers.length; i++) {
               if (chunkIdx >= chunks.length) break;
-              let html = chunks[chunkIdx]
-                             .replace(/^###\s+(.*)$/gm, '<h3>$1</h3>')
-                             .replace(/^##\s+(.*)$/gm, '<h2>$1</h2>')
-                             .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
-                             .replace(/\n/g, '<br>');
+              let html = formatChunk(chunks[chunkIdx]).replace(/\n/g, '<br>');
               
               const el = containers[i];
               if (el.innerHTML.trim() && el.innerHTML.trim() !== '<br>') {
-                  el.innerHTML += "<br><br>" + html; // 기존 글이 있으면 아래에 추가
+                  el.innerHTML += "<br><br>" + html; 
               } else {
-                  el.innerHTML = html; // 비어있으면 덮어쓰기
+                  el.innerHTML = html; 
               }
               chunkIdx++;
           }
           
-          // 남은 글이 있다면 마지막 슬롯에 몰아넣기
           if (chunkIdx < chunks.length) {
               const lastEl = containers[containers.length - 1];
               let remaining = chunks.slice(chunkIdx).join("\n\n");
-              let html = remaining.replace(/^###\s+(.*)$/gm, '<h3>$1</h3>')
-                                  .replace(/^##\s+(.*)$/gm, '<h2>$1</h2>')
-                                  .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
-                                  .replace(/\n/g, '<br>');
+              let html = formatChunk(remaining).replace(/\n/g, '<br>');
               lastEl.innerHTML += "<br><br>" + html;
           }
           
-          // 미리보기에 꽂은 화면을 백그라운드 편집기에 안전하게 저장(역동기화)
           if (typeof window.syncPreviewToEdit === 'function') window.syncPreviewToEdit();
 
       } else {
@@ -3263,10 +3272,7 @@ function clearEditor(){
 
           for (let i = startIndex; i < inputs.length; i++) {
               if (chunkIdx >= chunks.length) break;
-              let raw = chunks[chunkIdx]
-                              .replace(/^###\s+(.*)$/gm, '<h3>$1</h3>')
-                              .replace(/^##\s+(.*)$/gm, '<h2>$1</h2>')
-                              .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+              let raw = formatChunk(chunks[chunkIdx]);
               
               const ta = inputs[i];
               if (ta.value.trim()) {
@@ -3281,61 +3287,52 @@ function clearEditor(){
           if (chunkIdx < chunks.length) {
               const lastTa = inputs[inputs.length - 1];
               let remaining = chunks.slice(chunkIdx).join("\n\n");
-              let raw = remaining.replace(/^###\s+(.*)$/gm, '<h3>$1</h3>')
-                                 .replace(/^##\s+(.*)$/gm, '<h2>$1</h2>')
-                                 .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+              let raw = formatChunk(remaining);
               lastTa.value += "\n\n" + raw;
               lastTa.dispatchEvent(new Event("input", { bubbles: true }));
           }
       }
 
-      // 모달 닫기
       if (typeof closeAiModal === 'function') closeAiModal();
       
-      // 완료 알림
       if (typeof showAlert_ === 'function') {
           showAlert_(`✨ AI 생성 글이 템플릿의 각 빈 공간에 알맞게 분배되었습니다! (${chunkIdx}개 영역 채움)`, "분배 성공", "🚀");
       } else {
           alert(`✨ AI 생성 글이 템플릿에 알맞게 분배되었습니다!`);
       }
     };
-/* ===========================================================
-       ✨ [NEW] 작업 ID 누락 시 템플릿 적용 방지 (안전장치)
-       =========================================================== */
-    function initSafeTemplateLock() {
-        // ID 입력창과 템플릿 관련 요소들 찾기
-        const targetIdInput = document.getElementById('targetId');
-        const templateSelect = document.getElementById('templateSelect');
-        // '템플릿 적용' 역할을 하는 버튼 찾기 (id가 없더라도 onclick 속성으로 추적)
-        const applyBtn = document.getElementById('btnApplyTemplate') || document.querySelector('button[onclick*="applyTemplate"]');
 
-        if (!targetIdInput) return; // ID 입력창이 없으면 작동 안 함
+  /* ===========================================================
+   ✨ [NEW] 작업 ID 누락 시 템플릿 적용 방지 (안전장치)
+   =========================================================== */
+    function initSafeTemplateLock() {
+        // 💡 [버그 수정] HTML의 실제 id 값은 'id' 이므로 이를 추적하도록 변경
+        const targetIdInput = document.getElementById('id');
+        const templateSelect = document.getElementById('templateSelect');
+        const applyBtn = document.getElementById('btnApplyTemplate');
+        const rewrapBtn = document.getElementById('btnRewrapTemplate');
+
+        if (!targetIdInput) return;
 
         function toggleLock() {
-            // 작업 ID 칸에 글자가 1글자라도 있는지 확인
             const hasId = targetIdInput.value.trim().length > 0;
             
             if (templateSelect) {
-                templateSelect.disabled = !hasId;
-                templateSelect.style.cursor = hasId ? "" : "not-allowed";
-                templateSelect.title = hasId ? "" : "🚨 작업 ID를 먼저 생성/입력해야 템플릿을 선택할 수 있습니다.";
+                templateSelect.style.border = hasId ? "" : "2px solid #ef4444";
+                templateSelect.title = hasId ? "" : "🚨 작업 ID가 있어야 적용할 수 있습니다.";
             }
             
             if (applyBtn) {
-                applyBtn.disabled = !hasId;
-                applyBtn.style.cursor = hasId ? "pointer" : "not-allowed";
                 applyBtn.style.opacity = hasId ? "1" : "0.5";
-                applyBtn.title = hasId ? "" : "🚨 작업 ID를 먼저 생성/입력해야 템플릿을 적용할 수 있습니다.";
+            }
+            if (rewrapBtn) {
+                rewrapBtn.style.opacity = hasId ? "1" : "0.5";
             }
         }
 
-        // 1. 페이지가 로딩될 때 한 번 잠금 상태 체크
         toggleLock();
-
-        // 2. 사용자가 ID 칸에 타자를 치거나 지울 때 실시간으로 잠금 풀고 잠그기
         targetIdInput.addEventListener('input', toggleLock);
         targetIdInput.addEventListener('change', toggleLock);
     }
 
-    // 기존 렌더링 로직들이 화면을 다 그린 후, 안전하게 잠금 장치를 가동합니다.
     setTimeout(initSafeTemplateLock, 800);
