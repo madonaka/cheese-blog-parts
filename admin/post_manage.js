@@ -1989,7 +1989,7 @@ function clearEditor(){
        ✅ 원클릭 파이프라인 (NEW)
        - Drive 저장 → Blogger 업로드
     ========================= */
-    async function pipelinePublish_(publish){
+async function pipelinePublish_(publish){
       const id = getTargetId();
       if (!id) return setStatus("id가 필요합니다.", false);
 
@@ -2003,35 +2003,45 @@ function clearEditor(){
         // 2) Blogger 업로드
         const res = await exportToBlogger(publish); 
 
-        // 3) 🚀 [수정된 부분] 첫 발행 시 라벨 누락 방지 (구글 시트 동기화 타이밍 이슈 해결)
+        // 3) 🚀 [개선] 첫 발행 시 라벨 누락 방지를 위한 '끈질긴 3회 재시도' 로직
         const labelsCsv = $("bloggerLabelsTop").value.trim();
         if (labelsCsv) {
-            // 💡 [핵심] 구글 시트에 새 Blogger ID가 캐시 갱신될 시간을 줌 (2초 대기)
-            setStatus("구글 시트 동기화 대기 중 (2초)...", true);
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            
-            setStatus("블로그 라벨 동기화 중...", true);
             const actionUi = $("bloggerLabelsActionTop").value || "replace";
             
-            // 이미 생성된 포스트를 대상으로 라벨 전용 업데이트 실행
-            // 백엔드 스크립트가 시트를 조회하지 않아도 되도록 res.post_id를 함께 찔러 넣어줌
-            await apiPost("bloggerPatchLabels", { 
-              id: id, 
-              post_id: res ? res.post_id : "", 
-              labels: labelsCsv, 
-              action: actionUi 
-            });
+            // 시트 캐시가 갱신되도록 3초 넉넉히 대기
+            setStatus("구글 시트 동기화 대기 중 (3초)...", true);
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            
+            // 최대 3회 재시도 (실패해도 앱이 멈추지 않도록 함)
+            for(let attempt = 1; attempt <= 3; attempt++) {
+                setStatus(`블로그 라벨 동기화 중... (시도 ${attempt}/3)`, true);
+                try {
+                    const labelRes = await apiPost("bloggerPatchLabels", { 
+                        id: id, 
+                        post_id: res ? res.post_id : "", 
+                        labels: labelsCsv, 
+                        action: actionUi 
+                    });
+                    
+                    if (labelRes && labelRes.ok) {
+                        break; // 성공 시 반복문 즉시 탈출
+                    }
+                } catch(e) {
+                    console.log("라벨 재시도 중 에러 무시:", e);
+                }
+                
+                // 실패 시 2.5초 더 기다렸다가 다음 재시도
+                if(attempt < 3) {
+                    await new Promise(resolve => setTimeout(resolve, 2500));
+                }
+            }
         }
 
-        // 결과에서 URL 추출 (혹시 없으면 null)
         const postUrl = res ? res.url : null;
-        
         const msg = publish ? "원클릭 발행 완료" : "원클릭 초안 저장 완료";
         
         setStatus(msg, true);
-        
         showAlert_(msg + "\n편집창을 초기화합니다.", "작업 완료", "🚀", postUrl);
-        
         clearEditor();
 
       }catch(e){
@@ -2771,7 +2781,7 @@ function clearEditor(){
       window.syncPreviewToEdit();
     };
 
-    // 💡 역동기화 (미리보기 -> 편집모드)
+  // 💡 역동기화 (미리보기 -> 편집모드)
     window.syncPreviewToEdit = function() {
       const containers = document.querySelectorAll('.preview-slot-container');
       containers.forEach(container => {
@@ -2781,18 +2791,16 @@ function clearEditor(){
 
         let html = container.innerHTML;
 
-        // 💡 [NEW] 브라우저 버그로 내용물 없이 껍데기만 남은 주석 태그를 "완전 파괴"하는 좀비 방지 로직
         const fnRegex = /<sup[^>]*class="[^"]*preview-fn-marker[^"]*"[^>]*data-original="([^"]+)"[^>]*>([\s\S]*?)<\/sup>/gi;
         html = html.replace(fnRegex, (match, encodedOriginal, innerText) => {
-           // 내용물(주석 번호)이 텅 비어있다면 사용자가 지운 것이므로 복원하지 않고 삭제 처리
            if (innerText.replace(/<[^>]+>/g, '').trim() === '') return '';
            return decodeURIComponent(encodedOriginal);
         });
 
-        // br, hr 처리 및 브라우저 생성 찌꺼기 태그 정리
-        html = html.replace(/<br\s*\/?>/gi, '\n');
-        html = html.replace(/<div><hr><\/div>/gi, '\n<hr>\n'); 
-        html = html.replace(/<div>/gi, '\n').replace(/<\/div>/gi, '');
+        // 🚨 [치명적 버그 수정] <br>을 \n으로 지우면 발행 시 한 줄로 뭉개지므로 절대 지우지 않음!
+        // 단, 크롬 브라우저가 엔터를 칠 때 자동으로 만드는 <div> 태그만 깔끔한 <br>로 바꿔줌.
+        html = html.replace(/<div><br><\/div>/gi, '<br>'); 
+        html = html.replace(/<div>(.*?)<\/div>/gi, '<br>$1');
 
         ta.value = html;
         ta.dispatchEvent(new Event("input", { bubbles:true }));
@@ -3210,22 +3218,21 @@ function clearEditor(){
 
       let chunkIdx = 0;
 
-      // 💡 [개선] 글머리 기호(Bullet List)도 HTML로 예쁘게 변환하도록 정규식 업그레이드
+      // 💡 [개선] 글머리 기호(List)도 HTML로 변환하고, 남은 엔터(\n)를 모조리 <br>로 치환
       const formatChunk = (text) => {
           let html = text;
           html = html.replace(/^###\s+(.*)$/gm, '<h3>$1</h3>');
           html = html.replace(/^##\s+(.*)$/gm, '<h2>$1</h2>');
           html = html.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
           
-          // 리스트 변환 ( - 항목 또는 * 항목 )
           html = html.replace(/^[\-\*]\s+(.*)$/gm, '<li style="margin-left:20px; list-style-type:disc;">$1</li>');
-          // 연속된 <li> 태그들을 <ul>로 묶어주기
           html = html.replace(/(<li[^>]*>.*<\/li>\n?)+/g, '<ul style="margin: 8px 0;">$&</ul>');
           
+          // 🚨 발행 시 한 줄로 나오는 현상을 막기 위해 HTML 상 줄바꿈 <br> 강제 적용
+          html = html.replace(/\n/g, '<br>');
           return html;
       };
 
-      // 🌟 미리보기 모드일 땐 화면(HTML)에 즉시 꽂아버림
       if (isPreviewMode) {
           const containers = Array.from(document.querySelectorAll('.preview-slot-container'));
           if (containers.length === 0) return alert("미리보기 슬롯이 없습니다.");
@@ -3241,7 +3248,7 @@ function clearEditor(){
 
           for (let i = startIndex; i < containers.length; i++) {
               if (chunkIdx >= chunks.length) break;
-              let html = formatChunk(chunks[chunkIdx]).replace(/\n/g, '<br>');
+              let html = formatChunk(chunks[chunkIdx]); 
               
               const el = containers[i];
               if (el.innerHTML.trim() && el.innerHTML.trim() !== '<br>') {
@@ -3254,8 +3261,8 @@ function clearEditor(){
           
           if (chunkIdx < chunks.length) {
               const lastEl = containers[containers.length - 1];
-              let remaining = chunks.slice(chunkIdx).join("\n\n");
-              let html = formatChunk(remaining).replace(/\n/g, '<br>');
+              let remaining = chunks.slice(chunkIdx).join("<br><br>"); 
+              let html = formatChunk(remaining);
               lastEl.innerHTML += "<br><br>" + html;
           }
           
@@ -3277,11 +3284,11 @@ function clearEditor(){
 
           for (let i = startIndex; i < inputs.length; i++) {
               if (chunkIdx >= chunks.length) break;
-              let raw = formatChunk(chunks[chunkIdx]);
+              let raw = formatChunk(chunks[chunkIdx]); // <br>이 포함된 완벽한 HTML
               
               const ta = inputs[i];
               if (ta.value.trim()) {
-                  ta.value += "\n\n" + raw;
+                  ta.value += "<br><br>" + raw; // \n 대신 <br> 삽입
               } else {
                   ta.value = raw;
               }
@@ -3291,19 +3298,16 @@ function clearEditor(){
 
           if (chunkIdx < chunks.length) {
               const lastTa = inputs[inputs.length - 1];
-              let remaining = chunks.slice(chunkIdx).join("\n\n");
+              let remaining = chunks.slice(chunkIdx).join("<br><br>");
               let raw = formatChunk(remaining);
-              lastTa.value += "\n\n" + raw;
+              lastTa.value += "<br><br>" + raw;
               lastTa.dispatchEvent(new Event("input", { bubbles: true }));
           }
       }
 
       if (typeof closeAiModal === 'function') closeAiModal();
-      
       if (typeof showAlert_ === 'function') {
           showAlert_(`✨ AI 생성 글이 템플릿의 각 빈 공간에 알맞게 분배되었습니다! (${chunkIdx}개 영역 채움)`, "분배 성공", "🚀");
-      } else {
-          alert(`✨ AI 생성 글이 템플릿에 알맞게 분배되었습니다!`);
       }
     };
 
