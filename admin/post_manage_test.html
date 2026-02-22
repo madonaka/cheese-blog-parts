@@ -2676,7 +2676,7 @@ function clearEditor(){
       setStatus("모든 작업이 초기화되었습니다.", true);
     }
 
-  /* =========================
+/* =========================
        ✅ 원클릭 파이프라인 (NEW)
        - Drive 저장 → Blogger 업로드
     ========================= */
@@ -2694,13 +2694,24 @@ function clearEditor(){
         // 2) Blogger 업로드
         const res = await exportToBlogger(publish); 
 
-        // 3) 🚀 [추가된 부분] 첫 발행 시 라벨 누락 방지 (업로드 직후 라벨 강제 업데이트)
+        // 3) 🚀 [수정된 부분] 첫 발행 시 라벨 누락 방지 (구글 시트 동기화 타이밍 이슈 해결)
         const labelsCsv = $("bloggerLabelsTop").value.trim();
         if (labelsCsv) {
+            // 💡 [핵심] 구글 시트에 새 Blogger ID가 캐시 갱신될 시간을 줌 (2초 대기)
+            setStatus("구글 시트 동기화 대기 중 (2초)...", true);
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
             setStatus("블로그 라벨 동기화 중...", true);
             const actionUi = $("bloggerLabelsActionTop").value || "replace";
-            // 이미 생성된 포스트(res)를 대상으로 라벨 전용 업데이트 실행
-            await apiPost("bloggerPatchLabels", { id: id, labels: labelsCsv, action: actionUi });
+            
+            // 이미 생성된 포스트를 대상으로 라벨 전용 업데이트 실행
+            // 백엔드 스크립트가 시트를 조회하지 않아도 되도록 res.post_id를 함께 찔러 넣어줌
+            await apiPost("bloggerPatchLabels", { 
+              id: id, 
+              post_id: res ? res.post_id : "", 
+              labels: labelsCsv, 
+              action: actionUi 
+            });
         }
 
         // 결과에서 URL 추출 (혹시 없으면 null)
