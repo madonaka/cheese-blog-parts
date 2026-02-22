@@ -3181,7 +3181,7 @@ function clearEditor(){
       textarea.focus();
       textarea.selectionStart = textarea.selectionEnd = start + linkTag.length;
     };
-    
+
     // 7. 주석 삭제
     window.deleteFootnoteTag = function(index) {
       if(!confirm("본문에서 이 주석 태그를 삭제할까요?")) return;
@@ -3190,8 +3190,17 @@ function clearEditor(){
       const targetEl = inputs[fn.inputIndex];
     
       if(targetEl) {
+        // 데이터에서 완전 삭제
         targetEl.value = targetEl.value.replace(fn.fullTag, '');
-        detectFootnotes();
+        targetEl.dispatchEvent(new Event("input", { bubbles:true }));
+
+        // 💡 [NEW] 미리보기 모드인 상태에서 우측 패널 삭제를 눌렀다면 화면 즉시 새로고침
+        const vPrev = document.getElementById('viewPreview');
+        if (vPrev && vPrev.style.display === 'block') {
+           renderFullPreview();
+        } else {
+           detectFootnotes();
+        }
       }
     };
 
@@ -3203,7 +3212,6 @@ function clearEditor(){
       const noteList = [];
       const inputs = document.querySelectorAll('#viewEdit .modal-body-input');
 
-      // 💡 [수정] 상단 툴바에 '되돌리기(Undo)', '다시실행(Redo)' 버튼 추가, onmousedown으로 포커스 유지
       combinedHtml += `
         <div style="position:sticky; top:0; z-index:10; background:#f8fafc; padding:10px; margin-bottom:15px; border-radius:8px; border:1px solid #e2e8f0; box-shadow:0 4px 6px -1px rgba(0,0,0,0.05); display:flex; gap:8px; align-items:center; flex-wrap:wrap;"
              onmousedown="if(event.target.tagName !== 'INPUT') event.preventDefault();">
@@ -3254,7 +3262,8 @@ function clearEditor(){
           try { txt = decodeURIComponent(enc); } catch(e){}
           noteList.push({ num, txt });
           const encodedOriginal = encodeURIComponent(m);
-          return `<sup class="preview-fn-marker" data-original="${encodedOriginal}" style="color:#2563eb; font-weight:bold; padding:0 2px; cursor:pointer; user-select:none;" contenteditable="false">*${num}</sup>`;
+          // 💡 [수정] 브라우저에서 키보드(백스페이스)로 더 잘 지워지도록 user-select:none 속성 제거
+          return `<sup class="preview-fn-marker" data-original="${encodedOriginal}" style="color:#2563eb; font-weight:bold; padding:0 2px; cursor:pointer;" contenteditable="false">*${num}</sup>`;
         });
         
         html = html.replace(/\n/g, '<br>');
@@ -3287,7 +3296,6 @@ function clearEditor(){
             e.preventDefault();
             document.execCommand('insertHTML', false, '<br>');
           }
-          // 💡 키보드 Ctrl+Z 단축키 감지 시 편집모드 동기화 추가
           if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'z' || e.key.toLowerCase() === 'y')) {
             setTimeout(window.syncPreviewToEdit, 50);
           }
@@ -3297,7 +3305,6 @@ function clearEditor(){
 
     // 💡 브라우저 내장 기능을 이용해 글자 증발 원천 차단 + Undo/Redo 완벽 지원
     window.applyCustomFormatInPreview = function(type) {
-      // [1] 되돌리기/다시실행 (텍스트 선택 여부와 무관하게 즉시 실행)
       if (type === 'undo') {
         document.execCommand('undo', false, null);
         window.syncPreviewToEdit();
@@ -3316,13 +3323,11 @@ function clearEditor(){
       let container = range.commonAncestorContainer;
       if (container.nodeType === 3) container = container.parentNode;
 
-      // 커서가 미리보기 본문 안에 있는지 확인
       if (!container.closest('.preview-slot-container')) {
         alert("미리보기 본문 영역 안을 클릭하거나 텍스트를 선택해주세요.");
         return;
       }
 
-      // [2] 드래그 없이 클릭만 해도 적용되는 서식 (구분선, H2, H3)
       if (type === 'hr') {
         document.execCommand('insertHorizontalRule', false, null);
         window.syncPreviewToEdit();
@@ -3330,13 +3335,11 @@ function clearEditor(){
       }
 
       if (type === 'h2' || type === 'h3') {
-        // 브라우저 내장 블록 포맷 명령어 (글자 증발 X, 한 줄 전체 적용)
         document.execCommand('formatBlock', false, type.toUpperCase());
         window.syncPreviewToEdit();
         return;
       }
 
-      // [3] 반드시 드래그(선택)가 필요한 서식 (볼드, 색상, 배경, 지우기)
       if (sel.isCollapsed) {
         alert("서식을 적용하거나 지울 텍스트를 먼저 드래그(선택)해주세요.");
         return;
@@ -3351,12 +3354,10 @@ function clearEditor(){
             document.execCommand('backColor', false, document.getElementById('prevBgPicker').value);
         }
       } else if (type === 'remove') {
-        // 일반 서식(글자색, 볼드) 제거
         document.execCommand('removeFormat', false, null);
         if (!document.execCommand('hiliteColor', false, 'transparent')) {
             document.execCommand('backColor', false, 'transparent');
         }
-        // 제목 서식(H2, H3)이 있다면 일반 텍스트(div) 문단으로 되돌림
         let blockNode = container.closest('h1, h2, h3, h4, h5, h6');
         if (blockNode && blockNode.closest('.preview-slot-container')) {
             document.execCommand('formatBlock', false, 'div');
@@ -3376,9 +3377,13 @@ function clearEditor(){
 
         let html = container.innerHTML;
 
-        // 숨겨둔 주석 원본 복원
-        const fnRegex = /<sup[^>]*class="[^"]*preview-fn-marker[^"]*"[^>]*data-original="([^"]+)"[^>]*>.*?<\/sup>/gi;
-        html = html.replace(fnRegex, (match, encodedOriginal) => decodeURIComponent(encodedOriginal));
+        // 💡 [NEW] 브라우저 버그로 내용물 없이 껍데기만 남은 주석 태그를 "완전 파괴"하는 좀비 방지 로직
+        const fnRegex = /<sup[^>]*class="[^"]*preview-fn-marker[^"]*"[^>]*data-original="([^"]+)"[^>]*>([\s\S]*?)<\/sup>/gi;
+        html = html.replace(fnRegex, (match, encodedOriginal, innerText) => {
+           // 내용물(주석 번호)이 텅 비어있다면 사용자가 지운 것이므로 복원하지 않고 삭제 처리
+           if (innerText.replace(/<[^>]+>/g, '').trim() === '') return '';
+           return decodeURIComponent(encodedOriginal);
+        });
 
         // br, hr 처리 및 브라우저 생성 찌꺼기 태그 정리
         html = html.replace(/<br\s*\/?>/gi, '\n');
@@ -3391,6 +3396,8 @@ function clearEditor(){
       
       window.detectFootnotes();
     };
+
+
 
     // 💡 마우스 위치에 주석 삽입
     window.insertFootnoteInPreview = function() {
