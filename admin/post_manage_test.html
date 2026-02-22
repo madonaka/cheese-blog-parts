@@ -674,6 +674,24 @@
     </div>
   </div>
 
+<div id="footnoteInputModal" class="pm-modal-overlay" style="display:none; z-index: 99999;">
+    <div class="pm-modal-content" style="max-width: 450px;">
+      <div class="pm-modal-header">
+        <h3 style="margin:0;">📝 새 주석 추가</h3>
+        <button class="pm-btn small ghost" onclick="closeFootnoteModal()">✕</button>
+      </div>
+      <div class="pm-modal-body" style="padding: 20px;">
+        <div class="pm-label" style="margin-bottom:8px;">주석 내용</div>
+        <textarea id="footnoteInputTextarea" class="pm-textarea" style="width:100%; min-height:140px; font-size:13px;" placeholder="여기에 주석 내용을 길게 입력하셔도 안전합니다..."></textarea>
+        <div class="pm-small pm-muted" style="margin-top:8px;">※ 모달 바깥 영역을 클릭해도 창이 닫히지 않아 내용이 날아가지 않습니다.</div>
+      </div>
+      <div class="pm-modal-footer">
+        <button class="pm-btn ghost" style="width:80px;" onclick="closeFootnoteModal()">취소</button>
+        <button class="pm-btn primary" style="flex:1; margin-left:8px;" onclick="confirmFootnoteModal()">주석 삽입</button>
+      </div>
+    </div>
+  </div>
+
   
   <div id="globalMask" class="pm-global-mask">
     <div class="pm-global-spinner"></div>
@@ -3024,31 +3042,94 @@ function clearEditor(){
         listEl.appendChild(item);
       });
     }
-    
-    // 5. 커서 위치에 주석 태그 추가
+
+    // 💡 [NEW] 주석 모달 제어를 위한 상태 저장 변수
+    let pendingFootnoteCtx = null;
+
+    window.openFootnoteModal = function(ctx) {
+      pendingFootnoteCtx = ctx;
+      document.getElementById('footnoteInputModal').style.display = 'flex';
+      const ta = document.getElementById('footnoteInputTextarea');
+      ta.value = '';
+      setTimeout(() => ta.focus(), 100);
+    };
+
+    window.closeFootnoteModal = function() {
+      document.getElementById('footnoteInputModal').style.display = 'none';
+      pendingFootnoteCtx = null;
+    };
+
+    window.confirmFootnoteModal = function() {
+      if (!pendingFootnoteCtx) return;
+      const content = document.getElementById('footnoteInputTextarea').value;
+      
+      if (!content.trim()) {
+        alert("주석 내용을 입력해주세요.");
+        return;
+      }
+
+      const encoded = encodeURIComponent(content);
+      const tempId = Math.random().toString(36).substr(2, 5);
+      const rawTag = `<a id="ref_${tempId}" href="#note_${tempId}" class="cheese-footnote-ref" data-note="${encoded}">*?</a>`;
+
+      // [1] 편집 모드에서 추가한 경우
+      if (pendingFootnoteCtx.mode === 'edit') {
+        const input = pendingFootnoteCtx.input;
+        const start = pendingFootnoteCtx.start;
+        const end = pendingFootnoteCtx.end;
+        const text = input.value;
+
+        input.value = text.substring(0, start) + rawTag + text.substring(end);
+        
+        input.focus();
+        input.selectionStart = input.selectionEnd = start + rawTag.length;
+        
+        input.dispatchEvent(new Event("input", { bubbles:true }));
+        detectFootnotes();
+
+      // [2] 미리보기 모드에서 추가한 경우
+      } else if (pendingFootnoteCtx.mode === 'preview') {
+        const range = pendingFootnoteCtx.range;
+        const sel = window.getSelection();
+        
+        // 포커스를 잃었던 드래그 영역 복구
+        sel.removeAllRanges();
+        sel.addRange(range);
+
+        const previewNode = document.createElement('sup');
+        previewNode.className = 'preview-fn-marker';
+        previewNode.setAttribute('data-original', encodeURIComponent(rawTag));
+        previewNode.setAttribute('contenteditable', 'false');
+        previewNode.style.color = '#2563eb';
+        previewNode.style.fontWeight = 'bold';
+        previewNode.style.padding = '0 2px';
+        previewNode.textContent = '*새주석';
+
+        range.collapse(false);
+        range.insertNode(previewNode);
+
+        window.syncPreviewToEdit();
+        renderFullPreview(); 
+      }
+
+      closeFootnoteModal();
+    };
+
+    // 5. 커서 위치에 주석 태그 추가 (편집 모드 - 모달 호출)
     window.insertFootnoteAtCursor = function() {
       if (!lastFocusedInput) {
         alert("왼쪽 에디터를 클릭해서 입력 위치를 선택해주세요.");
         return;
       }
-      
-      const content = prompt("주석 내용을 입력하세요:");
-      if (!content) return;
-    
-      const encoded = encodeURIComponent(content);
-      const tempId = Math.random().toString(36).substr(2, 5);
-      const tag = `<a id="ref_${tempId}" href="#note_${tempId}" class="cheese-footnote-ref" data-note="${encoded}">*?</a>`;
-    
-      const start = lastFocusedInput.selectionStart;
-      const end = lastFocusedInput.selectionEnd;
-      const text = lastFocusedInput.value;
-    
-      lastFocusedInput.value = text.substring(0, start) + tag + text.substring(end);
-      lastFocusedInput.focus();
-      
-      detectFootnotes();
+      // 커서 위치 저장 후 모달 열기
+      window.openFootnoteModal({
+        mode: 'edit',
+        input: lastFocusedInput,
+        start: lastFocusedInput.selectionStart,
+        end: lastFocusedInput.selectionEnd
+      });
     };
-    
+
     // 6. 주석 내용 수정
     window.updateFootnoteText = function(index, newText) {
       const fn = g_footnotes[index];
@@ -3397,9 +3478,7 @@ function clearEditor(){
       window.detectFootnotes();
     };
 
-
-
-    // 💡 마우스 위치에 주석 삽입
+    // 💡 마우스 위치에 주석 삽입 (미리보기 모드 - 모달 호출)
     window.insertFootnoteInPreview = function() {
       const sel = window.getSelection();
       if (!sel.rangeCount) {
@@ -3415,28 +3494,11 @@ function clearEditor(){
         return;
       }
 
-      const noteContent = prompt("새 주석 내용을 입력하세요:");
-      if (!noteContent) return;
-
-      const encoded = encodeURIComponent(noteContent);
-      const tempId = Math.random().toString(36).substr(2, 5);
-      
-      const rawTag = `<a id="ref_${tempId}" href="#note_${tempId}" class="cheese-footnote-ref" data-note="${encoded}">*?</a>`;
-
-      const previewNode = document.createElement('sup');
-      previewNode.className = 'preview-fn-marker';
-      previewNode.setAttribute('data-original', encodeURIComponent(rawTag));
-      previewNode.setAttribute('contenteditable', 'false');
-      previewNode.style.color = '#2563eb';
-      previewNode.style.fontWeight = 'bold';
-      previewNode.style.padding = '0 2px';
-      previewNode.textContent = '*새주석';
-
-      range.collapse(false);
-      range.insertNode(previewNode);
-
-      window.syncPreviewToEdit();
-      renderFullPreview(); 
+      // 커서 범위(Range) 안전하게 복사 후 모달 열기
+      window.openFootnoteModal({
+        mode: 'preview',
+        range: range.cloneRange()
+      });
     };
     
  
