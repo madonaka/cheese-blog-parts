@@ -2664,7 +2664,7 @@ async function pipelinePublish_(publish){
         </div>
       `;
     
-      inputs.forEach((ta) => {
+     inputs.forEach((ta) => {
         let html = ta.value;
         const slotName = ta.getAttribute('data-target-slot');
 
@@ -2676,18 +2676,19 @@ async function pipelinePublish_(publish){
           try { txt = decodeURIComponent(enc); } catch(e){}
           noteList.push({ num, txt });
           const encodedOriginal = encodeURIComponent(m);
-          // 💡 [수정] 브라우저에서 키보드(백스페이스)로 더 잘 지워지도록 user-select:none 속성 제거
           return `<sup class="preview-fn-marker" data-original="${encodedOriginal}" style="color:#2563eb; font-weight:bold; padding:0 2px; cursor:pointer;" contenteditable="false">*${num}</sup>`;
         });
         
         html = html.replace(/\n/g, '<br>');
         
+        // 💡 [버그 수정] onfocus 시 backgroundColor를 바꾸면 브라우저가 글자에 회색 배경을 강제 주입함.
+        // 따라서 배경색은 투명하게 내버려두고, 예쁜 파란색 테두리(boxShadow)가 생기도록 변경!
         combinedHtml += `
           <div style="margin-bottom:5px; font-size:11px; font-weight:bold; color:#94a3b8;">[${slotName}] 영역</div>
           <div class="preview-slot-container" data-slot="${slotName}" contenteditable="true" 
                style="margin-bottom:30px; outline:none; padding:15px; border:1px dashed #cbd5e1; border-radius:8px; min-height:100px; transition:all 0.2s; line-height: 1.7;"
-               onfocus="this.style.borderColor='#3b82f6'; this.style.backgroundColor='#f8fafc';"
-               onblur="this.style.borderColor='#cbd5e1'; this.style.backgroundColor='transparent';">
+               onfocus="this.style.borderColor='#3b82f6'; this.style.boxShadow='0 0 0 3px rgba(59,130,246,0.1)';"
+               onblur="this.style.borderColor='#cbd5e1'; this.style.boxShadow='none';">
             ${html}
           </div>
         `;
@@ -2781,7 +2782,7 @@ async function pipelinePublish_(publish){
       window.syncPreviewToEdit();
     };
 
-  // 💡 역동기화 (미리보기 -> 편집모드)
+// 💡 역동기화 (미리보기 -> 편집모드)
     window.syncPreviewToEdit = function() {
       const containers = document.querySelectorAll('.preview-slot-container');
       containers.forEach(container => {
@@ -2797,8 +2798,12 @@ async function pipelinePublish_(publish){
            return decodeURIComponent(encodedOriginal);
         });
 
-        // 🚨 [치명적 버그 수정] <br>을 \n으로 지우면 발행 시 한 줄로 뭉개지므로 절대 지우지 않음!
-        // 단, 크롬 브라우저가 엔터를 칠 때 자동으로 만드는 <div> 태그만 깔끔한 <br>로 바꿔줌.
+        // 🚨 [회색 배경 세탁기] 크롬 브라우저가 몰래 주입한 회색 배경(#f8fafc) 스타일 찌꺼기 완벽 청소!
+        html = html.replace(/background-color:\s*(?:#f8fafc|rgb\(248,\s*250,\s*252\));?/gi, '');
+        html = html.replace(/\s*style=""/gi, ''); // 비어있는 style 속성 깔끔하게 제거
+        html = html.replace(/<span>(.*?)<\/span>/gi, '$1'); // 속성 없이 의미 없어진 빈 span 껍데기 제거
+
+        // 🚨 <br> 유지 로직 (발행 시 한 줄 뭉개짐 방지)
         html = html.replace(/<div><br><\/div>/gi, '<br>'); 
         html = html.replace(/<div>(.*?)<\/div>/gi, '<br>$1');
 
