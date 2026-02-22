@@ -3216,14 +3216,17 @@ async function pipelinePublish_(publish){
       const vPrev = document.getElementById('viewPreview');
       const isPreviewMode = vPrev && vPrev.style.display === 'block';
 
-      let chunks = resultText.split(/(?=^#{2,3}\s+)/m).map(s => s.trim()).filter(Boolean);
+      // 💡 [핵심 업그레이드] H2(##), H3(###) 뿐만 아니라 "1. ", "2. " 같은 큰 단위의 숫자 목차를 기준으로 자릅니다!
+      // 정규식 `\d+\.\s+`는 숫자에 점 하나 찍고 띄어쓰기가 있는 경우만 찾아내므로, 1.1 이나 1.2는 무시하고 한 덩어리로 안전하게 묶어줍니다.
+      let chunks = resultText.split(/(?=^(?:#{2,3}|\d+\.)\s+)/m).map(s => s.trim()).filter(Boolean);
+      
+      // 만약 헤딩이나 숫자 목차가 전혀 없는 통글이라면 기존처럼 문단(엔터 두 번) 기준으로 자름
       if (chunks.length <= 1) {
           chunks = resultText.split(/\n\n+/).map(s => s.trim()).filter(Boolean);
       }
 
       let chunkIdx = 0;
 
-      // 💡 [개선] 글머리 기호(List)도 HTML로 변환하고, 남은 엔터(\n)를 모조리 <br>로 치환
       const formatChunk = (text) => {
           let html = text;
           html = html.replace(/^###\s+(.*)$/gm, '<h3>$1</h3>');
@@ -3289,11 +3292,11 @@ async function pipelinePublish_(publish){
 
           for (let i = startIndex; i < inputs.length; i++) {
               if (chunkIdx >= chunks.length) break;
-              let raw = formatChunk(chunks[chunkIdx]); // <br>이 포함된 완벽한 HTML
+              let raw = formatChunk(chunks[chunkIdx]); 
               
               const ta = inputs[i];
               if (ta.value.trim()) {
-                  ta.value += "<br><br>" + raw; // \n 대신 <br> 삽입
+                  ta.value += "<br><br>" + raw; 
               } else {
                   ta.value = raw;
               }
