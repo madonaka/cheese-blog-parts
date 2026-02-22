@@ -3203,9 +3203,10 @@ function clearEditor(){
       const noteList = [];
       const inputs = document.querySelectorAll('#viewEdit .modal-body-input');
 
-      // 💡 [NEW] 툴바에 서식 지우기, H2, H3, 구분선 버튼 추가
+      // 💡 [수정] 툴바 클릭 시 포커스(드래그)가 풀리지 않도록 onmousedown 이벤트 추가
       combinedHtml += `
-        <div style="position:sticky; top:0; z-index:10; background:#f8fafc; padding:10px; margin-bottom:15px; border-radius:8px; border:1px solid #e2e8f0; box-shadow:0 4px 6px -1px rgba(0,0,0,0.05); display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <div style="position:sticky; top:0; z-index:10; background:#f8fafc; padding:10px; margin-bottom:15px; border-radius:8px; border:1px solid #e2e8f0; box-shadow:0 4px 6px -1px rgba(0,0,0,0.05); display:flex; gap:8px; align-items:center; flex-wrap:wrap;"
+             onmousedown="if(event.target.tagName !== 'INPUT') event.preventDefault();">
           <span style="font-size:12px; font-weight:800; color:#475569; margin-right:4px;">미리보기 에디터</span>
           
           <button class="pm-btn small ghost" style="font-weight:800; color:#0f172a;" onclick="applyCustomFormatInPreview('bold')">B 볼드</button>
@@ -3222,7 +3223,7 @@ function clearEditor(){
             <button class="pm-btn small ghost" style="padding:2px 4px; font-size:11px;" onclick="applyCustomFormatInPreview('bg')">적용</button>
           </div>
 
-          <button class="pm-btn small ghost" onclick="applyCustomFormatInPreview('remove')" title="드래그한 텍스트의 색상과 볼드를 초기화합니다">🧹 지우기</button>
+          <button class="pm-btn small ghost" onclick="applyCustomFormatInPreview('remove')" title="드래그한 텍스트의 색상, 볼드, 소제목을 일반 텍스트로 초기화합니다">🧹 지우기</button>
           
           <div style="width:1px; height:16px; background:#cbd5e1; margin:0 2px;"></div>
           
@@ -3240,10 +3241,8 @@ function clearEditor(){
         let html = ta.value;
         const slotName = ta.getAttribute('data-target-slot');
 
-        // 기존 하단 목록 제거
         html = html.replace(/(\n\n)?<hr>\s*<ol class="cheese-footnotes">[\s\S]*?<\/ol>/gi, '');
         
-        // 미리보기용 태그 변환
         html = html.replace(/<a [^>]*data-note="([^"]+)"[^>]*>.*?<\/a>/g, (m, enc) => {
           const num = currentFnIdx++;
           let txt = "";
@@ -3253,7 +3252,6 @@ function clearEditor(){
           return `<sup class="preview-fn-marker" data-original="${encodedOriginal}" style="color:#2563eb; font-weight:bold; padding:0 2px; cursor:pointer; user-select:none;" contenteditable="false">*${num}</sup>`;
         });
         
-        // 줄바꿈 처리
         html = html.replace(/\n/g, '<br>');
         
         combinedHtml += `
@@ -3267,7 +3265,6 @@ function clearEditor(){
         `;
       });
     
-      // 하단 목록 생성
       if(noteList.length > 0) {
         combinedHtml += `<hr><ol class="cheese-footnotes" style="padding-left:20px; font-size:0.9em; color:#555;">`;
         noteList.forEach(n => {
@@ -3278,7 +3275,6 @@ function clearEditor(){
       
       previewEl.innerHTML = combinedHtml;
 
-      // 양방향 동기화 이벤트 리스너 연결
       document.querySelectorAll('.preview-slot-container').forEach(el => {
         el.addEventListener('input', window.syncPreviewToEdit);
         el.addEventListener('keydown', (e) => {
@@ -3289,6 +3285,89 @@ function clearEditor(){
         });
       });
     }
+
+    // 💡 [수정] 미리보기 텍스트 서식 적용 (글자 증발 버그 완벽 차단)
+    window.applyCustomFormatInPreview = function(type) {
+      const sel = window.getSelection();
+      
+      if (!sel.rangeCount) return;
+      
+      const range = sel.getRangeAt(0);
+      let container = range.commonAncestorContainer;
+      if (container.nodeType === 3) container = container.parentNode;
+      
+      if (!container.closest('.preview-slot-container')) {
+        alert("미리보기 본문 영역 안에서 텍스트를 선택하거나 커서를 두세요.");
+        return;
+      }
+
+      // [1] 구분선 (HR): 드래그한 글자가 덮어쓰기(삭제)되지 않도록 커서를 맨 끝으로 보낸 뒤 삽입
+      if (type === 'hr') {
+        sel.collapseToEnd(); 
+        document.execCommand('insertHTML', false, '<br><hr><br>');
+        window.syncPreviewToEdit();
+        return;
+      }
+
+      // 선택 영역이 필수인 포맷들 체크
+      if (sel.isCollapsed && type !== 'h2' && type !== 'h3') {
+        alert("서식을 적용하거나 지울 텍스트를 먼저 드래그(선택)해주세요.");
+        return;
+      }
+
+      // [2] 소제목 (H2, H3): 브라우저 내장 execCommand의 버그(글자 증발)를 막기 위해 직접 DOM으로 감싸기
+      if (type === 'h2' || type === 'h3') {
+        if (!sel.isCollapsed) {
+          const content = range.extractContents(); // 텍스트를 안전하게 임시 보관
+          const wrapper = document.createElement(type);
+          wrapper.appendChild(content); // 태그 안에 텍스트를 넣음
+          range.insertNode(wrapper); // 원래 위치에 삽입 (글자 증발 원천 차단)
+          sel.collapseToEnd(); // 커서를 블록 바깥으로 빼기
+        } else {
+          // 텍스트 선택 없이 커서만 두고 누를 경우
+          document.execCommand('formatBlock', false, type.toUpperCase());
+        }
+        window.syncPreviewToEdit();
+        return;
+      }
+
+      // [3] 서식 지우기: 색상, 볼드 지우고 + H2/H3에 걸려있으면 일반 텍스트로 풀어줌
+      if (type === 'remove') {
+        // 기본 텍스트 서식(볼드, 색상 등) 제거
+        document.execCommand('removeFormat', false, null);
+        document.execCommand('backColor', false, 'transparent');
+        
+        // H2, H3 같은 소제목 태그에 걸려있다면 태그를 강제로 벗겨냄
+        let el = container;
+        while (el && el.closest('.preview-slot-container') && el !== el.closest('.preview-slot-container')) {
+            if (['H1', 'H2', 'H3', 'H4', 'H5', 'H6'].includes(el.tagName)) {
+                const docFrag = document.createDocumentFragment();
+                while (el.firstChild) {
+                    docFrag.appendChild(el.firstChild); // 알맹이 텍스트만 추출
+                }
+                el.parentNode.replaceChild(docFrag, el); // 껍데기(H2/H3)를 버리고 알맹이로 교체
+                break;
+            }
+            el = el.parentNode;
+        }
+
+        window.syncPreviewToEdit();
+        return;
+      }
+
+      // [4] 볼드, 글자색, 배경색
+      if (type === 'bold') {
+        document.execCommand('bold', false, null);
+      } else if (type === 'color') {
+        document.execCommand('foreColor', false, document.getElementById('prevColorPicker').value);
+      } else if (type === 'bg') {
+        if (!document.execCommand('hiliteColor', false, document.getElementById('prevBgPicker').value)) {
+            document.execCommand('backColor', false, document.getElementById('prevBgPicker').value);
+        }
+      }
+      
+      window.syncPreviewToEdit();
+    };
 
     
     // 💡 [NEW] 미리보기에서 변경된 내용을 편집 모드(Textarea)로 역동기화
