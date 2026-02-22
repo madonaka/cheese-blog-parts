@@ -2939,6 +2939,10 @@ function clearEditor(){
       const tabs = document.querySelectorAll('.pm-tab');
       
       if(mode === 'edit') {
+        // 미리보기에서 편집 모드로 돌아갈 때 최종 동기화 진행
+        if (vPrev.style.display === 'block' && typeof window.syncPreviewToEdit === 'function') {
+           window.syncPreviewToEdit();
+        }
         vEdit.style.display = 'block';
         vPrev.style.display = 'none';
         tabs[0].classList.add('active');
@@ -3191,31 +3195,68 @@ function clearEditor(){
       }
     };
     
-    // 8. 미리보기 (HTML 변환)
+ // 8. 미리보기 (HTML 변환 및 WYSIWYG 에디터화)
     function renderFullPreview() {
       const previewEl = document.getElementById('viewPreview');
       let combinedHtml = "";
       let currentFnIdx = 1;
       const noteList = [];
       const inputs = document.querySelectorAll('#viewEdit .modal-body-input');
+
+      // 💡 [NEW] 미리보기 전용 상단 툴바 추가
+      combinedHtml += `
+        <div style="position:sticky; top:0; z-index:10; background:#f8fafc; padding:10px; margin-bottom:15px; border-radius:8px; border:1px solid #e2e8f0; box-shadow:0 4px 6px -1px rgba(0,0,0,0.05); display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <span style="font-size:12px; font-weight:800; color:#475569; margin-right:8px;">미리보기 에디터</span>
+          <button class="pm-btn small ghost" style="font-weight:800; color:#0f172a;" onclick="applyCustomFormatInPreview('bold')">B 볼드</button>
+          
+          <div style="display:flex; align-items:center; gap:4px; background:#fff; border:1px solid #cbd5e1; padding:2px 6px; border-radius:6px;">
+            <span style="font-size:11px; color:#64748b;">글자색</span>
+            <input type="color" id="prevColorPicker" value="#2563eb" style="width:20px; height:20px; border:none; padding:0; cursor:pointer;">
+            <button class="pm-btn small ghost" style="padding:2px 6px; font-size:11px;" onclick="applyCustomFormatInPreview('color')">적용</button>
+          </div>
+
+          <div style="display:flex; align-items:center; gap:4px; background:#fff; border:1px solid #cbd5e1; padding:2px 6px; border-radius:6px;">
+            <span style="font-size:11px; color:#64748b;">배경색</span>
+            <input type="color" id="prevBgPicker" value="#fef08a" style="width:20px; height:20px; border:none; padding:0; cursor:pointer;">
+            <button class="pm-btn small ghost" style="padding:2px 6px; font-size:11px;" onclick="applyCustomFormatInPreview('bg')">적용</button>
+          </div>
+          
+          <div style="flex:1;"></div>
+          
+          <button class="pm-btn small primary" onclick="insertFootnoteInPreview()">+ 주석 추가 (*?)</button>
+        </div>
+      `;
     
       inputs.forEach((ta) => {
         let html = ta.value;
-        // 기존 목록 제거
+        const slotName = ta.getAttribute('data-target-slot');
+
+        // 기존 하단 목록 제거
         html = html.replace(/(\n\n)?<hr>\s*<ol class="cheese-footnotes">[\s\S]*?<\/ol>/gi, '');
         
-        // 미리보기용 태그 변환
+        // 미리보기용 태그 변환 (편집 모드 복원을 위해 data-original 에 원본 태그를 안전하게 보관)
         html = html.replace(/<a [^>]*data-note="([^"]+)"[^>]*>.*?<\/a>/g, (m, enc) => {
           const num = currentFnIdx++;
           let txt = "";
           try { txt = decodeURIComponent(enc); } catch(e){}
           noteList.push({ num, txt });
-          return `<sup style="color:#2563eb; font-weight:bold;">*${num}</sup>`;
+          const encodedOriginal = encodeURIComponent(m);
+          return `<sup class="preview-fn-marker" data-original="${encodedOriginal}" style="color:#2563eb; font-weight:bold; padding:0 2px; cursor:pointer; user-select:none;" contenteditable="false">*${num}</sup>`;
         });
         
         // 줄바꿈 처리
         html = html.replace(/\n/g, '<br>');
-        combinedHtml += `<div style="margin-bottom:30px;">${html}</div>`;
+        
+        // 💡 [NEW] 각 슬롯을 수정 가능한 영역(contenteditable)으로 렌더링
+        combinedHtml += `
+          <div style="margin-bottom:5px; font-size:11px; font-weight:bold; color:#94a3b8;">[${slotName}] 영역</div>
+          <div class="preview-slot-container" data-slot="${slotName}" contenteditable="true" 
+               style="margin-bottom:30px; outline:none; padding:15px; border:1px dashed #cbd5e1; border-radius:8px; min-height:100px; transition:all 0.2s; line-height: 1.7;"
+               onfocus="this.style.borderColor='#3b82f6'; this.style.backgroundColor='#f8fafc';"
+               onblur="this.style.borderColor='#cbd5e1'; this.style.backgroundColor='transparent';">
+            ${html}
+          </div>
+        `;
       });
     
       // 하단 목록 생성
@@ -3228,7 +3269,134 @@ function clearEditor(){
       }
       
       previewEl.innerHTML = combinedHtml;
+
+      // 💡 [NEW] 실시간 양방향 동기화 이벤트 리스너 연결
+      document.querySelectorAll('.preview-slot-container').forEach(el => {
+        el.addEventListener('input', window.syncPreviewToEdit);
+        el.addEventListener('keydown', (e) => {
+          // 엔터 키 입력 시 div 생성을 막고, 편집 모드와 동일하게 <br> 태그만 삽입하도록 강제
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            document.execCommand('insertHTML', false, '<br>');
+          }
+        });
+      });
     }
+    // 💡 [NEW] 미리보기에서 변경된 내용을 편집 모드(Textarea)로 역동기화
+    window.syncPreviewToEdit = function() {
+      const containers = document.querySelectorAll('.preview-slot-container');
+      containers.forEach(container => {
+        const slotName = container.getAttribute('data-slot');
+        const ta = document.querySelector(`textarea[data-target-slot="${slotName}"]`);
+        if (!ta) return;
+
+        let html = container.innerHTML;
+
+        // 1. 숨겨둔 주석 원본 태그(<a data-note...>) 복원
+        const fnRegex = /<sup[^>]*class="[^"]*preview-fn-marker[^"]*"[^>]*data-original="([^"]+)"[^>]*>.*?<\/sup>/gi;
+        html = html.replace(fnRegex, (match, encodedOriginal) => {
+           return decodeURIComponent(encodedOriginal);
+        });
+
+        // 2. <br> 태그를 다시 원래의 \n(줄바꿈)으로 변환
+        html = html.replace(/<br\s*\/?>/gi, '\n');
+        
+        // 3. 간혹 브라우저가 자동 생성하는 <div> 태그 찌꺼기 정리
+        html = html.replace(/<div>/gi, '\n').replace(/<\/div>/gi, '');
+
+        ta.value = html;
+        // 메인 화면으로 전달하기 위해 input 이벤트 강제 트리거
+        ta.dispatchEvent(new Event("input", { bubbles:true }));
+      });
+      
+      // 우측 주석 리스트 실시간 갱신
+      window.detectFootnotes();
+    };
+
+    // 💡 [NEW] 미리보기 텍스트 서식 적용 (볼드, 글자색, 배경색)
+    window.applyCustomFormatInPreview = function(type) {
+      const sel = window.getSelection();
+      if (!sel.rangeCount || sel.isCollapsed) {
+        alert("서식을 적용할 텍스트를 먼저 드래그(선택)해주세요.");
+        return;
+      }
+      
+      const range = sel.getRangeAt(0);
+      const container = range.commonAncestorContainer.nodeType === 1 ? range.commonAncestorContainer : range.commonAncestorContainer.parentNode;
+      
+      if (!container.closest('.preview-slot-container')) {
+        alert("미리보기 본문 영역 내에서 텍스트를 선택해주세요.");
+        return;
+      }
+
+      const content = range.extractContents();
+      let wrapper;
+
+      if (type === 'bold') {
+        wrapper = document.createElement('b');
+      } else if (type === 'color') {
+        wrapper = document.createElement('span');
+        wrapper.style.color = document.getElementById('prevColorPicker').value;
+      } else if (type === 'bg') {
+        wrapper = document.createElement('mark');
+        wrapper.style.backgroundColor = document.getElementById('prevBgPicker').value;
+      }
+
+      wrapper.appendChild(content);
+      range.insertNode(wrapper);
+
+      // 선택 해제 (깜빡임 방지)
+      sel.removeAllRanges();
+      
+      // 즉시 편집 모드에 태그 동기화
+      window.syncPreviewToEdit();
+    };
+
+    // 💡 [NEW] 미리보기에서 마우스 클릭 위치에 직접 주석 삽입
+    window.insertFootnoteInPreview = function() {
+      const sel = window.getSelection();
+      if (!sel.rangeCount) {
+        alert("주석을 넣을 위치를 미리보기 본문에서 클릭해주세요.");
+        return;
+      }
+      
+      const range = sel.getRangeAt(0);
+      const container = range.commonAncestorContainer.nodeType === 1 ? range.commonAncestorContainer : range.commonAncestorContainer.parentNode;
+      
+      if (!container.closest('.preview-slot-container')) {
+        alert("미리보기 본문 영역 안쪽을 클릭해 커서를 위치시켜주세요.");
+        return;
+      }
+
+      const noteContent = prompt("새 주석 내용을 입력하세요:");
+      if (!noteContent) return;
+
+      const encoded = encodeURIComponent(noteContent);
+      const tempId = Math.random().toString(36).substr(2, 5);
+      
+      // 편집 모드(Raw Text)로 넘길 실제 A 태그
+      const rawTag = `<a id="ref_${tempId}" href="#note_${tempId}" class="cheese-footnote-ref" data-note="${encoded}">*?</a>`;
+
+      // 미리보기 화면에 즉시 띄울 가짜 마커 (이 마커 안에 rawTag를 숨겨둡니다)
+      const previewNode = document.createElement('sup');
+      previewNode.className = 'preview-fn-marker';
+      previewNode.setAttribute('data-original', encodeURIComponent(rawTag));
+      previewNode.setAttribute('contenteditable', 'false'); // 주석 번호 자체가 수정되는 것 방지
+      previewNode.style.color = '#2563eb';
+      previewNode.style.fontWeight = 'bold';
+      previewNode.style.padding = '0 2px';
+      previewNode.textContent = '*새주석';
+
+      // 현재 커서 위치에 노드 삽입
+      range.collapse(false);
+      range.insertNode(previewNode);
+
+      // 편집 모드 동기화 
+      window.syncPreviewToEdit();
+      
+      // 번호 재정렬 및 하단 리스트 출력을 위해 미리보기 화면 새로고침
+      renderFullPreview(); 
+    };
     
     // 9. 최종 적용 (동적 슬롯 매핑)
     window.applyIntegratedChanges = function() {
