@@ -3203,11 +3203,16 @@ function clearEditor(){
       const noteList = [];
       const inputs = document.querySelectorAll('#viewEdit .modal-body-input');
 
-      // 💡 [수정] 툴바 클릭 시 포커스(드래그)가 풀리지 않도록 onmousedown 이벤트 추가
+      // 💡 [수정] 상단 툴바에 '되돌리기(Undo)', '다시실행(Redo)' 버튼 추가
       combinedHtml += `
         <div style="position:sticky; top:0; z-index:10; background:#f8fafc; padding:10px; margin-bottom:15px; border-radius:8px; border:1px solid #e2e8f0; box-shadow:0 4px 6px -1px rgba(0,0,0,0.05); display:flex; gap:8px; align-items:center; flex-wrap:wrap;"
              onmousedown="if(event.target.tagName !== 'INPUT') event.preventDefault();">
-          <span style="font-size:12px; font-weight:800; color:#475569; margin-right:4px;">미리보기 에디터</span>
+          <span style="font-size:12px; font-weight:800; color:#475569; margin-right:4px;">에디터</span>
+          
+          <button class="pm-btn small ghost" onclick="applyCustomFormatInPreview('undo')" title="실행 취소 (Ctrl+Z)">↩️ 되돌리기</button>
+          <button class="pm-btn small ghost" onclick="applyCustomFormatInPreview('redo')" title="다시 실행 (Ctrl+Y)">↪️</button>
+
+          <div style="width:1px; height:16px; background:#cbd5e1; margin:0 2px;"></div>
           
           <button class="pm-btn small ghost" style="font-weight:800; color:#0f172a;" onclick="applyCustomFormatInPreview('bold')">B 볼드</button>
           
@@ -3282,14 +3287,29 @@ function clearEditor(){
             e.preventDefault();
             document.execCommand('insertHTML', false, '<br>');
           }
+          // 키보드 Ctrl+Z 단축키 감지 시 편집모드 동기화 추가
+          if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z' || e.key === 'y' || e.key === 'Y')) {
+            setTimeout(window.syncPreviewToEdit, 50);
+          }
         });
       });
     }
 
-    // 💡 [수정] 미리보기 텍스트 서식 적용 (글자 증발 버그 완벽 차단)
+    // 💡 [수정] 미리보기 텍스트 서식 적용 (글자 증발 차단 & 브라우저 Undo 스택 활용)
     window.applyCustomFormatInPreview = function(type) {
+      // [0] 되돌리기 / 다시 실행 (선택 영역 무관하게 즉시 실행)
+      if (type === 'undo') {
+        document.execCommand('undo', false, null);
+        window.syncPreviewToEdit();
+        return;
+      }
+      if (type === 'redo') {
+        document.execCommand('redo', false, null);
+        window.syncPreviewToEdit();
+        return;
+      }
+
       const sel = window.getSelection();
-      
       if (!sel.rangeCount) return;
       
       const range = sel.getRangeAt(0);
@@ -3301,7 +3321,7 @@ function clearEditor(){
         return;
       }
 
-      // [1] 구분선 (HR): 드래그한 글자가 덮어쓰기(삭제)되지 않도록 커서를 맨 끝으로 보낸 뒤 삽입
+      // [1] 구분선 (HR)
       if (type === 'hr') {
         sel.collapseToEnd(); 
         document.execCommand('insertHTML', false, '<br><hr><br>');
@@ -3309,49 +3329,42 @@ function clearEditor(){
         return;
       }
 
-      // 선택 영역이 필수인 포맷들 체크
-      if (sel.isCollapsed && type !== 'h2' && type !== 'h3') {
-        alert("서식을 적용하거나 지울 텍스트를 먼저 드래그(선택)해주세요.");
-        return;
-      }
-
-      // [2] 소제목 (H2, H3): 브라우저 내장 execCommand의 버그(글자 증발)를 막기 위해 직접 DOM으로 감싸기
+      // [2] 소제목 (H2, H3): 선택한 글자를 복사해 태그를 씌운 후, 원래 위치에 '덮어쓰기' (증발 차단 + 되돌리기 보존)
       if (type === 'h2' || type === 'h3') {
-        if (!sel.isCollapsed) {
-          const content = range.extractContents(); // 텍스트를 안전하게 임시 보관
-          const wrapper = document.createElement(type);
-          wrapper.appendChild(content); // 태그 안에 텍스트를 넣음
-          range.insertNode(wrapper); // 원래 위치에 삽입 (글자 증발 원천 차단)
-          sel.collapseToEnd(); // 커서를 블록 바깥으로 빼기
-        } else {
-          // 텍스트 선택 없이 커서만 두고 누를 경우
-          document.execCommand('formatBlock', false, type.toUpperCase());
+        if (sel.isCollapsed) {
+          alert("소제목으로 만들 텍스트를 먼저 드래그해주세요.");
+          return;
         }
+        const tempDiv = document.createElement('div');
+        tempDiv.appendChild(range.cloneContents()); // 텍스트를 안전하게 추출
+        document.execCommand('insertHTML', false, `<${type}>${tempDiv.innerHTML}</${type}><br>`);
         window.syncPreviewToEdit();
         return;
       }
 
-      // [3] 서식 지우기: 색상, 볼드 지우고 + H2/H3에 걸려있으면 일반 텍스트로 풀어줌
+      // [3] 서식 지우기
       if (type === 'remove') {
-        // 기본 텍스트 서식(볼드, 색상 등) 제거
+        // 일반 서식(볼드, 색상 등) 제거
         document.execCommand('removeFormat', false, null);
         document.execCommand('backColor', false, 'transparent');
         
-        // H2, H3 같은 소제목 태그에 걸려있다면 태그를 강제로 벗겨냄
-        let el = container;
-        while (el && el.closest('.preview-slot-container') && el !== el.closest('.preview-slot-container')) {
-            if (['H1', 'H2', 'H3', 'H4', 'H5', 'H6'].includes(el.tagName)) {
-                const docFrag = document.createDocumentFragment();
-                while (el.firstChild) {
-                    docFrag.appendChild(el.firstChild); // 알맹이 텍스트만 추출
-                }
-                el.parentNode.replaceChild(docFrag, el); // 껍데기(H2/H3)를 버리고 알맹이로 교체
-                break;
-            }
-            el = el.parentNode;
+        // H2, H3 소제목 태그에 걸려있다면 태그를 완전히 벗겨내고 알맹이만 남김
+        let headingEl = container.closest('h1, h2, h3, h4, h5, h6');
+        if (headingEl && headingEl.closest('.preview-slot-container')) {
+            const innerHTML = headingEl.innerHTML;
+            const newRange = document.createRange();
+            newRange.selectNode(headingEl);
+            sel.removeAllRanges();
+            sel.addRange(newRange);
+            document.execCommand('insertHTML', false, innerHTML + '<br>');
         }
-
         window.syncPreviewToEdit();
+        return;
+      }
+
+      // 선택 영역이 필수인 포맷들 체크
+      if (sel.isCollapsed && ['bold', 'color', 'bg'].includes(type)) {
+        alert("서식을 적용할 텍스트를 먼저 드래그(선택)해주세요.");
         return;
       }
 
