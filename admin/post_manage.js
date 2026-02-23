@@ -2394,13 +2394,15 @@ async function pipelinePublish_(publish){
     window.confirmFootnoteModal = function() {
       if (!pendingFootnoteCtx) return;
       const content = document.getElementById('footnoteInputTextarea').value;
-      
+    
       if (!content.trim()) {
         alert("주석 내용을 입력해주세요.");
         return;
       }
-
-      const encoded = encodeURIComponent(content);
+    
+      // 🚨 수정: 새 주석 생성 시에도 엔터를 <br>로 변환하여 저장하도록 수정
+      const htmlText = content.replace(/\n/g, '<br>');
+      const encoded = encodeURIComponent(htmlText);
       const tempId = Math.random().toString(36).substr(2, 5);
       const rawTag = `<a id="ref_${tempId}" href="#note_${tempId}" class="cheese-footnote-ref" data-note="${encoded}">*?</a>`;
 
@@ -2476,6 +2478,15 @@ async function pipelinePublish_(publish){
       const newTag = fn.fullTag.replace(/data-note="([^"]+)"/, `data-note="${newEncoded}"`);
       
       targetEl.value = targetEl.value.replace(fn.fullTag, newTag);
+    
+      // 🚨 수정: 미리보기 모드일 때 화면 마커의 원본 데이터도 같이 업데이트하여 옛날 데이터로 덮어씌워지는(날아가는) 현상 방지!
+      const vPrev = document.getElementById('viewPreview');
+      if (vPrev && vPrev.style.display === 'block') {
+         const oldEncodedOriginal = encodeURIComponent(fn.fullTag);
+         const newEncodedOriginal = encodeURIComponent(newTag);
+         const sups = vPrev.querySelectorAll(`sup[data-original="${oldEncodedOriginal}"]`);
+         sups.forEach(sup => sup.setAttribute('data-original', newEncodedOriginal));
+      }
       
       fn.content = newText; // 화면 표시용은 엔터 상태 유지
       fn.fullTag = newTag; 
@@ -2688,9 +2699,7 @@ async function pipelinePublish_(publish){
           <div class="preview-slot-container" data-slot="${slotName}" contenteditable="true" 
                style="margin-bottom:30px; outline:none; padding:15px; border:1px dashed #cbd5e1; border-radius:8px; min-height:100px; transition:all 0.2s; line-height: 1.7;"
                onfocus="this.style.borderColor='#3b82f6'; this.style.boxShadow='0 0 0 3px rgba(59,130,246,0.1)';"
-               onblur="this.style.borderColor='#cbd5e1'; this.style.boxShadow='none';">
-            ${html}
-          </div>
+               onblur="this.style.borderColor='#cbd5e1'; this.style.boxShadow='none';">${html}</div>
         `;
       });
     
@@ -2806,6 +2815,11 @@ async function pipelinePublish_(publish){
         // 🚨 <br> 유지 로직 (발행 시 한 줄 뭉개짐 방지)
         html = html.replace(/<div><br><\/div>/gi, '<br>'); 
         html = html.replace(/<div>(.*?)<\/div>/gi, '<br>$1');
+
+        // ✅ [추가] 양끝에 누적된 쓸모없는 개행(\n), 공백, <br> 태그 완벽 청소
+        html = html.replace(/^(?:<br\s*\/?>|\s)+/gi, '');
+        html = html.replace(/(?:<br\s*\/?>|\s)+$/gi, '');
+        html = html.trim();
 
         ta.value = html;
         ta.dispatchEvent(new Event("input", { bubbles:true }));
