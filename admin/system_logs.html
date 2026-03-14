@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>시스템 로그 센터 · Cheese Admin</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="./admin.css" />
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        .log-filter-bar {
+            background: #fff;
+            padding: 20px;
+            border-radius: 16px;
+            border: 1px solid #f1f5f9;
+            margin-bottom: 25px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .filter-group { display: flex; align-items: center; gap: 10px; }
+        .filter-group label { font-size: 0.8rem; font-weight: 700; color: #64748b; }
+        .filter-input {
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            font-size: 0.9rem;
+            outline: none;
+        }
+
+        .log-type-badge {
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 0.7rem;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+
+        .type-info { background: #e0f2fe; color: #0369a1; } /* Page View, etc */
+        .type-success { background: #dcfce7; color: #166534; } /* Login, Purchase */
+        .type-warning { background: #fef3c7; color: #92400e; } /* Logout, UI Action */
+        .type-error { background: #fee2e2; color: #991b1b; } /* Errors */
+
+        .admin-table td { font-size: 0.85rem; vertical-align: middle; }
+        .path-text { font-family: monospace; color: #64748b; font-size: 0.75rem; }
+        .uid-text { font-family: monospace; color: #94a3b8; font-size: 0.7rem; }
+
+        .btn-detail {
+            background: #f1f5f9;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-detail:hover { background: #e2e8f0; }
+
+        /* Modal specific */
+        .detail-row {
+            display: flex;
+            padding: 12px 0;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        .detail-label { width: 120px; font-weight: 700; color: #64748b; font-size: 0.85rem; }
+        .detail-value { flex: 1; word-break: break-all; color: #1e293b; font-size: 0.85rem; font-family: monospace; }
+
+        pre.raw-json {
+            background: #1e293b;
+            color: #d1d5db;
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 0.8rem;
+            overflow-x: auto;
+            margin-top: 10px;
+        }
+
+        /* Pagination Styles */
+        .pagination-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-top: 30px;
+            padding-bottom: 20px;
+        }
+
+        .page-btn {
+            padding: 8px 14px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            background: #fff;
+            color: #64748b;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 600;
+        }
+        .page-btn.active { background: #3b82f6; color: #fff; border-color: #3b82f6; }
+        .page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* Modal Base Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%;
+            height: 100%;
+            background: rgba(15, 23, 42, 0.6);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            backdrop-filter: blur(4px);
+            padding: 20px;
+        }
+
+        .modal-overlay.show { display: flex; }
+
+        .modal-content {
+            background: #fff;
+            border-radius: 20px;
+            width: 100%;
+            position: relative;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            animation: modalSlide 0.3s ease-out;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        @keyframes modalSlide {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        .modal-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid #f1f5f9;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h3 { margin: 0; font-size: 1.1rem; font-weight: 800; }
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            color: #94a3b8;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="admin-shell">
+        <div id="admin-header-slot"></div>
+
+        <div class="admin-main">
+            <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+
+            <main>
+                <div style="margin-bottom: 2rem; display: flex; justify-content: space-between; align-items: flex-end;">
+                    <div>
+                        <h1 style="font-size: 1.5rem; font-weight: 800;">시스템 실시간 로그</h1>
+                        <p style="font-size: 0.85rem; color: #64748b;">모든 사용자 활동과 시스템 이벤트를 실시간으로 추적합니다.</p>
+                    </div>
+                    <button class="btn-primary" onclick="loadLogs()" style="padding: 10px 20px;">새로고침</button>
+                </div>
+
+                <!-- Filters -->
+                <div class="log-filter-bar">
+                    <div class="filter-group">
+                        <label>검색</label>
+                        <input type="text" id="logSearch" class="filter-input" placeholder="UID 또는 행동명 검색" style="width: 250px;">
+                    </div>
+                    <div class="filter-group">
+                        <label>행동 분류</label>
+                        <select id="actionFilter" class="filter-input">
+                            <option value="">전체 로그</option>
+                            <option value="PAGE_VIEW">페이지 조회</option>
+                            <option value="LOGIN">로그인</option>
+                            <option value="PURCHASE">구매 활동</option>
+                            <option value="ERROR">오류/사고</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>플랫폼</label>
+                        <select id="platformFilter" class="filter-input">
+                            <option value="">모든 출처</option>
+                            <option value="Cloudflare-Storefront">스토어프론트</option>
+                            <option value="Cheese-Admin">관리자 센터</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Log Table -->
+                <section class="admin-card">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 180px;">발생 일시</th>
+                                <th style="width: 120px;">행동</th>
+                                <th style="width: 150px;">사용자(UID)</th>
+                                <th>경로/내용</th>
+                                <th style="width: 100px;">플랫폼</th>
+                                <th style="width: 80px;">관리</th>
+                            </tr>
+                        </thead>
+                        <tbody id="logTableBody">
+                            <tr>
+                                <td colspan="6" style="text-align: center; padding: 100px;">로그 데이터를 불러오는 중입니다...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <div id="pagination" class="pagination-container"></div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <!-- Log Detail Modal -->
+    <div id="logModal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 700px;">
+            <div class="modal-header">
+                <h3 id="logModalTitle">로그 상세 정보</h3>
+                <button class="modal-close" onclick="closeLogModal()">&times;</button>
+            </div>
+            <div id="logModalContent" style="padding: 24px;">
+                <!-- Content will be injected here -->
+            </div>
+        </div>
+    </div>
+
+    <script src="./admin-common.js"></script>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, getDocs, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBgLF7lEKQxdsUked-i_Pf0FJEdP_d1Ab4",
+            authDomain: "auth.cheesehistory.com",
+            projectId: "cheese-history-platform",
+            storageBucket: "cheese-history-platform.firebasestorage.app",
+            messagingSenderId: "206588835864",
+            appId: "1:206588835864:web:18cc695d72c6fc96c4ab6d"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        let allLogs = [];
+        let currentPage = 1;
+        const itemsPerPage = 20;
+
+        async function loadLogs() {
+            const tbody = document.getElementById('logTableBody');
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 100px;">실시간 로그를 동기화 중입니다...</td></tr>';
+
+            try {
+                // 부하 방지를 위해 최근 1000건의 로그만 우선 로드
+                const q = query(collection(db, "logs"), orderBy("timestamp", "desc"), limit(1000));
+                const snapshot = await getDocs(q);
+                
+                allLogs = [];
+                snapshot.forEach(doc => {
+                    allLogs.push({ id: doc.id, ...doc.data() });
+                });
+
+                renderLogTable();
+            } catch (err) {
+                console.error("Load Logs Error:", err);
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #ef4444; padding: 100px;">데이터 로드실패: ${err.message}</td></tr>`;
+            }
+        }
+
+        function renderLogTable() {
+            const search = document.getElementById('logSearch').value.toLowerCase();
+            const action = document.getElementById('actionFilter').value;
+            const platform = document.getElementById('platformFilter').value;
+
+            const filtered = allLogs.filter(l => {
+                const logAction = (l.action || '').toLowerCase();
+                const filterAction = action.toLowerCase();
+                
+                const matchSearch = l.uid?.toLowerCase().includes(search) || logAction.includes(search);
+                const matchAction = !action || logAction.includes(filterAction) || (filterAction === 'purchase' && logAction.includes('purchase'));
+                const matchPlatform = !platform || l.platform === platform;
+                return matchSearch && matchAction && matchPlatform;
+            });
+
+            const totalItems = filtered.length;
+            const totalPages = Math.ceil(totalItems / itemsPerPage);
+            if (currentPage > totalPages && totalPages > 0) currentPage = totalPages;
+
+            const startIndex = (currentPage - 1) * itemsPerPage;
+            const paginatedData = filtered.slice(startIndex, startIndex + itemsPerPage);
+
+            const tbody = document.getElementById('logTableBody');
+            if (paginatedData.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 100px;">조건에 맞는 로그가 없습니다.</td></tr>';
+                document.getElementById('pagination').innerHTML = '';
+                return;
+            }
+
+            tbody.innerHTML = paginatedData.map(l => {
+                const date = l.timestamp ? new Date(l.timestamp.toDate()).toLocaleString() : '-';
+                const typeClass = getLogTypeClass(l.action);
+                
+                return `
+                    <tr>
+                        <td><span style="color: #64748b;">${date}</span></td>
+                        <td><span class="log-type-badge ${typeClass}">${l.action}</span></td>
+                        <td class="uid-text">${l.uid || 'Anonymous'}</td>
+                        <td>
+                            <div class="path-text">${l.path || '-'}</div>
+                            <div style="font-weight: 600; font-size: 0.8rem; margin-top: 4px;">${formatSummary(l)}</div>
+                        </td>
+                        <td><span style="font-size: 0.7rem; color: #94a3b8;">${l.platform || '-'}</span></td>
+                        <td><button class="btn-detail" onclick="viewLogDetail('${l.id}')">정보</button></td>
+                    </tr>
+                `;
+            }).join('');
+
+            renderPagination(totalItems);
+        }
+
+        function getLogTypeClass(action) {
+            if (!action) return 'type-info';
+            const a = action.toUpperCase();
+            if (a.includes('ERROR') || a.includes('FAIL')) return 'type-error';
+            if (a.includes('PURCHASE') || a.includes('LOGIN') || a.includes('SUCCESS')) return 'type-success';
+            if (a.includes('LOGOUT') || a.includes('DELETE') || a.includes('UPDATE')) return 'type-warning';
+            return 'type-info';
+        }
+
+        function formatSummary(log) {
+            if (log.details?.title) return `상품: ${log.details.title}`;
+            if (log.details?.message) return log.details.message;
+            if (log.action === 'PAGE_VIEW') return '페이지 탐색 중';
+            return '-';
+        }
+
+        function renderPagination(totalItems) {
+            const paginationEl = document.getElementById('pagination');
+            const totalPages = Math.ceil(totalItems / itemsPerPage);
+            
+            if (totalPages <= 1) {
+                paginationEl.innerHTML = '';
+                return;
+            }
+
+            let html = `<button class="page-btn" onclick="changePage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>이전</button>`;
+            
+            // 현재 페이지 전후 2개씩만 표시 (데이터가 많을 경우 대비)
+            for (let i = 1; i <= totalPages; i++) {
+                if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) {
+                    html += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="changePage(${i})">${i}</button>`;
+                } else if (i === currentPage - 3 || i === currentPage + 3) {
+                    html += `<span>...</span>`;
+                }
+            }
+
+            html += `<button class="page-btn" onclick="changePage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>다음</button>`;
+            paginationEl.innerHTML = html;
+        }
+
+        window.changePage = (page) => {
+            currentPage = page;
+            renderLogTable();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        };
+
+        window.viewLogDetail = (id) => {
+            const log = allLogs.find(l => l.id === id);
+            if (!log) return;
+
+            const content = document.getElementById('logModalContent');
+            const date = log.timestamp ? new Date(log.timestamp.toDate()).toLocaleString() : '-';
+            
+            content.innerHTML = `
+                <div class="detail-row">
+                    <div class="detail-label">발생 시각</div>
+                    <div class="detail-value">${date}</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">사용자 UID</div>
+                    <div class="detail-value">${log.uid || 'Anonymous'}</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">브라우저 정보</div>
+                    <div class="detail-value">${log.userAgent || '-'}</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">유입 경로</div>
+                    <div class="detail-value">${log.referrer || '직접 유입'}</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">접속 경로</div>
+                    <div class="detail-value">${log.path || '-'}</div>
+                </div>
+                <div style="margin-top: 25px;">
+                    <h5 style="margin: 0 0 10px; font-size: 0.9rem;">Raw JSON Data</h5>
+                    <pre class="raw-json">${JSON.stringify(log.details || {}, null, 2)}</pre>
+                </div>
+            `;
+
+            document.getElementById('logModal').classList.add('show');
+        };
+
+        window.closeLogModal = () => {
+            document.getElementById('logModal').classList.remove('show');
+        };
+
+        // Event Listeners
+        document.getElementById('logSearch').addEventListener('input', () => { currentPage = 1; renderLogTable(); });
+        document.getElementById('actionFilter').addEventListener('change', () => { currentPage = 1; renderLogTable(); });
+        document.getElementById('platformFilter').addEventListener('change', () => { currentPage = 1; renderLogTable(); });
+
+        window.addEventListener('load', () => {
+            if (window.renderAdminHeader) window.renderAdminHeader({ mountId: 'admin-header-slot', badgeText: 'System', subtitle: '실시간 로그' });
+            if (window.renderAdminMenu) window.renderAdminMenu({ mountId: 'admin-menu-slot', active: 'system_logs' });
+            loadLogs();
+        });
+    </script>
+</body>
+
+</html>

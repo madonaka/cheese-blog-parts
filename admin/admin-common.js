@@ -1,11 +1,11 @@
 // 관리자 페이지 공통 스크립트
 (function () {
   // 토큰/로그인 정보 키 이름
-  const TOKEN_KEY        = "cheese_admin_token";
-  const LOGIN_ID_KEY     = "cheese_admin_login_id";
+  const TOKEN_KEY = "cheese_admin_token";
+  const LOGIN_ID_KEY = "cheese_admin_login_id";
   const DISPLAY_NAME_KEY = "cheese_admin_display_name";
-  const ROLE_KEY         = "cheese_admin_role";
-  const EMP_NO_KEY       = "cheese_admin_emp_no";
+  const ROLE_KEY = "cheese_admin_role";
+  const EMP_NO_KEY = "cheese_admin_emp_no";
 
   // 1) 로그인 토큰 가져오기
   var token = sessionStorage.getItem(TOKEN_KEY) || "";
@@ -17,17 +17,17 @@
   }
 
   // 3) 로그인 정보 읽기
-  const loginId     = sessionStorage.getItem(LOGIN_ID_KEY)     || "";
+  const loginId = sessionStorage.getItem(LOGIN_ID_KEY) || "";
   const displayName = sessionStorage.getItem(DISPLAY_NAME_KEY) || "";
-  const role        = sessionStorage.getItem(ROLE_KEY)         || "";
-  const empNo       = sessionStorage.getItem(EMP_NO_KEY)       || ""; 
+  const role = sessionStorage.getItem(ROLE_KEY) || "";
+  const empNo = sessionStorage.getItem(EMP_NO_KEY) || "";
 
   // 4) 전역으로 보관 (다른 스크립트/페이지에서 사용)
-  window.CHEESE_ADMIN_TOKEN        = token;
-  window.CHEESE_ADMIN_LOGIN_ID     = loginId;
+  window.CHEESE_ADMIN_TOKEN = token;
+  window.CHEESE_ADMIN_LOGIN_ID = loginId;
   window.CHEESE_ADMIN_DISPLAY_NAME = displayName;
-  window.CHEESE_ADMIN_ROLE         = role;
-  window.CHEESE_ADMIN_EMP_NO       = empNo;
+  window.CHEESE_ADMIN_ROLE = role;
+  window.CHEESE_ADMIN_EMP_NO = empNo;
 
   // 5) 권한 체크 (페이지 상단에서 REQUIRED_ROLES를 세팅해 둔 경우만)
   const requiredRoles = window.CHEESE_ADMIN_REQUIRED_ROLES;
@@ -69,9 +69,9 @@ function showAdminLoading(message) {
     return;
   }
 
-  const textEl    = loading.querySelector(".cheese-quiz-loading-text");
+  const textEl = loading.querySelector(".cheese-quiz-loading-text");
   const percentEl = loading.querySelector(".cheese-quiz-loading-percent");
-  const ringEl    = loading.querySelector(".cheese-quiz-loading-ring");
+  const ringEl = loading.querySelector(".cheese-quiz-loading-ring");
 
   // 안내 문구 세팅
   if (textEl && message) {
@@ -97,7 +97,7 @@ function showAdminLoading(message) {
   // 진행률 초기화
   adminLoadingProgress = 0;
   if (percentEl) percentEl.textContent = "0%";
-  if (ringEl)     ringEl.style.setProperty("--progress", "0%");
+  if (ringEl) ringEl.style.setProperty("--progress", "0%");
 
   // 0 → 95%까지 연출
   adminLoadingTimer = setInterval(() => {
@@ -113,16 +113,16 @@ function showAdminLoading(message) {
 
     const value = Math.min(adminLoadingProgress, 95);
     if (percentEl) percentEl.textContent = value + "%";
-    if (ringEl)     ringEl.style.setProperty("--progress", value + "%");
+    if (ringEl) ringEl.style.setProperty("--progress", value + "%");
   }, 80);
 }
 
 function hideAdminLoading() {
-  const loading   = document.getElementById("cheese-quiz-loading");
+  const loading = document.getElementById("cheese-quiz-loading");
   if (!loading) return;
 
   const percentEl = loading.querySelector(".cheese-quiz-loading-percent");
-  const ringEl    = loading.querySelector(".cheese-quiz-loading-ring");
+  const ringEl = loading.querySelector(".cheese-quiz-loading-ring");
 
   // 타이머 정리
   if (adminLoadingTimer) {
@@ -132,7 +132,7 @@ function hideAdminLoading() {
 
   // 100% 한 번 찍고
   if (percentEl) percentEl.textContent = "100%";
-  if (ringEl)     ringEl.style.setProperty("--progress", "100%");
+  if (ringEl) ringEl.style.setProperty("--progress", "100%");
 
   // 살짝 있다가 닫기
   setTimeout(() => {
@@ -161,6 +161,12 @@ const CHEESE_APPROVAL_API_BASE =
 
 // 모달(approval-line-editor.html) 안에서 window.* 로 읽을 수 있게 보장
 window.CHEESE_APPROVAL_API_BASE = CHEESE_APPROVAL_API_BASE;
+
+// ✅ 스토어 상품 파일 관리 전용 API 베이스 (구글 드라이브 업로드용)
+const CHEESE_STORE_API_BASE =
+  window.CHEESE_STORE_API_BASE ||
+  "https://script.google.com/macros/s/AKfycbwi-87AojkAJLWCjJYSaeQ5E8QWTnvgp8ST6b6ifwg2TQV_z10dzzgtDSFGzBmxA4h9dQ/exec";
+window.CHEESE_STORE_API_BASE = CHEESE_STORE_API_BASE;
 
 // exam_sets 시트에서 불러온 실제 데이터가 담길 배열
 let examSets = [];
@@ -469,10 +475,10 @@ async function loadAdminMenu() {
 
     // 그리고 현재 페이지에 맞게 활성 메뉴 표시
     highlightActiveMenu();
-    
+
     // 메뉴 아코디언 표시
     initAdminMenuAccordion_();
-    
+
   } catch (err) {
     console.error("왼쪽 메뉴 로딩 실패:", err);
     slot.innerHTML =
@@ -519,9 +525,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.addEventListener("click", (e) => {
     const logoutBtn = e.target.closest("#btn-logout, [data-action='logout']");
     if (!logoutBtn) return;
-  
+
     e.preventDefault();
-  
+
     if (confirm("로그아웃 하시겠습니까?")) {
       if (typeof window.cheeseAdminLogout === "function") {
         window.cheeseAdminLogout();
@@ -576,7 +582,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 let currentApprovalLineTarget = {
   idInputId: null,
   nameInputId: null,
-  previewContainerId: null, 
+  previewContainerId: null,
 };
 
 /**
@@ -594,7 +600,7 @@ function loadApprovalLineModal(rootId = 'approval-line-modal-root') {
     .then(html => {
       // ✅ 모달 내부 스크립트가 읽을 수 있게 전용 API 베이스를 다시 한번 보장
       window.CHEESE_APPROVAL_API_BASE = window.CHEESE_APPROVAL_API_BASE || CHEESE_APPROVAL_API_BASE;
-      
+
       container.innerHTML = html;
       executeApprovalLineModalScripts_(container); // ✅ 이 줄만 추가
       initApprovalLineModal(); // 모달 요소 생긴 뒤에 이벤트 세팅
@@ -672,17 +678,17 @@ function initApprovalLineModal() {
       const lineId = (document.getElementById('approval-line-selected-id')?.value || '').trim();
       const lineName = (document.getElementById('approval-line-selected-name')?.value || '').trim();
       const lineJson = (document.getElementById('approval-line-selected-json')?.value || '').trim();
-  
+
       if (!lineId || !lineName) {
         alert('결재선을 구성해 주세요.');
         return;
       }
-  
+
       const idEl = document.getElementById(currentApprovalLineTarget.idInputId);
       const nameEl = document.getElementById(currentApprovalLineTarget.nameInputId);
       if (idEl) idEl.value = lineId;
       if (nameEl) nameEl.value = lineName;
-  
+
       // (선택) 페이지에 JSON hidden이 있으면 같이 저장
       const jsonEl = document.getElementById('approvalLineJson');
       if (jsonEl) jsonEl.value = lineJson;
@@ -723,7 +729,7 @@ function initApprovalLineOpenButtons() {
         const targetName = this.getAttribute('data-approval-line-name');
         const targetPreview = this.getAttribute('data-approval-line-preview');
 
-        
+
         currentApprovalLineTarget.idInputId = targetId;
         currentApprovalLineTarget.nameInputId = targetName;
         currentApprovalLineTarget.previewContainerId = targetPreview;
@@ -808,7 +814,7 @@ function renderApprovalLinePreview(targetNameInputId, previewContainerId) {
 
 function chip_(label, name) {
   const safeLabel = escapeHtml_(label);
-  const safeName  = escapeHtml_(name || "");
+  const safeName = escapeHtml_(name || "");
   return `
     <span style="display:inline-flex;gap:6px;align-items:center;border:1px solid #e5e7eb;background:#f9fafb;border-radius:9999px;padding:6px 10px;font-size:12px;">
       <b style="font-weight:800;">${safeLabel}</b>
@@ -830,8 +836,8 @@ function arrow_() {
 
 // admin-common에 이미 escapeHtml이 있으면 이건 빼도 됨.
 // 없을 경우를 대비한 최소 구현
-function escapeHtml_(s){
-  return String(s).replace(/[&<>"']/g, (m)=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m]));
+function escapeHtml_(s) {
+  return String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
 }
 
 
@@ -880,7 +886,7 @@ function initAdminMenuAccordion_() {
         const g = document.querySelector(`.admin-side-group[data-group="${saved}"]`);
         if (g) g.open = true;
       }
-    } catch (e) {}
+    } catch (e) { }
   }
 
   // ✅ 여러 그룹 동시 open 허용 (다른 그룹을 닫는 로직 없음)
@@ -892,7 +898,7 @@ function initAdminMenuAccordion_() {
     summary.addEventListener('click', () => {
       setTimeout(() => {
         if (g.open) {
-          try { localStorage.setItem('cheese_admin_menu_open', g.dataset.group || ''); } catch (e) {}
+          try { localStorage.setItem('cheese_admin_menu_open', g.dataset.group || ''); } catch (e) { }
         }
       }, 0);
     });
@@ -1022,7 +1028,7 @@ function initAdminMenu(menuHost) {
 function initMenuGroups(menuHost) {
   const LS_KEY = 'cheeseAdmin.menuOpenGroups';
   let saved = [];
-  try { saved = JSON.parse(localStorage.getItem(LS_KEY) || '[]'); } catch (e) {}
+  try { saved = JSON.parse(localStorage.getItem(LS_KEY) || '[]'); } catch (e) { }
 
   const groups = Array.from(menuHost.querySelectorAll('details.admin-side-group[data-group]'));
 
@@ -1038,7 +1044,7 @@ function initMenuGroups(menuHost) {
         .map(x => x.getAttribute('data-group'))
         .filter(Boolean);
 
-      try { localStorage.setItem(LS_KEY, JSON.stringify(opened)); } catch (e) {}
+      try { localStorage.setItem(LS_KEY, JSON.stringify(opened)); } catch (e) { }
     });
   });
 }
@@ -1117,3 +1123,80 @@ document.addEventListener("click", (e) => {
   if (overlay) overlay.classList.remove("open", "is-open", "show");
 });
 
+
+/**
+ * ─────────────────────────────────────────────
+ * 🚀 [CUSTOM] Google Drive Integration Utilities
+ * ─────────────────────────────────────────────
+ */
+
+// GAS WebApp API Base (기존 CHEESE_ADMIN_API_BASE 활용 혹은 별도 정의)
+// window.CHEESE_ADMIN_API_BASE 는 index.html 에서 주입됨
+
+/**
+ * 구글 드라이브 파일 선택 (Picker) 혹은 업로드 후 ID 반환
+ * 이 시뮬레이션에서는 GAS와 연동하여 실제 업로드 처리를 수행하는 함수를 정의합니다.
+ */
+window.uploadFileToGoogleDrive = async function (file) {
+  if (!file) return null;
+
+  const apiBase = window.CHEESE_STORE_API_BASE || window.CHEESE_ADMIN_API_BASE;
+
+  if (!apiBase) {
+    alert("스토어 API 주소가 설정되지 않았습니다. admin-common.js 또는 index.html을 확인해주세요.");
+    return null;
+  }
+
+  // 로딩 시작
+  if (window.showAdminLoading) window.showAdminLoading("구글 드라이브에 파일을 업로드 중입니다...");
+
+  try {
+    // 파일을 Base64로 변환
+    const reader = new FileReader();
+    const base64Promise = new Promise((resolve, reject) => {
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = reject;
+    });
+    reader.readAsDataURL(file);
+
+    const base64Content = await base64Promise;
+
+    const payload = {
+      mode: "uploadStoreFile",
+      fileName: file.name,
+      mimeType: file.type,
+      base64Data: base64Content
+    };
+
+    const response = await fetch(apiBase, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+
+    const result = await response.json();
+
+    if (result.ok) {
+      // 구글 드라이브 공식 썸네일 서버 주소로 변환 (속도 및 깨짐 방지 최적화)
+      let finalUrl = result.downloadUrl;
+      const fileId = result.fileId;
+      if (file.type.startsWith('image/') && fileId) {
+        // sz=w1000 기본값으로 저장 (나중에 프론트에서 sz 값만 바꿔서 리사이징 가능)
+        finalUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`;
+      }
+
+      return {
+        fileId: fileId,
+        downloadUrl: finalUrl,
+        fileName: result.fileName
+      };
+    } else {
+      throw new Error(result.error || "업로드 실패");
+    }
+  } catch (err) {
+    console.error("Google Drive Upload Error:", err);
+    alert("구글 드라이브 업로드 중 오류가 발생했습니다: " + err.message);
+    return null;
+  } finally {
+    if (window.hideAdminLoading) window.hideAdminLoading();
+  }
+};
