@@ -871,37 +871,26 @@ function initAdminMenuAccordion_() {
   const groups = Array.from(document.querySelectorAll('.admin-side-group'));
   if (!groups.length) return;
 
-  // active 링크가 속한 그룹은 자동으로 펼침
-  const active = document.querySelector('.admin-side-link.active');
-  if (active) {
-    const g = active.closest('.admin-side-group');
-    if (g) g.open = true;
+  // 1) 모든 그룹을 일단 닫음 (혹시 HTML에 open이 남아있을 경우 대비)
+  groups.forEach(g => g.open = false);
+
+  // 2) active 링크가 속한 그룹만 찾아서 펼침
+  const activeLink = document.querySelector('.admin-side-link.is-active, .admin-side-link.active');
+  if (activeLink) {
+    const parentGroup = activeLink.closest('.admin-side-group');
+    if (parentGroup) {
+      parentGroup.open = true;
+    }
   }
 
-  // 마지막으로 열었던 그룹 복원 (active가 있으면 active 우선)
-  if (!active) {
-    try {
-      const saved = localStorage.getItem('cheese_admin_menu_open');
-      if (saved) {
-        const g = document.querySelector(`.admin-side-group[data-group="${saved}"]`);
-        if (g) g.open = true;
-      }
-    } catch (e) { }
-  }
-
-  // ✅ 여러 그룹 동시 open 허용 (다른 그룹을 닫는 로직 없음)
-  // 마지막으로 open된 그룹만 저장(옵션)
+  // 3) 클릭 시 상태 저장 로직 (선택 사항 - 새로고침 시 이전에 열었던 그룹 복원)
   groups.forEach(g => {
     const summary = g.querySelector('summary');
     if (!summary) return;
 
-    summary.addEventListener('click', () => {
-      setTimeout(() => {
-        if (g.open) {
-          try { localStorage.setItem('cheese_admin_menu_open', g.dataset.group || ''); } catch (e) { }
-        }
-      }, 0);
-    });
+    // <details>의 기본 동작(클릭 시 토글)을 유지하면서,
+    // 필요 시 추가적인 로직(예: 다른 그룹 닫기 등)을 넣을 수 있는 자리입니다.
+    // 현재는 "다시 눌렀을 때만 접히도록" 하는 기본 동작이 details의 특징이므로 그대로 둡니다.
   });
 }
 
