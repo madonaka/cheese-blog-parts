@@ -490,12 +490,20 @@ async function loadAdminMenu() {
  * 활성 메뉴 표시 함수
  ***********************/
 function highlightActiveMenu() {
-  const active = window.CHEESE_ADMIN_ACTIVE_PAGE; // 각 페이지에서 세팅
-  if (!active) return;
+  const active = window.CHEESE_ADMIN_ACTIVE_PAGE; // 각 페이지에서 명시적으로 세팅한 경우
+  const currentPath = window.location.pathname.toLowerCase();
+  const currentFile = currentPath.split('/').pop();
 
-  document.querySelectorAll(".admin-side-link").forEach((link) => {
+  document.querySelectorAll(".admin-side-link, .admin-side-summary--link").forEach((link) => {
     const page = link.dataset.page;
-    link.classList.toggle("active", page === active);
+    const href = (link.getAttribute('href') || link.getAttribute('data-href') || '').toLowerCase();
+    
+    // 조건 1: 명시적 active 설정 매칭
+    // 조건 2: href가 현재 파일명으로 끝남 (예: ./store_manage.html)
+    const isActive = (active && page === active) || (currentFile && href.endsWith(currentFile));
+    
+    link.classList.toggle("active", isActive);
+    link.classList.toggle("is-active", isActive);
   });
 }
 /***********************
@@ -874,14 +882,14 @@ function initAdminMenuAccordion_() {
   // 1) 모든 그룹을 일단 닫음 (혹시 HTML에 open이 남아있을 경우 대비)
   groups.forEach(g => g.open = false);
 
-  // 2) active 링크가 속한 그룹만 찾아서 펼침
-  const activeLink = document.querySelector('.admin-side-link.is-active, .admin-side-link.active');
-  if (activeLink) {
-    const parentGroup = activeLink.closest('.admin-side-group');
+  // 2) active/is-active 링크가 속한 모든 그룹을 찾아서 펼침
+  const activeLinks = document.querySelectorAll('.admin-side-link.is-active, .admin-side-link.active, .admin-side-summary--link.is-active');
+  activeLinks.forEach(link => {
+    const parentGroup = link.closest('.admin-side-group');
     if (parentGroup) {
       parentGroup.open = true;
     }
-  }
+  });
 
   // 3) 클릭 시 상태 저장 로직 (선택 사항 - 새로고침 시 이전에 열었던 그룹 복원)
   groups.forEach(g => {
