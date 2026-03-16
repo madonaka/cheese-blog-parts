@@ -228,6 +228,31 @@
             background: linear-gradient(135deg, #3b82f6, #1d4ed8);
             color: white;
         }
+
+        /* Listing Price Styles */
+        .admin-price-info {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .admin-orig-price {
+            font-size: 0.75rem;
+            color: #94a3b8;
+            text-decoration: line-through;
+        }
+
+        .admin-sale-price {
+            font-weight: 700;
+            color: #1e293b;
+        }
+
+        .admin-discount {
+            color: #ef4444;
+            font-weight: 800;
+            font-size: 0.75rem;
+            margin-right: 4px;
+        }
     </style>
 </head>
 
@@ -298,15 +323,19 @@
                 </div>
                 <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                     <div>
-                        <label>가격 (원)</label>
+                        <label>판매가 (할인 후 가격)</label>
                         <input type="number" id="prodPrice" class="form-control" required placeholder="0" />
                     </div>
                     <div>
-                        <label>배지/카테고리</label>
-                        <select id="prodBadge" class="form-control" required>
-                            <!-- 카테고리 목록이 동적으로 채워짐 -->
-                        </select>
+                        <label>원래 가격 (할인 전/선택)</label>
+                        <input type="number" id="prodOriginalPrice" class="form-control" placeholder="0" />
                     </div>
+                </div>
+                <div class="form-group">
+                    <label>배지/카테고리</label>
+                    <select id="prodBadge" class="form-control" required>
+                        <!-- 카테고리 목록이 동적으로 채워짐 -->
+                    </select>
                 </div>
                 <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                     <div>
@@ -346,6 +375,19 @@
                         </div>
                         <p id="uploadStatusText" style="font-size:0.75rem; color:#64748b; margin-top:5px;">파일을 업로드하는
                             중...</p>
+                    </div>
+                </div>
+                <div class="form-group" style="padding: 15px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; margin-bottom: 15px;">
+                    <label style="color: #64748b; font-weight: 700; margin-bottom: 10px; display: block;">⚖️ 구매 시 필수 동의 설정</label>
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; cursor: pointer; color: #1e293b;">
+                            <input type="checkbox" id="regRequiredAgreePrivacy" checked style="width: 16px; height: 16px;">
+                            <span>[필수] 개인정보 수집 및 이용 동의</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; cursor: pointer; color: #1e293b;">
+                            <input type="checkbox" id="regRequiredAgreeAge" checked style="width: 16px; height: 16px;">
+                            <span>[필수] 만 14세 이상 이용 동의</span>
+                        </label>
                     </div>
                 </div>
                 <div class="form-group">
@@ -417,12 +459,15 @@
                     const data = docSnap.data();
                     document.getElementById('prodTitle').value = data.title;
                     document.getElementById('prodPrice').value = data.price;
+                    document.getElementById('prodOriginalPrice').value = data.original_price || "";
                     document.getElementById('prodBadge').value = data.badge_text || "";
                     document.getElementById('prodIcon').value = data.icon || "🧀";
                     document.getElementById('prodGradient').value = data.gradient_class || "gradient-gold";
                     document.getElementById('prodDesc').value = data.description || "";
                     document.getElementById('prodDownloadUrl').value = data.download_url || "";
                     document.getElementById('prodImageUrl').value = data.image_url || "";
+                    document.getElementById('regRequiredAgreePrivacy').checked = data.required_agree_privacy !== false; // 기본값 true
+                    document.getElementById('regRequiredAgreeAge').checked = data.required_agree_age !== false; // 기본값 true
 
                     // 미리보기 업데이트
                     const preview = document.getElementById('modalIconPreview');
@@ -543,7 +588,19 @@
               </td>
               <td><strong>${it.title}</strong></td>
               <td><span class="badge-pill">${it.badge_text || 'Premium'}</span></td>
-              <td>${Number(it.price).toLocaleString()}원</td>
+              <td>
+                <div class="admin-price-info">
+                  ${it.original_price && it.original_price > it.price ? `
+                    <span class="admin-orig-price">${Number(it.original_price).toLocaleString()}원</span>
+                    <div style="display: flex; align-items: center;">
+                      <span class="admin-discount">${Math.round(((it.original_price - it.price) / it.original_price) * 100)}%</span>
+                      <span class="admin-sale-price">${Number(it.price).toLocaleString()}원</span>
+                    </div>
+                  ` : `
+                    <span class="admin-sale-price">${Number(it.price).toLocaleString()}원</span>
+                  `}
+                </div>
+              </td>
               <td class="actions-cell">
                 <button class="btn-edit" onclick="window.openEditModal('${id}')">수정</button>
                 <button class="btn-delete" onclick="window.deleteProduct('${id}')">삭제</button>
@@ -603,12 +660,15 @@
                 const payload = {
                     title: document.getElementById('prodTitle').value,
                     price: Number(document.getElementById('prodPrice').value),
+                    original_price: document.getElementById('prodOriginalPrice').value ? Number(document.getElementById('prodOriginalPrice').value) : null,
                     badge_text: document.getElementById('prodBadge').value,
                     icon: document.getElementById('prodIcon').value,
                     gradient_class: document.getElementById('prodGradient').value,
                     description: document.getElementById('prodDesc').value,
                     download_url: downloadUrl,
                     image_url: imageUrl,
+                    required_agree_privacy: document.getElementById('regRequiredAgreePrivacy').checked,
+                    required_agree_age: document.getElementById('regRequiredAgreeAge').checked,
                     updatedAt: serverTimestamp()
                 };
 

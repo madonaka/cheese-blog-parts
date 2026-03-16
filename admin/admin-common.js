@@ -842,8 +842,6 @@ function arrow_() {
   return `<span style="color:#9ca3af;">→</span>`;
 }
 
-// admin-common에 이미 escapeHtml이 있으면 이건 빼도 됨.
-// 없을 경우를 대비한 최소 구현
 function escapeHtml_(s) {
   return String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
 }
@@ -1196,4 +1194,41 @@ window.uploadFileToGoogleDrive = async function (file) {
   } finally {
     if (window.hideAdminLoading) window.hideAdminLoading();
   }
+};
+
+/**
+ * ─────────────────────────────────────────────
+ * ⏰ [KST] Korean Standard Time Utilities
+ * ─────────────────────────────────────────────
+ */
+
+/**
+ * 한국 시간(KST) 기준 'YYYY-MM-DD' 날짜 문자열 반환
+ */
+window.getKSTDateString = function(date) {
+  let target;
+  if (date && typeof date.toDate === 'function') target = date.toDate();
+  else if (date instanceof Date) target = date;
+  else if (date) target = new Date(date);
+  else target = new Date();
+
+  if (isNaN(target.getTime())) target = new Date();
+
+  const kstOffset = 9 * 60 * 60 * 1000;
+  const kstDate = new Date(target.getTime() + (target.getTimezoneOffset() * 60000) + kstOffset);
+  return kstDate.toISOString().split('T')[0];
+};
+
+window.getKSTDateTimeString = function(date) {
+  let target;
+  if (date && typeof date.toDate === 'function') target = date.toDate();
+  else if (date instanceof Date) target = date;
+  else if (date) target = new Date(date);
+  else target = new Date();
+
+  if (isNaN(target.getTime())) target = new Date();
+
+  const kstOffset = 9 * 60 * 60 * 1000;
+  const kstDate = new Date(target.getTime() + (target.getTimezoneOffset() * 60000) + kstOffset);
+  return kstDate.toISOString().replace('T', ' ').split('.')[0];
 };

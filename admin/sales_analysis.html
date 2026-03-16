@@ -205,18 +205,58 @@
                     <p style="font-size: 0.85rem; color: #64748b;">스토어의 매출 현황과 인기 상품을 실시간으로 분석합니다.</p>
                 </div>
 
+                <!-- Filter Section -->
+                <div class="filter-section" style="background: #fff; padding: 20px; border-radius: 16px; border: 1px solid #f1f5f9; margin-bottom: 25px; display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 0.85rem; font-weight: 700; color: #64748b;">기간 설정:</span>
+                        <input type="date" id="start-date" style="padding: 8px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.85rem;">
+                        <span style="color: #94a3b8;">~</span>
+                        <input type="date" id="end-date" style="padding: 8px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.85rem;">
+                    </div>
+                    <div style="display: flex; gap: 5px;">
+                        <button id="btn-period-today" class="period-btn" style="padding: 6px 12px; border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-weight: 600;">오늘</button>
+                        <button id="btn-period-7d" class="period-btn" style="padding: 6px 12px; border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-weight: 600;">최근 7일</button>
+                        <button id="btn-period-30d" class="period-btn" style="padding: 6px 12px; border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-weight: 600;">최근 30일</button>
+                        <button id="btn-period-thisMonth" class="period-btn" style="padding: 6px 12px; border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-weight: 600;">이번 달</button>
+                    </div>
+                    <button id="btn-apply-filter" style="padding: 8px 20px; background: #3b82f6; color: white; border: none; border-radius: 8px; font-size: 0.85rem; font-weight: 700; cursor: pointer; margin-left: auto;">검색 적용</button>
+                </div>
+
                 <!-- Analysis Stats -->
                 <div class="analysis-grid">
-                    <div class="analysis-card">
+                    <div class="analysis-card" style="background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);">
                         <div class="card-label">
-                            💰 총 누적 매출
+                            💎 회원 매출
                             <div class="tooltip-icon">?
-                                <div class="tooltip-text">스토어 런칭 이후 발생한 전체 결제 금액입니다. 비즈니스의 전체 규모를 파악할 수 있습니다.</div>
+                                <div class="tooltip-text">회원 자격으로 로그인한 상태에서 결제된 총 금액입니다.</div>
                             </div>
                         </div>
-                        <div class="card-value" id="stat-revenue">0원</div>
-                        <div class="card-trend trend-up">▲ 실시간 집계 중</div>
+                        <div class="card-value" id="stat-member-revenue" style="color: #3b82f6;">0원</div>
+                        <div class="card-trend" id="stat-member-count">0건</div>
                     </div>
+                    <div class="analysis-card" style="background: linear-gradient(135deg, #ffffff 0%, #fefce8 100%);">
+                        <div class="card-label">
+                            👤 비회원 매출
+                            <div class="tooltip-icon">?
+                                <div class="tooltip-text">비회원으로 결제된 금액입니다. (회원 전환 후에도 이 지표는 비회원 시점에 발생한 것으로 유지됩니다)</div>
+                            </div>
+                        </div>
+                        <div class="card-value" id="stat-guest-revenue" style="color: #f59e0b;">0원</div>
+                        <div class="card-trend" id="stat-guest-count">0건</div>
+                    </div>
+                    <div class="analysis-card" style="background: linear-gradient(135deg, #1e293b 0%, #334155 100%); color: white; border: none;">
+                        <div class="card-label" style="color: rgba(255,255,255,0.8);">
+                            💰 총 누적 매출
+                            <div class="tooltip-icon" style="background: rgba(255,255,255,0.2); color: white;">?
+                                <div class="tooltip-text">회원 및 비회원 매출을 모두 합산한 전체 결제 금액입니다.</div>
+                            </div>
+                        </div>
+                        <div class="card-value" id="stat-revenue" style="color: #fff;">0원</div>
+                        <div class="card-trend" style="color: rgba(255,255,255,0.7);">회원 + 비회원 합산</div>
+                    </div>
+                </div>
+
+                <div class="analysis-grid" style="margin-top: -10px;">
                     <div class="analysis-card">
                         <div class="card-label">
                             📦 총 주문 건수
@@ -369,73 +409,182 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
-
         let salesChart = null;
         let monthlyChart = null;
         let hourlyChart = null;
         let referrerChart = null;
 
+        let allOrdersGlobal = [];
+        let allLogsGlobal = [];
+
         async function initAnalysis() {
             try {
-                // 주문 데이터 로드
+                // 1. 회원 주문 데이터 로드 (orders)
                 const ordersSnapshot = await getDocs(collection(db, "orders"));
-                const orders = [];
+                const memberColOrders = [];
                 ordersSnapshot.forEach(doc => {
                     const data = doc.data();
-                    orders.push({ id: doc.id, ...data });
+                    memberColOrders.push({ id: doc.id, ...data });
                 });
 
-                // 로그 데이터 로드 (유입 경로 분석용)
+                // 2. 비회원 주문 데이터 로드 (guest_orders)
+                const guestOrdersSnapshot = await getDocs(collection(db, "guest_orders"));
+                const guestColOrders = [];
+                guestOrdersSnapshot.forEach(doc => {
+                    const data = doc.data();
+                    guestColOrders.push({ id: doc.id, is_guest_exclusive: true, ...data });
+                });
+
+                // 3. 통합 데이터 생성
+                allOrdersGlobal = [...memberColOrders, ...guestColOrders];
+
+                // 4. 로그 데이터 로드 (유입 경로 분석용)
                 const logsSnapshot = await getDocs(query(collection(db, "logs"), orderBy("timestamp", "desc"), limit(500)));
-                const logs = [];
+                allLogsGlobal = [];
                 logsSnapshot.forEach(doc => {
-                    logs.push(doc.data());
+                    allLogsGlobal.push(doc.data());
                 });
 
-                calculateStats(orders);
-                renderSalesChart(orders);
-                renderMonthlyChart(orders);
-                renderHourlyChart(orders);
-                renderReferrerChart(logs);
-                renderEntranceAnalysis(logs);
-                renderTopProducts(orders);
-                renderRecentOrders(orders);
+                // 초기 기간 설정 및 적용 (최근 30일)
+                setPeriod('30d');
+                applyFilter();
+                
             } catch (err) {
                 console.error("Analysis Error:", err);
             }
         }
 
-        function calculateStats(orders) {
-            const totalRevenue = orders.reduce((sum, o) => sum + (Number(o.price) || 0), 0);
-            const totalOrders = orders.length;
-            const avgPrice = totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0;
+        // 특정 기간(오늘, 7일, 30일) 자동 설정 (getKSTDateString 사용)
+        window.setPeriod = function(type) {
+            const end = new Date();
+            const start = new Date();
+            
+            if (type === 'today') {
+                start.setHours(0, 0, 0, 0);
+            } else if (type === '7d') {
+                start.setDate(end.getDate() - 7);
+            } else if (type === '30d') {
+                start.setDate(end.getDate() - 30);
+            } else if (type === 'thisMonth') {
+                start.setDate(1);
+                start.setHours(0, 0, 0, 0);
+            }
+
+            document.getElementById('start-date').value = getKSTDateString(start);
+            document.getElementById('end-date').value = getKSTDateString(end);
+            
+            // 버튼들 스타일 갱신
+            document.querySelectorAll('.period-btn').forEach(btn => {
+                const btnType = btn.id.replace('btn-period-', '');
+                btn.style.background = btnType === type ? '#e2e8f0' : '#f8fafc';
+                btn.style.borderColor = btnType === type ? '#cbd5e1' : '#e2e8f0';
+            });
+            applyFilter();
+        };
+
+        window.applyFilter = function() {
+            const startDate = document.getElementById('start-date').value;
+            const endDate = document.getElementById('end-date').value;
+
+            // 주문 필터링 (한국 시간 기준)
+            const filteredOrders = allOrdersGlobal.filter(o => {
+                const dateRaw = o.created_at || o.timestamp;
+                if (!dateRaw) return false;
+                const d = dateRaw.toDate();
+                const dStr = getKSTDateString(d); // 공통 KST 변환 사용
+                if (startDate && dStr < startDate) return false;
+                if (endDate && dStr > endDate) return false;
+                return true;
+            });
+
+            // 로그 필터링 (한국 시간 기준)
+            const filteredLogs = allLogsGlobal.filter(log => {
+                if (!log.timestamp) return false;
+                const d = log.timestamp.toDate();
+                const dStr = getKSTDateString(d);
+                if (startDate && dStr < startDate) return false;
+                if (endDate && dStr > endDate) return false;
+                return true;
+            });
+
+            // 회원 vs 비회원 재분류
+            const nonMemberOrders = filteredOrders.filter(o => 
+                o.is_guest_exclusive === true || 
+                o.imported_from_guest === true || 
+                o.is_guest === true
+            );
+            const memberOrders = filteredOrders.filter(o => !nonMemberOrders.includes(o));
+
+            calculateStats(filteredOrders, memberOrders, nonMemberOrders);
+            renderSalesChart(filteredOrders, startDate, endDate);
+            renderMonthlyChart(filteredOrders);
+            renderHourlyChart(filteredOrders);
+            renderReferrerChart(filteredLogs);
+            renderEntranceAnalysis(filteredLogs);
+            renderTopProducts(filteredOrders);
+            renderRecentOrders(filteredOrders);
+        }
+
+        // 이벤트 리스너 등록
+        document.addEventListener('DOMContentLoaded', () => {
+            const btnToday = document.getElementById('btn-period-today');
+            const btn7d = document.getElementById('btn-period-7d');
+            const btn30d = document.getElementById('btn-period-30d');
+            const btnMonth = document.getElementById('btn-period-thisMonth');
+            const btnApply = document.getElementById('btn-apply-filter');
+
+            if(btnToday) btnToday.onclick = () => { setPeriod('today'); applyFilter(); };
+            if(btn7d) btn7d.onclick = () => { setPeriod('7d'); applyFilter(); };
+            if(btn30d) btn30d.onclick = () => { setPeriod('30d'); applyFilter(); };
+            if(btnMonth) btnMonth.onclick = () => { setPeriod('thisMonth'); applyFilter(); };
+            if(btnApply) btnApply.onclick = applyFilter;
+        });
+
+        function calculateStats(allOrders, memberOrders, nonMemberOrders) {
+            const totalRevenue = allOrders.reduce((sum, o) => sum + (Number(o.price) || 0), 0);
+            const memberRevenue = memberOrders.reduce((sum, o) => sum + (Number(o.price) || 0), 0);
+            const guestRevenue = nonMemberOrders.reduce((sum, o) => sum + (Number(o.price) || 0), 0);
+            
+            const totalOrdersCount = allOrders.length;
+            const avgPrice = totalOrdersCount > 0 ? Math.round(totalRevenue / totalOrdersCount) : 0;
 
             const now = new Date();
             const thisMonth = now.getMonth();
             const thisYear = now.getFullYear();
             
-            const monthRevenue = orders.filter(o => {
+            const monthRevenue = allOrders.filter(o => {
                 if (!o.created_at) return false;
                 const d = o.created_at.toDate();
                 return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
             }).reduce((sum, o) => sum + (Number(o.price) || 0), 0);
 
             document.getElementById('stat-revenue').innerText = totalRevenue.toLocaleString() + '원';
-            document.getElementById('stat-orders').innerText = totalOrders.toLocaleString() + '건';
+            document.getElementById('stat-member-revenue').innerText = memberRevenue.toLocaleString() + '원';
+            document.getElementById('stat-guest-revenue').innerText = guestRevenue.toLocaleString() + '원';
+            
+            const mCountEl = document.getElementById('stat-member-count');
+            const gCountEl = document.getElementById('stat-guest-count');
+            if(mCountEl) mCountEl.innerText = `${memberOrders.length}건`;
+            if(gCountEl) gCountEl.innerText = `${nonMemberOrders.length}건`;
+            
+            document.getElementById('stat-orders').innerText = totalOrdersCount.toLocaleString() + '건';
             document.getElementById('stat-avg').innerText = avgPrice.toLocaleString() + '원';
             document.getElementById('stat-month-revenue').innerText = monthRevenue.toLocaleString() + '원';
-            document.getElementById('stat-month-label').innerText = `${thisMonth + 1}월 결제액 기준`;
+            document.getElementById('stat-month-label').innerText = `총 매출 대비 이번 달 결제액`;
         }
 
-        function renderSalesChart(orders) {
-            const last7Days = [];
-            for (let i = 6; i >= 0; i--) {
-                const d = new Date();
-                d.setDate(d.getDate() - i);
-                last7Days.push(d.toISOString().split('T')[0]);
+        function renderSalesChart(orders, start, end) {
+            const dateRange = [];
+            let curr = new Date(start);
+            const last = new Date(end);
+            
+            // 최대 90일까지만 일별 표시
+            while (curr <= last && dateRange.length < 90) {
+                dateRange.push(curr.toISOString().split('T')[0]);
+                curr.setDate(curr.getDate() + 1);
             }
 
-            const dailySales = last7Days.map(date => {
+            const dailySales = dateRange.map(date => {
                 const dayTotal = orders.filter(o => {
                     if (!o.created_at) return false;
                     return o.created_at.toDate().toISOString().split('T')[0] === date;
@@ -449,7 +598,7 @@
             salesChart = new Chart(ctx, {
                 type: 'line',
                 data: {
-                    labels: last7Days.map(d => d.slice(5)), // MM-DD format
+                    labels: dateRange.map(d => d.slice(5)), // MM-DD format
                     datasets: [{
                         label: '일일 매출액 (원)',
                         data: dailySales,
@@ -675,10 +824,18 @@
 
             tbody.innerHTML = sorted.map(o => {
                 const dateStr = o.created_at ? new Date(o.created_at.toDate()).toLocaleString() : '-';
+                const isGuest = o.imported_from_guest || o.is_guest_exclusive || o.is_guest;
+                const typeBadge = isGuest 
+                    ? '<span class="status-badge" style="background:#fefce8; color:#854d0e; margin-left:5px;">비회원</span>' 
+                    : '<span class="status-badge" style="background:#eff6ff; color:#1e40af; margin-left:5px;">회원</span>';
+                
                 return `
                     <tr>
                         <td><span style="font-size: 0.85rem; color: #64748b;">${dateStr}</span></td>
-                        <td style="font-weight: 700;">${o.title}</td>
+                        <td style="font-weight: 700;">
+                            ${o.title}
+                            ${typeBadge}
+                        </td>
                         <td style="font-weight: 800;">${(Number(o.price) || 0).toLocaleString()}원</td>
                         <td><span class="status-badge status-completed">결제완료</span></td>
                         <td><span style="font-size: 0.75rem; color: #94a3b8; font-family: monospace;">${o.id.slice(0, 8)}...</span></td>
