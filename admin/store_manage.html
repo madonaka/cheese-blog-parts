@@ -352,10 +352,32 @@
                         </select>
                     </div>
                 </div>
+                <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <div>
+                        <label>파일 형식 (예: PDF, EPUB)</label>
+                        <input type="text" id="prodFileFormat" class="form-control" placeholder="PDF" />
+                    </div>
+                    <div>
+                        <label>파일 용량 (예: 15.4 MB)</label>
+                        <input type="text" id="prodFileSize" class="form-control" placeholder="0 MB" />
+                    </div>
+                </div>
                 <div class="form-group">
                     <label>상세 설명</label>
                     <textarea id="prodDesc" class="form-control" style="height: 100px;"
                         placeholder="상품에 대한 상세 히스토리를 입력하세요."></textarea>
+                </div>
+
+                <!-- Digital License Options Management -->
+                <div class="form-group" style="padding: 15px; background: #fdf2f2; border: 1px solid #fecaca; border-radius: 12px; margin-bottom: 15px;">
+                    <label style="color: #991b1b; font-weight: 800; display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <span>📋 라이선스 옵션 관리 (Digital Only)</span>
+                        <button type="button" onclick="window.addLicenseOptionRow()" style="background: #ef4444; color: white; border: none; padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; cursor: pointer;">＋ 옵션 추가</button>
+                    </label>
+                    <div id="licenseOptionsList" style="display: flex; flex-direction: column; gap: 10px;">
+                        <!-- JS로 동적 추가됨 -->
+                    </div>
+                    <p style="font-size: 0.7rem; color: #b91c1c; margin-top: 10px;">※ 지정하지 않으면 기본 라이선스(Basic/Premium)가 자동 적용됩니다.</p>
                 </div>
                 <div class="form-group"
                     style="padding: 15px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 12px; margin-bottom: 15px;">
@@ -449,14 +471,13 @@
 
         // 전역 노출 (버튼 등에서 접근용)
         window.openEditModal = async (id) => {
-            document.getElementById('editProductId').value = id;
-            document.getElementById('modalTitle').innerText = "상품 정보 수정";
-
             try {
                 const docRef = doc(db, "products", id);
                 const docSnap = await getDoc(docRef);
                 if (docSnap.exists()) {
                     const data = docSnap.data();
+                    document.getElementById('editProductId').value = id;
+                    document.getElementById('modalTitle').innerText = "상품 정보 수정";
                     document.getElementById('prodTitle').value = data.title;
                     document.getElementById('prodPrice').value = data.price;
                     document.getElementById('prodOriginalPrice').value = data.original_price || "";
@@ -466,8 +487,17 @@
                     document.getElementById('prodDesc').value = data.description || "";
                     document.getElementById('prodDownloadUrl').value = data.download_url || "";
                     document.getElementById('prodImageUrl').value = data.image_url || "";
-                    document.getElementById('regRequiredAgreePrivacy').checked = data.required_agree_privacy !== false; // 기본값 true
-                    document.getElementById('regRequiredAgreeAge').checked = data.required_agree_age !== false; // 기본값 true
+                    document.getElementById('prodFileFormat').value = data.file_format || "";
+                    document.getElementById('prodFileSize').value = data.file_size || "";
+                    document.getElementById('regRequiredAgreePrivacy').checked = data.required_agree_privacy !== false;
+                    document.getElementById('regRequiredAgreeAge').checked = data.required_agree_age !== false;
+
+                    // 라이선스 옵션 초기화
+                    const listContainer = document.getElementById('licenseOptionsList');
+                    listContainer.innerHTML = "";
+                    if (data.license_options && data.license_options.length > 0) {
+                        data.license_options.forEach(opt => window.addLicenseOptionRow(opt));
+                    }
 
                     // 미리보기 업데이트
                     const preview = document.getElementById('modalIconPreview');
@@ -477,6 +507,7 @@
                     document.getElementById('productModal').classList.add('show');
                 }
             } catch (err) {
+                console.error(err);
                 alert("정보를 가져오는데 실패했습니다.");
             }
         };
@@ -657,6 +688,21 @@
                     }
                 }
 
+                // 라이선스 옵션 데이터 추출
+                const licenseRows = document.querySelectorAll('.license-option-row');
+                const licenseOptions = [];
+                licenseRows.forEach(row => {
+                    licenseOptions.push({
+                        id: row.dataset.id || Math.random().toString(36).substr(2, 9),
+                        name: row.querySelector('.opt-name').value || 'New License',
+                        meta: row.querySelector('.opt-meta').value || 'Benefits...',
+                        price: Number(row.querySelector('.opt-price').value || 0),
+                        memberPrice: Number(row.querySelector('.opt-member-price').value || 0),
+                        max_downloads: Number(row.querySelector('.opt-max-dl').value || 1),
+                        expiry_days: Number(row.querySelector('.opt-expiry').value || 7)
+                    });
+                });
+
                 const payload = {
                     title: document.getElementById('prodTitle').value,
                     price: Number(document.getElementById('prodPrice').value),
@@ -667,6 +713,9 @@
                     description: document.getElementById('prodDesc').value,
                     download_url: downloadUrl,
                     image_url: imageUrl,
+                    file_format: document.getElementById('prodFileFormat').value,
+                    file_size: document.getElementById('prodFileSize').value,
+                    license_options: licenseOptions,
                     required_agree_privacy: document.getElementById('regRequiredAgreePrivacy').checked,
                     required_agree_age: document.getElementById('regRequiredAgreeAge').checked,
                     updatedAt: serverTimestamp()
@@ -711,6 +760,7 @@
             document.getElementById('productForm').reset();
             document.getElementById('editProductId').value = "";
             document.getElementById('modalTitle').innerText = "새 상품 등록";
+            document.getElementById('licenseOptionsList').innerHTML = ""; // 초기화
 
             // 미리보기 초기화
             previewEl.innerText = "🧀";
@@ -718,6 +768,32 @@
 
             document.getElementById('productModal').classList.add('show');
         }
+
+        window.addLicenseOptionRow = (data = null) => {
+            const container = document.getElementById('licenseOptionsList');
+            const rowId = data ? data.id : Math.random().toString(36).substr(2, 9);
+            const div = document.createElement('div');
+            div.className = 'license-option-row';
+            div.dataset.id = rowId;
+            div.style = "background: white; padding: 12px; border-radius: 10px; border: 1px solid #fee2e2; display: flex; flex-direction: column; gap: 8px;";
+            
+            div.innerHTML = `
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" class="form-control opt-name" placeholder="라이선스명" value="${data ? data.name : ''}" style="flex: 1; height: 32px; font-size: 0.8rem;">
+                    <button type="button" onclick="this.closest('.license-option-row').remove()" style="background: none; border: none; color: #ef4444; font-size: 1.2rem; cursor: pointer;">&times;</button>
+                </div>
+                <input type="text" class="form-control opt-meta" placeholder="혜택 설명 (예: 다운로드 1회 / 3일간)" value="${data ? data.meta : ''}" style="height: 32px; font-size: 0.8rem;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                    <div style="font-size: 0.7rem; color: #64748b;">일반가: <input type="number" class="opt-price" value="${data ? data.price : 0}" style="width: 100%; padding: 4px; border: 1px solid #ddd; border-radius: 4px;"></div>
+                    <div style="font-size: 0.7rem; color: #64748b;">회원가: <input type="number" class="opt-member-price" value="${data ? data.memberPrice : 0}" style="width: 100%; padding: 4px; border: 1px solid #ddd; border-radius: 4px;"></div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                    <div style="font-size: 0.7rem; color: #64748b;">다운로드: <input type="number" class="opt-max-dl" value="${data ? data.max_downloads : 1}" style="width: 100%; padding: 4px; border: 1px solid #ddd; border-radius: 4px;"></div>
+                    <div style="font-size: 0.7rem; color: #64748b;">기간(일): <input type="number" class="opt-expiry" value="${data ? data.expiry_days : 7}" style="width: 100%; padding: 4px; border: 1px solid #ddd; border-radius: 4px;"></div>
+                </div>
+            `;
+            container.appendChild(div);
+        };
         function closeProductModal() {
             document.getElementById('productModal').classList.remove('show');
         }
