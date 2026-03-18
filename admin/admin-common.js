@@ -1232,3 +1232,21 @@ window.getKSTDateTimeString = function(date) {
   const kstDate = new Date(target.getTime() + (target.getTimezoneOffset() * 60000) + kstOffset);
   return kstDate.toISOString().replace('T', ' ').split('.')[0];
 };
+
+/* =========================================
+   모바일 강제 확대 방지 (Pinch-to-zoom & Double-tap zoom)
+   ========================================= */
+document.addEventListener('touchstart', function (event) {
+  if (event.touches.length > 1) {
+    event.preventDefault();
+  }
+}, { passive: false });
+
+let lastTouchEnd_ = 0;
+document.addEventListener('touchend', function (event) {
+  const now = (new Date()).getTime();
+  if (now - lastTouchEnd_ <= 300) {
+    event.preventDefault();
+  }
+  lastTouchEnd_ = now;
+}, false);
