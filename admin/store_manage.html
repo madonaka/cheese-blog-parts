@@ -270,6 +270,7 @@
                         <p style="font-size: 0.85rem; color: #64748b;">치즈 히스토리 스토어의 상품을 추가하고 수정합니다.</p>
                     </div>
                     <div style="display: flex; gap: 10px;">
+                        <button class="btn-cancel" onclick="openGlobalLicenseModal()" style="background: #fff; border: 1px solid #cbd5e1;">📜 기본 라이선스 설정</button>
                         <button class="btn-cancel" onclick="openCategoryModal()" style="background: #fff; border: 1px solid #cbd5e1;">📁 카테고리 관리</button>
                         <button class="btn-submit" onclick="openProductModal()">＋ 새 상품 등록</button>
                     </div>
@@ -447,12 +448,40 @@
     </div>
 
 
+    <!-- Global License Management Modal -->
+    <div class="modal-overlay" id="globalLicenseModal">
+        <div class="modal-card">
+            <div class="modal-card-header">
+                <h3 class="modal-card-title">기본 라이선스 설정</h3>
+                <button onclick="closeGlobalLicenseModal()"
+                    style="background:none; border:none; font-size:1.5rem; cursor:pointer;">&times;</button>
+            </div>
+            <p style="font-size: 0.85rem; color: #64748b; margin-bottom: 1.5rem;">상품에 라이선스 옵션을 따로 지정하지 않았을 때 적용되는 기본값입니다.</p>
+            
+            <div class="form-group" style="padding: 15px; background: #fdf2f2; border: 1px solid #fecaca; border-radius: 12px; margin-bottom: 15px;">
+                <label style="color: #991b1b; font-weight: 800; display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <span>📋 기본 옵션 목록</span>
+                    <button type="button" onclick="window.addGlobalLicenseOptionRow()" style="background: #ef4444; color: white; border: none; padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; cursor: pointer;">＋ 옵션 추가</button>
+                </label>
+                <div id="globalLicenseOptionsList" style="display: flex; flex-direction: column; gap: 10px;">
+                    <!-- JS로 동적 추가됨 -->
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button type="button" class="btn-cancel" onclick="closeGlobalLicenseModal()">취소</button>
+                <button type="button" class="btn-submit" id="saveGlobalLicenseBtn">설정 저장</button>
+            </div>
+        </div>
+    </div>
+
+
     <script src="./admin-common.js"></script>
 
     <!-- Firebase SDK -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         // Firebase Storage 대신 Google Drive (via GAS)를 사용하므로 Storage import 제거
 
@@ -651,6 +680,7 @@
             if (window.renderAdminMenu) window.renderAdminMenu({ mountId: 'admin-menu-slot', active: 'store_manage' });
             loadCategories();
             loadProducts();
+            loadGlobalLicenses(); // 추가
         });
 
         // 폼 제출 처리
@@ -740,6 +770,93 @@
             }
         });
 
+        // --- [추가] 전역 라이선스 관리 로직 ---
+        let globalLicenses = [];
+
+        async function loadGlobalLicenses() {
+            try {
+                const docRef = doc(db, "settings", "global_license");
+                const docSnap = await getDoc(docRef);
+                if (docSnap.exists()) {
+                    globalLicenses = docSnap.data().options || [];
+                } else {
+                    // 기본값 (Basic/Premium 예시)
+                    globalLicenses = [
+                        { id: 'default-basic', name: 'Basic License', meta: '개인 소장용 / 재배포 금지', price: 0, memberPrice: 0, max_downloads: 1, expiry_days: 7 },
+                        { id: 'default-premium', name: 'Premium License', meta: '상업적 이용 가능 / 워터마크 제거', price: 5000, memberPrice: 3000, max_downloads: 10, expiry_days: 30 }
+                    ];
+                }
+            } catch (err) {
+                console.error("Global License Load Error:", err);
+            }
+        }
+
+        window.openGlobalLicenseModal = () => {
+            const listContainer = document.getElementById('globalLicenseOptionsList');
+            listContainer.innerHTML = "";
+            globalLicenses.forEach(opt => window.addGlobalLicenseOptionRow(opt));
+            document.getElementById('globalLicenseModal').classList.add('show');
+        };
+
+        window.closeGlobalLicenseModal = () => {
+            document.getElementById('globalLicenseModal').classList.remove('show');
+        };
+
+        window.addGlobalLicenseOptionRow = (data = null) => {
+            const container = document.getElementById('globalLicenseOptionsList');
+            const rowId = data ? data.id : Math.random().toString(36).substr(2, 9);
+            const div = document.createElement('div');
+            div.className = 'global-license-option-row';
+            div.dataset.id = rowId;
+            div.style = "background: white; padding: 12px; border-radius: 10px; border: 1px solid #fee2e2; display: flex; flex-direction: column; gap: 8px;";
+            
+            div.innerHTML = `
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" class="form-control opt-name" placeholder="라이선스명" value="${data ? data.name : ''}" style="flex: 1; height: 32px; font-size: 0.8rem;">
+                    <button type="button" onclick="this.closest('.global-license-option-row').remove()" style="background: none; border: none; color: #ef4444; font-size: 1.2rem; cursor: pointer;">&times;</button>
+                </div>
+                <input type="text" class="form-control opt-meta" placeholder="혜택 설명" value="${data ? data.meta : ''}" style="height: 32px; font-size: 0.8rem;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                    <div style="font-size: 0.7rem; color: #64748b;">일반가: <input type="number" class="opt-price" value="${data ? data.price : 0}" style="width: 100%; padding: 4px; border: 1px solid #ddd; border-radius: 4px;"></div>
+                    <div style="font-size: 0.7rem; color: #64748b;">회원가: <input type="number" class="opt-member-price" value="${data ? data.memberPrice : 0}" style="width: 100%; padding: 4px; border: 1px solid #ddd; border-radius: 4px;"></div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                    <div style="font-size: 0.7rem; color: #64748b;">다운로드: <input type="number" class="opt-max-dl" value="${data ? data.max_downloads : 1}" style="width: 100%; padding: 4px; border: 1px solid #ddd; border-radius: 4px;"></div>
+                    <div style="font-size: 0.7rem; color: #64748b;">기간(일): <input type="number" class="opt-expiry" value="${data ? data.expiry_days : 7}" style="width: 100%; padding: 4px; border: 1px solid #ddd; border-radius: 4px;"></div>
+                </div>
+            `;
+            container.appendChild(div);
+        };
+
+        document.getElementById('saveGlobalLicenseBtn').onclick = async () => {
+            const rows = document.querySelectorAll('.global-license-option-row');
+            const options = [];
+            rows.forEach(row => {
+                options.push({
+                    id: row.dataset.id,
+                    name: row.querySelector('.opt-name').value || 'New License',
+                    meta: row.querySelector('.opt-meta').value || '',
+                    price: Number(row.querySelector('.opt-price').value || 0),
+                    memberPrice: Number(row.querySelector('.opt-member-price').value || 0),
+                    max_downloads: Number(row.querySelector('.opt-max-dl').value || 1),
+                    expiry_days: Number(row.querySelector('.opt-expiry').value || 7)
+                });
+            });
+
+            try {
+                await setDoc(doc(db, "settings", "global_license"), {
+                    options: options,
+                    updatedAt: serverTimestamp()
+                });
+                globalLicenses = options;
+                alert("기본 라이선스 설정이 저장되었습니다.");
+                window.closeGlobalLicenseModal();
+            } catch (err) {
+                alert("저장 중 오류 발생: " + err.message);
+            }
+        };
+
+        // ------------------------------------
     </script>
 
     <script>
