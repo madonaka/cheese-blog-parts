@@ -139,13 +139,20 @@
           <button class="btn-bbs" style="background:#1a202c; color:#fff; border:none;" onclick="openModal()">+ 새 직원 등록</button>
         </div>
 
+        <!-- 검색 영역 -->
+        <div style="margin-bottom:20px; display:flex; gap:10px; background:#fff; padding:15px; border-radius:12px; border:1px solid #e2e8f0; box-shadow:0 2px 4px rgba(0,0,0,0.02);">
+          <div style="position:relative; flex:1;">
+            <span style="position:absolute; left:15px; top:50%; transform:translateY(-50%); color:#94a3b8;">🔍</span>
+            <input type="text" id="user-search" class="styled-input" style="padding-left:45px;" placeholder="이름, 사번, 아이디, 이메일로 검색..." onkeyup="filterUsers()">
+          </div>
+          <button class="btn-secondary" style="padding:0 20px; height:45px; border-radius:12px;" onclick="fetchUsers()">새로고침</button>
+        </div>
+
         <div id="sync-banner" style="display:none; background:#fffbeb; border:1px solid #fde68a; padding:15px 24px; border-radius:12px; margin-bottom:20px; align-items:center; justify-content:space-between; box-shadow:0 2px 4px rgba(0,0,0,0.02);">
           <div style="display:flex; align-items:center; gap:10px;">
             <span style="font-size:1.2rem;">⚠️</span>
-            <div>
-              <div style="font-weight:800; color:#92400e; font-size:0.9rem;">부서 데이터 구조 동기화 필요</div>
-              <p style="margin:0; font-size:0.75rem; color:#b45309;">기존 사원들의 부서 정보를 다중 부서 체계로 전환해야 부서 관리 페이지에 정상 노출됩니다.</p>
-            </div>
+              <div style="font-weight:800; color:#92400e; font-size:0.9rem;">비밀번호 및 조직 데이터 구조 동기화 필유</div>
+              <p style="margin:0; font-size:0.75rem; color:#b45309;">비밀번호, 다중 부서, 다중 직급 정보를 최신 체계로 전환해야 정상적인 서비스 이용이 가능합니다.</p>
           </div>
           <button onclick="syncDeptData()" style="padding:8px 20px; background:#f59e0b; color:#fff; border:none; border-radius:8px; font-weight:800; cursor:pointer;">지금 동기화</button>
         </div>
@@ -275,6 +282,7 @@
   window.db = db;
 
   let allDepts = [];
+  let allUsersCache = []; // 검색을 위한 캐시
 
   // 전역 노출 정의
   window.fetchUsers = fetchUsers;
@@ -283,6 +291,7 @@
   window.saveUser = saveUser;
   window.syncDeptData = syncDeptData;
   window.migrateFromGas = migrateFromGas;
+  window.filterUsers = filterUsers; // 검색 필터링 함수
 
   $(document).ready(async () => {
     await fetchDepts();
@@ -298,7 +307,7 @@
       
       const container = document.getElementById('dept-checkboxes');
       container.innerHTML = allDepts.map(d => `
-        <label style="display:flex; align-items:center; gap:8px; font-size:0.9rem; cursor:pointer;">
+        <label class="checkbox-label">
           <input type="checkbox" name="deptChoice" value="${d.id}"> ${d.name}
         </label>
       `).join('');
@@ -306,51 +315,80 @@
   }
 
   async function fetchUsers() {
-    const tbody = document.getElementById('user-tbody');
     try {
       const q = query(collection(db, "employees"), orderBy("empNo", "asc"));
       const querySnapshot = await getDocs(q);
       
-      let users = [];
+      allUsersCache = [];
       querySnapshot.forEach((doc) => {
-        users.push({ id: doc.id, ...doc.data() });
+        allUsersCache.push({ id: doc.id, ...doc.data() });
       });
 
-      if (users.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:40px;">등록된 직원이 없습니다. <button onclick="migrateFromGas()" style="padding: 10px 20px; background:#1e293b; color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:700;">기존 데이터 가져오기</button></td></tr>';
-        return;
-      }
-
       // 데이터 보정 필요 여부 확인
-      const needsSync = users.some(u => (!u.deptIds && u.deptId) || (!u.positionNames && u.positionName));
+      const needsSync = allUsersCache.some(u => (!u.deptIds && u.deptId) || (!u.positionNames && u.positionName) || !u.password);
       document.getElementById('sync-banner').style.display = needsSync ? 'flex' : 'none';
 
-      const html = users.map(u => {
-        const dIds = u.deptIds || (u.deptId ? [u.deptId] : []);
-        const dNames = dIds.map(id => allDepts.find(d => d.id === id)?.name || id).join(', ');
-        const pNames = u.positionNames || (u.positionName ? [u.positionName] : []);
-        const pDisplay = pNames.join(', ');
-
-        return `
-          <tr>
-            <td>
-              <div style="font-weight:700;">${u.displayName}</div>
-              <div style="font-size:0.75rem; color:#718096;">${u.empNo}</div>
-            </td>
-            <td>${u.loginId}</td>
-            <td>${dNames || '-'} / ${pDisplay || '-'}</td>
-            <td>${u.email}</td>
-            <td><span class="status-badge status-${u.active}">${u.active == 1 ? '정상' : '잠금'}</span></td>
-            <td><button class="btn-action" onclick='openModal(${JSON.stringify(u)})'>수정</button></td>
-          </tr>
-        `;
-      }).join('');
-      tbody.innerHTML = html;
+      renderUserRows(allUsersCache);
     } catch(e) { 
       console.error(e); 
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:40px; color:red;">데이터 로드 실패</td></tr>';
+      document.getElementById('user-tbody').innerHTML = '<tr><td colspan="6" style="text-align:center; padding:40px; color:red;">데이터 로드 실패</td></tr>';
     }
   }
+
+  // 실시간 검색 필터링
+  function filterUsers() {
+    const term = document.getElementById('user-search').value.toLowerCase().trim();
+    if (!term) {
+      renderUserRows(allUsersCache);
+      return;
+    }
+    const filtered = allUsersCache.filter(u => 
+      (u.displayName || '').toLowerCase().includes(term) ||
+      (u.empNo || '').toLowerCase().includes(term) ||
+      (u.loginId || '').toLowerCase().includes(term) ||
+      (u.email || '').toLowerCase().includes(term)
+    );
+    renderUserRows(filtered);
+  }
+
+  // 테이블 렌더링
+  function renderUserRows(users) {
+    const tbody = document.getElementById('user-tbody');
+    if (users.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:40px; color:#94a3b8;">검색 결과가 없습니다.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = users.map(u => {
+      const dIds = u.deptIds || (u.deptId ? [u.deptId] : []);
+      const dNames = dIds.map(id => allDepts.find(d => d.id === id)?.name || id).join(', ');
+      const pNames = u.positionNames || (u.positionName ? [u.positionName] : []);
+      const pDisplay = pNames.join(', ');
+
+      return `
+        <tr>
+          <td>
+            <div style="font-weight:700;">${u.displayName}</div>
+            <div style="font-size:0.75rem; color:#718096;">${u.empNo || '-'}</div>
+          </td>
+          <td style="font-family:monospace; font-size:0.85rem;">${u.loginId}</td>
+          <td>
+            <div style="font-weight:600; font-size:0.85rem;">${dNames || '소속 없음'}</div>
+            <div style="font-size:0.75rem; color:#64748b;">${pDisplay || '-'}</div>
+          </td>
+          <td style="font-size:0.85rem;">${u.email || '-'}</td>
+          <td><span class="status-badge status-${u.active}">${u.active === 1 ? '활성' : '차단'}</span></td>
+          <td><button class="btn-secondary" style="padding:4px 10px; font-size:0.75rem;" onclick="openEditById('${u.id}')">수정</button></td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  // ID로 모달 열기 (JSON 파싱 에러 방지용)
+  window.openEditById = (id) => {
+    const user = allUsersCache.find(u => u.id === id);
+    if(user) openModal(user);
+  };
 
   async function migrateFromGas() {
     if(!confirm("기존 스프레드시트 데이터를 Firebase로 가져오시겠습니까?")) return;
@@ -365,6 +403,7 @@
           empNo, loginId: u.loginId, displayName: u.displayName, email: u.email,
           deptId: u.deptId, deptIds: u.deptId ? [u.deptId] : [],
           positionName: u.positionName, positionNames: u.positionName ? [u.positionName] : [],
+          password: u.password || '1234', // 기존 비밀번호가 있으면 가져오고, 없으면 초기값 1234 설정
           active: u.active, updatedAt: serverTimestamp(), createdAt: serverTimestamp()
         }, { merge: true });
       }
@@ -374,15 +413,21 @@
   }
 
   async function syncDeptData() {
-    if(!confirm("기존 데이터를 다중 부서/직급 체계로 동기화하시겠습니까?")) return;
+    if(!confirm("비밀번호 및 다중 조직 체계로 데이터를 보정하시겠습니까?")) return;
     try {
       const snap = await getDocs(collection(db, "employees"));
       let count = 0;
       for(const d of snap.docs) {
         const u = d.data();
         const updateObj = {};
+        
+        // 1. 부서 정보 보정
         if(!u.deptIds && u.deptId) updateObj.deptIds = [u.deptId];
+        // 2. 직급 정보 보정
         if(!u.positionNames && u.positionName) updateObj.positionNames = [u.positionName];
+        // 3. 비밀번호 보정 (누락된 경우 초기값 1234)
+        if(!u.password) updateObj.password = '1234';
+
         if(Object.keys(updateObj).length > 0) {
           updateObj.updatedAt = serverTimestamp();
           await updateDoc(doc(db, "employees", d.id), updateObj);
