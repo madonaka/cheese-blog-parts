@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>전자결제 시스템 | Cheese Lab Admin</title>
+  
+  <link rel="stylesheet" href="./admin.css">
+  <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@400;600;800&display=swap" rel="stylesheet">
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+  <style>
+    :root {
+      --app-primary: #1e293b;
+      --app-border: #cbd5e1;
+      --app-bg: #f1f5f9;
+      --paper-shadow: 0 10px 30px rgba(0,0,0,0.12);
+    }
+    body { font-family: 'Pretendard', sans-serif; background: var(--app-bg); margin: 0; }
+
+    /* 📄 기안 전용 화면 (Immersive Draft Mode) */
+    .draft-page { display: none; position: fixed; inset: 0; background: #eaeff5; z-index: 10000; flex-direction: column; }
+    .draft-header { height: 64px; background: #fff; border-bottom: 1px solid #d1d9e6; display: flex; align-items: center; justify-content: space-between; padding: 0 40px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+    .draft-body { flex: 1; display: grid; grid-template-columns: 320px 1fr 340px; gap: 0; overflow: hidden; }
+
+    /* 🌳 왼쪽: 조직도 (부서 수신처 선택 포함) */
+    .pane-left { background: #fff; border-right: 1px solid #d1d9e6; padding: 25px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
+    .org-search { width: 100%; padding: 12px; border: 1px solid #dee5ef; border-radius: 8px; font-size: 14px; outline: none; }
+    .dept-node { font-weight: 800; padding: 10px; cursor: pointer; color: #1e293b; border-bottom: 1px solid #f1f5f9; display: flex; align-items: center; justify-content: space-between; font-size: 15px; }
+    .dept-node:hover { background: #f8fafc; }
+    .btn-set-recipient { font-size: 11px; background: #e0f2fe; color: #0369a1; padding: 3px 8px; border-radius: 6px; font-weight: 700; cursor: pointer; transition: 0.2s; }
+    .btn-set-recipient:hover { background: #0369a1; color: #fff; }
+    .emp-node { padding: 8px 12px 8px 30px; cursor: pointer; font-size: 14px; border-radius: 6px; transition: 0.1s; display: flex; justify-content: space-between; align-items: center; }
+    .emp-node:hover { background: #eff6ff; color: #2563eb; }
+    .emp-node.selected { background: #2563eb; color: #fff; }
+
+    /* 📝 중앙: A4 기안지 편집기 */
+    .pane-center { padding: 50px 0; overflow-y: auto; display: flex; justify-content: center; background: #e2e8f0; }
+    .paper-a4 { background: #fff; width: 210mm; min-height: 297mm; padding: 25mm 20mm; box-shadow: var(--paper-shadow); position: relative; box-sizing: border-box; }
+
+    /* 🗄️ 행정 표준 기안문 푸터 스타일 */
+    .gm-admin-footer { margin-top: 50px; font-family: 'Malgun Gothic', 'Dotum', sans-serif; font-size: 13px; color: #111; line-height: 1.6; border-top: 8px solid #cbd5e1; padding-top: 20px; }
+    .footer-approver-row { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 12px; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; }
+    .footer-info-row { font-size: 12px; color: #3b82f6; font-weight: 500; display: flex; gap: 15px; margin-bottom: 2px; }
+    .footer-label { font-weight: 800; min-width: 30px; }
+    .approver-cell { display: flex; flex-direction: column; align-items: center; min-width: 80px; }
+    .approver-status { font-size: 10px; color: #64748b; margin-bottom: 2px; }
+    .approver-name { font-weight: 700; font-size: 14px; }
+
+    .gm-title { font-size: 34px; font-weight: 950; text-align: center; margin: 20px 0 50px; border-bottom: 3px double #000; padding-bottom: 20px; letter-spacing: 20px; text-indent: 20px; }
+    .gm-field { display: flex; border-bottom: 1px solid #eee; padding: 15px 0; font-size: 15px; }
+    .gm-label { width: 90px; font-weight: 800; color: #64748b; }
+    .gm-input { flex: 1; border: none; outline: none; font-size: 15px; font-weight: 600; padding: 0; background: transparent; }
+    .gm-content { width: 100%; border: none; outline: none; margin-top: 40px; font-size: 16px; line-height: 2.2; min-height: 500px; resize: none; background: transparent; }
+
+    /* ⚙️ 오른쪽: 결재선 및 파라미터 */
+    .pane-right { background: #fff; border-left: 1px solid #d1d9e6; padding: 30px; overflow-y: auto; }
+    .config-sec { margin-bottom: 40px; }
+    .config-title { font-weight: 900; font-size: 16px; margin-bottom: 20px; display: flex; align-items: center; gap: 8px; color: #1e293b; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px; }
+    .btn-push-line { width: 100%; padding: 14px; border: 2px solid #2563eb; color: #2563eb; background: #fff; border-radius: 10px; font-weight: 900; cursor: pointer; margin-top: 10px; transition: 0.2s; }
+    .btn-push-line:hover { background: #2563eb; color: #fff; }
+    .line-row { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 15px; display: flex; align-items: center; gap: 12px; margin-bottom: 10px; font-size: 14px; }
+    .tag-app { font-size: 10px; font-weight: 800; background: #1e293b; color: #fff; padding: 3px 8px; border-radius: 6px; }
+
+    /* 강제 잠금 해제 (Admin Common 호환) */
+    .quiz-loading-open { overflow: auto !important; }
+    #cheese-quiz-loading { display: none !important; }
+
+    @media print {
+      body * { display: none !important; }
+      #page-detail-viewer, #page-detail-viewer section, #page-detail-viewer .paper-a4, #page-detail-viewer .paper-a4 * { display: block !important; }
+      #page-detail-viewer { position: absolute !important; inset: 0 !important; background: #fff !important; }
+      .paper-a4 { box-shadow: none !important; margin: 0 !important; width: 100% !important; border: none !important; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ✅ 표준 관리자 셸 (대시보드 리스트) -->
+  <div class="admin-shell" id="app-shell">
+    <div id="admin-header-slot"></div>
+    <div class="admin-main">
+      <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+
+      <main>
+        <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 40px;">
+          <div>
+            <h1 style="font-size: 2.2rem; font-weight: 950; color: #1e293b; margin: 0; letter-spacing: -1px;">전자결제 관리 시스템</h1>
+            <p style="color: #64748b; font-weight: 600; margin-top: 10px;">기업 표준 스마트 워크플로우 솔루션</p>
+          </div>
+          <button id="btn-start-draft" style="background: linear-gradient(135deg, #2563eb, #1e40af); color: #fff; padding: 16px 40px; border-radius: 16px; border: none; font-weight: 900; font-size: 1.15rem; cursor: pointer; box-shadow: 0 8px 20px rgba(37, 99, 235, 0.3); transition: 0.3s;">📝 신규 기안 작성</button>
+        </div>
+
+        <!-- 실시간 지표 -->
+        <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:25px; margin-bottom:50px;">
+           <div style="background:#fff; padding:35px; border-radius:28px; border:1px solid #eef2f6; box-shadow:0 15px 25px -5px rgba(0,0,0,0.04);">
+              <div style="color:#64748b; font-weight:800; font-size:1rem; display:flex; align-items:center; gap:8px;">📥 결제 대기함 <span style="width:8px; height:8px; background:#ef4444; border-radius:50%;"></span></div>
+              <div id="stat-pending" style="font-size:2.8rem; font-weight:950; color:#1e293b; margin-top:15px;">0</div>
+           </div>
+           <div style="background:#fff; padding:35px; border-radius:28px; border:1px solid #eef2f6; box-shadow:0 15px 25px -5px rgba(0,0,0,0.04);">
+              <div style="color:#64748b; font-weight:800; font-size:1rem;">📤 나의 기안 진행</div>
+              <div id="stat-ongoing" style="font-size:2.8rem; font-weight:950; color:#2563eb; margin-top:15px;">0</div>
+           </div>
+           <div style="background:#fff; padding:35px; border-radius:28px; border:1px solid #eef2f6; box-shadow:0 15px 25px -5px rgba(0,0,0,0.04);">
+              <div style="color:#64748b; font-weight:800; font-size:1rem;">✅ 최근 처리 완료</div>
+              <div id="stat-done" style="font-size:2.8rem; font-weight:950; color:#10b981; margin-top:15px;">0</div>
+           </div>
+        </div>
+
+        <!-- 리스트 섹션 -->
+        <div style="background:#fff; border-radius:32px; border:1px solid #eef2f6; overflow:hidden; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.08);">
+          <div style="padding:30px 40px; border-bottom:1px solid #f1f5f9; display:flex; gap:40px; background:#fff;">
+             <div class="tab-btn active" data-tab="inbox" style="cursor:pointer; font-weight:900; color:#1e293b; font-size:1.1rem; position:relative;">📥 결제할 문서</div>
+             <div class="tab-btn" data-tab="outbox" style="cursor:pointer; font-weight:900; color:#94a3b8; font-size:1.1rem;">📤 보낸 기안함</div>
+             <div class="tab-btn" data-tab="completed" style="cursor:pointer; font-weight:900; color:#94a3b8; font-size:1.1rem;">✅ 처리 완료함</div>
+          </div>
+          <div id="list-container" style="min-height:400px;">
+             <!-- 데이터 테이블 자동 생성 -->
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- 🏗️ [NEW] Full Focus Draft Editor (Full Page) -->
+  <div id="draft-editor-page" class="draft-page">
+    <header class="draft-header">
+       <button id="btn-close-draft" style="background:#f8fafc; border:1px solid #d1d9e6; padding:12px 28px; border-radius:12px; font-weight:800; cursor:pointer; color:#64748b;">작성 취소</button>
+       <div style="font-weight:950; font-size:1.3rem; color:#1e293b; letter-spacing:-0.5px;">스마트 공문 기안 에디터 (V3.0)</div>
+       <button id="btn-submit-draft" style="background:#2563eb; color:#fff; border:none; padding:14px 40px; border-radius:12px; font-weight:950; cursor:pointer; box-shadow:0 4px 10px rgba(37, 99, 235, 0.2);">상신하기</button>
+    </header>
+    <div class="draft-body">
+       <!-- LEFT: 조직도 & 부서 선택 -->
+       <aside class="pane-left">
+          <div style="font-weight:900; color:#1e293b; margin-bottom:10px;">🏢 전사 조직도</div>
+          <input type="text" id="filter-org" class="org-search" placeholder="부서 또는 직원명 검색...">
+          <div id="org-tree-view" style="margin-top:15px;">
+             <!-- JS 렌더링 -->
+          </div>
+       </aside>
+
+       <!-- CENTER: A4 기안지 -->
+       <section class="pane-center">
+          <div id="paper-container" style="display:flex; flex-direction:column; gap:40px; align-items:center;">
+             <div class="paper-a4" style="display:flex; flex-direction:column; padding-bottom:50px;">
+                <div style="text-align:center; font-size:28px; font-weight:950; margin:30px 0 50px; color:#1e293b; letter-spacing:4px; font-family:'Pretendard', sans-serif;">Cheese Lab</div>
+                
+                <div class="gm-field"><div class="gm-label">수 신 :</div><input type="text" id="draft-recipient" class="gm-input" placeholder="수신처를 입력하세요"></div>
+                <div class="gm-field"><div class="gm-label">참 조 :</div><input type="text" id="draft-ref-display" class="gm-input" placeholder="오른쪽에서 참조인을 지정하세요" readonly></div>
+                <div class="gm-field" style="border-bottom:3px double #000; padding-bottom:20px; margin-bottom:40px;">
+                   <div class="gm-label">제 목 :</div>
+                   <input type="text" id="draft-title" class="gm-input" style="font-weight:950; font-size:1.2rem; color:#000;" placeholder="기안서 제목을 입력하십시오">
+                </div>
+                
+                <textarea id="draft-content" class="gm-content" style="flex:1; min-height:500px; margin-top:0;" placeholder="상세 내용을 입력하십시오."></textarea>
+                
+                <div style="margin-top:auto; padding-top:40px;">
+                   <div style="margin-bottom:50px; text-align:center; font-size:20px; font-weight:900; color:#000; letter-spacing:1px;">Cheese Lab 대표이사 권현수</div>
+
+                   <!-- 행정 푸터 (사진 양식 반영) -->
+                   <div id="draft-admin-footer" class="gm-admin-footer" style="padding-bottom:10px;">
+                      <div class="footer-approver-row" id="d-footer-apps">
+                         <!-- 결재자 텍스트 동적 생성 (updateDraftStamps) -->
+                      </div>
+                      <div class="footer-info-row">
+                         <span class="footer-label">시행</span> <span id="d-foot-docid">Cheese-2026-001</span>
+                         <span id="d-foot-date">(2026. 03. 18)</span>
+                         <span class="footer-label">접수</span> <span>( )</span>
+                      </div>
+                      <div class="footer-info-row">
+                         <span class="footer-label">우</span> [우편번호] <span>[회사 주소지 정보가 표시됩니다]</span>
+                         <span>/ http://www.cheesehistory.com</span>
+                      </div>
+                      <div class="footer-info-row">
+                         <span class="footer-label">전화</span> [전화번호] <span class="footer-label" style="margin-left:10px;">전송</span> [전송번호]
+                         <span>/ [공식 이메일 주소] / 공개</span>
+                      </div>
+                   </div>
+
+                   <!-- 별첨 영역 -->
+                   <div id="d-attach-area" style="display:none; margin-top:20px; border-top:1px dashed #cbd5e1; padding-top:15px; margin-bottom:10px;">
+                      <div style="font-weight:800; color:#64748b; margin-bottom:10px;">[별첨 자료]</div>
+                      <div id="d-attach-list" style="display:flex; flex-direction:column; gap:5px;"></div>
+                   </div>
+                </div>
+             </div>
+          </div>
+          
+          <!-- 툴바 (중앙 하단 고정) -->
+          <div style="position:fixed; bottom:30px; left:50%; transform:translateX(-50%); background:#1e293b; padding:10px 25px; border-radius:50px; display:flex; gap:20px; box-shadow:0 10px 25px rgba(0,0,0,0.3); z-index:100;">
+             <button id="btn-add-page" style="background:transparent; border:none; color:#fff; font-weight:800; cursor:pointer; display:flex; align-items:center; gap:8px;">➕ 페이지 추가</button>
+             <div style="width:1px; background:rgba(255,255,255,0.2);"></div>
+             <button id="btn-add-file" style="background:transparent; border:none; color:#fff; font-weight:800; cursor:pointer; display:flex; align-items:center; gap:8px;">📎 파일 첨부</button>
+             <input type="file" id="file-input" style="display:none;" multiple>
+          </div>
+       </section>
+
+       <!-- RIGHT: 결재자 & 참조인 관리 -->
+       <aside class="pane-right">
+          <div class="config-sec">
+             <div class="config-title">🛡️ 결재선 지정</div>
+             <div id="line-list-view" style="min-height:100px;"></div>
+             <button id="btn-add-to-line" class="btn-push-line">결재자로 지정 (ADD ↓)</button>
+          </div>
+          
+          <div class="config-sec" style="margin-top:20px;">
+             <div class="config-title">👥 참조인 지정</div>
+             <div id="ref-list-view" style="min-height:60px; display:flex; flex-direction:column; gap:8px;"></div>
+             <button id="btn-add-to-ref" class="btn-push-line" style="border-color:#64748b; color:#64748b;">참조인으로 지정 (ADD ↓)</button>
+          </div>
+
+          <div class="config-sec" style="background:#f8fafc; padding:20px; border-radius:20px; margin-top:30px;">
+             <div style="font-weight:800; font-size:14px; margin-bottom:10px;">💡 안내사항</div>
+             <ul style="font-size:12px; color:#64748b; padding-left:18px; line-height:1.8; margin:0;">
+                <li>파일은 Google Drive에 자동 업로드됩니다.</li>
+                <li>참조인은 결재 권한 없이 문서 확인만 가능합니다.</li>
+                <li>추가된 페이지는 기안 시 합쳐서 저장됩니다.</li>
+             </ul>
+          </div>
+       </aside>
+    </div>
+  </div>
+
+  <!-- 📖 상세 열람 & 결재 처리 페이지 -->
+  <div id="page-detail-viewer" class="draft-page">
+    <header class="draft-header">
+       <button class="btn-close-view" style="background:#f8fafc; border:1px solid #d1d9e6; padding:12px 28px; border-radius:12px; font-weight:800; cursor:pointer;">목록으로 돌아가기</button>
+       <div id="view-page-title" style="font-weight:950; font-size:1.2rem;">문서 상세 조회</div>
+       <button id="btn-print" style="background:#1e293b; color:#fff; border:none; padding:12px 30px; border-radius:12px; font-weight:900; cursor:pointer;">🖨️ 인쇄 / PDF 저장</button>
+    </header>
+    <div class="draft-body" style="grid-template-columns: 1fr 380px;">
+       <section class="pane-center">
+          <div id="v-paper-container" style="display:flex; flex-direction:column; gap:40px; align-items:center;">
+             <!-- 문서 컨텐츠 동적 렌더링 -->
+          </div>
+       </section>
+       <aside class="pane-right">
+          <div id="v-approval-actions" style="display:none; background:#f1f5f9; padding:30px; border-radius:24px; margin-bottom:40px;">
+             <div style="font-weight:950; margin-bottom:15px; color:#1e293b;">⚡ 결재 승인/반려 처리</div>
+             <textarea id="v-opinion" style="width:100%; height:140px; border:2px solid #cbd5e1; border-radius:16px; padding:20px; outline:none; margin-bottom:20px; font-size:15px;" placeholder="승인 또는 반려 사유를 상세히 입력해 주세요."></textarea>
+             <div style="display:flex; gap:12px;">
+                <button id="btn-v-reject" style="flex:1; padding:18px; background:#ef4444; color:#fff; border:none; border-radius:16px; font-weight:950; cursor:pointer; font-size:1.1rem;">❌ 반려</button>
+                <button id="btn-v-approve" style="flex:1; padding:18px; background:#10b981; color:#fff; border:none; border-radius:16px; font-weight:950; cursor:pointer; font-size:1.1rem;">✔️ 최종승인</button>
+             </div>
+          </div>
+          <div class="config-title" style="margin-top:20px;">📜 문서 결재 이력 (Log)</div>
+          <div id="v-history-log"></div>
+       </aside>
+    </div>
+  </div>
+
+  <script src="./admin-common.js"></script>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, getDoc, query, where, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyBgLF7lEKQxdsUked-i_Pf0FJEdP_d1Ab4",
+      authDomain: "auth.cheesehistory.com",
+      projectId: "cheese-history-platform",
+      storageBucket: "cheese-history-platform.firebasestorage.app",
+      messagingSenderId: "206588835864",
+      appId: "1:206588835864:web:18cc695d72c6fc96c4ab6d"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    window.db = db;
+
+    const state = {
+      users: [], currentTab: 'inbox', selectedLine: [], refLine: [], attaches: [], activeEmp: null,
+      currentUser: {
+        id: window.CHEESE_ADMIN_EMP_NO || sessionStorage.getItem("cheese_admin_emp_no"),
+        name: window.CHEESE_ADMIN_DISPLAY_NAME || sessionStorage.getItem("cheese_admin_display_name") || "시스템관리자"
+      }
+    };
+
+    const core = {
+      init: async function() {
+        this.watchdog();
+        await this.fetchUsers();
+        await this.loadDocs();
+        document.getElementById('my-name-display').textContent = state.currentUser.name;
+      },
+      watchdog: function() {
+        const reset = () => {
+          document.documentElement.classList.remove("quiz-loading-open");
+          document.body.classList.remove("quiz-loading-open");
+          const loader = document.getElementById("cheese-quiz-loading");
+          if(loader) loader.style.display="none";
+        };
+        reset(); setInterval(reset, 1000);
+      },
+      fetchUsers: async function() {
+        try {
+          const { getDocs, collection, query, orderBy } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
+          
+          // 부서 정보 로드
+          const dSnap = await getDocs(query(collection(db, "departments"), orderBy("name", "asc")));
+          state.depts = {};
+          dSnap.forEach(d => state.depts[d.id] = d.data().name);
+
+          // 직원 정보 로드
+          const q = query(collection(db, "employees"), orderBy("empNo", "asc"));
+          const querySnapshot = await getDocs(q);
+          
+          state.users = [];
+          querySnapshot.forEach((docSnap) => {
+            state.users.push({ id: docSnap.id, ...docSnap.data() });
+          });
+
+          if(state.users.length > 0) {
+            this.renderOrg();
+          }
+        } catch(e) { 
+          console.error("Firestore User Load Error", e); 
+          // 실패 시 기존 GAS 로직 폴백 (선택 사항)
+        }
+      },
+      renderOrg: function() {
+        const tree = document.getElementById('org-tree-view');
+        const groups = {}; // { deptId: [users] }
+        
+        state.users.forEach(u => {
+          const dIds = u.deptIds || (u.deptId ? [u.deptId] : ['미지정']);
+          dIds.forEach(id => {
+            if(!groups[id]) groups[id] = [];
+            groups[id].push(u);
+          });
+        });
+
+        let h = "";
+        for(let dId in groups) {
+          const dName = state.depts?.[dId] || dId;
+          h += `<div class="dept-node"><span>📂 ${dName}</span> <span class="btn-set-recipient" data-dept="${dName}">수신처</span></div>`;
+          groups[dId].forEach(u => {
+            const pNames = u.positionNames || (u.positionName ? [u.positionName] : []);
+            const pDisplay = pNames.length > 0 ? ` (${pNames.join(', ')})` : '';
+            h += `<div class="emp-node" data-uid="${u.empNo}" data-name="${u.displayName}">👤 ${u.displayName}<small style="color:#94a3b8">${pDisplay}</small> <small style="color:#cbd5e1">${u.empNo}</small></div>`;
+          });
+        }
+        tree.innerHTML = h;
+      },
+      loadDocs: async function() {
+        const list = document.getElementById('list-container');
+        const uid = state.currentUser.id;
+        try {
+          let q;
+          if(state.currentTab === 'inbox') q = query(collection(db, "approval_documents"), where("status", "==", "pending"));
+          else if(state.currentTab === 'outbox') q = query(collection(db, "approval_documents"), where("senderId", "==", uid));
+          else q = query(collection(db, "approval_documents"), where("status", "in", ["approved", "rejected"]));
+
+          const snap = await getDocs(q);
+          const raw = [];
+          snap.forEach(d => {
+            const data = d.data();
+            if(state.currentTab === 'inbox') {
+              const cur = data.approvalLine[data.currentStep];
+              const isRef = data.refLine && data.refLine.some(x=>x.userId === uid);
+              if((cur && cur.userId === uid) || isRef) raw.push({ id: d.id, ...data });
+            } else raw.push({ id: d.id, ...data });
+          });
+
+          raw.sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
+          
+          let html = `<div style="display:grid; grid-template-columns:80px 1fr 220px 150px; padding:25px 40px; border-bottom:1px solid #f1f5f9; background:#fcfdfe; color:#94a3b8; font-weight:900; font-size:13px;"><div>NO.</div><div>DOCUMENT TITLE</div><div>ORIGINATOR / DATE</div><div>STATUS</div></div>`;
+          raw.forEach((d, i) => {
+            html += `<div class="doc-item-row" data-id="${d.id}" style="display:grid; grid-template-columns:80px 1fr 220px 150px; padding:28px 40px; border-bottom:1px solid #f9fafb; cursor:pointer; align-items:center;">
+              <div style="font-family:monospace; color:#cbd5e1; font-weight:800;">#${raw.length - i}</div>
+              <div style="font-weight:900; color:#1e293b; font-size:1.1rem;">${d.title}</div>
+              <div style="font-size:13px; color:#475569;"><b>${d.senderName}</b> <span style="margin:0 8px; color:#e2e8f0;">|</span> <span style="color:#94a3b8;">${d.createdAt?new Date(d.createdAt.seconds*1000).toLocaleDateString():'-'}</span></div>
+              <div><span class="badge badge-${d.status}" style="padding:8px 16px; border-radius:12px; font-weight:900; text-transform:uppercase; font-size:11px;">${d.status}</span></div>
+            </div>`;
+          });
+          list.innerHTML = html || `<div style="padding:150px; text-align:center; color:#cbd5e1; font-weight:700;">문서가 없습니다.</div>`;
+          document.getElementById('stat-pending').textContent = raw.filter(x=>x.status==='pending').length;
+        } catch(e) { console.error(e); }
+      }
+    };
+
+    // ── Global Click Controller ──
+    document.addEventListener('click', async (e) => {
+      // 1. Tab Switch
+      const tab = e.target.closest('.tab-btn');
+      if(tab) {
+        state.currentTab = tab.dataset.tab;
+        document.querySelectorAll('.tab-btn').forEach(b => {
+           b.classList.remove('active'); b.style.color = "#94a3b8";
+        });
+        tab.classList.add('active'); tab.style.color = "#1e293b";
+        core.loadDocs();
+        return;
+      }
+
+      // 2. Open Draft Editor
+      if(e.target.id === 'btn-start-draft') {
+        state.selectedLine = []; state.refLine = []; state.attaches = [];
+        renderDraftLines(); renderAttaches();
+        document.getElementById('draft-title').value = '';
+        document.getElementById('draft-recipient').value = '';
+        document.getElementById('draft-content').value = '1. 귀 기관의 무궁한 발전을 기원합니다.\n...';
+        // 페이지 초기화 (1페이지만 남기기)
+        const cont = document.getElementById('paper-container');
+        cont.querySelectorAll('.paper-a4').forEach((p, idx) => { if(idx > 0) p.remove(); });
+        document.getElementById('draft-editor-page').style.display = 'flex';
+        return;
+      }
+
+      // 3. Org Select
+      const emp = e.target.closest('.emp-node');
+      if(emp) {
+        document.querySelectorAll('.emp-node').forEach(i => i.classList.remove('selected'));
+        emp.classList.add('selected');
+        state.activeEmp = { uid: emp.dataset.uid, name: emp.dataset.name };
+        return;
+      }
+
+      // 4. Set Recipient (Dept)
+      const setRec = e.target.closest('.btn-set-recipient');
+      if(setRec) { document.getElementById('draft-recipient').value = setRec.dataset.dept; return; }
+
+      // 5. Add to Line / Ref
+      if(e.target.id === 'btn-add-to-line' && state.activeEmp) {
+        if(state.selectedLine.find(x=>x.userId === state.activeEmp.uid)) return alert("이미 추가됨");
+        state.selectedLine.push({ ...state.activeEmp, userId: state.activeEmp.uid });
+        renderDraftLines(); return;
+      }
+      if(e.target.id === 'btn-add-to-ref' && state.activeEmp) {
+        if(state.refLine.find(x=>x.userId === state.activeEmp.uid)) return alert("이미 추가됨");
+        state.refLine.push({ ...state.activeEmp, userId: state.activeEmp.uid });
+        renderDraftLines(); return;
+      }
+
+      // 6. Doc Detail Click
+      const row = e.target.closest('.doc-item-row');
+      if(row) {
+        const id = row.dataset.id;
+        state.viewDocId = id;
+        const snap = await getDoc(doc(db, "approval_documents", id));
+        const d = snap.data();
+        renderViewer(d);
+        document.getElementById('page-detail-viewer').style.display = 'flex';
+        return;
+      }
+
+      // 7. General Buttons
+      if(e.target.id === 'btn-add-file') document.getElementById('file-input').click();
+      if(e.target.id === 'btn-add-page') addSheet();
+      if(e.target.id === 'btn-close-draft') document.getElementById('draft-editor-page').style.display = 'none';
+      if(e.target.closest('.btn-close-view')) document.getElementById('page-detail-viewer').style.display = 'none';
+      if(e.target.id === 'btn-submit-draft') finalizeSend();
+      if(e.target.id === 'btn-v-approve') runApproval('approved');
+      if(e.target.id === 'btn-v-reject') runApproval('rejected');
+      if(e.target.id === 'btn-print') window.print();
+    });
+
+    // 📁 구글 드라이브 연동 파일 업로드
+    document.getElementById('file-input').addEventListener('change', async (e) => {
+       const files = e.target.files;
+       if(!files.length) return;
+       for(let f of files) {
+          const res = await window.uploadFileToGoogleDrive(f);
+          if(res && res.fileId) {
+             state.attaches.push({ name: f.name, size: f.size, fileId: res.fileId, url: res.downloadUrl });
+             renderAttaches();
+          }
+       }
+       e.target.value = '';
+    });
+
+    function renderDraftLines() {
+      const aBox = document.getElementById('line-list-view');
+      const rBox = document.getElementById('ref-list-view');
+      aBox.innerHTML = state.selectedLine.map((u, i) => `<div class="line-row"><span class="tag-app">결재</span><b style="flex:1">${u.name}</b> <span style="cursor:pointer;" onclick="state.selectedLine.splice(${i},1); renderDraftLines();">&times;</span></div>`).join('') || '<div style="color:#94a3b8; text-align:center; padding:30px;">결재자를 추가해 주세요.</div>';
+      rBox.innerHTML = state.refLine.map((u, i) => `<div class="line-row" style="background:#f1f5f9;"><span class="tag-app" style="background:#64748b;">참조</span><b style="flex:1">${u.name}</b> <span style="cursor:pointer;" onclick="state.refLine.splice(${i},1); renderDraftLines();">&times;</span></div>`).join('') || '<div style="color:#94a3b8; text-align:center; padding:10px;">참조인을 지정하세요.</div>';
+      document.getElementById('draft-ref-display').value = state.refLine.map(x=>x.name).join(', ');
+      updateDraftStamps();
+    }
+
+    function renderAttaches() {
+       const sec = document.getElementById('d-attach-area');
+       const list = document.getElementById('d-attach-list');
+       if(state.attaches.length > 0) {
+          sec.style.display = 'block';
+          list.innerHTML = state.attaches.map(f => `<div class="attach-item" style="font-size:13px; color:#475569;">📎 ${f.name} (${Math.round(f.size/1024)}KB)</div>`).join('');
+       } else sec.style.display = 'none';
+    }
+
+    function addSheet() {
+       const cont = document.getElementById('paper-container');
+       const n = cont.querySelectorAll('.paper-a4').length + 1;
+       const div = document.createElement('div');
+       div.className = 'paper-a4';
+       div.innerHTML = `<div style="text-align:right; font-size:12px; color:#ccc; margin-bottom:20px;">Page ${n}</div><textarea class="gm-body" style="width:100%; border:none; outline:none; min-height:600px; font-size:16px; line-height:2.2; resize:none;" placeholder="추가 내용을 입력하세요."></textarea>`;
+       cont.appendChild(div);
+    }
+
+    function updateDraftStamps() {
+       const box = document.getElementById('d-footer-apps');
+       const now = new Date();
+       const ds = `${now.getMonth()+1}/${now.getDate()}`;
+
+       let h = `
+          <div style="display:flex; gap:30px;">
+             <div class="approver-cell"><span class="approver-status">${state.currentUser.role || '담당'}</span><span class="approver-name">${state.currentUser.name}</span><small style="color:#ef4444">${ds}</small></div>
+             <div style="color:#cbd5e1; font-size:20px;">|</div>
+          </div>
+          <div style="display:flex; gap:40px;">
+       `;
+
+       state.selectedLine.forEach((u, i) => {
+          h += `
+             <div class="approver-cell">
+                <span class="approver-status">${u.role || '결재'}</span>
+                <span class="approver-name">${u.name}</span>
+             </div>
+          `;
+       });
+       h += `</div>`;
+       box.innerHTML = h;
+    }
+
+    function renderViewer(d) {
+       const area = document.getElementById('v-paper-container');
+       const fmtDate = (dt) => {
+          if(!dt) return '';
+          const o = dt.seconds ? new Date(dt.seconds * 1000) : new Date(dt);
+          return `${o.getFullYear()}. ${String(o.getMonth()+1).padStart(2,'0')}. ${String(o.getDate()).padStart(2,'0')}`;
+       };
+       const fmtTime = (dt) => {
+          if(!dt) return '';
+          const o = dt.seconds ? new Date(dt.seconds * 1000) : new Date(dt);
+          return `${o.getMonth()+1}/${o.getDate()} ${o.getHours()}:${String(o.getMinutes()).padStart(2,'0')}`;
+       };
+
+       // 결재선 텍스트 렌더링
+       let appsHtml = `
+          <div style="display:flex; gap:30px;">
+             <div class="approver-cell"><span class="approver-status">담당</span><span class="approver-name">${d.senderName}</span><small style="color:#ef4444">${fmtTime(d.createdAt)}</small></div>
+             <div style="color:#cbd5e1; font-size:20px;">|</div>
+          </div>
+          <div style="display:flex; gap:40px;">
+       `;
+       d.approvalLine.forEach((u, i) => {
+          appsHtml += `
+             <div class="approver-cell">
+                <span class="approver-status">${u.role || (i===d.approvalLine.length-1?'결재':'협조')} ${u.status === 'approved' ? '[전결]' : ''}</span>
+                <span class="approver-name" style="${u.status==='approved'?'color:#000':'color:#94a3b8'}">${u.name}</span>
+                <small style="color:#ef4444">${u.status==='approved' ? fmtTime(u.updatedAt) : ''}</small>
+             </div>
+          `;
+       });
+       appsHtml += `</div>`;
+
+       const contentArr = d.content.split('---PAGE_BREAK---');
+       area.innerHTML = contentArr.map((p, i) => `
+          <div class="paper-a4" style="display:flex; flex-direction:column; padding-bottom:30px; margin-bottom:40px; min-height:297mm;">
+             ${i===0 ? `
+                <div style="text-align:center; font-size:28px; font-weight:950; margin:30px 0 50px; color:#1e293b; letter-spacing:4px;">Cheese Lab</div>
+                <div class="gm-row" style="display:flex; padding:10px 0; border-bottom:1px solid #eee;"><div style="width:80px; font-weight:800; color:#64748b;">수 신 :</div><div>${d.recipient || '-'}</div></div>
+                <div class="gm-row" style="display:flex; padding:10px 0; border-bottom:1px solid #eee;"><div style="width:80px; font-weight:800; color:#64748b;">참 조 :</div><div>${d.refLine?.map(x=>x.name).join(', ') || '-'}</div></div>
+                <div class="gm-row" style="display:flex; padding:10px 0; border-bottom:3px double #000; margin-bottom:40px;"><div style="width:80px; font-weight:800; color:#64748b;">제 목 :</div><div style="font-weight:950; font-size:1.2rem; color:#000;">${d.title}</div></div>
+             ` : `<div style="text-align:right; font-size:12px; color:#ccc;">Page ${i+1}</div>`}
+             
+             <div class="gm-body" style="white-space:pre-wrap; flex:1; font-size:16px; line-height:2.2; min-height:400px; color:#111;">${p}</div>
+             
+             ${i === contentArr.length - 1 ? `
+                <div style="margin-top:auto; padding-top:40px;">
+                   <div style="margin-bottom:50px; text-align:center; font-size:20px; font-weight:900; color:#000; letter-spacing:1px;">Cheese Lab 대표이사 권현수</div>
+                   
+                   <!-- 행정 푸터 -->
+                   <div class="gm-admin-footer" style="padding-bottom:10px;">
+                      <div class="footer-approver-row">${appsHtml}</div>
+                      <div class="footer-info-row">
+                         <span class="footer-label">시행</span> <span>Cheese-${fmtTime(d.createdAt).replace(/[^0-9]/g,'')}</span>
+                         <span>(${fmtDate(d.createdAt)})</span>
+                         <span class="footer-label">접수</span> <span>( )</span>
+                      </div>
+                      <div class="footer-info-row">
+                         <span class="footer-label">우</span> [우편번호] <span>[회사 주소지 정보가 표시됩니다]</span>
+                         <span>/ http://www.cheesehistory.com</span>
+                      </div>
+                      <div class="footer-info-row">
+                         <span class="footer-label">전화</span> [전화번호] <span class="footer-label" style="margin-left:10px;">전송</span> [전송번호]
+                         <span>/ [공식 이메일 주소] / 공개</span>
+                      </div>
+                   </div>
+
+                   ${d.attaches?.length > 0 ? `
+                      <div style="margin-top:20px; border-top:1px dashed #cbd5e1; padding-top:15px; margin-bottom:10px;">
+                         <div style="font-weight:800; color:#64748b; margin-bottom:10px;">[별첨 자료]</div>
+                         ${d.attaches.map(f => `<div style="font-size:14px; color:#2563eb; cursor:pointer; margin-bottom:5px;" onclick="window.open('${f.url}','_blank')">📎 ${f.name} (다운로드)</div>`).join('')}
+                      </div>
+                   ` : ''}
+                </div>
+             ` : ''}
+          </div>
+       `).join('');
+
+       const cur = d.approvalLine[d.currentStep];
+       document.getElementById('v-approval-actions').style.display = (d.status==='pending' && cur && cur.userId === state.currentUser.id) ? 'block' : 'none';
+       document.getElementById('v-history-log').innerHTML = d.approvalLine.filter(a => a.status !== 'waiting').map(a => `
+          <div style="padding:15px; background:#fff; border-radius:16px; margin-bottom:10px; border:1px solid #eee;">
+             <div style="display:flex; justify-content:space-between;"><b>${a.name}</b> <span style="font-size:11px; font-weight:800; color:${a.status==='approved'?'#10b981':'#ef4444'}">${a.status.toUpperCase()}</span></div>
+             <div style="font-size:13px; color:#64748b; margin-top:5px;">${a.comment || '의견 없음'}</div>
+          </div>
+       `).join('') || '<div style="color:#ccc; text-align:center;">진행 이력 없음</div>';
+    }
+
+    async function finalizeSend() {
+       const tit = document.getElementById('draft-title').value.trim();
+       if(!tit || !state.selectedLine.length) return alert("제목과 결재선 지정 필수");
+       try {
+          const pages = [document.getElementById('draft-content').value];
+          document.querySelectorAll('.pane-center .paper-a4 .gm-body').forEach(el => pages.push(el.value));
+          const contents = pages.join('---PAGE_BREAK---');
+          
+          const line = state.selectedLine.map((u, i) => ({
+             userId: u.userId, name: u.name, status: i===0 ? 'pending' : 'waiting', comment: '', updatedAt: null
+          }));
+          await addDoc(collection(db, "approval_documents"), {
+             title: tit, content: contents, recipient: document.getElementById('draft-recipient').value,
+             senderId: state.currentUser.id, senderName: state.currentUser.name,
+             status: 'pending', createdAt: serverTimestamp(), currentStep: 0, 
+             approvalLine: line, refLine: state.refLine, attaches: state.attaches
+          });
+          alert("상신되었습니다."); document.getElementById('draft-editor-page').style.display='none'; core.loadDocs();
+       } catch(e) { alert(e.message); }
+    }
+
+    async function runApproval(st) {
+       const op = document.getElementById('v-opinion').value.trim();
+       if(st==='rejected' && !op) return alert("반려 사유 필수");
+       try {
+          const ref = doc(db, "approval_documents", state.viewDocId);
+          const snap = await getDoc(ref);
+          const d = snap.data();
+          let line = [...d.approvalLine], step = d.currentStep, totalStatus = d.status;
+          line[step].status = st; line[step].comment = op; line[step].updatedAt = new Date();
+          if(st==='rejected') totalStatus = 'rejected';
+          else if(step + 1 < line.length) { step++; line[step].status = 'pending'; }
+          else totalStatus = 'approved';
+          await updateDoc(ref, { approvalLine: line, currentStep: step, status: totalStatus });
+          alert("처리 완료!"); document.getElementById('page-detail-viewer').style.display='none'; core.loadDocs();
+       } catch(e) { alert(e.message); }
+    }
+
+    window.renderDraftLines = renderDraftLines;
+    core.init();
+  </script>
+</body>
+</html>

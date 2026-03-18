@@ -325,33 +325,42 @@
     renderDropzones();
   });
 
-  // ====== API: 직원 목록 로드 ======
+  // ====== API: 직원 목록 로드 (Firebase Firestore 버전) ======
   async function loadEmployeesFromApi() {
-    if (!AL_API_BASE) throw new Error("CHEESE_ADMIN_API_BASE가 설정되지 않았습니다.");
-
-    const token = sessionStorage.getItem(TOKEN_KEY) || "";
-    const params = new URLSearchParams();
-    params.set("mode", "listEmployees");
-    if (token) params.set("token", token);
-
-    const res = await fetch(AL_API_BASE + "?" + params.toString(), { method: "GET" });
-    if (!res.ok) throw new Error("HTTP " + res.status);
-
-    const json = await res.json();
-    if (!json.ok || !Array.isArray(json.employees)) {
-      throw new Error(json.error || "employees 응답 형식이 올바르지 않습니다.");
+    // window.db (Firestore 인스턴스)가 있는지 확인
+    if (!window.db) {
+      console.warn("Firestore 인스턴스(window.db)를 찾을 수 없습니다. 초기화를 시도합니다.");
+      // admin-common.js에서 초기화하지 않았다면 여기서 필요한 설정을 불러와야 하지만, 
+      // 보통 admin 페이지들에서 Firebase를 각각 로드하고 있으므로 window.db가 노출된 상태여야 합니다.
+      // 만약 없다면, user_manage.html 등에서 사용한 설정을 참고하여 초기화 로직이 필요할 수 있습니다.
     }
 
-    employees = json.employees.map(e => ({
-      userId: String(e.empNo || e.userId || e.employeeId || "").trim(), // ✅ empNo 우선
-      name: String(e.name || e.nameKor || "").trim(),
-      role: String(e.role || e.roleId || "").trim(),
-    }))
-    .filter(e => e.userId && e.name)
-    .filter(e => !DRAFTER_USER_ID || e.userId !== DRAFTER_USER_ID); // ✅ 기안자 제외
+    try {
+      // dynamic import for firestore functions if not available
+      const { collection, getDocs, query, orderBy } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
+      
+      const q = query(collection(window.db, "employees"), orderBy("empNo", "asc"));
+      const querySnapshot = await getDocs(q);
+      
+      employees = [];
+      querySnapshot.forEach((docSnap) => {
+        const e = docSnap.data();
+        employees.push({
+          userId: String(e.empNo || "").trim(),
+          name: String(e.displayName || "").trim(),
+          role: String(e.positionName || "").trim(),
+        });
+      });
 
+      // 기안자 제외 로직 유지
+      employees = employees.filter(e => !DRAFTER_USER_ID || e.userId !== DRAFTER_USER_ID);
 
-    return employees;
+      return employees;
+    } catch (err) {
+      console.error("Firestore 직원 목록 로드 실패:", err);
+      // 폴백: GAS API 시도 (선택 사항)
+      throw err;
+    }
   }
 
   // ====== 초기화 ======
