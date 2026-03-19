@@ -372,13 +372,32 @@
                     <div id="galleryList" style="display: flex; flex-direction: column; gap: 8px;"></div>
                 </div>
 
-                <!-- Digital File -->
+                <!-- Digital File & Versioning -->
                 <div class="form-group" style="padding: 15px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; margin-bottom: 15px;">
                     <label style="color: #1e40af; font-weight: 700; display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                        <span>📦 다운로드 상품 파일 연동</span>
+                        <span>📦 다운로드 상품 및 버전 관리</span>
                         <button type="button" onclick="window.openFileSelectModal()" style="background: #3b82f6; color: white; border: none; padding: 4px 12px; border-radius: 6px; font-size: 0.75rem; cursor: pointer;">📂 파일 저장소에서 선택</button>
                     </label>
                     <input type="text" id="prodDownloadUrl" class="form-control" placeholder="다운로드 URL" style="margin-bottom: 10px;" />
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                        <div>
+                            <label style="font-size: 0.75rem; color: #1e40af;">상품 버전 (v1.0.0)</label>
+                            <input type="text" id="prodVersion" class="form-control" placeholder="1.0.0" value="1.0.0" />
+                        </div>
+                        <div>
+                            <label style="font-size: 0.75rem; color: #1e40af;">메이저 번호 (정수)</label>
+                            <input type="number" id="prodMajorVersion" class="form-control" placeholder="1" value="1" />
+                        </div>
+                    </div>
+
+                    <div style="background: #fff; padding: 10px; border-radius: 8px; border: 1px solid #dbeafe; margin-bottom: 10px;">
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 0.82rem; cursor: pointer; color: #1e40af; font-weight: 700;">
+                            <input type="checkbox" id="isMajorUpdate" onchange="window.handleVersionUpgrade(this)"> 이 업데이트를 메이저 업그레이드로 처리
+                        </label>
+                        <p style="font-size: 0.72rem; color: #60a5fa; margin: 4px 0 0 25px;">* 체크 시 기존 구매자들에게 50% 할인 업그레이드 혜택이 적용됩니다.</p>
+                    </div>
+
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                         <div>
                             <label style="font-size: 0.75rem; color: #1e40af;">파일 형식</label>
@@ -387,6 +406,16 @@
                         <div>
                             <label style="font-size: 0.75rem; color: #1e40af;">파일 용량</label>
                             <input type="text" id="prodFileSize" class="form-control" placeholder="0 MB" />
+                        </div>
+                    </div>
+
+                    <!-- [New] 업데이트 내역 입력 -->
+                    <div style="margin-top: 15px; border-top: 1px dashed #bfdbfe; padding-top: 15px;">
+                        <label style="font-size: 0.82rem; color: #1e40af; font-weight: 700; margin-bottom: 8px; display: block;">📝 이번 버전 업데이트 내용 (Changelog)</label>
+                        <textarea id="prodUpdateNotes" class="form-control" style="height: 80px; font-size: 0.85rem;" placeholder="예: [v1.1.0] - 오타 수정 및 사료 3종 추가 &#10;- 모바일 가독성 개선"></textarea>
+                        <div id="prevUpdateHistoryContainer" style="margin-top: 10px; display: none;">
+                            <label style="font-size: 0.7rem; color: #64748b;">이전 업데이트 기록 (열람 전용)</label>
+                            <div id="prevUpdateHistoryList" style="font-size: 0.75rem; color: #94a3b8; max-height: 100px; overflow-y: auto; background: #f8fafc; padding: 10px; border-radius: 8px;"></div>
                         </div>
                     </div>
                 </div>
@@ -578,6 +607,25 @@
             document.getElementById('prodImageUrl').value = data.image_url;
             document.getElementById('prodFileFormat').value = data.file_format || "";
             document.getElementById('prodFileSize').value = data.file_size || "";
+            document.getElementById('prodVersion').value = data.version || "1.0.0";
+            document.getElementById('prodMajorVersion').value = data.major_version || 1;
+            document.getElementById('isMajorUpdate').checked = false;
+            document.getElementById('prodUpdateNotes').value = ""; // 초기화
+            
+            // 히스토리 표시
+            const historyList = document.getElementById('prevUpdateHistoryList');
+            const historyContainer = document.getElementById('prevUpdateHistoryContainer');
+            if (data.update_history && data.update_history.length > 0) {
+                historyContainer.style.display = 'block';
+                historyList.innerHTML = data.update_history.map(h => `
+                    <div style="margin-bottom: 5px; border-bottom: 1px dotted #e2e8f0; padding-bottom: 3px;">
+                        <strong>v${h.version}</strong> (${h.date})<br>
+                        ${h.notes.replace(/\n/g, '<br>')}
+                    </div>
+                `).join('');
+            } else {
+                historyContainer.style.display = 'none';
+            }
             
             if (data.image_url) {
                 document.getElementById('mainImagePreview').src = data.image_url;
@@ -704,11 +752,39 @@
                 gallery_urls: Array.from(document.querySelectorAll('.gallery-url')).map(i => i.value).filter(v => v),
                 file_format: document.getElementById('prodFileFormat').value,
                 file_size: document.getElementById('prodFileSize').value,
+                version: document.getElementById('prodVersion').value,
+                major_version: Number(document.getElementById('prodMajorVersion').value),
                 license_options: licenseOptions,
                 required_agree_privacy: document.getElementById('regRequiredAgreePrivacy').checked,
                 required_agree_age: document.getElementById('regRequiredAgreeAge').checked,
                 updatedAt: serverTimestamp()
             };
+
+            // [New] 업데이트 히스토리 기록 로직
+            const newVersion = payload.version;
+            const newNotes = document.getElementById('prodUpdateNotes').value.trim();
+            
+            if (newNotes) {
+                // 기존 데이터 가져오기 (수정 시에만)
+                let existingHistory = [];
+                if (id) {
+                    const docSnap = await getDoc(doc(db, "products", id));
+                    if (docSnap.exists()) {
+                        existingHistory = docSnap.data().update_history || [];
+                    }
+                }
+                
+                // 최상단에 새로운 로그 추가
+                const newLog = {
+                    version: newVersion,
+                    date: new Date().toISOString().split('T')[0],
+                    notes: newNotes,
+                    isMajor: document.getElementById('isMajorUpdate').checked
+                };
+                
+                // 중복 로그 방지 (동일 버전 + 동일 노트면 패스하는 등의 정교함 가능하나 여기서는 그냥 추가)
+                payload.update_history = [newLog, ...existingHistory];
+            }
 
             const btn = e.target.querySelector('button[type="submit"]');
             btn.disabled = true;
@@ -857,6 +933,16 @@
                 <input type="hidden" class="opt-member-price" value="${data?.memberPrice || 0}">
             `;
             container.appendChild(div);
+        };
+
+        window.handleVersionUpgrade = (chk) => {
+            const majorEl = document.getElementById('prodMajorVersion');
+            const versionEl = document.getElementById('prodVersion');
+            if (chk.checked) {
+                const currentMajor = parseInt(majorEl.value) || 1;
+                majorEl.value = currentMajor + 1;
+                versionEl.value = (currentMajor + 1) + ".0.0";
+            }
         };
 
         window.calcDiscount = (el) => {
