@@ -109,9 +109,10 @@
 
         <!-- 리스트 섹션 -->
         <div style="background:#fff; border-radius:32px; border:1px solid #eef2f6; overflow:hidden; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.08);">
-          <div style="padding:30px 40px; border-bottom:1px solid #f1f5f9; display:flex; gap:40px; background:#fff;">
+          <div style="padding:30px 40px; border-bottom:1px solid #f1f5f9; display:flex; gap:30px; background:#fff;">
              <div class="tab-btn active" data-tab="inbox" style="cursor:pointer; font-weight:900; color:#1e293b; font-size:1.1rem; position:relative;">📥 결제할 문서</div>
              <div class="tab-btn" data-tab="outbox" style="cursor:pointer; font-weight:900; color:#94a3b8; font-size:1.1rem;">📤 보낸 기안함</div>
+             <div class="tab-btn" data-tab="received" style="cursor:pointer; font-weight:900; color:#94a3b8; font-size:1.1rem;">📥 수신 문서함</div>
              <div class="tab-btn" data-tab="completed" style="cursor:pointer; font-weight:900; color:#94a3b8; font-size:1.1rem;">✅ 처리 완료함</div>
           </div>
           <div id="list-container" style="min-height:400px;">
@@ -297,7 +298,8 @@
     window.db = db;
 
     const state = {
-      users: [], depts: {}, userDepts: [], currentTab: 'inbox', selectedLine: [], refLine: [], attaches: [], activeEmp: null,
+      users: [], depts: {}, userDepts: [], userDeptIds: [], draftRecipientId: null,
+      currentTab: 'inbox', selectedLine: [], refLine: [], attaches: [], activeEmp: null,
       currentUser: {
         id: window.CHEESE_ADMIN_EMP_NO || sessionStorage.getItem("cheese_admin_emp_no"),
         name: window.CHEESE_ADMIN_DISPLAY_NAME || sessionStorage.getItem("cheese_admin_display_name") || "시스템관리자"
@@ -308,7 +310,6 @@
       init: async function() {
         this.watchdog();
         await this.fetchUsers();
-        await this.loadDocs();
         document.getElementById('my-name-display').textContent = state.currentUser.name;
 
         // 현재 사용자 정보 확인 및 기안 옵션 초기화
@@ -326,8 +327,8 @@
            if(me) {
               const myRoles = [];
               const dNamesSet = new Set();
+              const userDeptsSet = new Set();
               
-              // 부서 및 직급 데이터 통합
               const allIds = [...(me.deptIds || [])];
               if(me.deptId && !allIds.includes(me.deptId)) allIds.push(me.deptId);
               
@@ -341,18 +342,23 @@
                  if(label && !dNamesSet.has(label)) {
                     myRoles.push(`<option value="${label}">${label}</option>`);
                     dNamesSet.add(label);
+                    userDeptsSet.add(dName);
                  }
               });
               h = myRoles.length > 0 ? myRoles.join('') : `<option value="담당">담당</option>`;
-              state.userDepts = Array.from(dNamesSet).map(l => l.split(' ')[0]);
+              state.userDepts = Array.from(userDeptsSet);
+              state.userDeptIds = allIds;
            } else {
-              // 인사 정보에 없는 경우 (통합 관리자 등)
               h = `<option value="기안자">기안자 (${state.currentUser.name})</option>`;
               state.userDepts = ["ADMIN"];
+              state.userDeptIds = ["ADMIN"];
            }
            sel.innerHTML = h;
-           updateDraftStamps(); // 즉시 리프레시
+           updateDraftStamps();
         }
+        
+        // 부서 정보 등이 모두 세팅된 후 결재 문서 로드
+        await this.loadDocs();
       },
       watchdog: function() {
         const reset = () => {
@@ -368,13 +374,12 @@
           const { getDocs, collection, query, orderBy } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
           
           // 부서 정보 로드
-          const dSnap = await getDocs(query(collection(db, "departments"), orderBy("name", "asc")));
+          const dSnap = await getDocs(collection(db, "departments"));
           state.depts = {};
           dSnap.forEach(d => state.depts[d.id] = { id: d.id, ...d.data() });
 
-          // 직원 정보 로드
-          const q = query(collection(db, "employees"), orderBy("empNo", "asc"));
-          const querySnapshot = await getDocs(q);
+          // 직원 정보 로드 (정렬 제거 - 누락 방지)
+          const querySnapshot = await getDocs(collection(db, "employees"));
           
           state.users = [];
           querySnapshot.forEach((docSnap) => {
@@ -386,7 +391,6 @@
           }
         } catch(e) { 
           console.error("Firestore User Load Error", e); 
-          // 실패 시 기존 GAS 로직 폴백 (선택 사항)
         }
       },
       renderOrg: function() {
@@ -404,7 +408,7 @@
         let h = "";
         for(let dId in groups) {
           const dName = state.depts[dId]?.name || dId;
-          h += `<div class="dept-node"><span>📂 ${dName}</span> <span class="btn-set-recipient" data-dept="${dName}">수신처</span></div>`;
+          h += `<div class="dept-node"><span>📂 ${dName}</span> <span class="btn-set-recipient" data-dept="${dName}" data-dept-id="${dId}">수신처</span></div>`;
           groups[dId].forEach(u => {
             const pNames = u.positionNames || (u.positionName ? [u.positionName] : []);
             const pDisplay = pNames.length > 0 ? ` (${pNames.join(', ')})` : '';
@@ -418,19 +422,48 @@
         const uid = state.currentUser.id;
         try {
           let q;
-          if(state.currentTab === 'inbox') q = query(collection(db, "approval_documents"), where("status", "==", "pending"));
-          else if(state.currentTab === 'outbox') q = query(collection(db, "approval_documents"), where("senderId", "==", uid));
-          else q = query(collection(db, "approval_documents"), where("status", "in", ["approved", "rejected"]));
+          // 탭별 베이스 쿼리
+          if(state.currentTab === 'inbox') {
+             q = query(collection(db, "approval_documents"), where("status", "==", "pending"));
+          } else if(state.currentTab === 'outbox') {
+             q = query(collection(db, "approval_documents"), where("senderId", "==", uid));
+          } else {
+             // 수신/완료함은 승인/반려된 모든 문서를 베이스로 가져옴
+             q = query(collection(db, "approval_documents"), where("status", "in", ["approved", "rejected"]));
+          }
 
           const snap = await getDocs(q);
           const raw = [];
+          
+          // 극강의 매칭을 위한 부서명 정규화 (공백/기호 제거)
+          const norm = (s) => String(s || "").replace(/[^가-힣a-zA-Z0-9]/g, "");
+          const myNormDepts = (state.userDepts || []).map(norm);
+          const myDeptIds = (state.userDeptIds || []).map(String);
+
+          console.log("[DEBUG] Current userDepts:", state.userDepts, "IDs:", state.userDeptIds);
+
           snap.forEach(d => {
             const data = d.data();
+            const isSender = data.senderId === uid;
+            const isApprover = data.approvalLine && data.approvalLine.some(x => x.userId === uid);
+            const isRef = data.refLine && data.refLine.some(x => x.userId === uid);
+            
+            // 수신 부서 여부 (ID 매칭 또는 정규화된 이름 매칭)
+            const isRecipientDept = (data.recipientId && myDeptIds.includes(String(data.recipientId))) || 
+                                    (data.recipient && myNormDepts.includes(norm(data.recipient)));
+
             if(state.currentTab === 'inbox') {
               const cur = data.approvalLine[data.currentStep];
-              const isRef = data.refLine && data.refLine.some(x=>x.userId === uid);
               if((cur && cur.userId === uid) || isRef) raw.push({ id: d.id, ...data });
-            } else raw.push({ id: d.id, ...data });
+            } else if(state.currentTab === 'outbox') {
+              raw.push({ id: d.id, ...data });
+            } else if(state.currentTab === 'received') {
+              // 수신 문서함: 승인된 문서 중 수신처가 내 부서인 것
+              if(isRecipientDept && data.status === 'approved') raw.push({ id: d.id, ...data });
+            } else if(state.currentTab === 'completed') {
+              // 본인 관련 문서 전부
+              if(isSender || isApprover || isRef || isRecipientDept) raw.push({ id: d.id, ...data });
+            }
           });
 
           raw.sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
@@ -444,9 +477,10 @@
               <div><span class="badge badge-${d.status}" style="padding:8px 16px; border-radius:12px; font-weight:900; text-transform:uppercase; font-size:11px;">${d.status}</span></div>
             </div>`;
           });
-          list.innerHTML = html || `<div style="padding:150px; text-align:center; color:#cbd5e1; font-weight:700;">문서가 없습니다.</div>`;
-          document.getElementById('stat-pending').textContent = raw.filter(x=>x.status==='pending').length;
-        } catch(e) { console.error(e); }
+          list.innerHTML = html || `<div style="padding:150px; text-align:center; color:#cbd5e1; font-weight:700;">조회된 문서가 없습니다.</div>`;
+          
+          if(state.currentTab === 'inbox') document.getElementById('stat-pending').textContent = raw.length;
+        } catch(e) { console.error("Docs Load Error:", e); }
       }
     };
 
@@ -467,6 +501,7 @@
       // 2. Open Draft Editor
       if(e.target.id === 'btn-start-draft') {
         state.selectedLine = []; state.refLine = []; state.attaches = [];
+        state.draftRecipientId = null; // 초기화
         renderDraftLines(); renderAttaches();
         document.getElementById('draft-title').value = '';
         document.getElementById('draft-recipient').value = '';
@@ -489,7 +524,11 @@
 
       // 4. Set Recipient (Dept)
       const setRec = e.target.closest('.btn-set-recipient');
-      if(setRec) { document.getElementById('draft-recipient').value = setRec.dataset.dept; return; }
+      if(setRec) { 
+         document.getElementById('draft-recipient').value = setRec.dataset.dept; 
+         state.draftRecipientId = setRec.dataset.deptId;
+         return; 
+      }
 
       // 5. Add to Line / Ref
       if(e.target.id === 'btn-add-to-line' && state.activeEmp) {
@@ -694,8 +733,9 @@
        const cur = d.approvalLine[d.currentStep];
        document.getElementById('v-approval-actions').style.display = (d.status==='pending' && cur && cur.userId === state.currentUser.id) ? 'block' : 'none';
        
-       // 배부 패널 제어
-       const isRecipientDept = state.userDepts.includes(d.recipient);
+       // 배부 패널 제어 (ID 또는 이름으로 권한 확인)
+       const isRecipientDept = (d.recipientId && state.userDeptIds.includes(d.recipientId)) || 
+                               (d.recipient && state.userDepts.includes(d.recipient));
        const distPanel = document.getElementById('v-dist-panel');
        if(d.status === 'approved' && isRecipientDept) {
           distPanel.style.display = 'block';
@@ -731,7 +771,9 @@
              userId: u.userId, name: u.name, status: i===0 ? 'pending' : 'waiting', comment: '', updatedAt: null
           }));
           await addDoc(collection(db, "approval_documents"), {
-             title: tit, content: contents, recipient: document.getElementById('draft-recipient').value,
+             title: tit, content: contents, 
+             recipient: document.getElementById('draft-recipient').value,
+             recipientId: state.draftRecipientId || "", // ✅ 부서 ID 저장
              senderId: state.currentUser.id, senderName: state.currentUser.name,
              senderDeptPosition: document.getElementById('draft-myself-dept').value || '-',
              status: 'pending', createdAt: serverTimestamp(), currentStep: 0, 
