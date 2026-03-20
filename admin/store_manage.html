@@ -533,26 +533,50 @@
             const tbody = document.getElementById('productTableBody');
             try {
                 const snap = await getDocs(collection(db, "products"));
-                tbody.innerHTML = snap.docs.map(doc => {
-                    const it = doc.data();
-                    const id = doc.id;
+                const allDocs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+                // 제품명(title) 기준으로 그룹화하여 최신 버전만 추출
+                const grouped = {};
+                allDocs.forEach(p => {
+                    const title = p.title || "Untitled";
+                    if (!grouped[title]) grouped[title] = [];
+                    grouped[title].push(p);
+                });
+
+                const masterList = Object.keys(grouped).map(title => {
+                    const variants = grouped[title];
+                    // 정렬: major_version 내림차순 -> version 내림차순
+                    variants.sort((a, b) => {
+                        const mDiff = (b.major_version || 0) - (a.major_version || 0);
+                        if (mDiff !== 0) return mDiff;
+                        return (b.version || "").localeCompare((a.version || ""), undefined, { numeric: true });
+                    });
+                    return variants[0]; // 가장 최신 버전 반환
+                });
+
+                // 마스터 리스트 정렬 (가공 후 화면 표시 순서 - 최신 등록순 등 필요시 추가 가능)
+                
+                tbody.innerHTML = masterList.map(it => {
+                    const id = it.id;
                     const preview = it.image_url ? `<img src="${it.image_url}">` : (it.icon || '🧀');
                     
-                    // 가격 표시 로직 (라이선스 옵션 기반)
                     let salePrice = it.price || 0;
                     let originalPrice = it.original_price || null;
-                    
                     if (it.license_options && it.license_options.length > 0) {
                         salePrice = it.license_options[0].price;
                         originalPrice = it.license_options[0].originalPrice;
                     }
-                    
                     const discountPercent = originalPrice > salePrice && originalPrice > 0 ? Math.round(((originalPrice - salePrice) / originalPrice) * 100) : 0;
 
                     return `
                         <tr>
                             <td><div class="prod-icon-preview ${it.gradient_class || 'gradient-gold'}">${preview}</div></td>
-                            <td><strong>${it.title}</strong></td>
+                            <td>
+                                <div style="display:flex; flex-direction:column; gap:2px;">
+                                    <strong style="font-size:1.05rem;">${it.title}</strong>
+                                    <span style="font-size:0.65rem; color:#94a3b8; font-weight:700; font-family:'Outfit';">LATEST: v${it.version || '1.0.0'}</span>
+                                </div>
+                            </td>
                             <td><span class="badge-pill">${it.badge_text || ''}</span></td>
                             <td>
                                 <div class="admin-price-info">
@@ -575,7 +599,10 @@
                         </tr>
                     `;
                 }).join('') || '<tr><td colspan="5" style="text-align:center; padding:50px;">상품이 없습니다.</td></tr>';
-            } catch (err) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:red;">로드 오류</td></tr>'; }
+            } catch (err) { 
+                console.error(err);
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:red;">로드 오류</td></tr>'; 
+            }
         }
 
 
