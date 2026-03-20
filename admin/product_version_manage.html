@@ -223,15 +223,23 @@
         async function loadVersions() {
             const tbody = document.getElementById('versionTableBody');
             try {
-                // 특정 제목을 가진 상품들을 모두 가져옴 (버전별로 여러 문서가 존재할 수 있음)
+                // [Fix] 인덱스 오류 방지를 위해 where 조건만 사용하고 정렬은 클라이언트(JS)에서 수행
                 const q = query(
                     collection(db, "products"), 
-                    where("title", "==", productTitle),
-                    orderBy("major_version", "desc"),
-                    orderBy("version", "desc")
+                    where("title", "==", productTitle)
                 );
                 const snap = await getDocs(q);
-                const products = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                
+                // 클라이언트 정렬 (메이저 버전 내림차순 -> 상세 버전 내림차순)
+                const products = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => {
+                    const majorA = Number(a.major_version || 1);
+                    const majorB = Number(b.major_version || 1);
+                    if (majorB !== majorA) return majorB - majorA;
+                    
+                    const verA = (a.version || "1.0.0");
+                    const verB = (b.version || "1.0.0");
+                    return verB.localeCompare(verA, undefined, { numeric: true, sensitivity: 'base' });
+                });
 
                 if (products.length === 0) {
                     tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:50px;">해당 상품 정보를 찾을 수 없습니다.</td></tr>';
