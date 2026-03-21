@@ -1223,7 +1223,8 @@ window.getKSTDateString = function(date) {
   if (isNaN(target.getTime())) target = new Date();
 
   const kstOffset = 9 * 60 * 60 * 1000;
-  const kstDate = new Date(target.getTime() + (target.getTimezoneOffset() * 60000) + kstOffset);
+  // target.getTime()은 절대 UTC 밀리초입니다. 9시간을 바로 더해주어야 올바른 KST 시간을 얻습니다.
+  const kstDate = new Date(target.getTime() + kstOffset);
   return kstDate.toISOString().split('T')[0];
 };
 
@@ -1237,7 +1238,7 @@ window.getKSTDateTimeString = function(date) {
   if (isNaN(target.getTime())) target = new Date();
 
   const kstOffset = 9 * 60 * 60 * 1000;
-  const kstDate = new Date(target.getTime() + (target.getTimezoneOffset() * 60000) + kstOffset);
+  const kstDate = new Date(target.getTime() + kstOffset);
   return kstDate.toISOString().replace('T', ' ').split('.')[0];
 };
 
