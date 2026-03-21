@@ -333,12 +333,13 @@
 
             await loadCategories();
 
-            // 1. productIdParma이 있으면 먼저 문서를 조회하여 제목을 가져옴
+            // 1. productIdParam이 있으면 먼저 문서를 조회하여 제목을 가져옴
             if (productIdParam) {
                 try {
-                    const docSnap = await getDoc(doc(db, "products", productIdParam));
-                    if (docSnap.exists()) {
-                        productTitle = docSnap.data().title;
+                    // [Change] Admin API로 전환
+                    const res = await safeFetchDB({ action: "getDoc", collection: "products", id: productIdParam });
+                    if (res.ok) {
+                        productTitle = res.data.title;
                     }
                 } catch (err) { console.error("Lookup by ID error:", err); }
             }
@@ -368,22 +369,25 @@
 
         async function loadHistory() {
             try {
-                const q = query(collection(db, "products"), where("title", "==", productTitle));
-                const snap = await getDocs(q);
-                productsHistory = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => {
-                    const maj = (b.major_version || 0) - (a.major_version || 0);
-                    if (maj !== 0) return maj;
-                    return (b.version || "").localeCompare((a.version || ""), undefined, {numeric:true});
-                });
-                
-                if (productsHistory.length > 0) {
-                    const top = productsHistory[0];
-                    document.getElementById('pTitle').innerText = top.title;
-                    document.getElementById('pAvatar').innerText = top.icon || "🧀";
-                    document.getElementById('pAvatar').className = `h-avatar ${top.gradient_class}`;
-                    renderTabs();
+                // [Change] Admin API (title 필터 및 정렬)
+                const res = await safeFetchDB({ action: "get", collection: "products", where: { field: "title", op: "==", value: productTitle } });
+                if (res.ok) {
+                    const raw = res.dataList || res.data || [];
+                    productsHistory = raw.sort((a,b) => {
+                        const maj = (b.major_version || 0) - (a.major_version || 0);
+                        if (maj !== 0) return maj;
+                        return (b.version || "").localeCompare((a.version || ""), undefined, {numeric:true});
+                    });
+                    
+                    if (productsHistory.length > 0) {
+                        const top = productsHistory[0];
+                        document.getElementById('pTitle').innerText = top.title;
+                        document.getElementById('pAvatar').innerText = top.icon || "🧀";
+                        document.getElementById('pAvatar').className = `h-avatar ${top.gradient_class}`;
+                        renderTabs();
+                    }
                 }
-            } catch (err) {}
+            } catch (err) { console.error("[Load History Error]", err); }
         }
 
         function renderTabs() {
@@ -645,47 +649,65 @@
             };
 
             try {
-                // 이전 버전들의 판매 상태를 자동으로 종료로 변경 (동일 제목의 활성 상품 검색)
-                const q = query(collection(db, "products"), where("title", "==", payload.title), where("is_discontinued", "==", false));
-                const snap = await getDocs(q);
-                const batchPromises = snap.docs.map(d => updateDoc(doc(db, "products", d.id), { is_discontinued: true }));
-                await Promise.all(batchPromises);
+                // [Change] Admin API로 이전 버전들 discontinuing 처리
+                const oldOnes = await safeFetchDB({ action: "get", collection: "products", where: { field: "title", op: "==", value: payload.title } });
+                if (oldOnes.ok) {
+                    const activeOnes = (oldOnes.dataList || oldOnes.data || []).filter(p => p.is_discontinued === false);
+                    for (const p of activeOnes) {
+                        await safeFetchDB({ action: "update", collection: "products", id: p.id, data: { is_discontinued: true } });
+                    }
+                }
 
-                await addDoc(collection(db, "products"), payload);
-                alert("축하합니다! 새로운 버전이 성공적으로 출시되었으며, 이전 버전들은 자동으로 판매 종료 처리되었습니다.");
-                location.reload();
-            } catch (err) { alert(err.message); }
+                // [Change] Admin API로 신규 버전 출시
+                const res = await safeFetchDB({ action: "create", collection: "products", data: payload });
+                if (res.ok) {
+                    alert("축하합니다! 새로운 버전이 성공적으로 출시되었으며, 이전 버전들은 자동으로 판매 종료 처리되었습니다.");
+                    location.reload();
+                }
+            } catch (err) { alert("출시 중 에러: " + err.message); }
             finally { btn.disabled = false; }
         };
 
         window.toggleLiveStatus = async (id, status) => {
             if(!confirm(`판매 상태를 '${status?'종료':'정상'}'로 변경하시겠습니까?`)) return;
             try {
-                await updateDoc(doc(db, "products", id), { is_discontinued: status });
-                alert("상태가 업데이트되었습니다.");
-                location.reload();
-            } catch (err) { alert(err.message); }
+                // [Change] Admin API로 업데이트
+                const res = await safeFetchDB({ action: "update", collection: "products", id: id, data: { is_discontinued: status } });
+                if (res.ok) {
+                    alert("상태가 업데이트되었습니다.");
+                    location.reload();
+                }
+            } catch (err) { alert("업데이트 실패: " + err.message); }
         };
 
         window.updatePatchNote = async (id) => {
             const newNotes = document.getElementById(`patchNote_${id}`).value;
             if(!confirm("패치노트 내용을 수정하시겠습니까?")) return;
             try {
-                // update_history의 최신 항목도 함께 업데이트 (구조 유지용)
-                const docSnap = await getDoc(doc(db, "products", id));
-                const data = docSnap.data();
-                let history = data.update_history || [];
-                if(history.length > 0) {
-                    history[0].notes = newNotes;
+                // [Change] Admin API로 상세 조회 후 업데이트
+                const snapRes = await safeFetchDB({ action: "getDoc", collection: "products", id: id });
+                if (snapRes.ok) {
+                    const data = snapRes.data;
+                    let history = data.update_history || [];
+                    if(history.length > 0) {
+                        history[0].notes = newNotes;
+                    }
+                    
+                    const res = await safeFetchDB({ 
+                        action: "update", 
+                        collection: "products", 
+                        id: id, 
+                        data: { 
+                            description: newNotes,
+                            update_history: history
+                        } 
+                    });
+                    if (res.ok) {
+                        alert("내용이 성공적으로 수정되었습니다.");
+                        location.reload();
+                    }
                 }
-                
-                await updateDoc(doc(db, "products", id), { 
-                    description: newNotes,
-                    update_history: history
-                });
-                alert("내용이 성공적으로 수정되었습니다.");
-                location.reload();
-            } catch (err) { alert(err.message); }
+            } catch (err) { alert("패치노트 수정 실패: " + err.message); }
         };
 
         window.startEditPatchNote = (id) => {
@@ -722,9 +744,12 @@
         window.runArchiveDelete = async (id) => {
             if(!confirm("이 버전의 모든 기록을 삭제하시겠습니까? 구매자의 다운로드에 영향을 줄 수 있습니다.")) return;
             try {
-                await deleteDoc(doc(db, "products", id));
-                location.reload();
-            } catch (err) { alert(err.message); }
+                // [Change] Admin API로 삭제
+                const res = await safeFetchDB({ action: "delete", collection: "products", id: id });
+                if (res.ok) {
+                    location.reload();
+                }
+            } catch (err) { alert("삭제 실패: " + err.message); }
         };
 
         // --- UI Helpers for Form ---
@@ -855,10 +880,16 @@
             const list = document.getElementById('repoList');
             list.innerHTML = '로드 중...';
             try {
-                const snap = await getDocs(query(collection(db, "download_files"), orderBy("createdAt", "desc")));
-                repoFiles = snap.docs.map(d => d.data());
-                renderRepo(repoFiles);
-            } catch (err) {}
+                // [Change] Admin API로 전환
+                const res = await safeFetchDB({ action: "get", collection: "download_files", orderByField: "createdAt" });
+                if (res.ok) {
+                    repoFiles = res.dataList || res.data || [];
+                    renderRepo(repoFiles);
+                }
+            } catch (err) { 
+                console.error("[Repo Load Error]", err);
+                list.innerHTML = `<p style="text-align:center; color:red; padding:20px;">로드 실패: ${err.message}</p>`;
+            }
         };
         function renderRepo(fs) {
             document.getElementById('repoList').innerHTML = fs.map(f => `
