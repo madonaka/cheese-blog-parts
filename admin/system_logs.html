@@ -150,6 +150,24 @@
             color: #94a3b8;
             cursor: pointer;
         }
+
+        /* Dashboard Styles */
+        .log-dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 25px;
+        }
+        .stat-card {
+            background: #fff;
+            padding: 24px;
+            border-radius: 20px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+            border: 1px solid #f1f5f9;
+        }
+        .stat-label { font-size: 0.8rem; font-weight: 700; color: #64748b; margin-bottom: 8px; }
+        .stat-value { font-size: 1.5rem; font-weight: 800; color: #1e293b; }
+        .stat-sub { font-size: 0.75rem; color: #f97316; margin-top: 5px; font-weight: 600; }
     </style>
 </head>
 
@@ -167,6 +185,30 @@
                         <p style="font-size: 0.85rem; color: #64748b;">모든 사용자 활동과 시스템 이벤트를 실시간으로 추적합니다.</p>
                     </div>
                     <button class="btn-primary" onclick="loadLogs()" style="padding: 10px 20px;">새로고침</button>
+                </div>
+
+                <!-- [New] Log Insights Dashboard -->
+                <div class="log-dashboard">
+                    <div class="stat-card">
+                        <div class="stat-label">실시간 접속 (30분)</div>
+                        <div id="stat-login-30m" class="stat-value">0건</div>
+                        <div class="stat-sub">최근 30분 내 로그인/가입</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">오늘의 활동 (24시간)</div>
+                        <div id="stat-login-24h" class="stat-value">0건</div>
+                        <div class="stat-sub">일일 총 유입</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">평균 체류 시간</div>
+                        <div id="stat-avg-duration" class="stat-value">0분</div>
+                        <div class="stat-sub">세션 유지 추정치</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">관심도 높은 페이지</div>
+                        <div id="stat-top-path" class="stat-value" style="font-size: 1.1rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">-</div>
+                        <div class="stat-sub">최다 방문(조회) 경로</div>
+                    </div>
                 </div>
 
                 <!-- Filters -->
@@ -298,14 +340,58 @@
             }
         }
 
-        // [New] 로그 유의미한 활용을 위한 통계 정보 업데이트
+        // [New] 로그 유의미한 활용을 위한 통계 정보 업데이트 (고급화)
         function updateLogStats(logs) {
-            const signupCount = logs.filter(l => l.action === 'user_signup').length;
-            const purchaseCount = logs.filter(l => l.action === 'purchase_success').length;
-            const errorCount = logs.filter(l => (l.action || '').toUpperCase().includes('ERROR')).length;
+            const now = new Date();
+            const min30 = 30 * 60 * 1000;
+            const hour24 = 24 * 60 * 60 * 1000;
+
+            let login30m = 0;
+            let login24h = 0;
+            const pathCount = {};
+            const userActivity = {}; // uid별 (first, last) timestamp 저장
+
+            logs.forEach(l => {
+                if (!l.timestamp) return;
+                const ts = new Date(l.timestamp).getTime();
+                const diff = now.getTime() - ts;
+
+                // 1. 로그인 수 집계
+                if (['user_login', 'user_signup'].includes(l.action)) {
+                    if (diff <= min30) login30m++;
+                    if (diff <= hour24) login24h++;
+                }
+
+                // 2. 페이지 경로 집계 (마케팅 분석)
+                const path = l.path || '/';
+                pathCount[path] = (pathCount[path] || 0) + 1;
+
+                // 3. 체류 시간 추정용 (uid별 활동 범위)
+                if (l.uid && l.uid !== 'anonymous') {
+                    if (!userActivity[l.uid]) userActivity[l.uid] = { first: ts, last: ts };
+                    userActivity[l.uid].first = Math.min(userActivity[l.uid].first, ts);
+                    userActivity[l.uid].last = Math.max(userActivity[l.uid].last, ts);
+                }
+            });
+
+            // 최고 인기 경로
+            const topPath = Object.keys(pathCount).reduce((a, b) => pathCount[a] > pathCount[b] ? a : b, '-');
+
+            // 평균 체류 시간 계산 (동일 유저의 첫/마지막 활동 차이의 평균)
+            const durations = Object.values(userActivity)
+                .map(u => u.last - u.first)
+                .filter(d => d > 0 && d < 2 * 60 * 60 * 1000); // 2시간 이상은 세션 끊김으로 간주하고 제외
+
+            const avgDurationMs = durations.length > 0 ? durations.reduce((a, b) => a + b, 0) / durations.length : 0;
+            const avgMin = Math.round(avgDurationMs / (60 * 1000));
+
+            // UI 업데이트
+            document.getElementById('stat-login-30m').innerText = `${login30m}건`;
+            document.getElementById('stat-login-24h').innerText = `${login24h}건`;
+            document.getElementById('stat-avg-duration').innerText = `${avgMin}분`;
+            document.getElementById('stat-top-path').innerText = topPath;
             
-            // 상단 대시보드가 있다면 업데이트 (없으면 콘솔에 일단 출력 또는 인젝션)
-            console.log(`[로그 통계] 신규가입: ${signupCount}, 구매성공: ${purchaseCount}, 에러발생: ${errorCount}`);
+            console.log(`[분석 완료] 데이터 세트: ${logs.length}건`);
         }
 
         function renderLogTable() {
