@@ -415,6 +415,7 @@ async function loadAdminHeader() {
 
     const html = await res.text();
     slot.innerHTML = html;
+    executeApprovalLineModalScripts_(slot);
 
     // 헤더 + 메뉴가 DOM에 들어온 뒤에 활성 메뉴 표시
     fillHeaderLoginUser();
@@ -469,6 +470,7 @@ async function loadAdminMenu() {
 
     const html = await res.text();
     slot.innerHTML = html;
+    executeApprovalLineModalScripts_(slot);
 
     // 메뉴가 DOM에 들어온 뒤에 권한 필터 적용
     filterAdminMenuByRole();
@@ -757,6 +759,8 @@ function executeApprovalLineModalScripts_(container) {
   const scripts = Array.from(container.querySelectorAll("script"));
   scripts.forEach((old) => {
     const s = document.createElement("script");
+    // [Fix] type="module" 등 기존 속성 복사
+    if (old.type) s.type = old.type;
     if (old.src) s.src = old.src;
     if (old.textContent && old.textContent.trim()) s.textContent = old.textContent;
     old.parentNode.insertBefore(s, old);
@@ -1250,3 +1254,77 @@ document.addEventListener('touchend', function (event) {
   }
   lastTouchEnd_ = now;
 }, false);
+
+// ─────────────────────────────────────────────
+// [New] Global Admin Notification
+// ─────────────────────────────────────────────
+window.showNotification = function(title, message, type = 'success') {
+    const container = document.getElementById('admin-toast-container') || (function() {
+        const div = document.createElement('div');
+        div.id = 'admin-toast-container';
+        div.style.position = 'fixed';
+        div.style.top = '20px';
+        div.style.right = '20px';
+        div.style.zIndex = '9999';
+        div.style.display = 'flex';
+        div.style.flexDirection = 'column';
+        div.style.gap = '10px';
+        document.body.appendChild(div);
+        return div;
+    })();
+
+    const toast = document.createElement('div');
+    const colors = {
+        success: '#10b981',
+        error: '#ef4444',
+        info: '#3b82f6',
+        warning: '#f59e0b'
+    };
+    const icons = {
+        success: 'fa-check-circle',
+        error: 'fa-exclamation-circle',
+        info: 'fa-info-circle',
+        warning: 'fa-exclamation-triangle'
+    };
+
+    toast.style.background = '#fff';
+    toast.style.borderLeft = `5px solid ${colors[type] || '#111'}`;
+    toast.style.padding = '15px 20px';
+    toast.style.borderRadius = '12px';
+    toast.style.boxShadow = '0 10px 25px rgba(0,0,0,0.1)';
+    toast.style.display = 'flex';
+    toast.style.alignItems = 'center';
+    toast.style.gap = '15px';
+    toast.style.minWidth = '300px';
+    toast.style.animation = 'slideIn 0.3s ease-out';
+
+    toast.innerHTML = `
+        <i class="fas ${icons[type]}" style="color: ${colors[type]}; font-size: 1.2rem;"></i>
+        <div style="flex:1;">
+            <div style="font-weight: 800; font-size: 0.9rem; color: #1e293b;">${title}</div>
+            <div style="font-size: 0.82rem; color: #64748b; margin-top: 2px;">${message}</div>
+        </div>
+    `;
+
+    container.appendChild(toast);
+
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(20px)';
+        toast.style.transition = '0.3s';
+        setTimeout(() => toast.remove(), 300);
+    }, 4000);
+};
+
+// Add standard slideIn animation to document head if not exists
+if (!document.getElementById('toast-anim-styles')) {
+    const style = document.createElement('style');
+    style.id = 'toast-anim-styles';
+    style.innerHTML = `
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(50px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+    `;
+    document.head.appendChild(style);
+}
