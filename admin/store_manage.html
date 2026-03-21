@@ -995,16 +995,24 @@
             try {
                 const id = document.getElementById('editProductId').value;
                 const licenseRows = document.querySelectorAll('.license-option-row');
-                const licenseOptions = Array.from(licenseRows).map(row => ({
-                    id: row.dataset.id,
-                    name: (row.querySelector('.opt-name-select').value === 'custom' ? row.querySelector('.opt-name').value : row.querySelector('.opt-name-select').value),
-                    meta: row.querySelector('.opt-meta').value,
-                    originalPrice: Number(row.querySelector('.opt-original-price').value || 0),
-                    price: Number(row.querySelector('.opt-price').value || 0),
-                    memberPrice: Number(row.querySelector('.opt-member-price').value || 0),
-                    max_downloads: Number(row.querySelector('.opt-max-dl').value || 1),
-                    expiry_days: Number(row.querySelector('.opt-expiry').value || 7)
-                }));
+                const licenseOptions = Array.from(licenseRows).map(row => {
+                    const isSale = row.querySelector('.chk-sale').checked;
+                    const isMember = row.querySelector('.chk-member').checked;
+                    const orig = Number(row.querySelector('.opt-original-price').value || 0);
+                    const sale = isSale ? Number(row.querySelector('.opt-price').value || 0) : orig;
+                    const member = isMember ? Number(row.querySelector('.opt-member-price').value || 0) : null;
+                    
+                    return {
+                        id: row.dataset.id,
+                        name: (row.querySelector('.opt-name-select').value === 'custom' ? row.querySelector('.opt-name').value : row.querySelector('.opt-name-select').value),
+                        meta: row.querySelector('.opt-meta').value,
+                        originalPrice: orig,
+                        price: sale,
+                        memberPrice: member,
+                        max_downloads: Number(row.querySelector('.opt-max-dl').value || 1),
+                        expiry_days: Number(row.querySelector('.opt-expiry').value || 7)
+                    };
+                });
 
                 const payload = {
                     title: document.getElementById('prodTitle').value,
@@ -1241,20 +1249,46 @@
             }
         };
 
-        window.calcDiscount = (el) => {
+        window.togglePriceField = (chk, targetClass) => {
+            const row = chk.closest('.license-option-row');
+            if(!row) return;
+            row.querySelector(targetClass).style.display = chk.checked ? 'block' : 'none';
+            window.calcLivePreview(chk);
+        };
+
+        window.calcLivePreview = (el) => {
             const row = el.closest('.license-option-row');
-            const orig = Number(row.querySelector('.opt-original-price').value || 0);
-            const sale = Number(row.querySelector('.opt-price').value || 0);
-            const badge = row.querySelector('.discount-badge');
+            if(!row) return;
+
+            const orig = parseInt(row.querySelector('.opt-original-price').value) || 0;
+            const isSale = row.querySelector('.chk-sale').checked;
+            const sale = isSale ? (parseInt(row.querySelector('.opt-price').value) || 0) : orig;
+            const isMem = row.querySelector('.chk-member').checked;
+            const mem = isMem ? (parseInt(row.querySelector('.opt-member-price').value) || 0) : null;
+
+            // Preview Sync
+            row.querySelector('.pv-orig').innerText = `${orig.toLocaleString()}원`;
+            row.querySelector('.pv-final').innerText = `${sale.toLocaleString()}원`;
             
+            const badge = row.querySelector('.pv-badge');
             if (orig > sale && orig > 0) {
-                const pct = Math.round(((orig - sale) / orig) * 100);
-                badge.innerText = pct + "% OFF";
-                badge.style.display = 'block';
+                const perc = Math.round(((orig - sale) / orig) * 100);
+                badge.innerText = `${perc}% OFF`;
+                badge.style.display = 'inline-block';
             } else {
                 badge.style.display = 'none';
             }
+
+            const pvMem = row.querySelector('.pv-member');
+            if (isMem && mem !== null) {
+                pvMem.innerText = `회원 할인가: ${mem.toLocaleString()}원`;
+                pvMem.style.display = 'block';
+            } else {
+                pvMem.style.display = 'none';
+            }
         };
+
+        
 
         
         window.handleLicenseNameChange = (sel) => {
