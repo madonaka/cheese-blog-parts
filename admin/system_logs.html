@@ -200,11 +200,11 @@
                     <table class="admin-table">
                         <thead>
                             <tr>
-                                <th style="width: 180px;">발생 일시</th>
-                                <th style="width: 120px;">행동</th>
-                                <th style="width: 150px;">사용자(UID)</th>
-                                <th>경로/내용</th>
-                                <th style="width: 100px;">플랫폼</th>
+                                <th style="width: 180px; cursor: pointer;" onclick="window.handleSort('timestamp')">발생 일시 <span id="sort-icon-timestamp">▼</span></th>
+                                <th style="width: 120px; cursor: pointer;" onclick="window.handleSort('action')">행동 <span id="sort-icon-action"></span></th>
+                                <th style="width: 150px; cursor: pointer;" onclick="window.handleSort('uid')">사용자(UID) <span id="sort-icon-uid"></span></th>
+                                <th style="cursor: pointer;" onclick="window.handleSort('path')">경로/내용 <span id="sort-icon-path"></span></th>
+                                <th style="width: 100px; cursor: pointer;" onclick="window.handleSort('platform')">플랫폼 <span id="sort-icon-platform"></span></th>
                                 <th style="width: 80px;">관리</th>
                             </tr>
                         </thead>
@@ -253,6 +253,32 @@
         let currentPage = 1;
         const itemsPerPage = 20;
 
+        // [New] 정렬 상태 관리
+        let currentSortField = 'timestamp';
+        let isAscending = false;
+
+        window.handleSort = (field) => {
+            if (currentSortField === field) {
+                isAscending = !isAscending;
+            } else {
+                currentSortField = field;
+                isAscending = (field === 'timestamp') ? false : true; // 시간은 최신순(내림차순)이 기본, 나머지는 오름차순 기본
+            }
+            
+            // 모든 헤더 아이콘 초기화
+            ['timestamp', 'action', 'uid', 'path', 'platform'].forEach(f => {
+                const el = document.getElementById(`sort-icon-${f}`);
+                if (el) el.innerText = '';
+            });
+
+            // 선택된 헤더 아이콘 업데이트
+            const currentIcon = document.getElementById(`sort-icon-${field}`);
+            if (currentIcon) currentIcon.innerText = isAscending ? '▲' : '▼';
+
+            currentPage = 1; 
+            renderLogTable();
+        };
+
         async function loadLogs() {
             const tbody = document.getElementById('logTableBody');
             tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 100px;">실시간 로그를 동기화 중입니다...</td></tr>';
@@ -262,11 +288,24 @@
                 const res = await safeFetchDB({ collection: "logs", orderByField: "timestamp", limitCount: 1000 });
                 allLogs = res.data || [];
 
+                // 요약 정보 업데이트 (유의미한 활용 제안)
+                updateLogStats(allLogs);
+
                 renderLogTable();
             } catch (err) {
                 console.error("Load Logs Error:", err);
                 tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #ef4444; padding: 100px;">데이터 로드실패: ${err.message}</td></tr>`;
             }
+        }
+
+        // [New] 로그 유의미한 활용을 위한 통계 정보 업데이트
+        function updateLogStats(logs) {
+            const signupCount = logs.filter(l => l.action === 'user_signup').length;
+            const purchaseCount = logs.filter(l => l.action === 'purchase_success').length;
+            const errorCount = logs.filter(l => (l.action || '').toUpperCase().includes('ERROR')).length;
+            
+            // 상단 대시보드가 있다면 업데이트 (없으면 콘솔에 일단 출력 또는 인젝션)
+            console.log(`[로그 통계] 신규가입: ${signupCount}, 구매성공: ${purchaseCount}, 에러발생: ${errorCount}`);
         }
 
         function renderLogTable() {
@@ -282,6 +321,20 @@
                 const matchAction = !action || logAction.includes(filterAction) || (filterAction === 'purchase' && logAction.includes('purchase'));
                 const matchPlatform = !platform || l.platform === platform;
                 return matchSearch && matchAction && matchPlatform;
+            });
+
+            // [New] 정렬 로직 적용
+            filtered.sort((a, b) => {
+                let vA = a[currentSortField] || '';
+                let vB = b[currentSortField] || '';
+
+                // 대소문자 무시 정렬
+                if (typeof vA === 'string') vA = vA.toLowerCase();
+                if (typeof vB === 'string') vB = vB.toLowerCase();
+
+                if (vA < vB) return isAscending ? -1 : 1;
+                if (vA > vB) return isAscending ? 1 : -1;
+                return 0;
             });
 
             const totalItems = filtered.length;
