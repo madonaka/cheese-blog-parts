@@ -801,9 +801,10 @@
         window.closeProductModal = () => document.getElementById('productModal').classList.remove('show');
 
         window.openEditModal = async (id) => {
-            const docSnap = await getDoc(doc(db, "products", id));
-            if (!docSnap.exists()) return;
-            const data = docSnap.data();
+            // [Change] SDK 대신 Admin API로 조회 (권한 이슈 방어)
+            const res = await safeFetchDB({ action: "getDoc", collection: "products", id: id });
+            if (!res.ok) { alert("정보 로드 실패: " + res.error); return; }
+            const data = res.data;
             document.getElementById('editProductId').value = id;
             document.getElementById('modalTitle').innerHTML = `상품 정보 수정 <small style="font-size:0.75em; color:#64748b; font-weight:400; margin-left:10px;">(Current: v${data.version || '1.0.0'})</small>`;
             
@@ -879,10 +880,15 @@
             btn.innerText = "⏳ 삭제 중...";
             
             try {
-                await deleteDoc(doc(db, "products", id));
-                alert("성공적으로 삭제되었습니다.");
-                closeDeleteModal();
-                loadProducts();
+                // [Change] Admin API로 삭제 (권한 이슈 방어)
+                const res = await safeFetchDB({ action: "delete", collection: "products", id: id });
+                if (res.ok) {
+                    alert("성공적으로 삭제되었습니다.");
+                    closeDeleteModal();
+                    loadProducts();
+                } else {
+                    throw new Error(res.error || "삭제 실패");
+                }
             } catch (err) {
                 alert("삭제 실패: " + err.message);
             } finally {
@@ -1018,18 +1024,25 @@
                     license_options: licenseOptions,
                     required_agree_privacy: document.getElementById('regRequiredAgreePrivacy').checked,
                     required_agree_age: document.getElementById('regRequiredAgreeAge').checked,
-                    updatedAt: serverTimestamp()
+                    updatedAt: new Date().toISOString()
                 };
 
+                let res;
                 if (id) {
-                    await updateDoc(doc(db, "products", id), payload);
+                    // [Change] Admin API로 업데이트
+                    res = await safeFetchDB({ action: "update", collection: "products", id: id, data: payload });
                 } else {
-                    await addDoc(collection(db, "products"), { ...payload, createdAt: serverTimestamp(), update_history: [] });
+                    // [Change] Admin API로 생성
+                    res = await safeFetchDB({ action: "create", collection: "products", data: { ...payload, createdAt: new Date().toISOString(), update_history: [] } });
                 }
                 
-                alert("성공적으로 저장되었습니다.");
-                closeProductModal();
-                loadProducts();
+                if (res.ok) {
+                    alert("성공적으로 저장되었습니다.");
+                    closeProductModal();
+                    loadProducts();
+                } else {
+                    throw new Error(res.error || "처리 실패");
+                }
             } catch(err) { 
                 console.error("Save Error:", err);
                 alert("저장 중 오류가 발생했습니다: " + err.message); 
@@ -1285,10 +1298,15 @@
             btn.disabled = true;
             btn.innerText = "⏳ 저장 중...";
             try {
-                await setDoc(doc(db, "settings", "global_license"), { options, updatedAt: serverTimestamp() });
-                globalLicenses = options;
-                alert("기본 라이선스 설정이 저장되었습니다.");
-                closeGlobalLicenseModal();
+                // [Change] Admin API로 설정 저장
+                const res = await safeFetchDB({ action: "set", collection: "settings", id: "global_license", data: { options, updatedAt: new Date().toISOString() } });
+                if (res.ok) {
+                    globalLicenses = options;
+                    alert("기본 라이선스 설정이 저장되었습니다.");
+                    closeGlobalLicenseModal();
+                } else {
+                    throw new Error(res.error || "저장 실패");
+                }
             } catch (err) { alert("저장 실패: " + err.message); }
             finally { 
                 btn.disabled = false; 
