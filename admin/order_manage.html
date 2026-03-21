@@ -241,6 +241,7 @@
                         <tr>
                             <th>주문일시/번호</th>
                             <th>상품명</th>
+                            <th>상태</th>
                             <th>다운로드</th>
                             <th>만료 기한</th>
                             <th>관리</th>
@@ -296,22 +297,19 @@
 
     <script src="./admin-common.js"></script>
 
-    <!-- Firebase SDK -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, getDocs, doc, updateDoc, Timestamp, orderBy, query } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-
-        const firebaseConfig = {
-            apiKey: "AIzaSyBgLF7lEKQxdsUked-i_Pf0FJEdP_d1Ab4",
-            authDomain: "auth.cheesehistory.com",
-            projectId: "cheese-history-platform",
-            storageBucket: "cheese-history-platform.firebasestorage.app",
-            messagingSenderId: "206588835864",
-            appId: "1:206588835864:web:18cc695d72c6fc96c4ab6d"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
+    <!-- 관리자용 서버 API -->
+    <script type="text/javascript">
+        async function safeFetchDB(payload) {
+            if (!window.CHEESE_ADMIN_DB_API) throw new Error("API URL이 없습니다.");
+            const res = await fetch(window.CHEESE_ADMIN_DB_API, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!data.ok) throw new Error(data.error);
+            return data;
+        }
 
         let activeOrders = [];
         let groupedOrdersList = [];
@@ -320,47 +318,41 @@
         window.loadOrders = async () => {
             const tbody = document.querySelector("#ordersTable tbody");
             try {
-                // 1. users 컬렉션 로드 (UID -> Email, Name 매핑용)
-                const usersSnap = await getDocs(collection(db, "users"));
+                // 1. users 로드
+                const usersRes = await safeFetchDB({ collection: "users" });
                 const userMap = new Map();
-                usersSnap.forEach(doc => {
-                    const data = doc.data();
-                    userMap.set(doc.id, {
+                (usersRes.data || []).forEach(data => {
+                    userMap.set(data.id, {
                         email: data.email || 'no-email',
                         name: data.displayName || '회원'
                     });
                 });
 
                 // 2. guest_orders 와 orders 모두 가져오기
-                const [guestSnap, memberSnap] = await Promise.all([
-                    getDocs(query(collection(db, "guest_orders"), orderBy("created_at", "desc"))),
-                    getDocs(query(collection(db, "orders"), orderBy("created_at", "desc")))
+                const [guestRes, memberRes] = await Promise.all([
+                    safeFetchDB({ collection: "guest_orders", orderByField: "created_at" }),
+                    safeFetchDB({ collection: "orders", orderByField: "created_at" })
                 ]);
                 
                 let allOrders = [];
 
-                guestSnap.docs.forEach(d => {
+                (guestRes.data || []).forEach(d => {
                     allOrders.push({
-                        id: d.id,
-                        collectionName: "guest_orders", // 식별용
-                        ...d.data()
+                        ...d, collectionName: "guest_orders"
                     });
                 });
 
-                memberSnap.docs.forEach(d => {
-                    const data = d.data();
-                    const userInfo = userMap.get(data.uid) || { email: 'unknown-member@email', name: '알 수 없는 회원' };
+                (memberRes.data || []).forEach(d => {
+                    const userInfo = userMap.get(d.uid) || { email: 'unknown-member@email', name: '알 수 없는 회원' };
                     allOrders.push({
-                        id: d.id,
+                        ...d,
                         collectionName: "orders",
-                        // 비회원 객체 구조와 동일하게 속성 추가시켜서 통합 그룹핑 호환
                         guest_contact: userInfo.email,
-                        guest_name: userInfo.name + " (회원)",
-                        ...data
+                        guest_name: userInfo.name + " (회원)"
                     });
                 });
 
-                activeOrders = allOrders.sort((a,b) => (b.created_at?.seconds || 0) - (a.created_at?.seconds || 0));
+                activeOrders = allOrders.sort((a,b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
                 
                 buildGroupedOrders();
                 renderTable(groupedOrdersList);
@@ -380,13 +372,13 @@
                         email: email,
                         name: order.guest_name || '익명',
                         orders: [],
-                        latestDateObj: order.created_at?.toDate ? order.created_at.toDate() : new Date(0),
+                        latestDateObj: order.created_at ? new Date(order.created_at) : new Date(0),
                         latestTitle: order.title || '알 수 없음'
                     });
                 }
                 const group = map.get(email);
                 group.orders.push(order);
-                const orderDate = order.created_at?.toDate ? order.created_at.toDate() : new Date(0);
+                const orderDate = order.created_at ? new Date(order.created_at) : new Date(0);
                 if (orderDate > group.latestDateObj) {
                     group.latestDateObj = orderDate;
                     group.latestTitle = order.title || '알 수 없음';
@@ -480,9 +472,9 @@
                 let expiryDateObj = null;
 
                 if (data.download_expiry) {
-                    expiryDateObj = data.download_expiry.toDate ? data.download_expiry.toDate() : new Date(data.download_expiry);
+                    expiryDateObj = new Date(data.download_expiry);
                 } else if (data.created_at) {
-                    expiryDateObj = new Date(data.created_at.toDate().getTime() + 7 * 24 * 60 * 60 * 1000);
+                    expiryDateObj = new Date(new Date(data.created_at).getTime() + 7 * 24 * 60 * 60 * 1000);
                 }
                 if (expiryDateObj && now > expiryDateObj) isExpired = true;
 
@@ -514,16 +506,16 @@
             }
 
             ordersArray.forEach((data) => {
-                const createdAt = data.created_at?.toDate ? data.created_at.toDate().toLocaleString() : 'N/A';
+                const createdAt = data.created_at ? new Date(data.created_at).toLocaleString() : 'N/A';
                 
                 let expiryStr = 'N/A';
                 let isExpired = false;
                 let expiryDateObj = null;
 
                 if (data.download_expiry) {
-                    expiryDateObj = data.download_expiry.toDate ? data.download_expiry.toDate() : new Date(data.download_expiry);
+                    expiryDateObj = new Date(data.download_expiry);
                 } else if (data.created_at) {
-                    expiryDateObj = new Date(data.created_at.toDate().getTime() + 7 * 24 * 60 * 60 * 1000);
+                    expiryDateObj = new Date(new Date(data.created_at).getTime() + 7 * 24 * 60 * 60 * 1000);
                 }
                 
                 const now = new Date();
@@ -546,6 +538,11 @@
                             ${createdAt}
                         </td>
                         <td>${data.icon || ''} ${titleStr}</td>
+                        <td>
+                            <span class="badge-pill" style="background: ${data.status === 'completed' ? '#ecfdf5' : '#fff7ed'}; color: ${data.status === 'completed' ? '#059669' : '#c2410c'}; border: 1px solid ${data.status === 'completed' ? '#d1fae5' : '#ffedd5'};">
+                                ${data.status === 'completed' ? '결제완료' : '대기중'}
+                            </span>
+                        </td>
                         <td>
                             <span style="color: ${countExhausted ? '#ef4444' : '#10b981'}; font-weight:700;">${usage}</span> / ${max}회
                         </td>
@@ -572,9 +569,9 @@
             // 만료일시 포맷팅 (YYYY-MM-DDTHH:mm 용) - KST 공통 유틸리티 활용
             let expiryDateObj = null;
             if (order.download_expiry) {
-                expiryDateObj = order.download_expiry.toDate ? order.download_expiry.toDate() : new Date(order.download_expiry);
+                expiryDateObj = new Date(order.download_expiry);
             } else if (order.created_at) {
-                const baseDate = order.created_at.toDate ? order.created_at.toDate() : new Date(order.created_at);
+                const baseDate = new Date(order.created_at);
                 expiryDateObj = new Date(baseDate.getTime() + 7 * 24 * 60 * 60 * 1000);
             } else {
                 expiryDateObj = new Date();
@@ -587,10 +584,32 @@
 
             // 요약 정보
             document.getElementById('modalOrderInfo').innerHTML = `
-                <strong>주문자:</strong> ${order.guest_name} (${order.guest_contact})<br>
-                <strong>상품명:</strong> ${order.title}<br>
-                <strong>현재 사용량:</strong> ${order.download_count || 0}회 다운로드 완료 (잔여: ${Math.max((order.max_downloads || 5) - (order.download_count || 0), 0)}회)<br>
-                <div style="margin-top:8px; font-size:0.8rem; color:#ef4444;">이곳에서 최대 횟수와 기간을 늘려주면 즉시 재다운로드가 가능해집니다.</div>
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:15px;">
+                    <div style="flex:1;">
+                        <div style="margin-bottom:8px;">
+                            <strong style="display:block; font-size:0.75rem; color:#94a3b8;">주문자 정보</strong>
+                            <span>${order.guest_name} (${order.guest_contact})</span>
+                        </div>
+                        <div style="margin-bottom:8px;">
+                            <strong style="display:block; font-size:0.75rem; color:#94a3b8;">상품명</strong>
+                            <span>${order.title}</span>
+                        </div>
+                        <div style="margin-bottom:8px;">
+                            <strong style="display:block; font-size:0.75rem; color:#94a3b8;">현재 상태</strong>
+                            <span style="font-weight:800; color:${order.status === 'completed' ? '#10b981' : '#f97316'}">${order.status === 'completed' ? '✅ 결제 완료' : '⏳ 결제 대기중'}</span>
+                        </div>
+                        <div>
+                            <strong style="display:block; font-size:0.75rem; color:#94a3b8;">다운로드 현황</strong>
+                            <span>${order.download_count || 0}회 / ${order.max_downloads || 5}회 (잔여: ${Math.max((order.max_downloads || 5) - (order.download_count || 0), 0)}회)</span>
+                        </div>
+                    </div>
+                    ${order.status !== 'completed' ? `
+                        <button onclick="window.completePayment('${orderId}')" style="background:#10b981; color:#fff; border:none; padding:12px 20px; border-radius:12px; font-weight:800; cursor:pointer; box-shadow:0 4px 12px rgba(16,185,129,0.2); flex-shrink:0;">승인 처리</button>
+                    ` : ''}
+                </div>
+                <div style="margin-top:15px; padding-top:12px; border-top:1px solid #eee; font-size:0.8rem; color:#64748b;">
+                    <span style="color:#ef4444; font-weight:700;">[임시/테스트]</span> 입금을 확인했다면 위 버튼으로 즉시 승인 가능합니다.
+                </div>
             `;
 
             document.getElementById('orderModal').classList.add('show');
@@ -634,13 +653,16 @@
                 if (!orderData) return;
                 
                 const collectionName = orderData.collectionName || "guest_orders";
-                const docRef = doc(db, collectionName, orderId);
                 const expiryDate = new Date(newExpiryStr);
                 
-                // Firestore Timestamp로 저장
-                await updateDoc(docRef, {
-                    max_downloads: newMax,
-                    download_expiry: Timestamp.fromDate(expiryDate)
+                await safeFetchDB({
+                    action: "update",
+                    collection: collectionName,
+                    id: orderId,
+                    data: {
+                        max_downloads: newMax,
+                        download_expiry: expiryDate.toISOString()
+                    }
                 });
 
                 alert("성공적으로 변경되었습니다. 고객이 이제 다운로드할 수 있습니다.");
@@ -657,6 +679,36 @@
             } catch (error) {
                 console.error("수정 에러:", error);
                 alert("수정 중 문제가 발생했습니다: " + error.message);
+            }
+        };
+
+        window.completePayment = async (orderId) => {
+            if (!confirm("해당 주문을 '결제 완료' 상태로 변경하시겠습니까?\n내용을 확인하고 입금이 완료된 경우에만 진행해 주세요.")) return;
+            
+            try {
+                const orderData = activeOrders.find(o => o.id === orderId);
+                if (!orderData) return;
+                
+                const collectionName = orderData.collectionName || "guest_orders";
+                
+                await safeFetchDB({
+                    action: "update",
+                    collection: collectionName,
+                    id: orderId,
+                    data: {
+                        status: "completed",
+                        paid_at: new Date().toISOString(),
+                        manual_approval: true
+                    }
+                });
+
+                alert("결제 승인 완료! 이제 고객이 다운로드할 수 있습니다.");
+                closeModal();
+                await loadOrders();
+                if (currentModalCustomerEmail) applyCustomerSearchFilter();
+            } catch (error) {
+                console.error("승인 에러:", error);
+                alert("승인 처리 중 오류 발생: " + error.message);
             }
         };
 

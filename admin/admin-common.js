@@ -29,6 +29,10 @@
   window.CHEESE_ADMIN_ROLE = role;
   window.CHEESE_ADMIN_EMP_NO = empNo;
 
+  // [New] Firebase 우회용 Cloud Functions API 엔드포인트
+  // 로컬 테스트 시: "http://localhost:5001/cheese-history-platform/asia-northeast3/adminDataApi" 등 사용 가능
+  window.CHEESE_ADMIN_DB_API = "https://asia-northeast3-cheese-history-platform.cloudfunctions.net/adminDataApi";
+
   // 5) 권한 체크 (페이지 상단에서 REQUIRED_ROLES를 세팅해 둔 경우만)
   const requiredRoles = window.CHEESE_ADMIN_REQUIRED_ROLES;
   if (Array.isArray(requiredRoles) && requiredRoles.length > 0) {

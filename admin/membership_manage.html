@@ -292,44 +292,38 @@
 
     <script src="./admin-common.js"></script>
 
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, getDocs, doc, updateDoc, getDoc, query, orderBy, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-
-        const firebaseConfig = {
-            apiKey: "AIzaSyBgLF7lEKQxdsUked-i_Pf0FJEdP_d1Ab4",
-            authDomain: "auth.cheesehistory.com",
-            projectId: "cheese-history-platform",
-            storageBucket: "cheese-history-platform.firebasestorage.app",
-            messagingSenderId: "206588835864",
-            appId: "1:206588835864:web:18cc695d72c6fc96c4ab6d"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
+    <script type="text/javascript">
+        // Firebase SDK를 제거하고 REST API(Cloud Functions)를 통해 안전하게 통신합니다.
 
         let allUsers = [];
         let allOrders = [];
         let currentPage = 1;
         const itemsPerPage = 10;
 
+        async function safeFetchDB(payload) {
+            if (!window.CHEESE_ADMIN_DB_API) {
+                throw new Error("CHEESE_ADMIN_DB_API 주소가 설정되지 않았습니다.");
+            }
+            const res = await fetch(window.CHEESE_ADMIN_DB_API, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!data.ok) throw new Error(data.error || "API 오류");
+            return data;
+        }
+
         async function loadUsers() {
             const tbody = document.getElementById('userTableBody');
             try {
-                // 1. 유저 목록 불러오기
-                const userQ = query(collection(db, "users"), orderBy("created_at", "desc"));
-                const userSnapshot = await getDocs(userQ);
-                allUsers = [];
-                userSnapshot.forEach((doc) => {
-                    allUsers.push({ id: doc.id, ...doc.data() });
-                });
+                // 1. 유저 목록 불러오기 (서버에 위임)
+                const userRes = await safeFetchDB({ collection: "users", orderByField: "created_at" });
+                allUsers = userRes.data || [];
 
-                // 2. 전체 주문 목록 불러오기 (데이터가 많아지면 유저별 쿼리 권장)
-                const orderSnapshot = await getDocs(collection(db, "orders"));
-                allOrders = [];
-                orderSnapshot.forEach((doc) => {
-                    allOrders.push({ id: doc.id, ...doc.data() });
-                });
+                // 2. 전체 주문 목록 불러오기 (서버에 위임)
+                const orderRes = await safeFetchDB({ collection: "orders" });
+                allOrders = orderRes.data || [];
 
                 updateStats();
                 renderUserTable();
@@ -377,12 +371,14 @@
                 const statusLabel = u.status === 'withdrawal_pending' ? '탈퇴 유예' : (u.status === 'blocked' ? '차단됨' : '정상');
                 const statusClass = u.status === 'withdrawal_pending' ? 'status-pending' : (u.status === 'blocked' ? 'status-blocked' : 'status-active');
                 const photo = u.photo_url || "https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg";
-                const createdDate = u.created_at ? new Date(u.created_at.toDate()).toLocaleDateString() : '-';
+                
+                // 서버에서 이미 ISO 문자열로 변환해 주므로 바로 new Date()로 감쌉니다.
+                const createdDate = u.created_at ? new Date(u.created_at).toLocaleDateString() : '-';
                 
                 // 이름이 없으면 이메일 아이디 부분 사용, 최근 접속일 필드 호환 처리
                 const displayName = u.displayName || u.email?.split('@')[0] || 'Member';
                 const lastLoginTs = u.last_login_at || u.last_login;
-                const lastLogin = lastLoginTs ? new Date(lastLoginTs.toDate()).toLocaleString() : '-';
+                const lastLogin = lastLoginTs ? new Date(lastLoginTs).toLocaleString() : '-';
 
                 // 구매 통계 계산
                 const userOrders = allOrders.filter(o => o.uid === u.id);
@@ -462,8 +458,8 @@
             const userOrders = allOrders.filter(o => o.uid === id);
 
             const content = document.getElementById('userDetailContent');
-            const createdDate = user.created_at ? new Date(user.created_at.toDate()).toLocaleString() : '-';
-            const withdrawalDate = user.withdrawal_at ? new Date(user.withdrawal_at.toDate()).toLocaleString() : '-';
+            const createdDate = user.created_at ? new Date(user.created_at).toLocaleString() : '-';
+            const withdrawalDate = user.withdrawal_at ? new Date(user.withdrawal_at).toLocaleString() : '-';
             
             content.innerHTML = `
                 <div style="display: flex; gap: 20px; align-items: center; margin-bottom: 25px;">
@@ -498,7 +494,7 @@
                         <div class="order-history-item">
                             <div>
                                 <div style="font-weight: 700; font-size: 0.9rem;">${o.title}</div>
-                                <div style="font-size: 0.75rem; color: #94a3b8;">${new Date(o.created_at?.toDate()).toLocaleDateString()}</div>
+                                <div style="font-size: 0.75rem; color: #94a3b8;">${new Date(o.created_at).toLocaleDateString()}</div>
                             </div>
                             <div style="font-weight: 800; color: #1e293b;">${Number(o.price).toLocaleString()}원</div>
                         </div>
@@ -516,7 +512,7 @@
                 if (!confirm(`회원 상태를 [${nextStatus}]로 변경하시겠습니까?`)) return;
                 
                 try {
-                    await updateDoc(doc(db, "users", id), { status: nextStatus });
+                    await safeFetchDB({ action: "update", collection: "users", id: id, data: { status: nextStatus } });
                     alert("변경되었습니다.");
                     closeUserModal();
                     loadUsers();

@@ -235,21 +235,19 @@
 
     <script src="./admin-common.js"></script>
 
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, getDocs, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-
-        const firebaseConfig = {
-            apiKey: "AIzaSyBgLF7lEKQxdsUked-i_Pf0FJEdP_d1Ab4",
-            authDomain: "auth.cheesehistory.com",
-            projectId: "cheese-history-platform",
-            storageBucket: "cheese-history-platform.firebasestorage.app",
-            messagingSenderId: "206588835864",
-            appId: "1:206588835864:web:18cc695d72c6fc96c4ab6d"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
+    <script type="text/javascript">
+        // Firebase SDK 삭제, Admin API fetch 사용
+        async function safeFetchDB(payload) {
+            if (!window.CHEESE_ADMIN_DB_API) throw new Error("API URL이 설정되지 않았습니다.");
+            const res = await fetch(window.CHEESE_ADMIN_DB_API, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!data.ok) throw new Error(data.error);
+            return data;
+        }
 
         let allLogs = [];
         let currentPage = 1;
@@ -261,13 +259,8 @@
 
             try {
                 // 부하 방지를 위해 최근 1000건의 로그만 우선 로드
-                const q = query(collection(db, "logs"), orderBy("timestamp", "desc"), limit(1000));
-                const snapshot = await getDocs(q);
-                
-                allLogs = [];
-                snapshot.forEach(doc => {
-                    allLogs.push({ id: doc.id, ...doc.data() });
-                });
+                const res = await safeFetchDB({ collection: "logs", orderByField: "timestamp", limitCount: 1000 });
+                allLogs = res.data || [];
 
                 renderLogTable();
             } catch (err) {
@@ -306,7 +299,7 @@
             }
 
             tbody.innerHTML = paginatedData.map(l => {
-                const date = l.timestamp ? getKSTDateTimeString(l.timestamp.toDate()) : '-';
+                const date = l.timestamp ? getKSTDateTimeString(new Date(l.timestamp)) : '-';
                 const typeClass = getLogTypeClass(l.action);
                 
                 return `
@@ -378,7 +371,7 @@
             if (!log) return;
 
             const content = document.getElementById('logModalContent');
-            const date = log.timestamp ? new Date(log.timestamp.toDate()).toLocaleString() : '-';
+            const date = log.timestamp ? new Date(log.timestamp).toLocaleString() : '-';
             
             content.innerHTML = `
                 <div class="detail-row">

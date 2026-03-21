@@ -357,20 +357,19 @@
     </div>
 
     <script src="./admin-common.js"></script>
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, getDoc, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-
-        const firebaseConfig = {
-            apiKey: "AIzaSyBgLF7lEKQxdsUked-i_Pf0FJEdP_d1Ab4",
-            authDomain: "auth.cheesehistory.com",
-            projectId: "cheese-history-platform",
-            storageBucket: "cheese-history-platform.firebasestorage.app",
-            messagingSenderId: "206588835864",
-            appId: "1:206588835864:web:18cc695d72c6fc96c4ab6d"
-        };
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
+    <script type="text/javascript">
+        // Firebase 직접 접근을 삭제하고 Cloud Functions 우회 API(서버)를 이용합니다.
+        async function safeFetchDB(payload) {
+            if (!window.CHEESE_ADMIN_DB_API) throw new Error("CHEESE_ADMIN_DB_API 주소가 설정되지 않았습니다.");
+            const res = await fetch(window.CHEESE_ADMIN_DB_API, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!data.ok) throw new Error(data.error || "서버 통신 오류");
+            return data;
+        }
 
         // State
         let quizzes = [];
@@ -504,9 +503,10 @@
 
         async function loadProducts() {
             try {
-                const snap = await getDocs(collection(db, "products"));
-                products = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                const res = await safeFetchDB({ collection: "products" });
+                products = res.data || [];
                 const select = document.getElementById('quizRelatedProduct');
+                select.innerHTML = '<option value="">연관 상품 없음</option>';
                 products.forEach(p => {
                     const opt = document.createElement('option');
                     opt.value = p.id;
@@ -519,9 +519,8 @@
         async function loadQuizzes() {
             const tbody = document.getElementById('quizTableBody');
             try {
-                const q = query(collection(db, "quizzes"), orderBy("created_at", "desc"));
-                const snap = await getDocs(q);
-                quizzes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                const res = await safeFetchDB({ collection: "quizzes", orderByField: "created_at" });
+                quizzes = res.data || [];
                 
                 renderQuizzes();
                 updateStats();
@@ -651,7 +650,7 @@
         window.deleteQuiz = async (id) => {
             if (!confirm("정말 이 문제를 삭제하시겠습니까?")) return;
             try {
-                await deleteDoc(doc(db, "quizzes", id));
+                await safeFetchDB({ action: "delete", collection: "quizzes", id: id });
                 window.showNotification("삭제 성공", "문제가 기록에서 제거되었습니다.", "info");
                 loadQuizzes();
             } catch (err) { console.error(err); }
@@ -687,16 +686,16 @@
                 correct_answer: correctAnswer,
                 explanation,
                 related_product_id: relatedProductId,
-                updated_at: serverTimestamp()
+                updated_at: new Date().toISOString()
             };
 
             try {
                 if (id) {
-                    await updateDoc(doc(db, "quizzes", id), quizData);
+                    await safeFetchDB({ action: "update", collection: "quizzes", id: id, data: quizData });
                     window.showNotification("수정 완료", "문제 정보가 업데이트되었습니다.", "success");
                 } else {
-                    quizData.created_at = serverTimestamp();
-                    await addDoc(collection(db, "quizzes"), quizData);
+                    quizData.created_at = new Date().toISOString();
+                    await safeFetchDB({ action: "create", collection: "quizzes", data: quizData });
                     window.showNotification("등록 성공", "새로운 문제가 은행에 추가되었습니다.", "success");
                 }
                 closeQuizModal();

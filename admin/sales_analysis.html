@@ -394,21 +394,19 @@
 
     <script src="./admin-common.js"></script>
 
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, getDocs, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-
-        const firebaseConfig = {
-            apiKey: "AIzaSyBgLF7lEKQxdsUked-i_Pf0FJEdP_d1Ab4",
-            authDomain: "auth.cheesehistory.com",
-            projectId: "cheese-history-platform",
-            storageBucket: "cheese-history-platform.firebasestorage.app",
-            messagingSenderId: "206588835864",
-            appId: "1:206588835864:web:18cc695d72c6fc96c4ab6d"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
+    <script type="text/javascript">
+        // Firebase 직접 접근을 제거하고 Cloud Functions 백엔드를 통해 안전하게 데이터를 처리합니다.
+        async function safeFetchDB(payload) {
+            if (!window.CHEESE_ADMIN_DB_API) throw new Error("API URL이 정의되지 않았습니다.");
+            const res = await fetch(window.CHEESE_ADMIN_DB_API, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!data.ok) throw new Error(data.error);
+            return data;
+        }
         let salesChart = null;
         let monthlyChart = null;
         let hourlyChart = null;
@@ -420,30 +418,23 @@
         async function initAnalysis() {
             try {
                 // 1. 회원 주문 데이터 로드 (orders)
-                const ordersSnapshot = await getDocs(collection(db, "orders"));
-                const memberColOrders = [];
-                ordersSnapshot.forEach(doc => {
-                    const data = doc.data();
-                    memberColOrders.push({ id: doc.id, ...data });
-                });
+                const ordersRes = await safeFetchDB({ collection: "orders" });
+                const memberColOrders = ordersRes.data || [];
 
                 // 2. 비회원 주문 데이터 로드 (guest_orders)
-                const guestOrdersSnapshot = await getDocs(collection(db, "guest_orders"));
-                const guestColOrders = [];
-                guestOrdersSnapshot.forEach(doc => {
-                    const data = doc.data();
-                    guestColOrders.push({ id: doc.id, is_guest_exclusive: true, ...data });
-                });
+                const guestOrdersRes = await safeFetchDB({ collection: "guest_orders" });
+                const guestColOrders = (guestOrdersRes.data || []).map(d => ({ ...d, is_guest_exclusive: true }));
 
                 // 3. 통합 데이터 생성
                 allOrdersGlobal = [...memberColOrders, ...guestColOrders];
 
                 // 4. 로그 데이터 로드 (유입 경로 분석용)
-                const logsSnapshot = await getDocs(query(collection(db, "logs"), orderBy("timestamp", "desc"), limit(500)));
-                allLogsGlobal = [];
-                logsSnapshot.forEach(doc => {
-                    allLogsGlobal.push(doc.data());
+                const logsRes = await safeFetchDB({ 
+                    collection: "logs", 
+                    orderByField: "timestamp", 
+                    limitCount: 500 
                 });
+                allLogsGlobal = logsRes.data || [];
 
                 // 초기 기간 설정 및 적용 (최근 30일)
                 setPeriod('30d');
@@ -490,7 +481,7 @@
             const filteredOrders = allOrdersGlobal.filter(o => {
                 const dateRaw = o.created_at || o.timestamp;
                 if (!dateRaw) return false;
-                const d = dateRaw.toDate();
+                const d = new Date(dateRaw);
                 const dStr = getKSTDateString(d); // 공통 KST 변환 사용
                 if (startDate && dStr < startDate) return false;
                 if (endDate && dStr > endDate) return false;
@@ -500,7 +491,7 @@
             // 로그 필터링 (한국 시간 기준)
             const filteredLogs = allLogsGlobal.filter(log => {
                 if (!log.timestamp) return false;
-                const d = log.timestamp.toDate();
+                const d = new Date(log.timestamp);
                 const dStr = getKSTDateString(d);
                 if (startDate && dStr < startDate) return false;
                 if (endDate && dStr > endDate) return false;
@@ -554,7 +545,7 @@
             
             const monthRevenue = allOrders.filter(o => {
                 if (!o.created_at) return false;
-                const d = o.created_at.toDate();
+                const d = new Date(o.created_at);
                 return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
             }).reduce((sum, o) => sum + (Number(o.price) || 0), 0);
 
@@ -587,7 +578,7 @@
             const dailySales = dateRange.map(date => {
                 const dayTotal = orders.filter(o => {
                     if (!o.created_at) return false;
-                    return o.created_at.toDate().toISOString().split('T')[0] === date;
+                    return new Date(o.created_at).toISOString().split('T')[0] === date;
                 }).reduce((sum, o) => sum + (Number(o.price) || 0), 0);
                 return dayTotal;
             });
@@ -638,7 +629,7 @@
             const monthlyData = last6Months.map(m => {
                 return orders.filter(o => {
                     if (!o.created_at) return false;
-                    const d = o.created_at.toDate();
+                    const d = new Date(o.created_at);
                     return d.getMonth() === m.month && d.getFullYear() === m.year;
                 }).reduce((sum, o) => sum + (Number(o.price) || 0), 0);
             });
@@ -673,7 +664,7 @@
             const hourlyDist = hours.map(h => {
                 return orders.filter(o => {
                     if (!o.created_at) return false;
-                    return o.created_at.toDate().getHours() === h;
+                    return new Date(o.created_at).getHours() === h;
                 }).length;
             });
 
@@ -811,8 +802,8 @@
 
         function renderRecentOrders(orders) {
             const sorted = [...orders].sort((a,b) => {
-                const ta = a.created_at?.toDate() || 0;
-                const tb = b.created_at?.toDate() || 0;
+                const ta = new Date(a.created_at || 0).getTime();
+                const tb = new Date(b.created_at || 0).getTime();
                 return tb - ta;
             }).slice(0, 10);
 
@@ -822,16 +813,18 @@
                 return;
             }
 
-            tbody.innerHTML = sorted.map(o => {
-                const dateStr = o.created_at ? new Date(o.created_at.toDate()).toLocaleString() : '-';
+            const html = sorted.map(o => {
+                const date = o.created_at ? new Date(o.created_at).toLocaleString() : 'N/A';
                 const isGuest = o.imported_from_guest || o.is_guest_exclusive || o.is_guest;
+                const shortId = o.id.slice(-8);
+                const titleStr = o.title ? (o.title.length > 18 ? o.title.slice(0, 18) + '...' : o.title) : 'Unknown';
                 const typeBadge = isGuest 
                     ? '<span class="status-badge" style="background:#fefce8; color:#854d0e; margin-left:5px;">비회원</span>' 
                     : '<span class="status-badge" style="background:#eff6ff; color:#1e40af; margin-left:5px;">회원</span>';
                 
                 return `
                     <tr>
-                        <td><span style="font-size: 0.85rem; color: #64748b;">${dateStr}</span></td>
+                        <td><span style="font-size: 0.85rem; color: #64748b;">${date}</span></td>
                         <td style="font-weight: 700;">
                             ${o.title}
                             ${typeBadge}
