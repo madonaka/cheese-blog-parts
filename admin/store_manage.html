@@ -621,6 +621,17 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
+        // --- Core Helpers (Admin API Bridge) ---
+        async function safeFetchDB(payload) {
+            const API_URL = window.CHEESE_ADMIN_DB_API || "https://asia-northeast3-cheese-history-platform.cloudfunctions.net/adminDataApi";
+            const response = await fetch(API_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            return await response.json();
+        }
+
         let categories = [];
         let globalLicenses = [];
         let repositoryFiles = [];
@@ -629,27 +640,39 @@
         async function loadCategories() {
             const list = document.getElementById('categoryList');
             const select = document.getElementById('prodBadge');
-            try {
-                const snap = await getDocs(collection(db, "categories"));
-                categories = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-                
-                list.innerHTML = categories.map(c => `
-                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; border-bottom: 1px solid #f8fafc; transition: 0.2s; background:#fff;">
-                        <span style="font-weight:700; color:#1e293b;"><i class="fas fa-tag" style="color:#10b981; margin-right:8px; font-size:0.8rem;"></i>${c.name}</span>
-                        <button class="btn-delete" style="font-size: 0.75rem; background:#fff1f2; padding:6px 12px; border-radius:8px; font-weight:800;" onclick="window.deleteCategory('${c.id}')">삭제</button>
-                    </div>
-                `).join('') || '<div style="padding:30px; text-align:center; color:#94a3b8; font-weight:600;">등록된 카테고리가 없습니다.</div>';
+            if (!list || !select) return;
 
-                select.innerHTML = '<option value="">카테고리 선택</option>' + categories.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
-            } catch (err) { console.error(err); }
+            try {
+                // [Change] 클라이언트 SDK 대신 Admin API 우회 호출 (CORS/권한 이슈 방지)
+                const res = await safeFetchDB({ action: "get", collection: "categories" });
+                if (res.ok) {
+                    categories = res.dataList || res.data || [];
+                    
+                    list.innerHTML = categories.map(c => `
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; border-bottom: 1px solid #f8fafc; transition: 0.2s; background:#fff;">
+                            <span style="font-weight:700; color:#1e293b;"><i class="fas fa-tag" style="color:#10b981; margin-right:8px; font-size:0.8rem;"></i>${c.name}</span>
+                            <button class="btn-delete" style="font-size: 0.75rem; background:#fff1f2; padding:6px 12px; border-radius:8px; font-weight:800;" onclick="window.deleteCategory('${c.id}')">삭제</button>
+                        </div>
+                    `).join('') || '<div style="padding:30px; text-align:center; color:#94a3b8; font-weight:600;">등록된 카테고리가 없습니다.</div>';
+
+                    select.innerHTML = '<option value="">카테고리 선택</option>' + categories.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
+                } else {
+                    throw new Error(res.error || "응답 실패");
+                }
+            } catch (err) { 
+                console.error("[Load Categories Error]", err);
+                list.innerHTML = `<div style="padding:30px; text-align:center; color:red; font-size:0.8rem;">로드 실패: ${err.message}</div>`;
+            }
         }
 
         async function loadGlobalLicenses() {
             try {
-                const docRef = doc(db, "settings", "global_license");
-                const snap = await getDoc(docRef);
-                if (snap.exists()) globalLicenses = snap.data().options || [];
-            } catch (err) { console.error(err); }
+                // [Change] 클라이언트 SDK 대신 Admin API 우회 호출
+                const res = await safeFetchDB({ action: "getDoc", collection: "settings", id: "global_license" });
+                if (res.ok) {
+                    globalLicenses = res.data?.options || [];
+                }
+            } catch (err) { console.error("[Load License Error]", err); }
         }
 
         async function loadProducts() {
@@ -986,15 +1009,25 @@
         window.addCategory = async () => {
             const name = document.getElementById('newCategoryName').value.trim();
             if (name) {
-                await addDoc(collection(db, "categories"), { name, createdAt: serverTimestamp() });
-                document.getElementById('newCategoryName').value = "";
-                loadCategories();
+                // [Change] Admin API를 통해 저장
+                const res = await safeFetchDB({ action: "create", collection: "categories", data: { name, createdAt: new Date().toISOString() } });
+                if (res.ok) {
+                    document.getElementById('newCategoryName').value = "";
+                    loadCategories();
+                } else {
+                    alert("추가 실패: " + res.error);
+                }
             }
         };
         window.deleteCategory = async (id) => {
             if (confirm("삭제하시겠습니까?")) {
-                await deleteDoc(doc(db, "categories", id));
-                loadCategories();
+                // [Change] Admin API를 통해 삭제
+                const res = await safeFetchDB({ action: "delete", collection: "categories", id: id });
+                if (res.ok) {
+                    loadCategories();
+                } else {
+                    alert("삭제 실패: " + res.error);
+                }
             }
         };
 
