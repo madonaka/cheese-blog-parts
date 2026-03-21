@@ -337,7 +337,7 @@
     <script src="./admin-common.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, getDocs, doc, updateDoc, serverTimestamp, onSnapshot, query, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, getDocs, doc, updateDoc, serverTimestamp, onSnapshot, query, orderBy, addDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBgLF7lEKQxdsUked-i_Pf0FJEdP_d1Ab4",
@@ -535,15 +535,38 @@
 
             try {
                 const docRef = doc(db, "qna", currentEditId);
+                const item = allQna.find(x => x.id === currentEditId);
+                
                 await updateDoc(docRef, {
                     answer: answer || null,
                     answered_at: serverTimestamp()
                 });
+
+                // 답변 등록 시 사용자에게 알림 생성
+                if (answer && item && item.uid) {
+                    try {
+                        const productName = productMap.get(item.productId) || "상품";
+                        await addDoc(collection(db, "notifications"), {
+                            uid: item.uid,
+                            message: `질문하신 [${productName}] 상품에 대한 답변이 등록되었습니다.`,
+                            icon: "💬",
+                            link: "mypage.html",
+                            is_read: false,
+                            created_at: serverTimestamp(),
+                            type: 'qna_answer'
+                        });
+                        console.log("알림 생성 완료");
+                    } catch (notiErr) {
+                        console.error("알림 생성 실패:", notiErr);
+                        // 알림 생성 실패가 본 데이터 저장을 방해하지 않도록 함
+                    }
+                }
+
                 alert("답변이 저장되었습니다.");
                 closeModal();
             } catch (e) {
                 console.error("답변 저장 실패:", e);
-                alert("저장 중 오류가 발생했습니다.");
+                alert("저장 중 오류가 발생했습니다. (권한 또는 네트워크 문제)");
             }
         };
 
