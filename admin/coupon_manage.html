@@ -361,34 +361,33 @@
     <script src="./admin-common.js"></script>
 
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, getDocs, addDoc, deleteDoc, updateDoc, doc, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-
-        const firebaseConfig = {
-            apiKey: "AIzaSyBgLF7lEKQxdsUked-i_Pf0FJEdP_d1Ab4",
-            authDomain: "auth.cheesehistory.com",
-            projectId: "cheese-history-platform",
-            storageBucket: "cheese-history-platform.firebasestorage.app",
-            messagingSenderId: "206588835864",
-            appId: "1:206588835864:web:18cc695d72c6fc96c4ab6d"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
+        // --- Admin DB API Helper ---
+        async function safeFetchDB(payload) {
+            if (!window.CHEESE_ADMIN_DB_API) throw new Error("Admin API URL is not configured.");
+            const res = await fetch(window.CHEESE_ADMIN_DB_API, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!data.ok) throw new Error(data.error || "API Error");
+            return data;
+        }
 
         let allCoupons = [];
 
         async function loadCoupons() {
             try {
-                const q = query(collection(db, "coupons"), orderBy("created_at", "desc"));
-                const snapshot = await getDocs(q);
-                allCoupons = [];
-                snapshot.forEach(doc => {
-                    allCoupons.push({ id: doc.id, ...doc.data() });
+                const res = await safeFetchDB({ 
+                    action: "get", 
+                    collection: "coupons",
+                    orderByField: "created_at"
                 });
+                allCoupons = res.data || [];
                 renderCoupons();
             } catch (err) {
                 console.error("Load Coupons Error:", err);
+                document.getElementById('couponGrid').innerHTML = `<p style="text-align:center; color:red; padding:40px;">데이터 로드 실패: ${err.message}</p>`;
             }
         }
 
@@ -461,7 +460,6 @@
             const targetCriteria = document.getElementById('fcTargetCriteria').value;
             const targetValue = document.getElementById('fcTargetValue').value.trim();
             const targetListRaw = document.getElementById('fcTargetList').value;
-            // 줄바꿈으로 나누고 공백 제거하여 저장
             const targetList = targetListRaw.split('\n').map(s => s.trim()).filter(s => s);
             const range = document.getElementById('fcRange').value;
             const rangeTarget = document.getElementById('fcRangeTarget').value;
@@ -472,21 +470,25 @@
             }
 
             try {
-                await addDoc(collection(db, "coupons"), {
-                    code, type, value,
-                    min_order_amount: minAmount,
-                    usage_limit: limitVal,
-                    per_user_limit: perUserLimit,
-                    used_count: 0,
-                    expired_at: expiry,
-                    issue_type: issueType,
-                    target_criteria: targetCriteria,
-                    target_value: targetValue,
-                    target_list: targetList, // [추가] 이메일 리스트
-                    range: range,
-                    range_target: rangeTarget,
-                    is_active: true,
-                    created_at: serverTimestamp()
+                await safeFetchDB({
+                    action: "create",
+                    collection: "coupons",
+                    data: {
+                        code, type, value,
+                        min_order_amount: minAmount,
+                        usage_limit: limitVal,
+                        per_user_limit: perUserLimit,
+                        used_count: 0,
+                        expired_at: expiry,
+                        issue_type: issueType,
+                        target_criteria: targetCriteria,
+                        target_value: targetValue,
+                        target_list: targetList,
+                        range: range,
+                        range_target: rangeTarget,
+                        is_active: true,
+                        created_at: new Date().toISOString()
+                    }
                 });
                 
                 alert("쿠폰이 성공적으로 발행되었습니다.");
@@ -500,8 +502,11 @@
 
         window.toggleCouponStatus = async (id, currentStatus) => {
             try {
-                await updateDoc(doc(db, "coupons", id), {
-                    is_active: !currentStatus
+                await safeFetchDB({
+                    action: "update",
+                    collection: "coupons",
+                    id: id,
+                    data: { is_active: !currentStatus }
                 });
                 loadCoupons();
             } catch (err) {
@@ -528,13 +533,16 @@
             document.getElementById('productSelectorModal').classList.add('show');
             
             if (productListForSelector.length === 0) {
-                const snapshot = await getDocs(collection(db, "products"));
-                productListForSelector = [];
-                snapshot.forEach(doc => {
-                    productListForSelector.push({ id: doc.id, ...doc.data() });
-                });
+                try {
+                    const res = await safeFetchDB({ action: "get", collection: "products" });
+                    productListForSelector = res.data || [];
+                    renderProductSelectorList();
+                } catch(e) {
+                    console.error("Load Products Category Error:", e);
+                }
+            } else {
+                renderProductSelectorList();
             }
-            renderProductSelectorList();
         };
 
         window.closeProductSelector = () => {
@@ -543,20 +551,19 @@
 
         function renderProductSelectorList(filter = "") {
             const list = document.getElementById('psList');
-            const filtered = productListForSelector.filter(p => p.title.toLowerCase().includes(filter.toLowerCase()));
+            const filtered = productListForSelector.filter(p => (p.title || "").toLowerCase().includes(filter.toLowerCase()));
             
             list.innerHTML = filtered.map(p => `
                 <div class="product-item" onclick="selectProduct('${p.id}')">
                     <span class="name">${p.title}</span>
                     <span class="id">${p.id}</span>
                 </div>
-            `).join('');
+            `).join('') || '<p style="padding:20px; text-align:center; color:#94a3b8;">검색 결과가 없습니다.</p>';
         }
 
         window.selectProduct = (id) => {
             const input = document.getElementById(targetInputId);
             if (targetInputId === 'fcRangeTarget' && input.value) {
-                // 쉼표로 구분하여 추가
                 const current = input.value.split(',').map(s => s.trim()).filter(s => s);
                 if (!current.includes(id)) {
                     current.push(id);
@@ -575,31 +582,35 @@
         window.deleteCoupon = async (id) => {
             if (!confirm("정말 이 쿠폰을 삭제하시겠습니까? 기록이 영구삭제됩니다.")) return;
             try {
-                await deleteDoc(doc(db, "coupons", id));
+                await safeFetchDB({ action: "delete", collection: "coupons", id: id });
                 loadCoupons();
             } catch (err) {
                 console.error("Delete Coupon Error:", err);
+                alert("삭제 실패: " + err.message);
             }
         };
 
         window.addEventListener('load', () => {
             if (window.renderAdminHeader) window.renderAdminHeader({ mountId: 'admin-header-slot', badgeText: 'Marketing', subtitle: '쿠폰 마스터 관리' });
             if (window.renderAdminMenu) window.renderAdminMenu({ mountId: 'admin-menu-slot', active: 'coupon_manage' });
-            loadCoupons();
+            
+            // API 설정 대기 후 로드
+            const checkApi = setInterval(() => {
+                if (window.CHEESE_ADMIN_DB_API) {
+                    clearInterval(checkApi);
+                    loadCoupons();
+                }
+            }, 100);
 
-            // 범위 선택에 따른 타겟 입력 표시 토글
             document.getElementById('fcRange').addEventListener('change', (e) => {
                 const targetRow = document.getElementById('fcRangeTargetRow');
                 targetRow.style.display = (e.target.value === 'all') ? 'none' : 'block';
             });
 
-            // 발급 대상 조건에 따른 입력 표시 토글
             document.getElementById('fcTargetCriteria').addEventListener('change', (e) => {
                 const targetRow = document.getElementById('fcTargetRow');
                 const listRow = document.getElementById('fcTargetListRow');
                 const val = e.target.value;
-                
-                // 검색 버튼 및 라벨 조정
                 if (val === 'purchased_product') {
                     targetRow.style.display = 'block';
                     listRow.style.display = 'none';
@@ -617,11 +628,10 @@
                 }
             });
 
-            // 적용 범위에 따른 검색 버튼 텍스트 변경
             document.getElementById('fcRange').addEventListener('change', (e) => {
                 const btn = document.getElementById('rangeSearchBtn');
                 if (e.target.value === 'category') {
-                    btn.style.display = 'none'; // 카테고리는 일단 수동입력 또는 별도 로직 필요 (현재는 상품 검색 위주)
+                    btn.style.display = 'none';
                 } else if (e.target.value === 'product') {
                     btn.style.display = 'inline-block';
                 }
