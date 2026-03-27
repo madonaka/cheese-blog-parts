@@ -231,6 +231,27 @@
             background: #e64500;
             transform: translateY(-1px);
         }
+
+        .cs-tab {
+            padding: 12px 24px;
+            cursor: pointer;
+            border: none;
+            background: none;
+            font-weight: 700;
+            font-size: 0.95rem;
+            color: #64748b;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .cs-tab:hover { color: #1e293b; }
+        .cs-tab.active {
+            color: #ff4d00;
+            border-bottom-color: #ff4d00;
+        }
+
+        .status-badge.rejected { background: #f1f5f9; color: #64748b; }
+        .status-badge.approved { background: #fee2e2; color: #ef4444; }
     </style>
 </head>
 
@@ -244,16 +265,22 @@
             <div class="admin-content" style="flex:1; padding: 2rem;">
                 <div class="qna-manage-header">
                     <div>
-                        <h2 style="font-size: 1.5rem; font-weight: 800; color: #1e293b; margin-bottom: 0.2rem;">상품 문의 관리</h2>
-                        <p style="color: #64748b; font-size: 0.95rem;">고객이 남긴 상품 문의에 답변을 등록하고 관리할 수 있습니다.</p>
+                        <h2 style="font-size: 1.5rem; font-weight: 800; color: #1e293b; margin-bottom: 0.2rem;" id="mainTitle">고객지원 통합 관리</h2>
+                        <p style="color: #64748b; font-size: 0.95rem;" id="mainDesc">상품 문의 및 환불 요청을 한곳에서 효율적으로 처리합니다.</p>
                     </div>
                 </div>
 
-                <div style="margin-bottom: 20px; display: flex; gap: 10px;">
-                    <select id="statusFilter" class="form-control" style="width: auto; min-height: auto;" onchange="renderQnaTable()">
-                        <option value="all">전체 문의</option>
-                        <option value="pending">답변 대기</option>
-                        <option value="completed">답변 완료</option>
+                <!-- Tabs -->
+                <div style="display: flex; gap: 10px; margin-bottom: 25px; border-bottom: 1px solid #e2e8f0; padding-bottom: 0;">
+                    <button class="cs-tab active" id="tab-qna" onclick="switchCsTab('qna')">상품 문의 관리</button>
+                    <button class="cs-tab" id="tab-refund" onclick="switchCsTab('refund')">환불 요청 관리 <span id="refundCountBadge" style="background:#ef4444; color:white; font-size:10px; padding:2px 6px; border-radius:10px; margin-left:5px; display:none;">0</span></button>
+                </div>
+
+                <div id="qnaFilterSection" style="margin-bottom: 20px; display: flex; gap: 10px;">
+                    <select id="statusFilter" class="form-control" style="width: auto; min-height: auto;" onchange="renderActiveTable()">
+                        <option value="all">전체 상태</option>
+                        <option value="pending">처리 대기</option>
+                        <option value="completed">처리 완료</option>
                     </select>
                 </div>
 
@@ -294,27 +321,34 @@
                 <div class="qna-question-text" id="modalQuestionContent">질문 내용이 여기에 들어갑니다.</div>
             </div>
 
-            <div style="margin-bottom:20px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:10px;">
-                    <label style="font-size:0.9rem; font-weight:700; color:#1e293b;">답변 내용</label>
-                    <div style="display:flex; gap:6px;">
-                        <button id="aiRecommendBtn" onclick="recommendAIAnswer('suggest')" style="display:flex; align-items:center; gap:5px; background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%); color:white; border:none; padding:5px 12px; border-radius:8px; font-size:0.75rem; font-weight:700; cursor:pointer; transition:0.2s; box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.2);">
-                            <span style="font-size:0.9rem;">✨</span> AI 자동 제안
-                        </button>
-                        <button id="aiRefineBtn" onclick="recommendAIAnswer('refine')" style="display:flex; align-items:center; gap:5px; background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%); color:white; border:none; padding:5px 12px; border-radius:8px; font-size:0.75rem; font-weight:700; cursor:pointer; transition:0.2s; box-shadow: 0 4px 6px -1px rgba(14, 165, 233, 0.2);">
-                            <span style="font-size:0.9rem;">🪄</span> 문맥 다듬기
-                        </button>
+            <div id="qnaEditSection">
+                <div style="margin-bottom:20px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:10px;">
+                        <label style="font-size:0.9rem; font-weight:700; color:#1e293b;">답변 내용</label>
+                        <div style="display:flex; gap:6px;">
+                            <button id="aiRecommendBtn" onclick="recommendAIAnswer('suggest')" style="display:flex; align-items:center; gap:5px; background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%); color:white; border:none; padding:5px 12px; border-radius:8px; font-size:0.75rem; font-weight:700; cursor:pointer; transition:0.2s; box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.2);">
+                                <span style="font-size:0.9rem;">✨</span> AI 자동 제안
+                            </button>
+                        </div>
                     </div>
+                    <textarea id="answerInput" class="form-control" placeholder="고객에게 전달할 답변을 입력해 주세요."></textarea>
                 </div>
-                <div id="aiLoading" style="display:none; font-size:0.8rem; color:#6366f1; margin-bottom:10px; font-weight:600; animation: pulse 1.5s infinite;">
-                    AI가 적절한 답변을 생성하고 있습니다...
+                <div style="display:flex; justify-content:flex-end; gap:10px;">
+                    <button class="btn-cancel" style="background:#f1f5f9; color:#475569; border:none; padding:12px 24px; border-radius:10px; font-weight:700; cursor:pointer;" onclick="closeModal()">취소</button>
+                    <button class="btn-submit" onclick="saveAnswer()">답변 등록/수정</button>
                 </div>
-                <textarea id="answerInput" class="form-control" placeholder="고객에게 전달할 답변을 입력해 주세요."></textarea>
             </div>
 
-            <div style="display:flex; justify-content:flex-end; gap:10px;">
-                <button class="btn-cancel" style="background:#f1f5f9; color:#475569; border:none; padding:12px 24px; border-radius:10px; font-weight:700; cursor:pointer;" onclick="closeModal()">취소</button>
-                <button class="btn-submit" onclick="saveAnswer()">답변 등록/수정</button>
+            <div id="refundProcessSection" style="display:none;">
+                <div style="background: #f8fafc; padding: 20px; border-radius: 12px; margin-bottom: 20px; border: 1px dashed #cbd5e1;">
+                    <div style="font-size: 0.8rem; color: #64748b; margin-bottom: 10px;">관리자 처리 사유</div>
+                    <textarea id="refundNoteInput" class="form-control" style="min-height: 80px;" placeholder="승인/거절 사유를 입력하세요 (사용자에게 노출될 수 있음)"></textarea>
+                </div>
+                <div style="display:flex; gap:10px;">
+                    <button class="btn-cancel" style="flex:1; background:#f1f5f9; color:#475569; border:none; padding:15px; border-radius:12px; font-weight:700; cursor:pointer;" onclick="processRefund('rejected')">환불 거절</button>
+                    <button class="btn-submit" style="flex:1.5; background:#ef4444; padding:15px; border-radius:12px;" onclick="processRefund('approved')">최종 환불 승인</button>
+                </div>
+                <p style="font-size:0.75rem; color:#94a3b8; margin-top:15px; text-align:center;">※ 승인 시 PG사(토스 등) 취소 API 호출이 필요할 수 있습니다.</p>
             </div>
         </div>
     </div>
@@ -352,8 +386,10 @@
         const db = getFirestore(app);
 
         let allQna = [];
+        let allRefunds = [];
         let productMap = new Map();
         let currentEditId = null;
+        let activeTab = 'qna';
 
         // 상품 마스터 정보 먼저 로드
         async function loadProductMap() {
@@ -367,213 +403,242 @@
             }
         }
 
-        // QnA 실시간 리스너
-        function listenToQna() {
-            const q = query(collection(db, "qna"), orderBy("created_at", "desc"));
-            onSnapshot(q, (snapshot) => {
+        // 통합 실시간 리스너
+        function listenToData() {
+            // QnA 리스너
+            const qQna = query(collection(db, "qna"), orderBy("created_at", "desc"));
+            onSnapshot(qQna, (snapshot) => {
                 allQna = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                renderQnaTable();
-            }, (err) => {
-                console.error("QnA 실시간 리스너 오류:", err);
-                document.querySelector("#qnaTable tbody").innerHTML = `<tr><td colspan="6" style="text-align:center; color:#ef4444;">데이터를 불러오는 중 오류가 발생했습니다.</td></tr>`;
+                if (activeTab === 'qna') renderActiveTable();
+            });
+
+            // Refund 리스너
+            const qRefund = query(collection(db, "refunds"), orderBy("created_at", "desc"));
+            onSnapshot(qRefund, (snapshot) => {
+                allRefunds = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                const pendingCount = allRefunds.filter(r => r.status === 'pending').length;
+                const badge = document.getElementById('refundCountBadge');
+                if (pendingCount > 0) {
+                    badge.innerText = pendingCount;
+                    badge.style.display = 'inline-block';
+                } else {
+                    badge.style.display = 'none';
+                }
+                if (activeTab === 'refund') renderActiveTable();
             });
         }
 
-        window.renderQnaTable = () => {
+        window.switchCsTab = (tab) => {
+            activeTab = tab;
+            document.querySelectorAll('.cs-tab').forEach(el => el.classList.remove('active'));
+            document.getElementById(`tab-${tab}`).classList.add('active');
+            
+            const tableHeader = document.querySelector("#qnaTable thead tr");
+            if (tab === 'qna') {
+                tableHeader.innerHTML = `
+                    <th style="width: 150px;">등록일</th>
+                    <th>대상 상품</th>
+                    <th>문의 내용</th>
+                    <th style="width: 120px;">작성자</th>
+                    <th style="width: 100px;">상태</th>
+                    <th style="width: 80px;">관리</th>
+                `;
+            } else {
+                tableHeader.innerHTML = `
+                    <th style="width: 150px;">신청일</th>
+                    <th>대상 상품</th>
+                    <th>환불 금액</th>
+                    <th style="width: 150px;">신청자</th>
+                    <th style="width: 100px;">상태</th>
+                    <th style="width: 80px;">처리</th>
+                `;
+            }
+            renderActiveTable();
+        };
+
+        window.renderActiveTable = () => {
             const filter = document.getElementById('statusFilter').value;
             const tbody = document.querySelector("#qnaTable tbody");
             
-            const filtered = allQna.filter(item => {
-                if (filter === 'pending') return !item.answer;
-                if (filter === 'completed') return !!item.answer;
-                return true;
-            });
+            if (activeTab === 'qna') {
+                const filtered = allQna.filter(item => {
+                    if (filter === 'pending') return !item.answer;
+                    if (filter === 'completed') return !!item.answer;
+                    return true;
+                });
+                renderQnaRows(filtered, tbody);
+            } else {
+                const filtered = allRefunds.filter(item => {
+                    if (filter === 'pending') return item.status === 'pending';
+                    if (filter === 'completed') return item.status !== 'pending';
+                    return true;
+                });
+                renderRefundRows(filtered, tbody);
+            }
+        };
 
-            if (filtered.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding: 3rem; color: #64748b;">조건에 맞는 문의가 없습니다.</td></tr>`;
+        function renderQnaRows(data, tbody) {
+            if (data.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding: 3rem; color: #64748b;">문의 데이터가 없습니다.</td></tr>`;
                 return;
             }
-
-            tbody.innerHTML = filtered.map(item => {
+            tbody.innerHTML = data.map(item => {
                 const date = item.created_at ? new Date(item.created_at.seconds * 1000).toLocaleString() : '-';
-                const productName = productMap.get(item.productId) || "삭제된 상품 (" + item.productId + ")";
+                const productName = productMap.get(item.productId) || "삭제된 상품";
                 const statusClass = item.answer ? 'completed' : 'pending';
                 const statusText = item.answer ? '답변완료' : '답변대기';
-                const secretMark = item.is_secret ? '<span class="secret-badge">🔒</span>' : '';
-
                 return `
                     <tr>
                         <td style="font-size:0.8rem; color:#64748b;">${date}</td>
                         <td style="font-weight:700; color:#1e293b;">${productName}</td>
                         <td>
-                            <div style="font-weight:600; margin-bottom:4px;">${item.title} ${secretMark}</div>
+                            <div style="font-weight:600; margin-bottom:4px;">${item.title}</div>
                             <div style="font-size:0.82rem; color:#64748b; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:300px;">${item.content}</div>
                         </td>
                         <td>${item.userEmail?.split('@')[0] || '익명'}</td>
                         <td><span class="status-badge ${statusClass}">${statusText}</span></td>
                         <td>
-                            <button onclick="window.openQnaModal('${item.id}')" style="background:#f8fafc; border:1px solid #e2e8f0; padding:6px 10px; border-radius:6px; cursor:pointer; font-size:0.8rem; font-weight:700;">관리</button>
+                            <button onclick="window.openManageModal('${item.id}', 'qna')" style="background:#f8fafc; border:1px solid #e2e8f0; padding:6px 10px; border-radius:6px; cursor:pointer; font-size:0.8rem; font-weight:700;">관리</button>
                         </td>
                     </tr>
                 `;
             }).join('');
+        }
+
+        function renderRefundRows(data, tbody) {
+            if (data.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding: 3rem; color: #64748b;">환불 요청 데이터가 없습니다.</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = data.map(item => {
+                const date = item.created_at ? new Date(item.created_at.seconds * 1000).toLocaleString() : '-';
+                const statusClass = item.status || 'pending';
+                const statusText = item.status === 'pending' ? '대기중' : (item.status === 'approved' ? '승인완료' : '환불거절');
+                return `
+                    <tr>
+                        <td style="font-size:0.8rem; color:#64748b;">${date}</td>
+                        <td style="font-weight:700; color:#1e293b;">${item.productTitle}</td>
+                        <td style="color:#ef4444; font-weight:900;">${Number(item.price).toLocaleString()}원</td>
+                        <td style="font-size:0.85rem;">${item.userEmail}</td>
+                        <td><span class="status-badge ${statusClass}">${statusText}</span></td>
+                        <td>
+                            <button onclick="window.openManageModal('${item.id}', 'refund')" style="background:#fff; border:1px solid #e2e8f0; padding:6px 10px; border-radius:6px; cursor:pointer; font-size:0.8rem; font-weight:700;">${item.status === 'pending' ? '처리' : '조회'}</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        window.openManageModal = (id, type) => {
+            currentEditId = id;
+            if (type === 'qna') {
+                const item = allQna.find(x => x.id === id);
+                document.getElementById('modalTitle').innerText = "문의 답변하기";
+                document.getElementById('modalMeta').innerText = `${item.userEmail || '익명'} | ${item.created_at ? new Date(item.created_at.seconds * 1000).toLocaleString() : '-'}`;
+                document.getElementById('modalQuestionTitle').innerText = item.title;
+                document.getElementById('modalQuestionContent').innerText = item.content;
+                document.getElementById('qnaEditSection').style.display = 'block';
+                document.getElementById('refundProcessSection').style.display = 'none';
+                document.getElementById('answerInput').value = item.answer || '';
+            } else {
+                const item = allRefunds.find(x => x.id === id);
+                document.getElementById('modalTitle').innerText = "환불 요청 상세";
+                document.getElementById('modalMeta').innerText = `${item.userEmail} | ${item.created_at ? new Date(item.created_at.seconds * 1000).toLocaleString() : '-'}`;
+                document.getElementById('modalQuestionTitle').innerText = `주문 ID: #${item.orderId.slice(0,8)}`;
+                document.getElementById('modalQuestionContent').innerHTML = `
+                    <div style="background:#fff; padding:15px; border-radius:10px; border:1px solid #eee;">
+                        <p style="margin:0 0 5px 0;"><b>신청 상품:</b> ${item.productTitle}</p>
+                        <p style="margin:0 0 5px 0;"><b>신청 금액:</b> <span style="color:#ef4444; font-weight:700;">${Number(item.price).toLocaleString()}원</span></p>
+                        <p style="margin:0;"><b>사유:</b> ${item.reason}</p>
+                    </div>
+                `;
+                document.getElementById('qnaEditSection').style.display = 'none';
+                document.getElementById('refundProcessSection').style.display = item.status === 'pending' ? 'block' : 'none';
+                document.getElementById('refundNoteInput').value = item.admin_note || '';
+            }
+            document.getElementById('qnaModal').classList.add('show');
         };
 
-        window.openQnaModal = (id) => {
-            const item = allQna.find(x => x.id === id);
+        window.processRefund = async (status) => {
+            const note = document.getElementById('refundNoteInput').value.trim();
+            const item = allRefunds.find(x => x.id === currentEditId);
             if (!item) return;
 
-            currentEditId = id;
-            const date = item.created_at ? new Date(item.created_at.seconds * 1000).toLocaleString() : '-';
-            
-            document.getElementById('modalMeta').innerText = `${item.userEmail || '익명'} | ${date}`;
-            document.getElementById('modalQuestionTitle').innerText = item.title;
-            document.getElementById('modalQuestionContent').innerText = item.content;
-            document.getElementById('answerInput').value = item.answer || '';
-            
-            document.getElementById('qnaModal').classList.add('show');
+            const confirmMsg = status === 'approved' ? "정말로 환불을 최종 승인하시겠습니까? 결제가 취소됩니다." : "환불 요청을 거절하시겠습니까?";
+            if (!confirm(confirmMsg)) return;
+
+            try {
+                await updateDoc(doc(db, "refunds", currentEditId), {
+                    status: status,
+                    admin_note: note || null,
+                    processed_at: serverTimestamp()
+                });
+
+                // 사용자 알림 발송
+                const msg = status === 'approved' 
+                    ? `[${item.productTitle}] 상품의 환불이 승인되었습니다. 결제 금액이 환불됩니다.` 
+                    : `[${item.productTitle}] 상품의 환불이 거절되었습니다. 사유: ${note || '내부 규정에 따름'}`;
+                
+                await addDoc(collection(db, "notifications"), {
+                    uid: item.uid,
+                    message: msg,
+                    icon: status === 'approved' ? "💸" : "🚫",
+                    link: "mypage.html#orders",
+                    is_read: false,
+                    created_at: serverTimestamp(),
+                    type: 'refund_result'
+                });
+
+                alert(status === 'approved' ? "환불 승인 처리되었습니다." : "환불 거절 처리되었습니다.");
+                closeModal();
+            } catch (e) {
+                console.error(e);
+                alert("처리 중 오류가 발생했습니다.");
+            }
         };
 
         window.closeModal = () => {
             document.getElementById('qnaModal').classList.remove('show');
             currentEditId = null;
-            document.getElementById('aiLoading').style.display = 'none';
-        };
-
-        window.recommendAIAnswer = async (mode = 'suggest') => {
-            const item = allQna.find(x => x.id === currentEditId);
-            if (!item) return;
-
-            const suggestBtn = document.getElementById('aiRecommendBtn');
-            const refineBtn = document.getElementById('aiRefineBtn');
-            const loader = document.getElementById('aiLoading');
-            const textarea = document.getElementById('answerInput');
-
-            if (mode === 'suggest' && textarea.value.trim() && !confirm("현재 입력된 내용을 지우고 AI 추천 답변으로 채우시겠습니까?")) {
-                return;
-            }
-
-            if (mode === 'refine' && !textarea.value.trim()) {
-                alert("다듬을 내용을 먼저 입력해 주시면 AI가 정중한 표현으로 바꿔드립니다.");
-                return;
-            }
-
-            suggestBtn.disabled = true;
-            refineBtn.disabled = true;
-            loader.style.display = 'block';
-            loader.innerText = mode === 'suggest' ? "AI가 질문 의도를 분석하여 답변을 생성 중입니다..." : "AI가 작성하신 내용을 토대로 정중한 답변을 구성 중입니다...";
-            
-            // 시뮬레이션: AI 연출
-            await new Promise(r => setTimeout(r, 700 + Math.random() * 600));
-
-            try {
-                const productName = productMap.get(item.productId) || "상품";
-                const qBody = (item.title + " " + item.content).toLowerCase();
-                const currentText = textarea.value.trim();
-                
-                let result = "";
-                
-                if (mode === 'suggest') {
-                    if (qBody.includes("테스트") || qBody.includes("test")) {
-                        result = `안녕하세요 고객님! [${productName}] 상품에 대한 테스트 문의시군요.\n\n현재 치즈랩의 상품 문의 시스템과 실시간 알림 기능이 모두 정상적으로 작동하고 있습니다. 🎉\n\nAI 추천 답변 기능 또한 지금 보시는 것처럼 고객님의 질문 의도를 파악하여 최적의 제안을 해드릴 준비가 되어 있으니, 궁금하신 점이 있다면 언제든 편하게 질문해 주세요! 감사합니다.`;
-                    } else if (qBody.includes("배송") || qBody.includes("언제") || qBody.includes("기다") || qBody.includes("택배")) {
-                        result = `안녕하세요 고객님! [${productName}] 상품 배송 문의에 대해 답변드립니다.\n\n현재 고객님의 상품은 출고를 위한 검수 단계에 있으며, 영업일 기준 1~3일 내에 안전하게 발송될 예정입니다. 발송이 시작되면 운송장 번호를 알림설정하신 수단으로 보내드리오니 조금만 더 기다려 주시면 감사하겠습니다.\n\n기다려 주셔서 감사합니다. 좋은 소식으로 보답하겠습니다.`;
-                    } else if (qBody.includes("환불") || qBody.includes("취소") || qBody.includes("반품")) {
-                        result = `안녕하세요 고객님, 치즈랩 고객지원팀입니다.\n\n문의하신 [${productName}] 상품의 환불 관련하여 안내드립니다. 결제하신 상품은 규정에 따라 미다운로드 상태인 경우 구매일로부터 7일 이내에 전액 환불이 가능합니다. 확인을 위해 [마이페이지 > 구매내역]에서 신청해 주시거나, 추가 도움이 필요하시면 말씀해 주세요.\n\n항상 고객님의 만족을 위해 노력하는 치즈랩이 되겠습니다. 감사합니다.`;
-                    } else if (qBody.includes("오류") || qBody.includes("안되요") || qBody.includes("안돼요") || qBody.includes("에러") || qBody.includes("문제")) {
-                        result = `안녕하세요 고객님, 이용에 큰 불편을 드려 진심으로 사과드립니다.\n\n말씀해 주신 [${productName}] 관련 기술적 문제는 현재 저희 운영팀에서 긴급 원인을 파악 중입니다. 번거로우시겠지만 사용 중이신 브라우저의 캐시를 삭제 후 재시도해 보시기 바라며, 증상이 계속될 경우 캡처 화면과 함께 다시 문의 주시면 빠르게 원격 지원 혹은 해결책을 안내해 드리겠습니다.\n\n신속한 처리를 위해 최선을 다하겠습니다. 감사합니다.`;
-                    } else if (qBody.includes("감사") || qBody.includes("좋아") || qBody.includes("최고") || qBody.includes("리뷰")) {
-                        result = `안녕하세요 고객님, 따뜻한 말씀 전해 주셔서 정말 감사합니다!\n\n[${productName}] 상품이 고객님의 프로젝트나 공부에 큰 도움이 되었다니 저희 개발팀도 매우 보람을 느낍니다. 보내주신 응원에 힘입어 더 좋은 품질의 자료와 업데이트로 보답하도록 하겠습니다.\n\n앞으로도 치즈랩과 즐거운 시간 되시길 바랍니다. 감사합니다!`;
-                    } else {
-                        result = `안녕하세요 고객님, 치즈랩입니다. [${productName}] 상품에 대해 관심을 갖고 문의 주셔서 감사합니다.\n\n고객님께서 문의하신 내용에 대해 현재 담당 부서에서 상세 내용을 확인 중에 있습니다. 확인이 완료되는 대로 본 답변을 업데이트하여 신속하고 정확한 안내를 도와드릴 수 있도록 하겠습니다.\n\n잠시만 기다려 주시면 감사하겠습니다. 궁금하신 사항은 언제든 추가로 말씀해 주세요. 감사합니다!`;
-                    }
-                } else {
-                    // [개선된 다듬기 모드] 불필요한 중복 제거 및 간결하고 세련된 문장으로 변형
-                    let refined = currentText;
-                    
-                    // 1. 이미 인사가 포함되어 있다면 인사말 생략 또는 교체
-                    const hasGreeting = refined.includes("안녕") || refined.includes("반갑");
-                    const hasClosing = refined.includes("감사") || refined.includes("좋은");
-
-                    const greeting = hasGreeting ? "" : "안녕하세요 고객님, 치즈랩입니다. ";
-                    const closing = hasClosing ? "" : "\n\n추가적인 궁금증은 언제든 말씀해 주세요. 감사합니다!";
-
-                    // 2. 문장 끝맺음 부드럽게 (음/슴체 정중하게 변환)
-                    refined = refined
-                        .replace(/해요/g, "합니다")
-                        .replace(/어여/g, "어요")
-                        .replace(/구요/g, "고요")
-                        .trim();
-
-                    result = `${greeting}${refined}${closing}`;
-
-                    // 3. 극히 짧은 경우만 별도 처리
-                    if (currentText.length < 10 && !hasGreeting) {
-                        result = `안녕하세요 고객님! [${productName}] 관련하여 남겨주신 "${currentText}" 문의 확인했습니다. 신속히 안내 및 조치하도록 하겠습니다. 감사합니다.`;
-                    }
-                }
-
-                textarea.value = result;
-                textarea.style.height = 'auto';
-                textarea.style.height = textarea.scrollHeight + 'px';
-                textarea.focus();
-            } catch (e) {
-                console.error("AI 처리 실패:", e);
-                alert("처리 중 오류가 발생했습니다.");
-            } finally {
-                suggestBtn.disabled = false;
-                refineBtn.disabled = false;
-                loader.style.display = 'none';
-            }
         };
 
         window.saveAnswer = async () => {
             const answer = document.getElementById('answerInput').value.trim();
-            if (!answer) {
-                if (!confirm("답변을 비운 채로 저장하시겠습니까? (상태가 답변대기로 변경됩니다)")) return;
-            }
-
             try {
-                const docRef = doc(db, "qna", currentEditId);
                 const item = allQna.find(x => x.id === currentEditId);
-                
-                await updateDoc(docRef, {
+                await updateDoc(doc(db, "qna", currentEditId), {
                     answer: answer || null,
                     answered_at: serverTimestamp()
                 });
 
-                // 답변 등록 시 사용자에게 알림 생성
-                if (answer && item && item.uid) {
-                    try {
-                        const productName = productMap.get(item.productId) || "상품";
-                        await addDoc(collection(db, "notifications"), {
-                            uid: item.uid,
-                            message: `질문하신 [${productName}] 상품에 대한 답변이 등록되었습니다.`,
-                            icon: "💬",
-                            link: `detail.html?id=${item.productId}#qna-${item.id}`,
-                            is_read: false,
-                            created_at: serverTimestamp(),
-                            type: 'qna_answer'
-                        });
-                        console.log("알림 생성 완료");
-                    } catch (notiErr) {
-                        console.error("알림 생성 실패:", notiErr);
-                        // 알림 생성 실패가 본 데이터 저장을 방해하지 않도록 함
-                    }
+                if (answer && item.uid) {
+                    await addDoc(collection(db, "notifications"), {
+                        uid: item.uid,
+                        message: `질문하신 [${productMap.get(item.productId)}] 상품에 대한 답변이 등록되었습니다.`,
+                        icon: "💬",
+                        link: `detail.html?id=${item.productId}#qna-${item.id}`,
+                        is_read: false,
+                        created_at: serverTimestamp(),
+                        type: 'qna_answer'
+                    });
                 }
-
                 alert("답변이 저장되었습니다.");
                 closeModal();
             } catch (e) {
-                console.error("답변 저장 실패:", e);
-                alert("저장 중 오류가 발생했습니다. (권한 또는 네트워크 문제)");
+                alert("저장 오류");
             }
         };
 
         // 초기 실행
         (async () => {
             await loadProductMap();
-            listenToQna();
+            listenToData();
+            
+            // URL 파라미터 체크 (알림 클릭 시 탭 이동)
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('tab') === 'refund') {
+                switchCsTab('refund');
+            }
         })();
     </script>
 </body>
