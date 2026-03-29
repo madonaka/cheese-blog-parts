@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>이슈 연대기 DB 관리 · Cheese Admin</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="stylesheet" href="./admin.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        /* ===== Year Dashboard ===== */
+        .year-dashboard {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            border-radius: 1rem;
+            padding: 28px;
+            margin-bottom: 28px;
+            color: #fff;
+        }
+        .year-dashboard h2 { font-size: 1.15rem; font-weight: 800; margin-bottom: 18px; }
+        .year-cards-row {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+        .yr-card {
+            background: rgba(255,255,255,0.08);
+            border: 1.5px solid rgba(255,255,255,0.12);
+            border-radius: 14px;
+            padding: 18px 22px;
+            min-width: 140px;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+        }
+        .yr-card:hover { background: rgba(255,255,255,0.14); transform: translateY(-2px); }
+        .yr-card.hidden-year { opacity: 0.4; }
+        .yr-card .yr-num { font-size: 1.8rem; font-weight: 900; display: block; }
+        .yr-card .yr-meta { font-size: 0.75rem; color: rgba(255,255,255,0.5); margin-top: 4px; }
+        .yr-card .yr-badge {
+            position: absolute; top: 10px; right: 10px;
+            font-size: 0.6rem; font-weight: 900;
+            padding: 2px 7px; border-radius: 4px;
+        }
+        .yr-badge.live { background: #22c55e; color: #fff; }
+        .yr-badge.draft { background: #f59e0b; color: #000; }
+        .yr-actions-bar {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            padding-top: 16px;
+        }
+        .yr-btn {
+            padding: 8px 18px;
+            border-radius: 100px;
+            font-size: 0.82rem;
+            font-weight: 800;
+            border: none;
+            cursor: pointer;
+        }
+        .yr-btn-primary { background: #3b82f6; color: #fff; }
+        .yr-btn-outline { background: transparent; border: 1.5px solid rgba(255,255,255,0.3); color: #fff; }
+        .yr-btn-danger { background: #ef4444; color: #fff; }
+
+        /* ===== Table Section ===== */
+        .issue-manage-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+        .issue-table-card {
+            background: #fff;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02);
+            overflow-x: auto;
+        }
+        .filter-bar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .filter-select {
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            font-size: 0.9rem;
+            outline: none;
+        }
+        .badge-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+        }
+        .tag-pill {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 700;
+        }
+        .tag-mnforce { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+        .tag-important { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
+        .tag-normal { background: #f1f5f9; color: #475569; }
+
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(8px);
+            z-index: 2000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.show { display: flex; }
+        .modal-card {
+            background: #fff;
+            width: 95%;
+            max-width: 700px;
+            max-height: 90vh;
+            border-radius: 24px;
+            padding: 30px;
+            overflow-y: auto;
+            position: relative;
+        }
+        .form-label { display: block; font-size: 0.85rem; font-weight: 700; margin-bottom: 8px; color: #475569; }
+        .form-control {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 12px;
+            font-size: 0.95rem;
+            box-sizing: border-box;
+            outline: none;
+            margin-bottom: 15px;
+        }
+        .form-control:focus { border-color: #3b82f6; }
+        .btn-group { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+        .btn-save { background: #111; color: #fff; border: none; padding: 12px 24px; border-radius: 100px; font-weight: 800; cursor: pointer; }
+        .btn-cancel { background: #f1f5f9; color: #475569; border: none; padding: 12px 24px; border-radius: 100px; font-weight: 800; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div class="admin-shell">
+        <div id="admin-header-slot"></div>
+        <div class="admin-main">
+            <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+
+            <main>
+                <!-- ===== 연도 관리 대시보드 (신형) ===== -->
+                <div class="year-dashboard">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
+                        <div>
+                            <h2 style="margin-bottom: 5px;">📅 아카이브 마스터 컨트롤</h2>
+                            <p style="font-size: 0.82rem; color: rgba(255,255,255,0.6); margin:0;">관리자 페이지에서 설정한 연도만 <a href="/issue-index.html" target="_blank" style="color: #3b82f6; text-decoration: underline;">issue-index.html</a>에 노출됩니다.</p>
+                        </div>
+                        <button class="yr-btn yr-btn-outline" onclick="syncWithDatabase()" style="background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2);">
+                            <i class="fas fa-sync-alt"></i> DB에서 연도 자동 스캔
+                        </button>
+                    </div>
+
+                    <div class="year-cards-row" id="yearCardsRow">
+                        <div style="opacity: 0.5; padding: 20px;">연도 목록을 분석 중입니다...</div>
+                    </div>
+
+                    <div class="yr-actions-bar">
+                        <button class="yr-btn yr-btn-primary" onclick="addNewYear()"><i class="fas fa-plus"></i> 연도 직접 추가</button>
+                        <button class="yr-btn btn-save" style="background: #3b82f6; border:none;" onclick="saveYearConfig()"><i class="fas fa-check-circle"></i> 설정 저장 및 배포 (공개/숨김 반영)</button>
+                        <button class="yr-btn yr-btn-outline" style="border-color: #ef4444; color: #ef4444;" onclick="fullResetDatabase()"><i class="fas fa-trash-alt"></i> 데이터 전체 초기화</button>
+                        <span style="flex:1;"></span>
+                        <div style="text-align: right;">
+                            <span style="font-size:0.75rem; color: rgba(255,255,255,0.5); display: block;">* 저장 시 아카이브 메인 페이지에 즉시 적용</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===== 이벤트 테이블 ===== -->
+                <div class="issue-manage-header">
+                    <div>
+                        <h1 style="font-size: 1.5rem; font-weight: 800;">이슈 연대기 DB 관리 📚</h1>
+                        <p style="font-size: 0.85rem; color: #64748b;">저장된 모든 연대기 이벤트를 조회하고 수정합니다.</p>
+                    </div>
+                    <div>
+                        <button class="btn-save" onclick="openModal()">
+                            <i class="fas fa-plus"></i> 새 이벤트 추가
+                        </button>
+                    </div>
+                </div>
+
+                <div class="issue-table-card">
+                    <div class="filter-bar">
+                        <select id="filter-year" class="filter-select" onchange="loadIssues()">
+                            <option value="">연도 선택 (전체)</option>
+                        </select>
+                        <input type="text" id="search-keyword" class="form-control" style="width: 250px; margin-bottom:0;" placeholder="제목 또는 내용 검색..." onkeyup="if(event.keyCode==13) loadIssues()">
+                        <button class="btn-save" style="padding: 8px 20px;" onclick="loadIssues()">검색</button>
+                    </div>
+
+                    <table class="admin-table" style="table-layout: fixed;">
+                        <thead>
+                            <tr>
+                                <th style="width: 120px;">날짜</th>
+                                <th style="width: 100px;">태그</th>
+                                <th>이벤트 제목</th>
+                                <th style="width: 100px;">관리</th>
+                            </tr>
+                        </thead>
+                        <tbody id="issueTableBody">
+                            <tr>
+                                <td colspan="4" style="text-align: center; padding: 80px;">데이터를 불러오는 중입니다...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Edit Modal -->
+    <div class="modal-overlay" id="issueModal">
+        <div class="modal-card">
+            <h3 id="modalTitle" style="font-size: 1.4rem; font-weight: 800; margin-bottom: 25px;">이벤트 편집</h3>
+            <form id="issueForm">
+                <input type="hidden" id="edit-id">
+                <input type="hidden" id="edit-year">
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <div>
+                        <label class="form-label">발생 날짜 (YYYY-MM-DD)</label>
+                        <input type="text" id="edit-date" class="form-control" placeholder="2024-12-03" required>
+                    </div>
+                    <div>
+                        <label class="form-label">태그 (쉼표 구분)</label>
+                        <input type="text" id="edit-tags" class="form-control" placeholder="mnforce-계엄, important-정치">
+                    </div>
+                </div>
+
+                <label class="form-label">이벤트 제목</label>
+                <input type="text" id="edit-title" class="form-control" required>
+
+                <label class="form-label">상세 내용 (Raw HTML/Text)</label>
+                <textarea id="edit-content" class="form-control" style="height: 150px; resize: none;"></textarea>
+
+                <label class="form-label">이미지 URL (Optional)</label>
+                <input type="text" id="edit-image" class="form-control">
+
+                <div class="btn-group">
+                    <button type="button" class="btn-cancel" onclick="closeModal()">취소</button>
+                    <button type="submit" class="btn-save">저장하기</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="./admin-common.js"></script>
+    <script>
+        let allIssues = [];
+        let availableYears = [];
+        let yearConfig = {}; // { "2026": { visible: true, label: "View Chronicle" }, ... }
+
+        async function safeFetchDB(payload) {
+            const res = await fetch(window.CHEESE_ADMIN_DB_API, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            return await res.json();
+        }
+
+        // ===== 연도 설정 로드 =====
+        async function loadYearConfig() {
+            try {
+                const res = await safeFetchDB({ action: "getDoc", collection: "archive_config", id: "year_settings" });
+                if (res.ok && res.data && res.data.years) {
+                    yearConfig = res.data.years;
+                }
+            } catch (e) { console.log("No existing year config, will create."); }
+        }
+
+        // ===== 연도 대시보드 렌더링 =====
+        function renderYearDashboard() {
+            const row = document.getElementById('yearCardsRow');
+            if (availableYears.length === 0) {
+                row.innerHTML = '<div style="opacity:0.5; padding:20px;">등록된 연도 데이터가 없습니다. 상단의 [DB에서 연도 자동 스캔] 버튼을 눌러주세요.</div>';
+                return;
+            }
+
+            row.innerHTML = availableYears.sort((a,b) => b - a).map(y => {
+                const cfg = yearConfig[y] || { visible: true, label: "View Chronicle" };
+                const isVisible = cfg.visible !== false;
+                return `
+                    <div class="yr-card ${isVisible ? '' : 'hidden-year'}">
+                        <div onclick="toggleYearVisibility('${y}')" style="cursor:pointer;" title="클릭: 공개/숨김 전환">
+                            <span class="yr-badge ${isVisible ? 'live' : 'draft'}">${isVisible ? '공개' : '숨김'}</span>
+                            <span class="yr-num">${y}</span>
+                            <span class="yr-meta">${cfg.eventCount || 0}개 이벤트</span>
+                        </div>
+                        <div style="border-top:1px solid rgba(255,255,255,0.05); margin-top:12px; padding-top:8px; text-align:center;">
+                            <a href="/issue-detail.html?year=${y}" target="_blank" style="font-size:0.65rem; color:#3b82f6; text-decoration:none;">
+                                <i class="fas fa-external-link-alt"></i> 페이지 보기
+                            </a>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // ===== DB 연도 스캔 및 자동 동기화 =====
+        window.syncWithDatabase = async () => {
+            if (!confirm("데이터베이스를 스캔하여 새로운 연도를 찾아 목록에 추가하시겠습니까? (기존 설정은 보존됩니다)")) return;
+            
+            window.showNotification("DB 스캔 중", "전체 연도 데이터를 분석 중입니다...", "info");
+            
+            try {
+                const res = await safeFetchDB({ action: "get", collection: "historical_issues" });
+                if (res.ok) {
+                    const dbYears = res.data.map(d => d.id.replace('year_', ''));
+                    availableYears = [...new Set([...availableYears, ...dbYears])];
+
+                    // 상세 정보(이벤트 수) 업데이트
+                    for (const y of availableYears) {
+                        const detailRes = await safeFetchDB({ action: "getDoc", collection: "historical_issues", id: "year_" + y });
+                        if (detailRes.ok && detailRes.data.months) {
+                            let count = 0;
+                            Object.values(detailRes.data.months).forEach(m => count += (m.events || []).length);
+                            if (!yearConfig[y]) yearConfig[y] = { visible: true, label: "View Chronicle" };
+                            yearConfig[y].eventCount = count;
+                        }
+                    }
+                    
+                    renderYearDashboard();
+                    populateYearFilter();
+                    window.showNotification("스캔 완료", "DB에 저장된 모든 연도를 동기화했습니다. [설정 저장] 버튼을 눌러 반영해주세요.", "success");
+                }
+            } catch (err) {
+                console.error(err);
+                alert("동기화 중 오류가 발생했습니다.");
+            }
+        };
+
+        // ===== 연도 공개/숨김 토글 =====
+        window.toggleYearVisibility = (year) => {
+            if (!yearConfig[year]) yearConfig[year] = { visible: true, label: "View Chronicle" };
+            yearConfig[year].visible = !yearConfig[year].visible;
+            renderYearDashboard();
+        };
+
+        // ===== 연도 설정 저장 =====
+        window.saveYearConfig = async () => {
+            try {
+                await safeFetchDB({
+                    action: "set",
+                    collection: "archive_config",
+                    id: "year_settings",
+                    data: { years: yearConfig, updatedAt: new Date().toISOString() }
+                });
+                window.showNotification("설정 저장 완료", "연도 공개/숨김 설정이 issue-index.html에 즉시 반영됩니다.", "success");
+            } catch (e) {
+                console.error(e);
+                alert("설정 저장 중 오류가 발생했습니다.");
+            }
+        };
+
+        // ===== 새 연도 추가 =====
+        window.addNewYear = async () => {
+            const year = prompt("추가할 연도를 입력하세요 (예: 2023)");
+            if (!year || isNaN(parseInt(year))) return;
+
+            try {
+                // 빈 연도 문서 생성
+                await safeFetchDB({
+                    action: "set",
+                    collection: "historical_issues",
+                    id: "year_" + year,
+                    data: { yearTitle: year + " 이슈 연대기", months: {} }
+                });
+                // 설정에도 추가
+                yearConfig[year] = { visible: true, label: "View Chronicle", eventCount: 0 };
+                await saveYearConfig();
+
+                if (!availableYears.includes(year)) availableYears.push(year);
+                renderYearDashboard();
+                populateYearFilter();
+                window.showNotification("연도 추가", year + "년이 생성되었습니다.", "success");
+            } catch (e) { console.error(e); }
+        };
+
+        // ===== DB 전체 초기화 (완전 삭제) =====
+        window.fullResetDatabase = async () => {
+            if (!confirm("⚠️ 정말로 모든 이슈 연대기 데이터를 삭제하시겠습니까?\n이 작업은 모든 연도 기록을 비우며, 되돌릴 수 없습니다.")) return;
+            if (!confirm("확인을 위해 한 번 더 묻습니다. 정말로 전체 DB를 초기화할까요?")) return;
+
+            window.showNotification("DB 초기화 중", "데이터를 모두 비우고 있습니다...", "info");
+
+            try {
+                // 1. 모든 연도 문서 ID 가져오기
+                const getRes = await safeFetchDB({ action: "get", collection: "historical_issues" });
+                if (getRes.ok && getRes.data) {
+                    const ids = getRes.data.map(d => d.id);
+                    
+                    // 2. 각 문서를 빈 데이터로 덮어쓰기 (API가 deleteDoc을 지원하지 않을 경우의 확실한 대안)
+                    for (const id of ids) {
+                        await safeFetchDB({ 
+                            action: "set", 
+                            collection: "historical_issues", 
+                            id: id, 
+                            data: { yearTitle: id.replace('year_', '') + " 이슈 연대기", months: {} } 
+                        });
+                    }
+                }
+
+                // 3. 설정 파일도 빈 값으로 초기화
+                await safeFetchDB({ 
+                    action: "set", 
+                    collection: "archive_config", 
+                    id: "year_settings", 
+                    data: { years: {}, updatedAt: new Date().toISOString() } 
+                });
+
+                window.showNotification("초기화 완료", "모든 데이터가 성공적으로 비워졌습니다.", "success");
+                setTimeout(() => location.reload(), 1000);
+            } catch (err) {
+                console.error(err);
+                alert("초기화 도중 오류가 발생했습니다.");
+            }
+        };
+
+        // ===== 초기화 =====
+        async function init() {
+            try {
+                await loadYearConfig();
+
+                const res = await safeFetchDB({ action: "get", collection: "historical_issues" });
+                if (res.ok) {
+                    availableYears = res.data.map(d => d.id.replace('year_', ''));
+                    
+                    // 이벤트 수 카운트를 위해 각 연도 세부 로드
+                    for (const y of availableYears) {
+                        const detail = await safeFetchDB({ action: "getDoc", collection: "historical_issues", id: "year_" + y });
+                        let count = 0;
+                        if (detail.ok && detail.data.months) {
+                            Object.values(detail.data.months).forEach(m => {
+                                count += (m.events || []).length;
+                            });
+                        }
+                        if (!yearConfig[y]) yearConfig[y] = { visible: true, label: "View Chronicle" };
+                        yearConfig[y].eventCount = count;
+                    }
+
+                    renderYearDashboard();
+                    populateYearFilter();
+                }
+                await loadIssues();
+            } catch (err) { console.error(err); }
+        }
+
+        function populateYearFilter() {
+            const yearSelect = document.getElementById('filter-year');
+            yearSelect.innerHTML = '<option value="">연도 선택 (전체)</option>';
+            availableYears.sort().reverse().forEach(y => {
+                const opt = document.createElement('option');
+                opt.value = y;
+                opt.innerText = y + "년";
+                yearSelect.appendChild(opt);
+            });
+        }
+
+        async function loadIssues() {
+            const year = document.getElementById('filter-year').value;
+            const keyword = document.getElementById('search-keyword').value.toLowerCase();
+            const tbody = document.getElementById('issueTableBody');
+            
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 80px;">데이터 분석 중...</td></tr>';
+            
+            try {
+                let targets = [];
+                if (year) {
+                    targets = ["year_" + year];
+                } else {
+                    targets = availableYears.map(y => "year_" + y);
+                }
+
+                let mergedEvents = [];
+                for (const t of targets) {
+                    const res = await safeFetchDB({ action: "getDoc", collection: "historical_issues", id: t });
+                    if (res.ok && res.data.months) {
+                        Object.keys(res.data.months).forEach(mn => {
+                            (res.data.months[mn].events || []).forEach(ev => {
+                                ev._year = t.replace('year_', '');
+                                ev._month = mn;
+                                mergedEvents.push(ev);
+                            });
+                        });
+                    }
+                }
+
+                if (keyword) {
+                    mergedEvents = mergedEvents.filter(ev => 
+                        (ev.title && ev.title.toLowerCase().includes(keyword)) || 
+                        (ev.content_raw && ev.content_raw.toLowerCase().includes(keyword))
+                    );
+                }
+
+                mergedEvents.sort((a,b) => (b.date_start || '').localeCompare(a.date_start || ''));
+                allIssues = mergedEvents;
+                renderTable();
+            } catch (err) {
+                console.error(err);
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: red;">데이터를 불러오지 못했습니다.</td></tr>';
+            }
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('issueTableBody');
+            if (allIssues.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 50px;">조건에 맞는 데이터가 없습니다.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = allIssues.map(ev => {
+                const tags = (ev.tags || '').split(',').map(t => t.trim()).filter(t => t);
+                const tagHtml = tags.map(t => {
+                    let cls = 'tag-normal';
+                    if (t.startsWith('mnforce-')) cls = 'tag-mnforce';
+                    else if (t.startsWith('important-')) cls = 'tag-important';
+                    return `<span class="tag-pill ${cls}">${t.replace('mnforce-', '').replace('important-', '')}</span>`;
+                }).join('');
+
+                return `
+                    <tr>
+                        <td style="font-family: monospace; font-weight: 700;">${ev.date_start || ''}</td>
+                        <td style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><div class="badge-tags">${tagHtml}</div></td>
+                        <td style="overflow: hidden; text-overflow: ellipsis;">
+                            <div style="font-weight: 800; color: #1e293b; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${ev.title || '(제목 없음)'}</div>
+                            <div style="font-size: 0.75rem; color: #94a3b8; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${(ev.content_raw || '').replace(/<[^>]*>?/gm, '')}</div>
+                        </td>
+                        <td>
+                            <div style="display:flex; gap: 5px;">
+                                <button class="btn" style="padding: 5px 10px;" onclick="openModal('${ev.id}')"><i class="fas fa-edit"></i></button>
+                                <button class="btn" style="padding: 5px 10px; color: red;" onclick="deleteIssue('${ev.id}')"><i class="fas fa-trash"></i></button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        window.openModal = (id) => {
+            const modal = document.getElementById('issueModal');
+            const form = document.getElementById('issueForm');
+            form.reset();
+            
+            if (id) {
+                const ev = allIssues.find(i => i.id === id);
+                if (ev) {
+                    document.getElementById('edit-id').value = ev.id;
+                    document.getElementById('edit-year').value = ev._year;
+                    document.getElementById('edit-date').value = ev.date_start;
+                    document.getElementById('edit-tags').value = ev.tags || '';
+                    document.getElementById('edit-title').value = ev.title || '';
+                    document.getElementById('edit-content').value = ev.content_raw || '';
+                    document.getElementById('edit-image').value = ev.image_url || '';
+                    document.getElementById('modalTitle').innerText = "이벤트 정보 수정";
+                }
+            } else {
+                document.getElementById('edit-id').value = "";
+                document.getElementById('edit-year').value = "";
+                document.getElementById('modalTitle').innerText = "새 이벤트 추가";
+            }
+            modal.classList.add('show');
+        };
+
+        window.closeModal = () => document.getElementById('issueModal').classList.remove('show');
+
+        document.getElementById('issueForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('edit-id').value || 'evt_' + Date.now();
+            const dateStr = document.getElementById('edit-date').value;
+            const yr = dateStr.split('-')[0];
+            const mn = dateStr.split('-')[1];
+
+            if (!yr || !mn) { alert("날짜 형식이 올바르지 않습니다 (YYYY-MM-DD)"); return; }
+
+            const updatedEvent = {
+                id: id,
+                date_start: dateStr,
+                tags: document.getElementById('edit-tags').value,
+                title: document.getElementById('edit-title').value,
+                content_raw: document.getElementById('edit-content').value,
+                image_url: document.getElementById('edit-image').value
+            };
+
+            try {
+                const res = await safeFetchDB({ action: "getDoc", collection: "historical_issues", id: "year_" + yr });
+                let yearData = res.ok ? res.data : { yearTitle: yr + " 이슈 연대기", months: {} };
+                
+                if (!yearData.months[mn]) yearData.months[mn] = { summary: "", events: [] };
+                
+                const existingIdx = yearData.months[mn].events.findIndex(ev => ev.id === id);
+                if (existingIdx > -1) {
+                    yearData.months[mn].events[existingIdx] = updatedEvent;
+                } else {
+                    Object.keys(yearData.months).forEach(m => {
+                        yearData.months[m].events = yearData.months[m].events.filter(ev => ev.id !== id);
+                    });
+                    yearData.months[mn].events.push(updatedEvent);
+                }
+
+                await safeFetchDB({
+                    action: "set",
+                    collection: "historical_issues",
+                    id: "year_" + yr,
+                    data: yearData
+                });
+
+                window.showNotification("저장 성공", "연대기 데이터가 업데이트되었습니다.", "success");
+                closeModal();
+                loadIssues();
+            } catch (err) {
+                console.error(err);
+                alert("저장 중 오류가 발생했습니다.");
+            }
+        };
+
+        window.deleteIssue = async (id) => {
+            if (!confirm("정말 이 이벤트를 삭제하시겠습니까?")) return;
+            const ev = allIssues.find(i => i.id === id);
+            if (!ev) return;
+
+            try {
+                const res = await safeFetchDB({ action: "getDoc", collection: "historical_issues", id: "year_" + ev._year });
+                if (res.ok) {
+                    let yearData = res.data;
+                    Object.keys(yearData.months).forEach(mn => {
+                        yearData.months[mn].events = yearData.months[mn].events.filter(item => item.id !== id);
+                    });
+                    await safeFetchDB({ action: "set", collection: "historical_issues", id: "year_" + ev._year, data: yearData });
+                    window.showNotification("삭제 성공", "이벤트가 제거되었습니다.", "info");
+                    loadIssues();
+                }
+            } catch (err) { console.error(err); }
+        };
+
+        init();
+    </script>
+</body>
+</html>
