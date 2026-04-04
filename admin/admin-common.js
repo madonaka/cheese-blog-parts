@@ -413,8 +413,8 @@ async function loadAdminHeader() {
   if (!slot) return; // 이 페이지에 헤더 슬롯이 없으면 그냥 종료
 
   try {
-    // /admin/question-list.html, /admin/question-detail.html 과 같은 폴더라고 가정
-    const res = await fetch("./admin-header.html");
+    // [Cache Busting] 브라우저가 예전 헤더를 캐싱하여 알림판이 안 뜨는 현상 방지
+    const res = await fetch("./admin-header.html?v=" + new Date().getTime());
     if (!res.ok) throw new Error("HTTP " + res.status);
 
     const html = await res.text();
@@ -427,6 +427,29 @@ async function loadAdminHeader() {
   } catch (err) {
     console.error("헤더 로딩 실패:", err);
     slot.innerHTML = '<div class="admin-header">헤더 로딩 에러</div>';
+  }
+}
+/***********************
+ * 왼쪽 사이드 메뉴 로딩
+ ***********************/
+async function loadAdminMenu() {
+  const slot = document.getElementById("admin-menu-slot");
+  if (!slot) return;
+
+  try {
+    const res = await fetch("./admin-menu.html?v=" + new Date().getTime());
+    if (!res.ok) throw new Error("HTTP " + res.status);
+
+    const html = await res.text();
+    slot.innerHTML = html;
+
+    // 메뉴 관련 기능 (아코디언, 활성화 등)
+    applyRoleBasedMenuVisibility(slot);
+    initAdminMenu(slot);
+    highlightActiveMenu();
+  } catch (err) {
+    console.error("메뉴 로딩 실패:", err);
+    slot.innerHTML = '<div class="admin-sidebar" style="padding:1rem;">메뉴 로딩 에러</div>';
   }
 }
 /***********************
