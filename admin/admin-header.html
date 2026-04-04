@@ -44,7 +44,7 @@
 <!-- QnA 실시간 알림 스크립트 -->
 <script type="module">
     import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getFirestore, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+    import { getFirestore, collection, onSnapshot, query, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
     const firebaseConfig = {
         apiKey: "AIzaSyBgLF7lEKQxdsUked-i_Pf0FJEdP_d1Ab4",
@@ -59,6 +59,30 @@
     const app = initializeApp(firebaseConfig, "adminHeaderNotifier");
     const db = getFirestore(app);
 
+    let qnaCount = 0;
+    let refundCount = 0;
+
+    const updateAdminGlobalBadge = () => {
+        const total = qnaCount + refundCount;
+        
+        // 1. 헤더 종 배지 업데이트
+        const headerBadge = document.getElementById('header-qna-badge');
+        if (headerBadge) {
+            headerBadge.innerText = total > 99 ? '99+' : total;
+            headerBadge.style.display = total > 0 ? 'inline-block' : 'none';
+        }
+
+        // 2. 왼쪽 메뉴 배지 업데이트
+        const sidebarBadge = document.getElementById('qna-count-badge');
+        if (sidebarBadge) {
+            sidebarBadge.innerText = total > 99 ? '99+' : total;
+            sidebarBadge.style.display = total > 0 ? 'inline-block' : 'none';
+        }
+    };
+
+    // 사이드바가 늦게 로드될 경우를 대비한 주기적 동기화
+    setInterval(updateAdminGlobalBadge, 1000);
+
     // [개선] 모든 문의를 감시하여 클라이언트 측에서 미답변 개수 필터링
     onSnapshot(collection(db, "qna"), (snapshot) => {
         // answer 가 비어있거나(null, undefined, "") 인 것만 카운트
@@ -66,27 +90,14 @@
             const data = doc.data();
             return !data.answer || data.answer.toString().trim() === "";
         });
-        const count = unanswered.length;
-        
-        console.log(`[QnA 알림] 전체: ${snapshot.size}, 미답변: ${count}`);
-
-        // 1. 헤더 종 배지 업데이트
-        const headerBadge = document.getElementById('header-qna-badge');
-        if (headerBadge) {
-            headerBadge.innerText = count;
-            headerBadge.style.display = count > 0 ? 'inline-block' : 'none';
-        }
-
-        // 2. 왼쪽 메뉴 배지 업데이트 (로드 지연 고려하여 주기적으로 확인)
-        const updateSidebarBadge = () => {
-            const sidebarBadge = document.getElementById('qna-count-badge');
-            if (sidebarBadge) {
-                sidebarBadge.innerText = count;
-                sidebarBadge.style.display = count > 0 ? 'inline-block' : 'none';
-            } else {
-                setTimeout(updateSidebarBadge, 500);
-            }
-        };
-        updateSidebarBadge();
+        qnaCount = unanswered.length;
+        updateAdminGlobalBadge();
     }, (err) => console.error("QnA 알림 리스너 오류:", err));
+
+    // [추가] 대기 중인 환불 요청 감시
+    const refundQuery = query(collection(db, "refunds"), where("status", "==", "pending"));
+    onSnapshot(refundQuery, (snapshot) => {
+        refundCount = snapshot.size;
+        updateAdminGlobalBadge();
+    }, (err) => console.error("Refund 알림 리스너 오류:", err));
 </script>
