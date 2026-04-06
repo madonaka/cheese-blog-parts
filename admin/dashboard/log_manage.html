@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>작업 로그 관리 | Cheese Lab</title>
+
+  <link rel="stylesheet" href="../admin.css">
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+  <script>
+    window.CHEESE_ADMIN_API_BASE = "https://script.google.com/macros/s/AKfycbwn1TrLeSIAe570LRWMJxRzx88u3LQYF38Kme9WhMd-YQsrMsSggrNy3I_2SGKGXTpS/exec";
+  </script>
+  <script src="../admin-common.js" defer></script>
+
+  <style>
+    :root {
+      --bg-soft: #f8fafc;
+      --border-color: #e2e8f0;
+      --text-main: #1e293b;
+      --text-sub: #64748b;
+      --primary: #3b82f6;
+      --primary-dark: #2563eb;
+      --success: #10b981;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+    }
+
+    .log-dashboard-header {
+      margin-bottom: 32px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+
+    .header-info h2 {
+      font-size: 2rem;
+      font-weight: 800;
+      color: var(--text-main);
+      margin: 0;
+      letter-spacing: -0.02em;
+    }
+
+    .header-info p {
+      color: var(--text-sub);
+      margin-top: 6px;
+      font-size: 1rem;
+    }
+
+    /* 상단 요약 카드 */
+    .log-stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 20px;
+      margin-bottom: 32px;
+    }
+
+    .stat-card {
+      background: white;
+      padding: 24px;
+      border-radius: 20px;
+      border: 1px solid var(--border-color);
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .stat-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    }
+
+    .stat-label {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--text-sub);
+      margin-bottom: 8px;
+      display: block;
+    }
+
+    .stat-value {
+      font-size: 1.75rem;
+      font-weight: 800;
+      color: var(--text-main);
+    }
+
+    .stat-trend {
+      font-size: 0.75rem;
+      margin-top: 8px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* 필터 영역 */
+    .log-filter-box {
+      background: white;
+      border-radius: 20px;
+      padding: 24px;
+      border: 1px solid var(--border-color);
+      margin-bottom: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      flex-wrap: wrap;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    }
+
+    .filter-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .filter-label {
+      font-weight: 700;
+      color: var(--text-main);
+      font-size: 0.95rem;
+      white-space: nowrap;
+    }
+
+    .styled-input {
+      padding: 10px 16px;
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      font-size: 0.95rem;
+      transition: all 0.2s;
+      outline: none;
+    }
+
+    .styled-input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+
+    .btn-action {
+      padding: 12px 24px;
+      border-radius: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.95rem;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+    }
+
+    .btn-primary:hover {
+      background: var(--primary-dark);
+      transform: translateY(-2px);
+    }
+
+    .btn-outline {
+      background: white;
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+    }
+
+    .btn-outline:hover {
+      background: #f8fafc;
+      border-color: #cbd5e1;
+    }
+
+    /* 타임라인 영역 */
+    .timeline-wrapper {
+      position: relative;
+      padding: 20px 0;
+    }
+
+    .timeline-wrapper::before {
+      content: '';
+      position: absolute;
+      left: 31px;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: #e2e8f0;
+      z-index: 0;
+    }
+
+    .timeline-date-group {
+      margin-bottom: 40px;
+      position: relative;
+    }
+
+    .date-label {
+      display: inline-block;
+      padding: 6px 16px;
+      background: #f1f5f9;
+      color: #475569;
+      font-weight: 800;
+      border-radius: 20px;
+      font-size: 0.9rem;
+      margin-bottom: 24px;
+      position: relative;
+      z-index: 1;
+      border: 2px solid white;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    }
+
+    .timeline-item {
+      display: flex;
+      gap: 24px;
+      margin-bottom: 24px;
+      position: relative;
+    }
+
+    .item-marker {
+      width: 64px;
+      display: flex;
+      justify-content: center;
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    .marker-dot {
+      width: 14px;
+      height: 14px;
+      background: white;
+      border: 3px solid var(--primary);
+      border-radius: 50%;
+      position: relative;
+      z-index: 2;
+      margin-top: 10px;
+    }
+
+    .item-content-card {
+      background: white;
+      border-radius: 16px;
+      padding: 20px;
+      border: 1px solid var(--border-color);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+      flex: 1;
+      position: relative;
+      transition: all 0.2s;
+    }
+
+    .item-content-card:hover {
+      box-shadow: 0 8px 16px -4px rgba(0, 0, 0, 0.08);
+      border-color: #cbd5e1;
+    }
+
+    .item-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 12px;
+    }
+
+    .item-title {
+      font-size: 1.1rem;
+      font-weight: 800;
+      color: var(--text-main);
+      line-height: 1.4;
+    }
+
+    .item-meta {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-top: 8px;
+    }
+
+    .meta-badge {
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 2px 10px;
+      border-radius: 6px;
+      background: #f1f5f9;
+      color: #64748b;
+    }
+
+    .meta-badge.category {
+      background: #eff6ff;
+      color: var(--primary);
+    }
+
+    .meta-badge.duration {
+      background: #fff7ed;
+      color: #ea580c;
+    }
+
+    .item-body {
+      color: #475569;
+      font-size: 0.95rem;
+      line-height: 1.6;
+      word-break: break-all;
+      white-space: pre-wrap;
+    }
+
+    .item-actions {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      display: flex;
+      gap: 8px;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    .item-content-card:hover .item-actions {
+      opacity: 1;
+    }
+
+    .btn-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      background: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: #94a3b8;
+      transition: all 0.2s;
+    }
+
+    .btn-icon:hover {
+      color: var(--primary);
+      border-color: var(--primary);
+      background: #eff6ff;
+    }
+
+    .btn-icon.delete:hover {
+      color: var(--danger);
+      border-color: var(--danger);
+      background: #fef2f2;
+    }
+
+    /* 관련 목표 링크 */
+    .related-link {
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px dashed var(--border-color);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.85rem;
+      color: var(--success);
+      font-weight: 700;
+    }
+
+    /* 모달 */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(15, 23, 42, 0.6);
+      backdrop-filter: blur(8px);
+      z-index: 2000;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-overlay.open {
+      display: flex;
+    }
+
+    .modal-box {
+      background: white;
+      width: 100%;
+      max-width: 600px;
+      border-radius: 24px;
+      overflow: hidden;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    }
+
+    .modal-header {
+      padding: 24px 32px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-header h3 {
+      margin: 0;
+      font-size: 1.25rem;
+      font-weight: 800;
+    }
+
+    .modal-body {
+      padding: 32px;
+      max-height: 70vh;
+      overflow-y: auto;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--text-main);
+      margin-bottom: 8px;
+    }
+
+    .modal-footer {
+      padding: 20px 32px;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      background: #f8fafc;
+    }
+
+    @media (max-width: 768px) {
+      .timeline-wrapper::before {
+        left: 21px;
+      }
+      .item-marker {
+        width: 44px;
+      }
+      .marker-dot {
+        width: 12px;
+        height: 12px;
+      }
+      .item-actions {
+        opacity: 1;
+        position: relative;
+        top: 0;
+        right: 0;
+        margin-top: 16px;
+        justify-content: flex-end;
+      }
+      .log-filter-box {
+        flex-direction: column;
+        align-items: stretch;
+      }
+    }
+
+    /* --- 신규 스타일: 모달 섹션 및 접기 기능 --- */
+    .modal-section {
+      background: #f8fafc;
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 24px;
+      border: 1px solid var(--border-color);
+    }
+
+    .modal-section-title {
+      font-size: 0.85rem;
+      font-weight: 800;
+      color: var(--primary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .modal-section-title::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border-color);
+    }
+
+    .date-label-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      cursor: pointer;
+      margin-bottom: 24px;
+      user-select: none;
+    }
+
+    .date-label-wrapper:hover .date-label {
+      background: var(--primary);
+      color: white;
+    }
+
+    .toggle-chevron {
+      font-size: 0.8rem;
+      color: var(--text-sub);
+      transition: transform 0.3s;
+    }
+
+    .timeline-date-group.collapsed .toggle-chevron {
+      transform: rotate(-90deg);
+    }
+
+    .timeline-date-group.collapsed .group-content {
+      display: none;
+    }
+
+    .group-content {
+      animation: slideDown 0.3s ease-out;
+    }
+
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="admin-shell">
+    <div id="admin-header-slot"></div>
+    <main class="admin-main">
+      <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+
+      <section class="admin-content">
+        <div class="log-dashboard-header">
+          <div class="header-info">
+            <h2>Timeline Logs</h2>
+            <p>축적된 작업 기록을 확인하고 관리하세요.</p>
+          </div>
+          <button class="btn-action btn-primary" onclick="openLogModal()">
+            <span>+</span> 새 로그 작성
+          </button>
+        </div>
+
+        <div class="log-stats-grid">
+          <div class="stat-card">
+            <span class="stat-label">이번 달 기록</span>
+            <div class="stat-value" id="stat-month-count">0</div>
+            <div class="stat-trend" style="color: var(--success);">
+              <span>↑</span> 12% 증가
+            </div>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">총 작업 시간</span>
+            <div class="stat-value" id="stat-total-hours">0h</div>
+            <div class="stat-trend" style="color: var(--primary);">
+              <span>⏱</span> 효율 지수 85%
+            </div>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">연결된 할 일</span>
+            <div class="stat-value" id="stat-linked-tasks">0</div>
+            <div class="stat-trend" style="color: var(--warning);">
+              <span>🔗</span> 관리 밀도 높음
+            </div>
+          </div>
+        </div>
+
+        <div class="log-filter-box">
+          <div class="filter-group">
+            <span class="filter-label">📅 기간 조회</span>
+            <input type="date" id="log-filter-start" class="styled-input" onchange="renderLogs()">
+            <span style="color: #cbd5e1;">~</span>
+            <input type="date" id="log-filter-end" class="styled-input" onchange="renderLogs()">
+          </div>
+          <div class="filter-group" style="flex: 1;">
+            <input type="text" id="log-search-keyword" class="styled-input" placeholder="제목 또는 내용 검색..." style="width: 100%; min-width: 200px;" onkeyup="if(event.key==='Enter') renderLogs()">
+          </div>
+          <div class="filter-group">
+            <button class="btn-action btn-outline" onclick="renderLogs()">검색</button>
+            <button class="btn-action btn-outline" onclick="clearLogFilter()">초기화</button>
+            <button class="btn-action btn-outline" onclick="loadAllData()">갱신 ↻</button>
+          </div>
+        </div>
+
+        <div id="log-timeline-root" class="timeline-wrapper">
+          <!-- 타임라인 데이터가 여기 렌더링 됩니다 -->
+          <div style="padding: 100px; text-align: center; color: #94a3b8;">
+            데이터를 불러오고 있습니다...
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- 로그 작성/수정 모달 -->
+  <div id="log-modal" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 id="log-modal-title">새 작업 기록</h3>
+        <button class="btn-icon" onclick="closeModal('log-modal')">&times;</button>
+      </div>
+      <form id="log-form">
+        <div class="modal-body">
+          <input type="hidden" id="log-edit-id">
+          <input type="hidden" id="log-edit-mode" value="false">
+
+          <div class="modal-section">
+            <div class="modal-section-title">기본 정보</div>
+            <div class="form-group">
+              <label class="form-label">날짜</label>
+              <input type="date" id="log-date" class="styled-input" required style="width: 100%;">
+            </div>
+            <div class="form-group">
+              <label class="form-label">제목 (핵심 요약)</label>
+              <input type="text" id="log-title" class="styled-input" placeholder="오늘의 주요 성과를 적어주세요" style="width: 100%;">
+            </div>
+            <div class="form-group">
+              <label class="form-label">🔗 관련 목표/할 일 선택</label>
+              <select id="log-related-id" class="styled-input" style="width: 100%;">
+                <option value="">(연결된 목표 없음)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="modal-section" style="background: white;">
+            <div class="modal-section-title">작업 상세</div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <textarea id="log-content" class="styled-input" required style="width: 100%; min-height: 180px; resize: vertical; border-color: #cbd5e1;" placeholder="구체적인 작업 내용을 작성해주세요."></textarea>
+            </div>
+          </div>
+
+          <div class="modal-section">
+            <div class="modal-section-title">추가 정보</div>
+            <div class="log-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+              <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label">소요 시간</label>
+                <input type="text" id="log-duration" class="styled-input" placeholder="예: 3시간" style="width: 100%;">
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label">태그</label>
+                <input type="text" id="log-tags" class="styled-input" placeholder="예: 개발, UI" style="width: 100%;">
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-action btn-outline" onclick="closeModal('log-modal')">취소</button>
+          <button type="submit" class="btn-action btn-primary">저장하기 💾</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    window.CHEESE_ADMIN_ACTIVE_PAGE = "menu-log";
+    let g_logs = [], g_goals = [], g_tasks = [];
+
+    document.addEventListener('DOMContentLoaded', () => {
+      loadAllData();
+      
+      // URL 파라미터 처리 (todo_manage.html 등에서 넘어온 경우)
+      const urlParams = new URLSearchParams(window.location.search);
+      const relatedId = urlParams.get('related_id');
+      if (relatedId) {
+        setTimeout(() => {
+          openLogModal();
+          document.getElementById('log-related-id').value = relatedId;
+        }, 800); // 데이터 로드 후 처리를 위해 약간의 지연
+      }
+    });
+
+    async function loadAllData() {
+      if (typeof showAdminLoading === 'function') showAdminLoading("타임라인 동기화 중...");
+      try {
+        const res = await fetch(window.CHEESE_ADMIN_API_BASE + "?mode=getAllData");
+        const json = await res.json();
+        if (json.result === "success") {
+          g_logs = json.logs || [];
+          g_goals = json.goals || [];
+          g_tasks = json.tasks || [];
+          
+          updateStats();
+          updateRelatedOptions();
+          renderLogs();
+        }
+      } catch (e) { console.error(e); }
+      finally { if (typeof hideAdminLoading === 'function') hideAdminLoading(); }
+    }
+
+    function updateStats() {
+      const now = new Date();
+      const thisMonth = now.getMonth();
+      const thisYear = now.getFullYear();
+      
+      const monthLogs = g_logs.filter(l => {
+        const d = new Date(l['날짜']);
+        return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
+      });
+
+      document.getElementById('stat-month-count').textContent = monthLogs.length;
+      
+      const linkedCount = g_logs.filter(l => l['관련_목표ID']).length;
+      document.getElementById('stat-linked-tasks').textContent = linkedCount;
+      
+      // 시간 합산 (대략적)
+      let totalMins = 0;
+      g_logs.forEach(l => {
+        const dur = String(l['소요시간'] || '');
+        const match = dur.match(/(\d+)/);
+        if (match) totalMins += parseInt(match[1]) * (dur.includes('시간') ? 60 : 1);
+      });
+      document.getElementById('stat-total-hours').textContent = Math.round(totalMins / 60) + 'h';
+    }
+
+    function updateRelatedOptions() {
+      const select = document.getElementById('log-related-id');
+      const currentVal = select.value;
+      select.innerHTML = '<option value="">(연결된 목표 없음)</option>';
+      
+      const allItems = [...g_goals, ...g_tasks.filter(t => t['유형'] !== '아이디어')];
+      allItems.sort((a,b) => a['제목'].localeCompare(b['제목']));
+      
+      allItems.forEach(item => {
+        const opt = document.createElement('option');
+        opt.value = item.ID;
+        opt.textContent = `[${item['유형'] || '할 일'}] ${item['제목']}`;
+        select.appendChild(opt);
+      });
+      select.value = currentVal;
+    }
+
+    function renderLogs() {
+      const root = document.getElementById('log-timeline-root');
+      const startFilter = document.getElementById('log-filter-start').value;
+      const endFilter = document.getElementById('log-filter-end').value;
+      const keyword = document.getElementById('log-search-keyword').value.toLowerCase().trim();
+
+      let filtered = g_logs;
+      if (startFilter) filtered = filtered.filter(l => l['날짜'].split('T')[0] >= startFilter);
+      if (endFilter) filtered = filtered.filter(l => l['날짜'].split('T')[0] <= endFilter);
+      
+      if (keyword) {
+        filtered = filtered.filter(l => {
+          const title = String(l['제목'] || '').toLowerCase();
+          const content = String(l['내용'] || '').toLowerCase();
+          const tags = String(l['태그'] || '').toLowerCase();
+          return title.includes(keyword) || content.includes(keyword) || tags.includes(keyword);
+        });
+      }
+
+      if (filtered.length === 0) {
+        root.innerHTML = `<div style="padding: 80px; text-align: center; color: #94a3b8; font-size: 1.1rem; background: #f8fafc; border-radius: 24px; border: 2px dashed #e2e8f0;">조회된 기록이 없습니다.</div>`;
+        return;
+      }
+
+      // 날짜 내림차순 정렬
+      filtered.sort((a, b) => new Date(b['날짜']) - new Date(a['날짜']));
+
+      // 그룹화
+      const groups = {};
+      filtered.forEach(l => {
+        const d = l['날짜'].split('T')[0];
+        if (!groups[d]) groups[d] = [];
+        groups[d].push(l);
+      });
+
+      let html = "";
+      const dateKeys = Object.keys(groups).sort().reverse();
+      
+      dateKeys.forEach((date, index) => {
+        // 최근 3일치만 기본적으로 펼쳐둠
+        const isCollapsed = index >= 3;
+        
+        html += `
+          <div class="timeline-date-group ${isCollapsed ? 'collapsed' : ''}" id="group-${date}">
+            <div class="date-label-wrapper" onclick="toggleDateGroup('${date}')">
+              <div class="date-label">${date}</div>
+              <span class="toggle-chevron">▼</span>
+              <span style="font-size: 0.8rem; color: var(--text-sub); font-weight: 600;">(${groups[date].length}건)</span>
+            </div>
+            <div class="group-content">`;
+        
+        groups[date].forEach(log => {
+          const related = g_goals.find(g => g.ID === log['관련_목표ID']) || g_tasks.find(t => t.ID === log['관련_목표ID']);
+          const relatedHtml = related ? `<div class="related-link">🔗 ${related['제목']}</div>` : '';
+          const tags = (log['태그'] || '').split(',').map(t => t.trim()).filter(t => t);
+          const tagsHtml = tags.map(t => `<span class="meta-badge">${t}</span>`).join('');
+          
+          html += `
+            <div class="timeline-item">
+              <div class="item-marker"><div class="marker-dot"></div></div>
+              <div class="item-content-card">
+                <div class="item-actions">
+                  <button class="btn-icon" onclick="openEditLog('${log.ID}')" title="수정">✏️</button>
+                  <button class="btn-icon delete" onclick="deleteLog('${log.ID}')" title="삭제">🗑️</button>
+                </div>
+                <div class="item-header">
+                  <div class="item-title">${log['제목'] || '무제 작업 기록'}</div>
+                </div>
+                <div class="item-body">${(log['내용'] || '').replace(/\n/g, '<br>')}</div>
+                <div class="item-meta">
+                  ${log['소요시간'] ? `<span class="meta-badge duration">⏱ ${log['소요시간']}</span>` : ''}
+                  ${tagsHtml}
+                </div>
+                ${relatedHtml}
+              </div>
+            </div>
+          `;
+        });
+        html += `</div></div>`;
+      });
+      root.innerHTML = html;
+    }
+
+    function toggleDateGroup(date) {
+      const el = document.getElementById(`group-${date}`);
+      if (el) el.classList.toggle('collapsed');
+    }
+
+    function openLogModal() {
+      document.getElementById('log-modal-title').textContent = "새 작업 기록";
+      document.getElementById('log-edit-mode').value = "false";
+      document.getElementById('log-edit-id').value = "";
+      document.getElementById('log-form').reset();
+      
+      const today = new Date();
+      const localIso = new Date(today.getTime() - (today.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+      document.getElementById('log-date').value = localIso;
+      
+      updateRelatedOptions();
+      document.getElementById('log-modal').classList.add('open');
+    }
+
+    function openEditLog(id) {
+      const log = g_logs.find(x => x.ID === id);
+      if (!log) return;
+      
+      document.getElementById('log-modal-title').textContent = "작업 기록 수정";
+      document.getElementById('log-edit-mode').value = "true";
+      document.getElementById('log-edit-id').value = id;
+      
+      document.getElementById('log-date').value = log['날짜'].split('T')[0];
+      document.getElementById('log-title').value = log['제목'] || "";
+      document.getElementById('log-content').value = log['내용'] || "";
+      document.getElementById('log-duration').value = log['소요시간'] || "";
+      document.getElementById('log-tags').value = log['태그'] || "";
+      
+      updateRelatedOptions();
+      document.getElementById('log-related-id').value = log['관련_목표ID'] || "";
+      
+      document.getElementById('log-modal').classList.add('open');
+    }
+
+    function closeModal(id) {
+      document.getElementById(id).classList.remove('open');
+    }
+
+    async function deleteLog(id) {
+      if (!confirm("정말 이 기록을 삭제하시겠습니까?")) return;
+      if (typeof showAdminLoading === 'function') showAdminLoading("삭제 중...");
+      try {
+        await fetch(window.CHEESE_ADMIN_API_BASE, {
+          method: "POST",
+          body: JSON.stringify({ mode: "deleteItem", id: id })
+        });
+        loadAllData();
+      } catch (e) { console.error(e); }
+      finally { if (typeof hideAdminLoading === 'function') hideAdminLoading(); }
+    }
+
+    document.getElementById('log-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const isEdit = document.getElementById('log-edit-mode').value === "true";
+      const payload = {
+        mode: isEdit ? "editItem" : "addLog",
+        id: document.getElementById('log-edit-id').value,
+        date: document.getElementById('log-date').value,
+        title: document.getElementById('log-title').value,
+        content: document.getElementById('log-content').value,
+        duration: document.getElementById('log-duration').value,
+        tags: document.getElementById('log-tags').value,
+        relatedId: document.getElementById('log-related-id').value
+      };
+
+      if (typeof showAdminLoading === 'function') showAdminLoading("저장 중...");
+      try {
+        await fetch(window.CHEESE_ADMIN_API_BASE, {
+          method: "POST",
+          body: JSON.stringify(payload)
+        });
+        closeModal('log-modal');
+        loadAllData();
+      } catch (e) {
+        console.error(e);
+        alert("저장 중 오류가 발생했습니다.");
+      } finally {
+        if (typeof hideAdminLoading === 'function') hideAdminLoading();
+      }
+    });
+
+    function clearLogFilter() {
+      document.getElementById('log-filter-start').value = "";
+      document.getElementById('log-filter-end').value = "";
+      document.getElementById('log-search-keyword').value = "";
+      renderLogs();
+    }
+  </script>
+</body>
+
+</html>

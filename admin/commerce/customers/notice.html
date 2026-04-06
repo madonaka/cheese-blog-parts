@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>공지사항 - Cheese Lab</title>
+
+  <link rel="stylesheet" href="../../admin.css">
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tinymce/6.8.2/tinymce.min.js" referrerpolicy="origin"></script>
+
+  <script>
+    // ✅ API 주소 연결
+    window.CHEESE_ADMIN_API_BASE = "https://script.google.com/macros/s/AKfycbyE0uUpF2VdePr6AC6VcK7UOI4y5zvkUfMHlGHEiNKiGiiAjSzr172140GtV5MpiwzaSg/exec";
+
+    // 🚨 [핵심 1] index.html 등에서 로그인 시 발급된 세션(또는 로컬) 값을 자동으로 가져옵니다!
+    // 만약 저장하신 키 이름이 'emp_no'가 아니라 'userId' 등이라면 아래 괄호 안의 글자를 수정해 주세요.
+    window.CURRENT_USER_EMP_NO = sessionStorage.getItem("cheese_admin_emp_no") || "CL-ADMIN";
+    window.CURRENT_USER_NAME = sessionStorage.getItem("cheese_admin_display_name") || "관리자";
+  </script>
+  <script src="../../admin-common.js" defer></script>
+
+  <style>
+    :root {
+      --line-color: #eee;
+      --text-dark: #333;
+      --text-gray: #777;
+      --primary: #3b82f6;
+      --danger: #ef4444;
+      --bg-gray: #f9f9f9;
+    }
+
+    .dashboard-layout {
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 20px 10px 80px;
+    }
+
+    .sys-version-small {
+      font-size: 0.75rem;
+      color: #ccc;
+      text-align: right;
+      margin-bottom: 10px;
+    }
+
+    .view-header {
+      border-bottom: 2px solid #333;
+      padding-bottom: 15px;
+      margin-bottom: 20px;
+    }
+
+    .view-category {
+      color: var(--primary);
+      font-weight: 800;
+      font-size: 0.85rem;
+      margin-bottom: 8px;
+    }
+
+    .view-title {
+      font-size: 1.5rem;
+      font-weight: 900;
+      color: #000;
+      margin: 0 0 12px 0;
+      line-height: 1.4;
+      word-break: break-all;
+    }
+
+    .view-meta {
+      display: flex;
+      gap: 12px;
+      color: var(--text-gray);
+      font-size: 0.85rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .meta-sep {
+      color: #ddd;
+    }
+
+    .view-content {
+      min-height: 300px;
+      line-height: 1.8;
+      color: #333;
+      font-size: 1rem;
+      margin-bottom: 40px;
+      padding: 10px 0;
+    }
+
+    .view-content img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 4px;
+      margin: 15px 0;
+    }
+
+    .action-bar {
+      display: flex;
+      justify-content: space-between;
+      border-top: 1px solid var(--line-color);
+      padding-top: 20px;
+      margin-bottom: 40px;
+    }
+
+    .btn-bbs {
+      padding: 8px 16px;
+      border-radius: 4px;
+      font-size: 0.9rem;
+      font-weight: 700;
+      cursor: pointer;
+      border: 1px solid #ddd;
+      background: #fff;
+      text-decoration: none;
+      color: #333;
+      display: inline-flex;
+      align-items: center;
+    }
+
+    .comment-wrap {
+      background: #fff;
+      border: 1px solid var(--line-color);
+    }
+
+    .comment-header {
+      background: var(--bg-gray);
+      padding: 10px 15px;
+      border-bottom: 1px solid var(--line-color);
+      font-weight: 800;
+      font-size: 0.9rem;
+    }
+
+    .comment-item {
+      padding: 15px;
+      border-bottom: 1px solid var(--line-color);
+    }
+
+    .comment-item.is-reply {
+      background: #fcfcfc;
+      padding-left: 40px;
+      position: relative;
+    }
+
+    .comment-item.is-reply::before {
+      content: '└';
+      position: absolute;
+      left: 15px;
+      top: 15px;
+      color: #ccc;
+      font-weight: bold;
+    }
+
+    .comment-user {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    .user-name {
+      font-weight: 800;
+      color: #333;
+      font-size: 0.85rem;
+    }
+
+    .comment-date {
+      color: #999;
+      font-size: 0.75rem;
+    }
+
+    .comment-text {
+      font-size: 0.9rem;
+      line-height: 1.6;
+      color: #444;
+      white-space: pre-wrap;
+    }
+
+    .comment-btns {
+      margin-top: 8px;
+    }
+
+    .btn-comment-sm {
+      background: none;
+      border: none;
+      padding: 0;
+      margin-right: 10px;
+      color: #888;
+      font-size: 0.75rem;
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    .comment-form {
+      padding: 15px;
+      background: #fdfdfd;
+    }
+
+    .comment-textarea {
+      width: 100%;
+      border: 1px solid #ddd;
+      padding: 10px;
+      border-radius: 4px;
+      font-size: 0.9rem;
+      resize: none;
+      box-sizing: border-box;
+      font-family: inherit;
+    }
+
+    .btn-submit {
+      background: #555;
+      color: #fff;
+      border: none;
+      padding: 8px 20px;
+      border-radius: 4px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .edit-box {
+      background: #fff;
+      border: 1px solid #ddd;
+      padding: 20px;
+      border-radius: 8px;
+    }
+
+    .styled-input {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      margin-bottom: 15px;
+      font-family: inherit;
+      font-size: 0.95rem;
+      box-sizing: border-box;
+    }
+
+    .m-badge {
+      font-size: 0.75rem;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-weight: 800;
+      color: #fff;
+      vertical-align: middle;
+    }
+
+    .bg-danger {
+      background: var(--danger);
+    }
+
+    .bg-primary {
+      background: var(--primary);
+    }
+
+    .tox-tinymce-aux {
+      z-index: 99999 !important;
+    }
+
+    @media (max-width: 600px) {
+      .view-title {
+        font-size: 1.25rem;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="admin-shell">
+    <div id="admin-header-slot"></div>
+    <main class="admin-main">
+      <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+
+      <section class="admin-content">
+        <div class="dashboard-layout">
+          <div class="sys-version-small" id="sysVersion">Verifying Content...</div>
+
+          <div id="view-wrapper" style="display:none;">
+            <div class="view-header">
+              <div id="view-category" class="view-category"></div>
+              <h2 id="view-title" class="view-title">로딩 중...</h2>
+              <div class="view-meta">
+                <span id="view-author">--</span>
+                <span class="meta-sep">|</span>
+                <span id="view-date">--.--.--</span>
+                <span class="meta-sep">|</span>
+                <span>조회 <span id="view-count">0</span></span>
+              </div>
+            </div>
+            <div id="view-body" class="view-content"></div>
+
+            <div class="action-bar">
+              <a href="board.html" class="btn-bbs">목록</a>
+
+              <div id="author-action-btns" style="display:none; gap:10px;">
+                <button class="btn-bbs" style="color:var(--danger); border-color:var(--danger);"
+                  onclick="deleteNotice()">삭제</button>
+                <button id="btn-edit-trigger" class="btn-bbs" onclick="enterEditMode()">수정</button>
+              </div>
+            </div>
+
+            <div class="comment-wrap">
+              <div class="comment-header">댓글 <span id="comment-total-count">0</span></div>
+              <div id="comment-list-root"></div>
+              <div class="comment-form">
+                <textarea id="new-comment-body" class="comment-textarea" rows="3" placeholder="댓글을 입력하세요."></textarea>
+                <div style="display:flex; justify-content:flex-end; margin-top:10px;">
+                  <button class="btn-submit" onclick="submitComment()">등록</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="edit-wrapper" style="display:none;">
+            <div class="edit-box">
+              <h3 id="edit-page-title" style="margin-top:0;">글 쓰기</h3>
+              <input type="text" id="edit-title" class="styled-input" placeholder="제목을 입력하세요"
+                style="font-weight:700; font-size:1.1rem;">
+              <div style="display:flex; gap:10px; margin-bottom:15px;">
+                <select id="edit-level" class="styled-input" style="flex:1; margin-bottom:0;">
+                  <option value="normal">일반 공지</option>
+                  <option value="warn">중요 공지</option>
+                  <option value="danger">🚨 필독 공지</option>
+                </select>
+                <label
+                  style="flex:1; display:flex; align-items:center; gap:5px; font-size:0.9rem; font-weight:700; cursor:pointer;">
+                  <input type="checkbox" id="edit-pinned"> 📌 상단 고정
+                </label>
+              </div>
+              <textarea id="notice-editor"></textarea>
+              <div style="margin-top:20px; display:flex; justify-content:space-between;">
+                <button class="btn-bbs" onclick="cancelEdit()">취소</button>
+                <div style="display:flex; gap:10px;">
+                  <button class="btn-bbs" onclick="saveNotice('draft')">임시저장</button>
+                  <button class="btn-bbs" style="background:#333; color:#fff; border:none;"
+                    onclick="saveNotice('published')">작성 완료</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const targetNoticeId = urlParams.get('id') || urlParams.get('noticeId');
+    let currentNotice = null;
+    let currentComments = [];
+
+    document.addEventListener('DOMContentLoaded', initPage);
+
+    async function initPage() {
+      if (!targetNoticeId || targetNoticeId === "null") {
+        showEditMode(true);
+      } else {
+        showViewMode();
+        await loadNoticeData();
+      }
+    }
+
+    function showViewMode() {
+      document.getElementById('view-wrapper').style.display = 'block';
+      document.getElementById('edit-wrapper').style.display = 'none';
+    }
+
+    function showEditMode(isNew = false) {
+      document.getElementById('view-wrapper').style.display = 'none';
+      document.getElementById('edit-wrapper').style.display = 'block';
+      if (isNew) document.getElementById('edit-page-title').textContent = "새 공지 작성";
+      initTinyMCE();
+    }
+
+    // ✅ 이미지 업로드 서버(공지사항 이미지 서버) 주소 세팅
+    const NOTICE_IMAGE_API = "https://script.google.com/macros/s/AKfycby-P3dibmH3SX0aHcWltvAq1yRDDP0vxECZ_ztJ5fuThHzaXi96SjCIRHoIv81P49vV/exec";
+
+    async function initTinyMCE(pendingContent = null) {
+      // 이미 에디터가 있는 경우: 콘텐츠만 교체하고 종료
+      const existing = tinymce.get('notice-editor');
+      if (existing) {
+        if (pendingContent !== null) existing.setContent(pendingContent);
+        return;
+      }
+
+      await tinymce.init({
+        selector: '#notice-editor',
+        height: 500,
+        language: 'ko_KR',
+        menubar: false,
+        plugins: 'advlist autolink lists link image charmap preview anchor searchreplace visualblocks code fullscreen table help wordcount',
+        toolbar: 'undo redo | blocks fontfamily fontsize | bold italic underline | forecolor backcolor | alignleft aligncenter alignright | bullist numlist outdent indent | table link image | code',
+        toolbar_mode: 'wrap',
+        branding: false,
+        // 🚨 [핵심 수정] 에디터 초기화가 100% 완료된 직후 본문을 삽입합니다.
+        // setTimeout(500ms) 대신 이 콜백을 써야 타이밍 오류가 없습니다.
+        init_instance_callback: function (editor) {
+          if (pendingContent !== null) editor.setContent(pendingContent);
+        },
+
+        // 🚨 이미지 업로드 처리 로직
+        images_upload_handler: (blobInfo, progress) => new Promise((resolve, reject) => {
+          if (typeof showAdminLoading === 'function') showAdminLoading("이미지 서버로 전송 중... 🚀");
+
+          const file = blobInfo.blob();
+          const reader = new FileReader();
+
+          reader.readAsDataURL(file);
+          reader.onload = async () => {
+            try {
+              const base64Str = reader.result.split(',')[1];
+
+              // 전용 서버에 맞춘 가벼운 데이터 형식
+              const payload = {
+                mode: "upload",
+                base64: base64Str,
+                mime: file.type,
+                filename: "notice_" + Date.now() + "_" + blobInfo.filename()
+              };
+
+              const res = await fetch(NOTICE_IMAGE_API, {
+                method: "POST",
+                body: JSON.stringify(payload)
+              });
+
+              const data = await res.json();
+              if (!data.ok) throw new Error(data.error);
+
+              // 성공 시 본문에 다이렉트 이미지 URL 삽입
+              resolve(data.url);
+
+            } catch (e) {
+              console.error(e);
+              reject("이미지 업로드 실패: " + e.message);
+            } finally {
+              if (typeof hideAdminLoading === 'function') hideAdminLoading();
+            }
+          };
+          reader.onerror = () => reject("파일 읽기 오류");
+        })
+      });
+    }
+
+    function getV(obj, key) {
+      if (!obj) return "";
+      const foundKey = Object.keys(obj).find(k => k.toLowerCase() === key.toLowerCase());
+      return foundKey ? obj[foundKey] : "";
+    }
+
+    async function loadNoticeData() {
+      if (typeof showAdminLoading === 'function') showAdminLoading("공지 불러오는 중...");
+      try {
+        const qId = String(targetNoticeId || "").trim();
+        const fetchUrl = `${window.CHEESE_ADMIN_API_BASE}?mode=getAnnouncement&noticeId=${qId}`;
+        const res = await fetch(fetchUrl);
+        const json = await res.json();
+
+        const noticeItem = json.notice || json.announcement || json.data || json.item;
+
+        if (json.ok && noticeItem && typeof noticeItem === 'object') {
+          currentNotice = noticeItem;
+          renderNotice();
+          await loadComments();
+
+          fetch(window.CHEESE_ADMIN_API_BASE, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ mode: 'incrementNoticeView', noticeId: qId })
+          }).catch(e => { });
+
+        } else {
+          alert("게시글 데이터를 찾을 수 없습니다.");
+          location.href = 'board.html';
+        }
+      } catch (e) {
+        alert("서버 통신 중 오류가 발생했습니다.");
+      } finally {
+        if (typeof hideAdminLoading === 'function') hideAdminLoading();
+      }
+    }
+
+    function renderNotice() {
+      const l = String(getV(currentNotice, 'level')).toLowerCase();
+      const cat = document.getElementById('view-category');
+      if (l === 'danger') cat.innerHTML = '<span class="m-badge bg-danger">필독</span>';
+      else if (l === 'warn') cat.innerHTML = '<span class="m-badge bg-primary">중요</span>';
+      else cat.textContent = '공지';
+
+      document.getElementById('view-title').textContent = getV(currentNotice, 'title') || "제목 없음";
+
+      // 🚨 [핵심 3] 작성자 노출 및 권한 관리
+      const authorEmp = getV(currentNotice, 'authorEmpNo');
+
+      // 기본적으로 남의 글이면 사번을 표시, 내 글이면 내 세션 이름(display_name) 표시
+      let displayAuthor = authorEmp;
+      if (authorEmp === window.CURRENT_USER_EMP_NO) {
+        displayAuthor = window.CURRENT_USER_NAME;
+      }
+
+      // 만약 백엔드에서 authorName 컬럼을 별도로 준다면 그것을 1순위로 씁니다.
+      document.getElementById('view-author').textContent = getV(currentNotice, 'authorName') || displayAuthor || "익명";
+
+      document.getElementById('view-date').textContent = String(getV(currentNotice, 'createdAt') || "--.--.--").substring(0, 16);
+      document.getElementById('view-count').textContent = getV(currentNotice, 'viewCount') || 0;
+
+      const bodyText = getV(currentNotice, 'body') || getV(currentNotice, 'content') || "";
+      document.getElementById('view-body').innerHTML = bodyText;
+
+      // 🚨 [핵심 4] 본인이 쓴 글일 때만 수정/삭제 버튼 컨테이너를 노출시킵니다!
+      const actionBtns = document.getElementById('author-action-btns');
+      if (actionBtns) {
+        if (authorEmp && authorEmp === window.CURRENT_USER_EMP_NO) {
+          actionBtns.style.display = 'flex';
+        } else {
+          actionBtns.style.display = 'none';
+        }
+      }
+    }
+
+    function enterEditMode() {
+      document.getElementById('view-wrapper').style.display = 'none';
+      document.getElementById('edit-wrapper').style.display = 'block';
+      document.getElementById('edit-page-title').textContent = "공지 수정";
+      document.getElementById('edit-title').value = getV(currentNotice, 'title');
+      document.getElementById('edit-level').value = getV(currentNotice, 'level') || "normal";
+      document.getElementById('edit-pinned').checked = (getV(currentNotice, 'isPinned') == 1);
+
+      // ✅ [수정] 기존 본문을 initTinyMCE에 미리 전달 → 에디터 준비 완료 즉시 삽입
+      // 500ms setTimeout 방식은 초기화 시간을 보장하지 못해 본문이 비어있는 채로 저장됩니다.
+      const bodyContent = getV(currentNotice, 'body') || getV(currentNotice, 'content') || "";
+      initTinyMCE(bodyContent);
+    }
+
+    function cancelEdit() { if (!targetNoticeId) location.href = 'board.html'; else showViewMode(); }
+
+    // ✅ 삭제 기능 구현 (서버에 상태를 deleted로 전송)
+    async function deleteNotice() {
+      if (!confirm("이 공지사항을 정말 삭제하시겠습니까?")) return;
+
+      const payload = {
+        mode: 'upsertAnnouncement',
+        noticeId: targetNoticeId,
+        title: getV(currentNotice, 'title'),
+        body: getV(currentNotice, 'body') || getV(currentNotice, 'content') || "",
+        level: getV(currentNotice, 'level') || "normal",
+        isPinned: getV(currentNotice, 'isPinned') == 1 ? 1 : 0,
+        status: 'deleted',
+        authorEmpNo: getV(currentNotice, 'authorEmpNo') // 삭제 시에도 원작자 정보 유지
+      };
+
+      if (typeof showAdminLoading === 'function') showAdminLoading("삭제 중...");
+      try {
+        const res = await fetch(window.CHEESE_ADMIN_API_BASE, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) });
+        const json = await res.json();
+        if (json.ok || json.result === "success") {
+          alert("성공적으로 삭제되었습니다.");
+          location.href = 'board.html';
+        } else {
+          alert("삭제 실패: " + (json.message || "원인 불명"));
+        }
+      } catch (e) {
+        alert("삭제 중 서버 통신 오류가 발생했습니다.");
+      }
+      finally { if (typeof hideAdminLoading === 'function') hideAdminLoading(); }
+    }
+
+    // ✅ 글 저장 함수 수정 (댓글 허용 옵션 추가)
+    async function saveNotice(status) {
+      const title = document.getElementById('edit-title').value.trim();
+      if (!title) return alert("제목을 입력하세요.");
+
+      // ✅ [null 안전 체크] TinyMCE가 아직 초기화 중이면 저장 차단
+      const editorInstance = tinymce.get('notice-editor');
+      if (!editorInstance) {
+        return alert("에디터가 아직 로딩 중입니다.\n잠시 후 다시 시도해주세요.");
+      }
+      const body = editorInstance.getContent();
+
+      // 🚨 [글자 수 사전 체크] Google Sheets 셀 한도: 50,000자
+      const CELL_LIMIT = 50000;
+      const WARNING_LIMIT = 40000;
+      if (body.length > CELL_LIMIT) {
+        return alert(
+          `❌ 본문이 너무 깁니다!\n\n` +
+          `현재 본문 크기: ${body.length.toLocaleString()}자\n` +
+          `저장 가능 최대: ${CELL_LIMIT.toLocaleString()}자\n\n` +
+          `이미지를 URL 방식으로 삽입하거나 일부 내용을 줄여주세요.`
+        );
+      }
+      if (body.length > WARNING_LIMIT) {
+        const ok = confirm(
+          `⚠️ 본문이 상당히 깁니다 (${body.length.toLocaleString()}자).\n` +
+          `저장 한도(50,000자)에 근접했습니다.\n\n` +
+          `계속 저장하시겠습니까?`
+        );
+        if (!ok) return;
+      }
+
+      const payload = {
+        mode: 'upsertAnnouncement',
+        noticeId: targetNoticeId || "",
+        title: title,
+        body: body,
+        level: document.getElementById('edit-level').value,
+        isPinned: document.getElementById('edit-pinned').checked ? 1 : 0,
+        status: status,
+        authorEmpNo: window.CURRENT_USER_EMP_NO,
+        // 🚨 [핵심 해결] 앞으로 저장되는 모든 글은 무조건 댓글 허용(1)으로 설정합니다!
+        allowComments: 1
+      };
+
+      if (typeof showAdminLoading === 'function') showAdminLoading("저장 중...");
+      try {
+        const res = await fetch(window.CHEESE_ADMIN_API_BASE, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(payload)
+        });
+
+        let json;
+        try {
+          json = await res.json();
+        } catch (parseErr) {
+          throw new Error("서버 응답을 처리하지 못했습니다. (JSON 파싱 오류)");
+        }
+
+        if (json.ok || json.result === "success" || json.noticeId || json.id) {
+          const newId = json.noticeId || json.id || targetNoticeId;
+          location.href = `notice.html?id=${newId}`;
+        } else {
+          alert("저장 실패: " + (json.message || json.error || "서버에서 거부했습니다."));
+        }
+      } catch (e) { alert("저장 실패: " + (e.message || "네트워크 오류가 발생했습니다.")); }
+      finally { if (typeof hideAdminLoading === 'function') hideAdminLoading(); }
+    }
+
+    // ✅ 1. 댓글 로드 (새로고침 없이 실시간 반영을 위한 캐시 방지 적용)
+    async function loadComments() {
+      try {
+        // 🚨 [핵심] 구글 서버가 예전 데이터를 보여주지 못하도록 주소 끝에 '현재 시간'을 몰래 붙여 무조건 최신 데이터를 강제 호출합니다.
+        const timestamp = new Date().getTime();
+        const res = await fetch(`${window.CHEESE_ADMIN_API_BASE}?mode=listComments&noticeId=${targetNoticeId}&_t=${timestamp}`);
+        const json = await res.json();
+        currentComments = json.comments || json.items || json.data || [];
+        renderComments();
+      } catch (e) { console.error("댓글 로드 실패:", e); }
+    }
+
+    // ✅ 2. 댓글 등록 (알럿창 추가 & 서버 저장 완벽 대기)
+    async function submitComment(parentId = "") {
+      const inputId = parentId ? `reply-text-${parentId}` : 'new-comment-body';
+      const text = document.getElementById(inputId).value;
+      if (!text.trim()) return alert("내용을 입력하세요.");
+      if (!confirm("댓글을 등록하시겠습니까?")) return;
+
+      const payload = {
+        mode: 'addComment',
+        noticeId: targetNoticeId,
+        parentCommentId: parentId,
+        body: text,
+        authorEmpNo: window.CURRENT_USER_EMP_NO,
+        authorName: window.CURRENT_USER_NAME
+      };
+
+      if (typeof showAdminLoading === 'function') showAdminLoading("댓글 등록 중...");
+      try {
+        const res = await fetch(window.CHEESE_ADMIN_API_BASE, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(payload)
+        });
+        const json = await res.json();
+
+        if (json.ok || json.result === "success") {
+          document.getElementById(inputId).value = "";
+          if (parentId) toggleReplyForm(parentId);
+          await loadComments();
+        } else {
+          // 🚨 두루뭉술한 "서버 오류" 대신, 서버가 보낸 정확한 거절 사유를 알려줍니다.
+          alert("댓글 등록 실패: " + (json.message || "원인 불명"));
+        }
+      } catch (e) {
+        alert("서버와의 통신에 실패했습니다.");
+      } finally {
+        if (typeof hideAdminLoading === 'function') hideAdminLoading();
+      }
+    }
+
+    // ✅ 댓글 삭제 기능 (서버에 내 사번 신분증 동봉)
+    async function deleteComment(id) {
+      if (!confirm("댓글을 삭제하시겠습니까?")) return;
+
+      if (typeof showAdminLoading === 'function') showAdminLoading("삭제 중...");
+      try {
+        const payload = {
+          mode: 'setCommentStatus',
+          commentId: id,
+          status: 'deleted',
+          // 🚨 [핵심] 댓글 삭제 시에도 내 사번을 보내서 서버가 본인인지 검사하게 합니다.
+          reqEmpNo: window.CURRENT_USER_EMP_NO
+        };
+
+        const res = await fetch(window.CHEESE_ADMIN_API_BASE, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(payload)
+        });
+
+        const json = await res.json();
+        if (json.ok || json.result === "success") {
+          await loadComments(); // 삭제 성공 시 화면 즉시 갱신
+        } else {
+          // 서버에서 차단했을 때 뜨는 에러 메시지
+          alert("삭제 실패: " + (json.message || "권한이 없습니다."));
+        }
+      } catch (e) { alert("삭제 실패"); }
+      finally { if (typeof hideAdminLoading === 'function') hideAdminLoading(); }
+    }
+
+    function renderComments() {
+      const root = document.getElementById('comment-list-root');
+      const countEl = document.getElementById('comment-total-count');
+      root.innerHTML = "";
+      const active = currentComments.filter(c => c.status !== 'deleted');
+      countEl.textContent = active.length;
+      if (active.length === 0) { root.innerHTML = '<div style="text-align:center; padding:30px; color:#999; font-size:0.9rem;">첫 댓글을 남겨보세요.</div>'; return; }
+
+      const isNull = (v) => !v || v === "" || v === "null" || v === "undefined";
+      const parents = active.filter(c => isNull(getV(c, 'parentCommentId')));
+      const children = active.filter(c => !isNull(getV(c, 'parentCommentId')));
+
+      parents.sort((a, b) => new Date(getV(a, 'createdAt')) - new Date(getV(b, 'createdAt')));
+
+      parents.forEach(p => {
+        root.appendChild(createCommentEl(p, false));
+        const pId = getV(p, 'commentId') || getV(p, 'id');
+        const replies = children.filter(c => String(getV(c, 'parentCommentId')) === String(pId));
+        replies.forEach(r => root.appendChild(createCommentEl(r, true)));
+      });
+    }
+
+    // ✅ 댓글 UI 그리기 (본인 댓글에만 삭제 버튼 표시 + 서버가 변환해준 실명 표시)
+    function createCommentEl(c, isReply) {
+      const div = document.createElement('div');
+      div.className = `comment-item ${isReply ? 'is-reply' : ''}`;
+      const cId = getV(c, 'commentId') || getV(c, 'id');
+
+      // 서버가 로그인 DB에서 사번을 찾아 변환해준 실제 이름 (없으면 사번 그대로 표시)
+      const authorName = getV(c, 'authorName') || getV(c, 'authorEmpNo') || "익명";
+      // 작성자의 사번
+      const authorEmp = getV(c, 'authorEmpNo');
+
+      div.innerHTML = `
+      <div class="comment-user">
+        <span class="user-name">${authorName}</span>
+        <span class="comment-date">${getV(c, 'createdAt')}</span>
+      </div>
+      <div class="comment-text">${getV(c, 'body')}</div>
+      <div class="comment-btns">
+        ${!isReply ? `<button class="btn-comment-sm" onclick="toggleReplyForm('${cId}')">답글</button>` : ''}
+        
+        ${authorEmp === window.CURRENT_USER_EMP_NO ? `<button class="btn-comment-sm" style="color:var(--danger);" onclick="deleteComment('${cId}')">삭제</button>` : ''}
+      
+      </div>
+      <div id="reply-form-${cId}" style="display:none; margin-top:10px;">
+        <textarea class="comment-textarea" rows="2" id="reply-text-${cId}" placeholder="답글을 입력하세요."></textarea>
+        <div style="display:flex; justify-content:flex-end; margin-top:5px;">
+          <button class="btn-submit" style="padding:4px 12px; font-size:0.8rem;" onclick="submitComment('${cId}')">등록</button>
+        </div>
+      </div>`;
+      return div;
+    }
+
+    function toggleReplyForm(id) { const f = document.getElementById(`reply-form-${id}`); if (f) f.style.display = f.style.display === 'none' ? 'block' : 'none'; }
+
+    (function showVersion() {
+      const el = document.getElementById("sysVersion");
+      if (!el) return;
+      const d = new Date(document.lastModified);
+      const pad = (n) => String(n).padStart(2, '0');
+      el.textContent = `Ver: ${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())}_${pad(d.getHours())}:${pad(d.getMinutes())} [Auth&Delete-Fix]`;
+    })();
+  </script>
+</body>
+
+</html>

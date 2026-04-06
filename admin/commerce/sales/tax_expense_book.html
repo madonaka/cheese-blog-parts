@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>세무 경비 장부 (홈택스 최적화) · Cheese Admin</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <link rel="stylesheet" href="../../admin.css" />
+  <style>
+    /* ===== Page Shell ===== */
+    .tax-page { padding: 0; }
+
+    .tax-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.5rem;
+    }
+    .tax-title-area {}
+    .tax-title {
+      font-size: 1.5rem;
+      font-weight: 800;
+      margin: 0 0 0.2rem;
+      letter-spacing: -0.03em;
+    }
+    .tax-sub {
+      font-size: 0.85rem;
+      color: #6b7280;
+      margin: 0;
+    }
+    .tax-actions {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .tax-actions .tbtn {
+      appearance: none;
+      border: 1px solid #d1d5db;
+      background: #fff;
+      color: #374151;
+      padding: 0.5rem 1rem;
+      border-radius: 12px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .tax-actions .tbtn:hover {
+      border-color: #2563eb;
+      color: #2563eb;
+      box-shadow: 0 2px 8px rgba(37,99,235,0.1);
+    }
+    .tax-actions .tbtn.primary { background: #111827; color: #fff; border-color: #111827; }
+    .tax-actions .tbtn.primary:hover { background: #1d4ed8; border-color: #1d4ed8; }
+    .tax-actions .tbtn.export { background: #059669; color: #fff; border-color: #059669; }
+    .tax-actions .tbtn.export:hover { background: #047857; border-color: #047857; }
+    .tax-actions .tbtn.sync { background: #3b82f6; color: #fff; border-color: #3b82f6; }
+
+    /* ===== Summary Cards ===== */
+    .tax-summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+    }
+    .tax-stat {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 16px;
+      padding: 1rem;
+      position: relative;
+      overflow: hidden;
+    }
+    .tax-stat::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+    .tax-stat.st-sales::before { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+    .tax-stat.st-expense::before { background: linear-gradient(90deg, #ef4444, #f87171); }
+    .tax-stat.st-net::before { background: linear-gradient(90deg, #059669, #34d399); }
+    .tax-stat.st-vat::before { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+
+    .tax-stat-label { font-size: 0.78rem; color: #6b7280; margin-bottom: 4px; }
+    .tax-stat-value { font-size: 1.3rem; font-weight: 800; color: #111827; }
+    .tax-stat-note { font-size: 0.72rem; color: #9ca3af; margin-top: 4px; }
+
+    /* ===== Filter Bar ===== */
+    .tax-filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+      margin-bottom: 1rem;
+      align-items: center;
+    }
+    .tax-filters select,
+    .tax-filters input[type="text"],
+    .tax-filters input[type="month"] {
+      border: 1px solid #d1d5db;
+      border-radius: 10px;
+      padding: 0.45rem 0.7rem;
+      font-size: 0.82rem;
+      background: #fff;
+      outline: none;
+      min-width: 120px;
+    }
+
+    /* ===== Data Table ===== */
+    .tax-table-wrap {
+      border-radius: 16px;
+      border: 1px solid #e5e7eb;
+      overflow: hidden;
+      background: #fff;
+      margin-bottom: 1rem;
+    }
+    .tax-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    .tax-table thead { background: #f8fafc; position: sticky; top: 0; z-index: 2; }
+    .tax-table th {
+      padding: 0.6rem 0.75rem;
+      text-align: left;
+      font-weight: 700;
+      color: #64748b;
+      font-size: 0.76rem;
+      border-bottom: 1px solid #e5e7eb;
+      white-space: nowrap;
+    }
+    .tax-table td { padding: 0.55rem 0.75rem; border-bottom: 1px solid #f1f5f9; color: #374151; white-space: nowrap; }
+    .tax-table tbody tr:hover { background: #f5f7ff; }
+
+    .tax-table .amount-cell { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+    .badge-type { padding: 2px 6px; border-radius: 4px; font-weight: 800; font-size: 0.7rem; }
+    .badge-type.매출 { background: #dbeafe; color: #1e40af; }
+    .badge-type.매입 { background: #fee2e2; color: #991b1b; }
+
+    .badge-category { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.72rem; font-weight: 600; background: #f1f5f9; color: #475569; }
+    .badge-evidence { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.72rem; font-weight: 600; }
+    .badge-evidence.세금계산서 { background: #dcfce7; color: #166534; }
+    .badge-evidence.신용카드 { background: #fef3c7; color: #92400e; }
+    .badge-evidence.현금영수증 { background: #dbeafe; color: #1e40af; }
+    .badge-evidence.자동연동 { background: #f3e8ff; color: #6b21a8; border: 1px solid #e9d5ff; }
+
+    .tax-empty { text-align: center; padding: 3rem; color: #9ca3af; font-size: 0.9rem; }
+
+    /* Modal styles omitted for brevity, keeping existing modal styles */
+    .tax-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.45); z-index: 2000; justify-content: center; align-items: center; padding: 1rem; }
+    .tax-modal-overlay.active { display: flex; }
+    .tax-modal { background: #fff; border-radius: 20px; width: 100%; max-width: 600px; max-height: 90vh; overflow-y: auto; box-shadow: 0 25px 60px rgba(0,0,0,0.2); }
+    .tax-modal-header { display: flex; justify-content: space-between; align-items: center; padding: 1.25rem 1.5rem 0.75rem; border-bottom: 1px solid #f1f5f9; }
+    .tax-modal-body { padding: 1rem 1.5rem 1.5rem; }
+    .tax-form-row { margin-bottom: 0.85rem; }
+    .tax-form-label { display: block; font-size: 0.8rem; font-weight: 700; margin-bottom: 0.25rem; color: #374151; }
+    .tax-form-input, .tax-form-select, .tax-form-textarea { width: 100%; box-sizing: border-box; border: 1px solid #d1d5db; border-radius: 10px; padding: 0.5rem 0.7rem; font-size: 0.85rem; background: #f9fafb; outline: none; font-family: inherit; }
+    .tax-auto-calc { background: #eff6ff; border: 1px dashed #93c5fd; border-radius: 10px; padding: 0.6rem 0.75rem; margin-bottom: 0.85rem; font-size: 0.82rem; color: #1e40af; }
+    .tax-modal-footer { display: flex; justify-content: flex-end; gap: 0.5rem; padding-top: 0.75rem; border-top: 1px solid #f1f5f9; }
+
+    @media (max-width: 768px) {
+      .tax-summary { grid-template-columns: repeat(2, 1fr); }
+      .tax-table { min-width: 1000px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="admin-shell">
+    <div id="admin-header-slot"></div>
+    <div class="admin-main">
+      <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+
+      <main class="admin-content tax-page">
+        <!-- ===== Header ===== -->
+        <div class="tax-header">
+          <div class="tax-title-area">
+            <h1 class="tax-title">📒 세무 경비 장부 <span style="font-size: 0.7rem; vertical-align: middle; background: #ffedd5; color: #9a3412; padding: 2px 8px; border-radius: 6px;">홈택스 최적화</span></h1>
+            <p class="tax-sub">판매 데이터는 자동으로 연동되며, 운영 경비만 추가로 기록하세요. 홈택스 신고용 CSV를 생성합니다.</p>
+          </div>
+          <div class="tax-actions">
+            <button class="tbtn sync" onclick="syncSalesData()">🔄 판매 데이터 동기화</button>
+            <button class="tbtn primary" onclick="openTaxModal()">➕ 경비 등록</button>
+            <button class="tbtn export" onclick="exportCSV()">📥 홈택스 신고용 CSV 추출</button>
+          </div>
+        </div>
+
+        <!-- ===== Summary ===== -->
+        <div class="tax-summary">
+          <div class="tax-stat st-sales">
+            <div class="tax-stat-label">이번 달 매출 합계 (자동)</div>
+            <div class="tax-stat-value" id="stat-sales">0원</div>
+            <div class="tax-stat-note">결제 완료된 모든 주문</div>
+          </div>
+          <div class="tax-stat st-expense">
+            <div class="tax-stat-label">이번 달 경비 합계 (수동)</div>
+            <div class="tax-stat-value" id="stat-expense">0원</div>
+            <div class="tax-stat-note">직접 입력한 지출 항목</div>
+          </div>
+          <div class="tax-stat st-net">
+            <div class="tax-stat-label">이달의 예상 순이익</div>
+            <div class="tax-stat-value" id="stat-net" style="color: #059669;">0원</div>
+            <div class="tax-stat-note">매출액 - 지출액 (세전)</div>
+          </div>
+          <div class="tax-stat st-vat">
+            <div class="tax-stat-label">납부/환급 부가세 예정</div>
+            <div class="tax-stat-value" id="stat-vat">0원</div>
+            <div class="tax-stat-note">매출VAT - 매입VAT</div>
+          </div>
+        </div>
+
+        <!-- ===== Filters ===== -->
+        <div class="tax-filters">
+          <input type="month" id="filter-month" onchange="renderAll()" />
+          <select id="filter-type" onchange="renderAll()">
+            <option value="">전체 거래구분</option>
+            <option value="매출">매출 (수입)</option>
+            <option value="매입">매입 (지출)</option>
+          </select>
+          <input type="text" id="filter-search" placeholder="🔍 거래처 / 비고 / 적요 검색" oninput="renderAll()" />
+          <div id="sync-status" style="font-size: 0.75rem; color: #94a3b8; margin-left: auto;">연동 데이터: <span id="sync-count">0</span>건</div>
+        </div>
+
+        <!-- ===== Table ===== -->
+        <div class="tax-table-wrap">
+          <table class="tax-table" id="tax-table">
+            <thead>
+              <tr>
+                <th>No.</th>
+                <th>거래일자</th>
+                <th>주문번호</th>
+                <th>구분</th>
+                <th>계정과목</th>
+                <th>적요(내용)</th>
+                <th>거래처명</th>
+                <th style="text-align:right">공급가액</th>
+                <th style="text-align:right">부가세</th>
+                <th style="text-align:right">합계금액</th>
+                <th>증빙종류</th>
+                <th>결제수단</th>
+                <th>비고(관리)</th>
+              </tr>
+            </thead>
+            <tbody id="tax-tbody"></tbody>
+          </table>
+        </div>
+
+        <!-- ===== PG사 대사 (Reconciliation) 섹션 ===== -->
+        <div style="margin-top: 2rem; background: #fff; border: 1px solid #e5e7eb; border-radius: 16px; overflow: hidden;">
+          <div style="padding: 1.25rem 1.5rem; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <div>
+              <h2 style="font-size: 1.15rem; font-weight: 800; margin: 0 0 4px;">🔍 PG사 대사 (Reconciliation)</h2>
+              <p style="font-size: 0.8rem; color: #6b7280; margin: 0;">PG사 정산 엑셀을 업로드하여 자체 시스템 매출과 1:1 대조합니다. <strong style="color: #dc2626;">세금 신고 시 PG사 금액이 기준</strong>입니다.</p>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <label for="pg-csv-upload" class="tbtn" style="cursor:pointer; display:flex; align-items:center; gap:6px; appearance:none; border:1px solid #d1d5db; background:#fff; padding:0.5rem 1rem; border-radius:12px; font-size:0.82rem; font-weight:600;">
+                📂 PG사 CSV 업로드
+              </label>
+              <input type="file" id="pg-csv-upload" accept=".csv,.xlsx" style="display:none;" onchange="handlePGUpload(event)" />
+              <button class="tbtn" onclick="clearReconciliation()" style="appearance:none; border:1px solid #d1d5db; background:#fff; padding:0.5rem 1rem; border-radius:12px; font-size:0.82rem; font-weight:600; cursor:pointer;">🗑️ 초기화</button>
+            </div>
+          </div>
+
+          <!-- 대사 결과 요약 -->
+          <div id="recon-summary" style="display:none; padding: 1rem 1.5rem; background: #fefce8; border-bottom: 1px solid #fef08a;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
+              <div><span style="font-size:0.75rem; color:#92400e;">PG사 총 매출</span><br><strong id="recon-pg-total" style="font-size:1.1rem;">0원</strong></div>
+              <div><span style="font-size:0.75rem; color:#92400e;">자체 시스템 총 매출</span><br><strong id="recon-my-total" style="font-size:1.1rem;">0원</strong></div>
+              <div><span style="font-size:0.75rem; color:#92400e;">차액</span><br><strong id="recon-diff" style="font-size:1.1rem;">0원</strong></div>
+              <div><span style="font-size:0.75rem; color:#92400e;">불일치 건수</span><br><strong id="recon-mismatch" style="font-size:1.1rem; color:#dc2626;">0건</strong></div>
+            </div>
+          </div>
+
+          <!-- 대사 결과 테이블 -->
+          <div id="recon-table-area" style="display:none; max-height: 400px; overflow-y: auto;">
+            <table class="tax-table" id="recon-table">
+              <thead>
+                <tr style="background: #fffbeb;">
+                  <th>상태</th>
+                  <th>주문번호</th>
+                  <th>거래일자</th>
+                  <th style="text-align:right">PG사 금액</th>
+                  <th style="text-align:right">자체 금액</th>
+                  <th style="text-align:right">차액</th>
+                  <th>비고</th>
+                </tr>
+              </thead>
+              <tbody id="recon-tbody"></tbody>
+            </table>
+          </div>
+
+          <!-- 업로드 전 안내 -->
+          <div id="recon-placeholder" style="padding: 2.5rem 1.5rem; text-align: center; color: #9ca3af;">
+            <p style="font-size: 1.5rem; margin: 0 0 8px;">📊</p>
+            <p style="font-size: 0.85rem; margin: 0 0 4px;">PG사 관리자 센터에서 <strong>'부가세 신고용 매출 조회'</strong> 엑셀을 다운받아 업로드하세요.</p>
+            <p style="font-size: 0.75rem; color: #d1d5db;">CSV 파일에 '주문번호'와 '결제금액' 컬럼이 포함되어 있어야 합니다.</p>
+          </div>
+        </div>
+
+        <!-- ===== 세무 주의사항 가이드 ===== -->
+        <div style="margin-top: 1.5rem; background: linear-gradient(135deg, #fef2f2 0%, #fff7ed 50%, #fefce8 100%); border: 1px solid #fecdd3; border-radius: 16px; padding: 1.5rem;">
+          <h3 style="font-size: 1rem; font-weight: 800; margin: 0 0 12px; color: #991b1b;">⚠️ 홈택스 셀프 신고 시 반드시 알아야 할 사항</h3>
+          
+          <details style="margin-bottom: 10px; background: #fff; border-radius: 12px; border: 1px solid #fecaca; overflow: hidden;" open>
+            <summary style="padding: 12px 16px; cursor: pointer; font-weight: 700; font-size: 0.85rem; color: #991b1b; list-style: none; display: flex; justify-content: space-between; align-items: center;">
+              🚨 내 장부 매출 &lt; PG사 매출 → 매출 누락 (가장 위험)
+              <span style="font-size:0.7rem; background:#fef2f2; color:#dc2626; padding:2px 8px; border-radius:4px;">위험도: 높음</span>
+            </summary>
+            <div style="padding: 0 16px 14px; font-size: 0.82rem; color: #374151; line-height: 1.7;">
+              국세청은 PG사가 제출한 자료를 <strong>'정답(최소 기준)'</strong>으로 간주합니다.<br>
+              자체 장부 금액이 PG사보다 적으면 <strong>매출 누락</strong>으로 판단하여:<br>
+              · <span style="color:#dc2626; font-weight:700;">과소신고 가산세</span> (원래 세금의 10% 이상)<br>
+              · <span style="color:#dc2626; font-weight:700;">납부지연 가산세</span> (늦은 기간만큼 추가 부과)<br>
+              · 세무서가 <span style="font-weight:700;">해명(소명) 요구</span>를 할 수 있습니다.
+            </div>
+          </details>
+
+          <details style="margin-bottom: 10px; background: #fff; border-radius: 12px; border: 1px solid #fed7aa; overflow: hidden;">
+            <summary style="padding: 12px 16px; cursor: pointer; font-weight: 700; font-size: 0.85rem; color: #9a3412; list-style: none; display: flex; justify-content: space-between; align-items: center;">
+              💸 내 장부 매출 &gt; PG사 매출 → 불필요한 세금 과납
+              <span style="font-size:0.7rem; background:#fff7ed; color:#ea580c; padding:2px 8px; border-radius:4px;">위험도: 보통</span>
+            </summary>
+            <div style="padding: 0 16px 14px; font-size: 0.82rem; color: #374151; line-height: 1.7;">
+              더 내겠다니 세무서에서 굳이 문제를 삼지 않지만, 낼 필요 없는 <strong>세금을 과다 납부</strong>하여 금전적 손해가 발생합니다.<br>
+              단, 무통장입금이나 현금결제 등 <strong>PG사를 거치지 않은 자체 매출</strong>이 포함된 경우는 장부가 더 큰 것이 정상입니다.
+            </div>
+          </details>
+
+          <details style="margin-bottom: 10px; background: #fff; border-radius: 12px; border: 1px solid #e5e7eb; overflow: hidden;">
+            <summary style="padding: 12px 16px; cursor: pointer; font-weight: 700; font-size: 0.85rem; color: #374151; list-style: none; display: flex; justify-content: space-between; align-items: center;">
+              🤔 왜 자체 시스템과 PG사 금액이 달라질까?
+              <span style="font-size:0.7rem; background:#f1f5f9; color:#64748b; padding:2px 8px; border-radius:4px;">참고</span>
+            </summary>
+            <div style="padding: 0 16px 14px; font-size: 0.82rem; color: #374151; line-height: 1.7;">
+              <strong>1. 취소/환불 시점의 차이</strong>: 3월 31일 밤 결제 → 4월 1일 새벽 환불 시, 자체 시스템은 3월에서 삭제하지만 PG사는 3월 매출로 잡고 4월에 마이너스 처리<br>
+              <strong>2. 포인트/쿠폰 적용</strong>: 전액 마일리지 결제 시 자체 시스템은 매출로 잡지만, PG사에는 카드 승인이 없으므로 0원<br>
+              <strong>3. 시간 기준 차이</strong>: 자체='주문 완료' 시간 기준 vs PG사='카드사 최종 승인' 시간 기준 → 밤 12시 전후로 하루 차이 발생
+            </div>
+          </details>
+
+          <div style="background: #dcfce7; border: 1px solid #86efac; border-radius: 12px; padding: 14px 16px; font-size: 0.82rem; color: #166534; line-height: 1.6;">
+            <strong>✅ 안전한 원칙:</strong> 세금 신고 시 <strong>반드시 PG사 관리자 센터의 '부가세 신고용 매출 조회' 금액을 기준</strong>으로 국세청에 입력하세요.<br>
+            위의 '🔍 PG사 대사' 기능을 활용하여 매월 초 PG사 엑셀과 자체 데이터를 비교하면 오차를 사전에 잡을 수 있습니다.
+          </div>
+        </div>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- ===== Modal: 경비 등록 (기존 코드 유지) ===== -->
+  <div class="tax-modal-overlay" id="tax-modal-overlay" onclick="if(event.target===this) closeTaxModal()">
+    <div class="tax-modal">
+      <div class="tax-modal-header">
+        <h2 id="tax-modal-title">경비 등록</h2>
+        <button onclick="closeTaxModal()" style="border:none; background:none; font-size:1.5rem; cursor:pointer;">&times;</button>
+      </div>
+      <div class="tax-modal-body">
+        <input type="hidden" id="tax-edit-id" />
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <div class="tax-form-row">
+            <label class="tax-form-label">거래일자 *</label>
+            <input type="date" class="tax-form-input" id="tax-date" />
+          </div>
+          <div class="tax-form-row">
+            <label class="tax-form-label">거래구분 *</label>
+            <select class="tax-form-select" id="tax-type" disabled>
+              <option value="매입" selected>매입 (지출)</option>
+            </select>
+          </div>
+        </div>
+        <div class="tax-form-row">
+          <label class="tax-form-label">계정과목 *</label>
+          <select class="tax-form-select" id="tax-account">
+            <option value="상품매입비">상품매입비</option>
+            <option value="광고선전비">광고선전비</option>
+            <option value="판매수수료">판매수수료(PG/마켓)</option>
+            <option value="포장배송비">포장/배송비</option>
+            <option value="임차료">임차료/관리비</option>
+            <option value="비품소모품">비품/소모품비</option>
+            <option value="통신비">통신비/클라우드</option>
+            <option value="기타">기타</option>
+          </select>
+        </div>
+        <div class="tax-form-row">
+          <label class="tax-form-label">적요 / 상호명 *</label>
+          <input type="text" class="tax-form-input" id="tax-vendor" placeholder="예: 구글 광고, 박스몰, 스타벅스 등" />
+        </div>
+        <div class="tax-form-row">
+          <label class="tax-form-label">합계금액 (부가세 포함) *</label>
+          <input type="number" class="tax-form-input" id="tax-total" oninput="calcVAT()" />
+        </div>
+        <div class="tax-auto-calc">
+            공급가액: <span id="calc-supply">0</span>원 | 부가세: <span id="calc-vat">0</span>원
+        </div>
+        <div class="tax-form-row">
+          <label class="tax-form-label">증빙종류 *</label>
+          <select class="tax-form-select" id="tax-evidence">
+            <option value="신용카드">신용카드</option>
+            <option value="현금영수증">현금영수증(지출증빙)</option>
+            <option value="세금계산서">세금계산서</option>
+            <option value="계산서(면세)">계산서(면세)</option>
+            <option value="간이영수증">간이영수증</option>
+          </select>
+        </div>
+        <div class="tax-form-row">
+          <label class="tax-form-label">비고(메모)</label>
+          <textarea class="tax-form-textarea" id="tax-memo"></textarea>
+        </div>
+        <div class="tax-modal-footer">
+          <button class="tbtn" onclick="closeTaxModal()">취소</button>
+          <button class="tbtn primary" onclick="saveTaxExpense()">💾 저장하기</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../../admin-common.js"></script>
+
+  <!-- 관리자용 서버 API -->
+  <script type="text/javascript">
+    // ✅ 다른 관리자 페이지(order_manage, sales_analysis)와 동일한 검증된 패턴 사용
+    async function safeFetchDB(payload) {
+      if (!window.CHEESE_ADMIN_DB_API) throw new Error("API URL이 정의되지 않았습니다.");
+      const res = await fetch(window.CHEESE_ADMIN_DB_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || "서버 응답 오류");
+      return data;
+    }
+
+    const STORAGE_KEY = 'cheese_tax_expenses';
+    let autoSalesData = []; // DB에서 불러온 판매 데이터
+
+    // ---------- 판매 데이터 동기화 ----------
+    async function syncSalesData() {
+      const statusEl = document.getElementById('sync-status');
+      statusEl.innerHTML = "⏳ 판매 데이터 동기화 중...";
+      
+      try {
+        // 회원 주문 + 비회원 주문 모두 가져오기
+        const [mRes, gRes] = await Promise.all([
+          safeFetchDB({ collection: "orders", orderByField: "created_at" }),
+          safeFetchDB({ collection: "guest_orders", orderByField: "created_at" })
+        ]);
+
+        const allOrders = [...(mRes.data || []), ...(gRes.data || [])];
+        
+        // 결제 완료된 건만 매출로 인정
+        autoSalesData = allOrders.filter(o => o.status === 'completed' || o.status === 'SUCCESS').map(o => {
+          const total = Number(o.price || o.total_amount || 0);
+          const supply = Math.round(total / 1.1);
+          const vat = total - supply;
+          const dateStr = (o.created_at || o.timestamp || '').split('T')[0];
+          
+          return {
+            id: 'AUTO-' + o.id,
+            orderId: o.id || '',
+            date: dateStr,
+            type: '매출',
+            account: '상품매출',
+            desc: o.title || '디지털 콘텐츠 판매',
+            vendor: o.guest_name || '온라인 고객',
+            supply,
+            vat,
+            total,
+            evidence: '신용카드/자동',
+            payment: 'PG결제',
+            memo: '시스템 자동연동',
+            source: 'system'
+          };
+        });
+
+        statusEl.innerHTML = "✅ 동기화 완료 (" + new Date().toLocaleTimeString() + ") · 연동 데이터: <strong>" + autoSalesData.length + "</strong>건";
+        renderAll();
+      } catch (err) {
+        console.error("Sync Error:", err);
+        statusEl.innerHTML = '❌ 동기화 실패: <span style="color:#ef4444">' + err.message + '</span>';
+        // 실패해도 수동 경비는 보여주기
+        renderAll();
+      }
+    }
+
+    // ---------- 데이터 핸들링 ----------
+    function loadManualExpenses() {
+      try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch(e) { return []; }
+    }
+    function saveManualExpenses(data) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    }
+
+    function renderAll() {
+      const monthTrim = document.getElementById('filter-month').value;
+      const typeFilter = document.getElementById('filter-type').value;
+      const search = document.getElementById('filter-search').value.trim().toLowerCase();
+
+      let manual = loadManualExpenses();
+      let combined = [...autoSalesData, ...manual];
+
+      // 필터 적용
+      if (monthTrim) combined = combined.filter(item => (item.date || '').startsWith(monthTrim));
+      if (typeFilter) combined = combined.filter(item => item.type === typeFilter);
+      if (search) {
+        combined = combined.filter(item => 
+          (item.vendor || '').toLowerCase().includes(search) || 
+          (item.desc || '').toLowerCase().includes(search) || 
+          (item.memo || '').toLowerCase().includes(search)
+        );
+      }
+
+      // 날짜 내림차순
+      combined.sort((a,b) => (b.date || '').localeCompare(a.date || ''));
+
+      // 테이블 렌더링
+      const tbody = document.getElementById('tax-tbody');
+      if (combined.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="13" class="tax-empty">📭 내역이 없습니다. 동기화하거나 경비를 등록해 주세요.</td></tr>`;
+      } else {
+        tbody.innerHTML = combined.map((item, idx) => {
+          const shortOrderId = item.orderId ? (item.orderId.length > 12 ? '...' + item.orderId.slice(-10) : item.orderId) : '-';
+          return `
+          <tr style="${item.source === 'system' ? 'background: #fafafa;' : ''}">
+            <td>${idx + 1}</td>
+            <td>${item.date}</td>
+            <td style="font-family:monospace; font-size:0.75rem; color:#6b7280;" title="${item.orderId || ''}">${shortOrderId}</td>
+            <td><span class="badge-type ${item.type}">${item.type}</span></td>
+            <td><span class="badge-category">${item.account}</span></td>
+            <td>${item.desc || '-'}</td>
+            <td>${item.vendor}</td>
+            <td class="amount-cell">${item.supply.toLocaleString()}</td>
+            <td class="amount-cell">${item.vat.toLocaleString()}</td>
+            <td class="amount-cell" style="font-weight:800; color:${item.type==='매출'?'#2563eb':'#dc2626'}">${item.total.toLocaleString()}</td>
+            <td><span class="badge-evidence ${item.source==='system'?'자동연동':(item.evidence||'').replace(/[()]/g,'')}">${item.evidence}</span></td>
+            <td>${item.payment || '-'}</td>
+            <td>
+              ${item.source === 'system' ? '<span style="color:#94a3b8; font-size:0.7rem;">[자동] 삭제불가</span>' : `
+                <button onclick="deleteExpense('${item.id}')" style="border:none; background:none; cursor:pointer;" title="삭제">🗑️</button>
+              `}
+            </td>
+          </tr>`;
+        }).join('');
+      }
+
+      // 통계 계산
+      const stats = combined.reduce((acc, cur) => {
+        if (cur.type === '매출') {
+          acc.sales += cur.total;
+          acc.salesVat += cur.vat;
+        } else {
+          acc.expense += cur.total;
+          acc.expenseVat += cur.vat;
+        }
+        return acc;
+      }, { sales:0, expense:0, salesVat:0, expenseVat:0 });
+
+      document.getElementById('stat-sales').innerText = stats.sales.toLocaleString() + '원';
+      document.getElementById('stat-expense').innerText = stats.expense.toLocaleString() + '원';
+      document.getElementById('stat-net').innerText = (stats.sales - stats.expense).toLocaleString() + '원';
+      document.getElementById('stat-vat').innerText = (stats.salesVat - stats.expenseVat).toLocaleString() + '원';
+    }
+
+    // ---------- 경비 등록 관련 ----------
+    function openTaxModal() {
+      document.getElementById('tax-edit-id').value = '';
+      document.getElementById('tax-date').value = new Date().toISOString().split('T')[0];
+      document.getElementById('tax-vendor').value = '';
+      document.getElementById('tax-total').value = '';
+      document.getElementById('calc-supply').innerText = '0';
+      document.getElementById('calc-vat').innerText = '0';
+      document.getElementById('tax-modal-overlay').classList.add('active');
+    }
+    function closeTaxModal() { document.getElementById('tax-modal-overlay').classList.remove('active'); }
+    function calcVAT() {
+      const total = Number(document.getElementById('tax-total').value) || 0;
+      const supply = Math.round(total / 1.1);
+      const vat = total - supply;
+      document.getElementById('calc-supply').innerText = supply.toLocaleString();
+      document.getElementById('calc-vat').innerText = vat.toLocaleString();
+    }
+    function saveTaxExpense() {
+      const date = document.getElementById('tax-date').value;
+      const vendor = document.getElementById('tax-vendor').value.trim();
+      const total = Number(document.getElementById('tax-total').value);
+      if(!date || !vendor || !total) return alert("필수 항목을 입력하세요.");
+
+      const supply = Math.round(total / 1.1);
+      const vat = total - supply;
+      const newItem = {
+        id: 'MANUAL-' + Date.now(),
+        date,
+        type: '매입',
+        account: document.getElementById('tax-account').value,
+        vendor,
+        supply, vat, total,
+        evidence: document.getElementById('tax-evidence').value,
+        memo: document.getElementById('tax-memo').value,
+        source: 'manual'
+      };
+
+      let manual = loadManualExpenses();
+      manual.unshift(newItem);
+      saveManualExpenses(manual);
+      closeTaxModal();
+      renderAll();
+    }
+    function deleteExpense(id) {
+      if(!confirm("이 지출 내역을 삭제할까요?")) return;
+      let manual = loadManualExpenses();
+      manual = manual.filter(m => m.id !== id);
+      saveManualExpenses(manual);
+      renderAll();
+    }
+
+    // ---------- CSV 추출 (홈택스 양식 참고) ----------
+    function exportCSV() {
+      const month = document.getElementById('filter-month').value || '전체기간';
+      const search = document.getElementById('filter-search').value.trim().toLowerCase();
+      
+      const combined = [...autoSalesData, ...loadManualExpenses()].filter(item => {
+        if (month !== '전체기간' && !(item.date || '').startsWith(month)) return false;
+        if (search && !(item.vendor + item.desc).toLowerCase().includes(search)) return false;
+        return true;
+      });
+
+      if (combined.length === 0) return alert("추출할 데이터가 없습니다.");
+
+      const BOM = '\uFEFF';
+      const header = ["거래일자", "주문번호", "구분", "계정과목", "적요", "거래처/상호", "공급가액", "부가세", "합계금액", "증빙종류", "결제수단", "비고"];
+      const rows = combined.map(item => [
+        item.date, `"${item.orderId || '-'}"`, item.type, item.account, `"${(item.desc||'').replace(/"/g,'""')}"`, `"${(item.vendor||'').replace(/"/g,'""')}"`, 
+        item.supply, item.vat, item.total, item.evidence, `"${(item.payment||'').replace(/"/g,'""')}"`, `"${(item.memo||'').replace(/"/g,'""')}"`
+      ]);
+
+      const csvContent = BOM + [header.join(','), ...rows.map(r => r.join(','))].join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `치즈스토어_홈택스용_장부_${month}.csv`;
+      a.click();
+    }
+
+    // ---------- PG사 대사 (Reconciliation) ----------
+    let pgUploadedData = []; // PG사에서 업로드한 데이터
+
+    function handlePGUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const text = e.target.result;
+          const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
+          if (lines.length < 2) {
+            alert('CSV에 데이터가 없습니다.');
+            return;
+          }
+
+          // 헤더 파싱 (쉼표 기준)
+          const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
+          
+          // 주문번호, 결제금액, 거래일자 컬럼 자동 감지
+          const orderIdColIdx = headers.findIndex(h => 
+            h.includes('주문번호') || h.includes('orderId') || h.includes('order_id') || h.includes('mId') || h.includes('승인번호')
+          );
+          const amountColIdx = headers.findIndex(h => 
+            h.includes('결제금액') || h.includes('금액') || h.includes('amount') || h.includes('승인금액') || h.includes('합계')
+          );
+          const dateColIdx = headers.findIndex(h => 
+            h.includes('거래일자') || h.includes('승인일자') || h.includes('결제일') || h.includes('date') || h.includes('일시')
+          );
+
+          if (orderIdColIdx === -1 || amountColIdx === -1) {
+            alert('CSV에서 "주문번호"와 "결제금액" 컬럼을 찾을 수 없습니다.\n컬럼명에 "주문번호"(또는 orderId)와 "결제금액"(또는 금액)이 포함되어야 합니다.');
+            return;
+          }
+
+          // 데이터 파싱
+          pgUploadedData = [];
+          for (let i = 1; i < lines.length; i++) {
+            const cols = lines[i].split(',').map(c => c.replace(/"/g, '').trim());
+            const orderId = cols[orderIdColIdx] || '';
+            const amount = Number((cols[amountColIdx] || '0').replace(/[^0-9.-]/g, '')) || 0;
+            const date = dateColIdx >= 0 ? (cols[dateColIdx] || '') : '';
+
+            if (orderId) {
+              pgUploadedData.push({ orderId, amount, date });
+            }
+          }
+
+          if (pgUploadedData.length === 0) {
+            alert('유효한 데이터가 없습니다.');
+            return;
+          }
+
+          runReconciliation();
+        } catch (err) {
+          console.error('CSV 파싱 오류:', err);
+          alert('CSV 파일 파싱 중 오류가 발생했습니다: ' + err.message);
+        }
+      };
+      reader.readAsText(file, 'UTF-8');
+    }
+
+    function runReconciliation() {
+      // 자체 시스템 매출 데이터 (autoSalesData에서 원본 orderId 추출)
+      const myData = autoSalesData.map(item => ({
+        orderId: item.id.replace('AUTO-', ''),
+        amount: item.total,
+        date: item.date,
+        desc: item.desc
+      }));
+
+      // 매칭 Map 생성
+      const pgMap = new Map();
+      pgUploadedData.forEach(pg => pgMap.set(pg.orderId, pg));
+
+      const myMap = new Map();
+      myData.forEach(my => myMap.set(my.orderId, my));
+
+      // 모든 주문번호 합집합
+      const allOrderIds = new Set([...pgMap.keys(), ...myMap.keys()]);
+
+      let results = [];
+      let pgTotal = 0, myTotal = 0, mismatchCount = 0;
+
+      allOrderIds.forEach(orderId => {
+        const pg = pgMap.get(orderId);
+        const my = myMap.get(orderId);
+        const pgAmt = pg ? pg.amount : 0;
+        const myAmt = my ? my.amount : 0;
+        const diff = pgAmt - myAmt;
+        const date = (pg && pg.date) || (my && my.date) || '-';
+
+        pgTotal += pgAmt;
+        myTotal += myAmt;
+
+        let status = '✅ 일치';
+        let bgColor = '';
+        let note = '';
+
+        if (!pg) {
+          status = '⚠️ PG 누락';
+          note = '자체 시스템에만 있음 (마일리지/직접결제?)';
+          bgColor = '#fffbeb';
+          mismatchCount++;
+        } else if (!my) {
+          status = '🚨 시스템 누락';
+          note = 'PG사에만 있음 (매출 누락 위험!)';
+          bgColor = '#fef2f2';
+          mismatchCount++;
+        } else if (diff !== 0) {
+          status = '❗ 금액 불일치';
+          note = diff > 0 ? 'PG가 더 큼 (누락 위험)' : '시스템이 더 큼 (과납 가능)';
+          bgColor = diff > 0 ? '#fef2f2' : '#fffbeb';
+          mismatchCount++;
+        }
+
+        results.push({ status, orderId, date, pgAmt, myAmt, diff, note, bgColor });
+      });
+
+      // 불일치 건 우선 정렬
+      results.sort((a, b) => {
+        if (a.bgColor && !b.bgColor) return -1;
+        if (!a.bgColor && b.bgColor) return 1;
+        return 0;
+      });
+
+      // 요약 렌더링
+      const totalDiff = pgTotal - myTotal;
+      document.getElementById('recon-summary').style.display = 'block';
+      document.getElementById('recon-pg-total').innerText = pgTotal.toLocaleString() + '원';
+      document.getElementById('recon-my-total').innerText = myTotal.toLocaleString() + '원';
+      document.getElementById('recon-diff').innerHTML = 
+        `<span style="color:${totalDiff > 0 ? '#dc2626' : totalDiff < 0 ? '#ea580c' : '#059669'}; font-weight:800;">${totalDiff > 0 ? '+' : ''}${totalDiff.toLocaleString()}원</span>` +
+        (totalDiff > 0 ? ' <span style="font-size:0.7rem; color:#dc2626;">(매출 누락 위험!)</span>' : '');
+      document.getElementById('recon-mismatch').innerHTML = 
+        `<span style="color:${mismatchCount > 0 ? '#dc2626' : '#059669'};">${mismatchCount}건</span>`;
+
+      // 테이블 렌더링
+      document.getElementById('recon-table-area').style.display = 'block';
+      document.getElementById('recon-placeholder').style.display = 'none';
+      document.getElementById('recon-tbody').innerHTML = results.map(r => `
+        <tr style="background: ${r.bgColor};">
+          <td style="font-weight:700;">${r.status}</td>
+          <td style="font-family: monospace; font-size:0.78rem;">${r.orderId.substring(0, 20)}${r.orderId.length > 20 ? '...' : ''}</td>
+          <td>${r.date}</td>
+          <td class="amount-cell">${r.pgAmt.toLocaleString()}</td>
+          <td class="amount-cell">${r.myAmt.toLocaleString()}</td>
+          <td class="amount-cell" style="font-weight:800; color:${r.diff > 0 ? '#dc2626' : r.diff < 0 ? '#ea580c' : '#059669'};">${r.diff > 0 ? '+' : ''}${r.diff.toLocaleString()}</td>
+          <td style="font-size:0.75rem; color:#6b7280;">${r.note}</td>
+        </tr>
+      `).join('');
+    }
+
+    function clearReconciliation() {
+      pgUploadedData = [];
+      document.getElementById('recon-summary').style.display = 'none';
+      document.getElementById('recon-table-area').style.display = 'none';
+      document.getElementById('recon-placeholder').style.display = 'block';
+      document.getElementById('pg-csv-upload').value = '';
+    }
+
+    // ---------- 초기화 ----------
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('filter-month').value = new Date().toISOString().slice(0, 7);
+      setTimeout(() => {
+        syncSalesData();
+      }, 500);
+    });
+  </script>
+</body>
+</html>

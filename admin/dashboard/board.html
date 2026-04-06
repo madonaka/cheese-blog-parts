@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>공지사항 - Cheese Lab</title>
+  
+  <link rel="stylesheet" href="../admin.css">
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+  <script>
+    window.CHEESE_ADMIN_API_BASE = "https://script.google.com/macros/s/AKfycbyE0uUpF2VdePr6AC6VcK7UOI4y5zvkUfMHlGHEiNKiGiiAjSzr172140GtV5MpiwzaSg/exec";
+  </script>
+  <script src="../admin-common.js" defer></script>
+
+  <style>
+    :root { --line-color: #eee; --text-dark: #333; --text-gray: #777; --primary: #3b82f6; --danger: #ef4444; }
+    
+    .dashboard-layout { max-width: 1100px; margin: 0 auto; padding: 20px 10px; }
+    .sys-version-small { font-size: 0.75rem; color: #94a3b8; margin-bottom: 10px; text-align: right; }
+
+    .page-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 15px; border-bottom: 2px solid #333; padding-bottom: 10px; }
+    .page-header h2 { font-size: 1.4rem; margin: 0; font-weight: 900; letter-spacing: -1px; }
+    
+    .search-bar { display: flex; gap: 5px; margin-bottom: 15px; justify-content: flex-end; }
+    .search-bar input { padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.85rem; width: 180px; }
+    .btn-action { padding: 6px 12px; border-radius: 4px; font-size: 0.85rem; font-weight: 700; cursor: pointer; border: 1px solid #ddd; background: #fff; }
+    .btn-write { background: var(--primary); color: #fff; border: none; }
+
+    .view-tabs { display: flex; border-bottom: 1px solid #ddd; margin-bottom: 0; background: #f9f9f9; }
+    .view-tab-btn { padding: 10px 15px; font-size: 0.9rem; font-weight: 700; border: none; background: none; color: #666; cursor: pointer; position: relative; }
+    .view-tab-btn.active { color: var(--primary); }
+    .view-tab-btn.active::after { content: ''; position: absolute; bottom: 0; left: 0; width: 100%; height: 2px; background: var(--primary); }
+
+    .board-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; table-layout: fixed; }
+    .board-table th { background: #f1f1f1; border-bottom: 1px solid #ccc; padding: 10px 5px; font-weight: 700; color: #444; text-align: center; }
+    .board-table td { padding: 10px 5px; border-bottom: 1px solid var(--line-color); text-align: center; color: var(--text-dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    
+    .col-id { width: 50px; }
+    .col-title { text-align: left !important; width: auto; }
+    .col-date { width: 65px; color: var(--text-gray); font-size: 0.85rem; }
+    .col-view { width: 50px; color: var(--text-gray); font-size: 0.85rem; }
+
+    .notice-row:hover { background: #f8f9fa; }
+    .notice-row.is-pinned { background: #fff8f8; }
+    .notice-row.is-pinned td { font-weight: 600; }
+
+    .title-link { text-decoration: none; color: inherit; display: flex; align-items: center; gap: 5px; cursor: pointer; }
+    .title-link:hover .title-text { text-decoration: underline; }
+    
+    .m-badge { font-size: 0.7rem; padding: 1px 4px; border-radius: 2px; font-weight: 800; color: #fff; line-height: 1; }
+    .m-badge-pin { background: #777; }
+    .m-badge-danger { background: var(--danger); }
+    .m-badge-new { background: var(--danger); color: #fff; font-size: 0.65rem; padding: 1px 4px; border-radius: 3px; font-weight: 900; font-style: normal; margin-left: 4px; vertical-align: middle; }
+    .comment-count { color: var(--primary); font-size: 0.8rem; font-weight: 700; margin-left: 3px; }
+
+    /* 페이징 */
+    .pagination { display: flex; justify-content: center; gap: 6px; margin-top: 25px; margin-bottom: 40px; }
+    .page-btn { padding: 6px 12px; border: 1px solid #ddd; background: #fff; border-radius: 4px; font-size: 0.9rem; cursor: pointer; color: #555; font-weight: 600; }
+    .page-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .page-btn:hover:not(.active) { background: #f1f5f9; }
+
+    @media (max-width: 600px) {
+      .col-id { display: none; }
+      .board-table th:nth-child(1), .board-table td:nth-child(1) { display: none; } 
+      .col-date { width: 50px; font-size: 0.75rem; padding: 10px 2px; }
+      .col-view { width: 40px; font-size: 0.75rem; padding: 10px 2px; }
+      .title-text { font-size: 0.9rem; }
+      .page-header h2 { font-size: 1.1rem; }
+    }
+    
+    .empty-state { text-align: center; padding: 50px 0; color: #999; border-bottom: 1px solid var(--line-color); }
+  </style>
+</head>
+<body>
+
+<div class="admin-shell">
+  <div id="admin-header-slot"></div>
+  <main class="admin-main">
+    <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+
+    <section class="admin-content">
+      <div class="dashboard-layout">
+        
+        <div class="sys-version-small" id="sysVersion">Version Checking...</div>
+
+        <div class="page-header">
+          <h2>📢 공지사항</h2>
+          <button class="btn-action btn-write" onclick="location.href='notice.html'">글쓰기</button>
+        </div>
+
+        <div class="search-bar">
+          <input type="text" id="search-keyword" placeholder="제목 검색..." onkeyup="if(event.key==='Enter') executeSearch()">
+          <button class="btn-action" onclick="executeSearch()">검색</button>
+        </div>
+
+        <div class="view-tabs">
+          <button class="view-tab-btn active" onclick="switchTab('all')" id="tab-all">전체</button>
+          <button class="view-tab-btn" onclick="switchTab('important')" id="tab-important">필독</button>
+          <button class="view-tab-btn" onclick="switchTab('draft')" id="tab-draft">임시</button>
+        </div>
+
+        <table class="board-table">
+          <thead>
+            <tr>
+              <th class="col-id">번호</th>
+              <th class="col-title">제목</th>
+              <th class="col-date">날짜</th>
+              <th class="col-view">조회</th>
+            </tr>
+          </thead>
+          <tbody id="notice-list-body">
+            </tbody>
+        </table>
+        <div id="empty-msg" class="empty-state" style="display:none;">게시글이 없습니다.</div>
+
+        <div id="pagination-root" class="pagination"></div>
+
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+  window.CHEESE_ADMIN_ACTIVE_PAGE = "board"; 
+  let g_announcements = [];
+  
+  let currentTab = 'all';
+  let currentPage = 1;
+  const itemsPerPage = 10; // 👈 한 페이지당 보여줄 게시글 수 (수정 가능)
+
+  document.addEventListener('DOMContentLoaded', loadAnnouncements);
+
+  // 유틸 함수들
+  function getV(obj, ...keys) {
+      if (!obj) return "";
+      for (let key of keys) {
+          const target = String(key).toLowerCase().replace(/[\s_]/g, '');
+          const foundKey = Object.keys(obj).find(k => String(k).toLowerCase().replace(/[\s_]/g, '') === target);
+          if (foundKey && obj[foundKey] !== undefined && obj[foundKey] !== null && obj[foundKey] !== "") {
+              return obj[foundKey];
+          }
+      }
+      return "";
+  }
+
+  function forceFormatDate(dateVal) {
+      if (!dateVal) return '--.--';
+      const raw = String(dateVal).trim();
+      const match = raw.match(/(\d{4})[-/.\s년]+(\d{1,2})[-/.\s월]+(\d{1,2})/);
+      if (match) return `${match[2].padStart(2, '0')}.${match[3].padStart(2, '0')}`; 
+      const d = new Date(raw);
+      if (!isNaN(d.getTime())) return `${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+      return raw.substring(0, 5);
+  }
+
+  function findViewCount(item) {
+      let v = getV(item, 'viewCount', 'view_count', 'views', '조회수', '조회', '읽음', '#num!', 'num');
+      if (v !== "") {
+          let parsed = parseInt(String(v).replace(/[^0-9]/g, ''), 10);
+          if (!isNaN(parsed)) return parsed;
+      }
+      for (let k of Object.keys(item)) {
+          if (/(view|조회|hit|num)/i.test(String(k))) {
+              let parsed = parseInt(String(item[k]).replace(/[^0-9]/g, ''), 10);
+              if (!isNaN(parsed)) return parsed;
+          }
+      }
+      return 0; 
+  }
+
+  function findCommentCount(item) {
+      let c = getV(item, 'commentCount', '댓글수', '댓글');
+      if (c !== "") {
+          let parsed = parseInt(String(c).replace(/[^0-9]/g, ''), 10);
+          if (!isNaN(parsed)) return parsed;
+      }
+      for (let k of Object.keys(item)) {
+          if (/(comment|댓글)/i.test(String(k))) {
+              let parsed = parseInt(String(item[k]).replace(/[^0-9]/g, ''), 10);
+              if (!isNaN(parsed)) return parsed;
+          }
+      }
+      return 0;
+  }
+
+  function findDateStr(item) {
+      let d = getV(item, 'createdAt', 'created_at', '생성일시', '작성일', '날짜', '등록일', 'startAt');
+      if (d !== "") return forceFormatDate(d);
+      for (let k of Object.keys(item)) {
+          if (/(date|time|at|일|시|날짜)/i.test(k)) {
+              if (/^\d{4}[-/.]/.test(String(item[k]))) return forceFormatDate(item[k]);
+          }
+      }
+      return '--.--';
+  }
+
+  async function loadAnnouncements() {
+      if(typeof showAdminLoading==='function') showAdminLoading("로딩 중...");
+      try {
+          const res = await fetch(window.CHEESE_ADMIN_API_BASE + "?mode=listAnnouncements");
+          const json = await res.json();
+          if(json.ok || json.result === "success") {
+              g_announcements = json.announcements || json.data || json.items || json.notice || [];
+              renderBoard();
+          }
+      } catch(e) { console.error(e); } 
+      finally { if(typeof hideAdminLoading==='function') hideAdminLoading(); }
+  }
+
+  function switchTab(tabId) {
+      currentTab = tabId;
+      currentPage = 1; 
+      document.querySelectorAll('.view-tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('tab-' + tabId).classList.add('active');
+      renderBoard();
+  }
+
+  function executeSearch() {
+      currentPage = 1; 
+      renderBoard();
+  }
+
+  // ✅ 페이징 로직 핵심 (고정글 + 일반글 합쳐서 10개로 컷팅)
+  function renderBoard() {
+      const body = document.getElementById('notice-list-body');
+      const empty = document.getElementById('empty-msg');
+      body.innerHTML = ''; empty.style.display = 'none';
+
+      const keyword = document.getElementById('search-keyword').value.toLowerCase().trim();
+
+      // 1. 유효 데이터 필터링
+      let filtered = g_announcements.filter(item => {
+          const status = String(getV(item, 'status', '상태') || '').trim().toLowerCase();
+          const level = String(getV(item, 'level', '중요도') || '').trim().toLowerCase();
+          const isPinned = (getV(item, 'isPinned', '상단고정') == 1);
+          const title = String(getV(item, 'title', '제목') || '').toLowerCase();
+          const content = String(getV(item, 'content', '내용', '상세내용') || '').toLowerCase();
+
+          if (currentTab === 'draft') return status === 'draft';
+          if (status === 'draft') return false;
+          if (currentTab === 'important') return (isPinned || level === 'danger' || level === 'warn');
+          if (keyword && !title.includes(keyword) && !content.includes(keyword)) return false;
+          return true;
+      });
+
+      // 2. 고정글(Pinned)과 일반글(Normal) 완벽 분리
+      const pinnedItems = [];
+      const normalItems = [];
+
+      filtered.forEach(item => {
+          const isPinned = (getV(item, 'isPinned', '상단고정') == 1 || String(getV(item, 'level', '중요도')).toLowerCase() === 'danger');
+          if (isPinned && currentTab !== 'draft') {
+              pinnedItems.push(item);
+          } else {
+              normalItems.push(item);
+          }
+      });
+
+      // 3. 최신순 정렬
+      const sortByDateDesc = (a, b) => {
+          const dateA = new Date(getV(a, 'createdAt', '생성일시', '작성일') || 0);
+          const dateB = new Date(getV(b, 'createdAt', '생성일시', '작성일') || 0);
+          return dateB - dateA;
+      };
+      pinnedItems.sort(sortByDateDesc);
+      normalItems.sort(sortByDateDesc);
+
+      // 4. 리스트 병합 (항상 고정글이 위로 오도록)
+      const finalItems = [...pinnedItems, ...normalItems];
+
+      // 빈 데이터 처리
+      if (finalItems.length === 0) { 
+          empty.style.display = 'block'; 
+          document.getElementById('pagination-root').innerHTML = '';
+          return; 
+      }
+
+      // 5. 페이징 계산 (총 갯수 기준)
+      const totalPages = Math.ceil(finalItems.length / itemsPerPage) || 1;
+      if (currentPage > totalPages) currentPage = totalPages;
+
+      const startIndex = (currentPage - 1) * itemsPerPage;
+      // 화면에 보여줄 딱 10개의 데이터만 슬라이싱
+      const pageItems = finalItems.slice(startIndex, startIndex + itemsPerPage);
+
+      // 6. 화면 렌더링
+      pageItems.forEach((item) => {
+          // 이 아이템이 고정글 배열에 속하는지 확인
+          const isPinned = pinnedItems.includes(item);
+          
+          let displayNum = '';
+          if (isPinned) {
+              displayNum = '📌';
+          } else {
+              // 일반글이라면, 일반글 전체 목록에서의 진짜 번호를 찾아 부여
+              const normalIdx = normalItems.indexOf(item);
+              displayNum = normalItems.length - normalIdx; 
+          }
+          
+          body.appendChild(createRow(item, isPinned, displayNum));
+      });
+
+      // 7. 페이징 버튼 생성
+      renderPagination(totalPages);
+  }
+
+  function createRow(item, isPinned, displayNum) {
+      const row = document.createElement('tr');
+      row.className = `notice-row ${isPinned ? 'is-pinned' : ''}`;
+      
+      const isDanger = String(getV(item, 'level', '중요도')).toLowerCase() === 'danger';
+      const dateStr = findDateStr(item);
+      const viewCount = findViewCount(item);
+      const commentCount = findCommentCount(item);
+      
+      // 오늘 날짜를 MM.DD 형식(예: 02.13)으로 만들어 표시되는 날짜(dateStr)와 똑같은지 확인!
+      const today = new Date();
+      const todayStr = `${String(today.getMonth() + 1).padStart(2, '0')}.${String(today.getDate()).padStart(2, '0')}`;
+      const isNew = (dateStr === todayStr);
+    
+      const id = getV(item, 'noticeId', 'id');
+      const title = getV(item, 'title', '제목') || '(제목 없음)';
+
+      row.innerHTML = `
+          <td class="col-id">${displayNum}</td>
+          <td class="col-title">
+            <a class="title-link" onclick="location.href='notice.html?id=${id}'">
+              ${isDanger ? '<span class="m-badge m-badge-danger">필독</span>' : ''}
+              ${isPinned && !isDanger ? '<span class="m-badge m-badge-pin">공지</span>' : ''}
+              <span class="title-text">${title}</span>
+              ${commentCount > 0 ? `<span class="comment-count">[${commentCount}]</span>` : ''}
+              ${isNew ? '<span class="m-badge-new">N</span>' : ''}
+            </a>
+          </td>
+          <td class="col-date">${dateStr}</td>
+          <td class="col-view">${viewCount}</td>
+      `;
+      return row;
+  }
+
+  // ✅ 페이징 버튼 렌더링 (1페이지 뿐이어도 무조건 표시됨)
+  function renderPagination(totalPages) {
+      const pRoot = document.getElementById('pagination-root');
+      pRoot.innerHTML = '';
+      
+      // 글이 하나라도 있으면 최소 [ 1 ] 버튼은 항상 보이게 설정
+
+      if (currentPage > 1) {
+          const prevBtn = document.createElement('button');
+          prevBtn.className = 'page-btn';
+          prevBtn.textContent = '◀';
+          prevBtn.onclick = () => { currentPage--; renderBoard(); };
+          pRoot.appendChild(prevBtn);
+      }
+
+      for (let i = 1; i <= totalPages; i++) {
+          const btn = document.createElement('button');
+          btn.className = `page-btn ${i === currentPage ? 'active' : ''}`;
+          btn.textContent = i;
+          btn.onclick = () => { currentPage = i; renderBoard(); };
+          pRoot.appendChild(btn);
+      }
+
+      if (currentPage < totalPages) {
+          const nextBtn = document.createElement('button');
+          nextBtn.className = 'page-btn';
+          nextBtn.textContent = '▶';
+          nextBtn.onclick = () => { currentPage++; renderBoard(); };
+          pRoot.appendChild(nextBtn);
+      }
+  }
+
+  (function showVersion() {
+      const el = document.getElementById("sysVersion");
+      if (!el) return;
+      const d = new Date(document.lastModified);
+      const pad = (n) => String(n).padStart(2, '0');
+      el.textContent = `Ver: ${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())}_${pad(d.getHours())}:${pad(d.getMinutes())} [True-Pagination]`;
+  })();
+</script>
+</body>
+</html>

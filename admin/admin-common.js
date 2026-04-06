@@ -1,4 +1,18 @@
 // 관리자 페이지 공통 스크립트
+
+/**
+ * 현재 페이지의 URL을 기준으로 admin 루트 경로를 동적으로 반환합니다.
+ * admin/ 바로 아래 페이지: './'
+ * admin/subfolder/ 아래 페이지: '../'
+ */
+function getAdminRoot() {
+  const path = window.location.pathname;
+  const adminIdx = path.lastIndexOf('/admin/');
+  if (adminIdx === -1) return './';
+  const afterAdmin = path.slice(adminIdx + '/admin/'.length);
+  const depth = afterAdmin.split('/').length - 1; // directory depth below admin/
+  return depth > 0 ? '../'.repeat(depth) : './';
+}
 (function () {
   // 토큰/로그인 정보 키 이름
   const TOKEN_KEY = "cheese_admin_token";
@@ -414,7 +428,7 @@ async function loadAdminHeader() {
 
   try {
     // [Cache Busting] 브라우저가 예전 헤더를 캐싱하여 알림판이 안 뜨는 현상 방지
-    const res = await fetch("./admin-header.html?v=" + new Date().getTime());
+    const res = await fetch(getAdminRoot() + "admin-header.html?v=" + new Date().getTime());
     if (!res.ok) throw new Error("HTTP " + res.status);
 
     const html = await res.text();
@@ -437,7 +451,7 @@ async function loadAdminMenu() {
   if (!slot) return;
 
   try {
-    const res = await fetch("./admin-menu.html?v=" + new Date().getTime());
+    const res = await fetch(getAdminRoot() + "admin-menu.html?v=" + new Date().getTime());
     if (!res.ok) throw new Error("HTTP " + res.status);
 
     const html = await res.text();
@@ -492,7 +506,7 @@ async function loadAdminMenu() {
 
   try {
     // admin 폴더 안에 admin-menu.html 이 있다고 가정
-    const res = await fetch("./admin-menu.html");
+    const res = await fetch(getAdminRoot() + "admin-menu.html");
     if (!res.ok) throw new Error("HTTP " + res.status);
 
     const html = await res.text();
@@ -632,7 +646,7 @@ function loadApprovalLineModal(rootId = 'approval-line-modal-root') {
 
   // 경로는 admin-common.js 기준이 아니라,
   // HTML 페이지 기준 상대경로라서 ./ 또는 ../ 로 맞춰줘야 함
-  fetch('./approval-line-editor.html')
+  fetch(getAdminRoot() + 'corp/approval-line-editor.html')
     .then(res => res.text())
     .then(html => {
       // ✅ 모달 내부 스크립트가 읽을 수 있게 전용 API 베이스를 다시 한번 보장

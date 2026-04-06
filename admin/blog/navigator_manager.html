@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>네비게이터 제작 도구</title>
+
+  <link rel="stylesheet" href="../admin.css" />
+  <script src="../admin-common.js"></script>
+
+  <style>
+    .lm-wrap { padding: 0; }
+    
+    .tabs { display:flex; gap:10px; margin-bottom:15px; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+    .tab-btn { border: none; background: transparent; padding: 10px 15px; cursor: pointer; font-weight: bold; color: #888; border-radius: 8px; transition: 0.2s; }
+    .tab-btn.active { background: #eef2ff; color: #4f46e5; }
+
+    .card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:20px; margin-bottom:15px; box-shadow:0 4px 6px -1px rgba(0,0,0,0.05); }
+    .card-title { font-weight: 800; font-size: 16px; margin-bottom: 15px; display: flex; align-items: center; gap: 8px; color: #1e293b; justify-content: space-between; }
+
+    .builder-layout { display: grid; grid-template-columns: 350px 1fr; gap: 20px; }
+    @media (max-width: 800px) { .builder-layout { grid-template-columns: 1fr; } .left-panel { order: 2; } }
+
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px; }
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-label { font-size: 13px; font-weight: 600; color: #64748b; }
+    .input { border: 1px solid #cbd5e1; padding: 10px; border-radius: 8px; font-size: 14px; outline: none; transition: 0.2s; }
+    .input:focus { border-color: #6366f1; ring: 2px solid #e0e7ff; }
+    .input[type="color"] { padding: 2px; height: 42px; width: 100%; cursor: pointer; }
+    .select { border: 1px solid #cbd5e1; padding: 10px; border-radius: 8px; font-size: 14px; outline: none; background: #fff; }
+
+    .data-list { border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+    .data-row { display: grid; grid-template-columns: 80px 1fr 1fr 60px; gap: 1px; background: #e2e8f0; }
+    .data-cell { background: #fff; padding: 8px; display: flex; align-items: center; justify-content: center; gap: 2px; }
+    .data-cell input { width: 100%; border: none; outline: none; font-size: 13px; }
+    .data-header { background: #f8fafc; font-weight: bold; font-size: 12px; color: #475569; text-align: center; }
+    
+    .btn-icon { border: none; background: #fee2e2; color: #ef4444; cursor: pointer; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 14px; border-radius: 4px; }
+    .btn-icon:hover { background: #fecaca; }
+    .btn-add-mid { background: #dbeafe; color: #2563eb; }
+    .btn-add-mid:hover { background: #bfdbfe; }
+
+    .btn { background: #0f172a; color: white; padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; border: none; }
+    .btn.secondary { background: #fff; color: #0f172a; border: 1px solid #cbd5e1; }
+    .btn.primary { background: #4f46e5; color: white; }
+    .btn.danger { background: #fee2e2; color: #ef4444; border: 1px solid #fecaca; }
+    .btn.full { width: 100%; margin-top: 10px; }
+
+    .preview-box { border: 2px dashed #cbd5e1; padding: 20px; border-radius: 12px; background: #f8fafc; min-height: 200px; }
+    .saved-list { max-height: 200px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; }
+    .saved-item { padding: 12px; border-bottom: 1px solid #eee; cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: 0.2s; }
+    .saved-item:hover { background: #f1f5f9; }
+    .saved-item:last-child { border-bottom: none; }
+    .saved-item .info { display: flex; flex-direction: column; }
+    .saved-item .key { font-weight: bold; font-size: 14px; color: #334155; }
+    .saved-item .title { font-size: 12px; color: #64748b; }
+
+    .code-export-box { background: #1e1e1e; color: #a9b7c6; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 12px; height: 150px; overflow-y: auto; margin-top: 10px; border: 1px solid #333; }
+    .footer-list .data-row { grid-template-columns: 1fr 1fr 30px; }
+  </style>
+</head>
+
+<body>
+  <div class="admin-shell">
+    <div id="admin-header-slot"></div>
+    <div class="admin-main">
+      <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+      
+      <main class="admin-content">
+        <div class="lm-wrap">
+          
+          <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('easy')">🎨 이지 빌더</button>
+            <button class="tab-btn" onclick="switchTab('raw')">🔧 고급 편집</button>
+          </div>
+
+          <div class="card">
+            <div class="card-title">
+              📂 저장된 네비게이터 목록
+              <button class="btn secondary" style="padding: 5px 10px; font-size: 12px;" onclick="loadLibraryList()">🔄 새로고침</button>
+            </div>
+            <div class="saved-list" id="savedItemsList">
+              <div style="padding:20px; text-align:center; color:#999;">로딩 중...</div>
+            </div>
+          </div>
+
+          <div id="tab-easy" style="display:block;">
+            <div class="builder-layout">
+              
+              <div class="left-panel">
+                <div class="card">
+                  <div class="card-title">
+                    ⚙️ 설정
+                    <button class="btn danger" style="padding: 4px 8px; font-size: 11px;" onclick="resetForm()">초기화</button>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">고유 ID (KEY)</label>
+                    <input type="text" id="easyKey" class="input" placeholder="예: NAV_HISTORY" value="NAV_NEW">
+                  </div>
+                  <div class="form-group" style="margin-top:10px;">
+                    <label class="form-label">제목 (관리용)</label>
+                    <input type="text" id="easyTitle" class="input" placeholder="예: 조선 왕조 가계도">
+                  </div>
+                </div>
+
+                <div class="card">
+                  <div class="card-title">🎨 디자인</div>
+                  <div class="form-grid" style="grid-template-columns: 1fr 1fr;">
+                    <div class="form-group">
+                      <label class="form-label">메인 색상</label>
+                      <input type="color" id="easyColorMain" class="input" value="#B70000" oninput="renderPreview(); generateSkeletonCode();">
+                    </div>
+                    <div class="form-group">
+                      <label class="form-label">서브 색상</label>
+                      <input type="color" id="easyColorSub" class="input" value="#A00000" oninput="renderPreview(); generateSkeletonCode();">
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">상단 제목</label>
+                    <input type="text" id="easyHeadTitle" class="input" value="역대 왕조 가계도 시리즈" oninput="renderPreview(); generateSkeletonCode();">
+                  </div>
+                  <div class="form-group" style="margin-top:10px;">
+                    <label class="form-label">아이콘</label>
+                    <input type="text" id="easyIcon" class="input" value="👑" oninput="renderPreview(); generateSkeletonCode();" style="width: 50px; text-align: center;">
+                  </div>
+                  
+                  <div style="border-top:1px solid #eee; margin-top:15px; padding-top:15px;">
+                    <div class="form-label" style="margin-bottom:8px;">👇 하단 추가 영역 (여러 개 가능)</div>
+                    <div class="data-list footer-list">
+                       <div class="data-row data-header">
+                         <div class="data-cell">문구</div>
+                         <div class="data-cell">링크 (선택)</div>
+                         <div class="data-cell">×</div>
+                       </div>
+                       <div id="footerRows"></div>
+                    </div>
+                    <button class="btn secondary full" style="margin-bottom: 10px;" onclick="addFooterRow()">+ 하단 링크 추가</button>
+
+                    <div class="form-grid" style="grid-template-columns: 1fr 1fr; margin-top:10px;">
+                      <div class="form-group">
+                        <label class="form-label">하단 배경색</label>
+                        <input type="color" id="easyColorFooter" class="input" value="#E0F7FA" oninput="renderPreview(); generateSkeletonCode();">
+                      </div>
+                      <div class="form-group">
+                        <label class="form-label">하단 글자색</label>
+                        <select id="easyFooterTextColor" class="select" onchange="renderPreview(); generateSkeletonCode();">
+                          <option value="#333333">검정 (기본)</option>
+                          <option value="#ffffff">흰색</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="card">
+                  <div class="card-title">📝 데이터 입력</div>
+                  <div class="data-list">
+                    <div class="data-row data-header">
+                      <div class="data-cell">그룹</div>
+                      <div class="data-cell">이름</div>
+                      <div class="data-cell">링크</div>
+                      <div class="data-cell">편집</div>
+                    </div>
+                    <div id="dataRows"></div>
+                  </div>
+                  <button class="btn secondary full" onclick="addDataRow()">+ 맨 아래 추가하기</button>
+                </div>
+
+                <button class="btn primary full" style="padding: 15px;" onclick="saveEasyMode()">💾 저장하기</button>
+                <button class="btn danger full" style="margin-top:5px;" onclick="deleteCurrent()">🗑 삭제</button>
+              </div>
+
+              <div class="right-panel">
+                <div class="card">
+                   <div class="card-title">📤 블로그 붙여넣기용 코드</div>
+                   <textarea id="skeletonExport" class="code-export-box" readonly onclick="this.select()"></textarea>
+                   <button class="btn secondary full" onclick="copySkeletonCode()">📋 코드 복사하기</button>
+                </div>
+
+                <div class="card" style="height: 100%; display:flex; flex-direction:column;">
+                  <div class="card-title">👀 실시간 미리보기</div>
+                  <div id="easyPreview" class="preview-box"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="tab-raw" style="display:none;">
+            <div class="card">
+              <div class="card-title">HTML 직접 편집</div>
+              <textarea id="rawHtml" class="input" style="width:100%; height:400px; font-family:monospace; background:#1e1e1e; color:#eee;"></textarea>
+            </div>
+          </div>
+
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    (function renderShellOnce(){
+      if (window.AdminCommon && typeof window.AdminCommon.renderShell === "function"){
+        window.AdminCommon.renderShell({ headerSlotId: "admin-header-slot", menuSlotId: "admin-menu-slot", activeMenu: "library_manage" });
+      }
+    })();
+
+    const API_URL = "https://script.google.com/macros/s/AKfycbxEfHER2lBOZnixi1iX5pwn22lwIOKy6IWcq8XiDmoRsGT34wf1N6eYUL3YYLi8Tho4/exec";
+
+    function switchTab(mode) {
+      document.getElementById('tab-easy').style.display = mode === 'easy' ? 'block' : 'none';
+      document.getElementById('tab-raw').style.display = mode === 'raw' ? 'block' : 'none';
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      event.target.classList.add('active');
+      if(mode === 'raw') document.getElementById('rawHtml').value = generateHtmlFromEasyMode();
+    }
+
+    function loadLibraryList() {
+      const listEl = document.getElementById('savedItemsList');
+      listEl.innerHTML = '<div style="padding:20px; text-align:center;">🔄 목록 불러오는 중...</div>';
+      fetch(API_URL + "?mode=getLibraryList")
+        .then(r => r.json())
+        .then(res => {
+          if (res.items && res.items.length > 0) {
+            listEl.innerHTML = "";
+            res.items.forEach(item => {
+              const div = document.createElement('div');
+              div.className = 'saved-item';
+              div.innerHTML = `
+                <div class="info"><span class="key">${item.key}</span><span class="title">${item.title || '(제목 없음)'}</span></div>
+                <button class="btn secondary" style="padding:5px 10px; font-size:12px;">불러오기</button>`;
+              div.onclick = () => loadItemToEditor(item.key, item.title);
+              listEl.appendChild(div);
+            });
+          } else {
+            listEl.innerHTML = '<div style="padding:20px; text-align:center;">저장된 네비게이터가 없습니다.</div>';
+          }
+        });
+    }
+
+    function loadItemToEditor(key, title) {
+      if(!confirm(`[${key}] 불러오시겠습니까?`)) return;
+      document.getElementById('easyKey').value = key;
+      document.getElementById('easyTitle').value = title;
+      fetch(API_URL + "?mode=getComponent&key=" + key)
+        .then(r => r.json())
+        .then(res => {
+          if(res.result === "success") { parseHtmlToEasyMode(res.html); alert("불러왔습니다!"); } 
+          else { alert("실패: " + res.msg); }
+        });
+    }
+
+    function parseHtmlToEasyMode(html) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, "text/html");
+      const styleTag = doc.querySelector("style");
+      if(styleTag) {
+        const css = styleTag.innerHTML;
+        const main = css.match(/--nw-color-header:\s*(#[0-9a-fA-F]{6})/);
+        const sub = css.match(/--nw-color-sub:\s*(#[0-9a-fA-F]{6})/);
+        const footer = css.match(/--nw-color-footer:\s*(#[0-9a-fA-F]{6})/);
+        const footerText = css.match(/--nw-color-footer-text:\s*(#[0-9a-fA-F]{6})/);
+        
+        if(main) document.getElementById('easyColorMain').value = main[1];
+        if(sub) document.getElementById('easyColorSub').value = sub[1];
+        if(footer) document.getElementById('easyColorFooter').value = footer[1];
+        if(footerText) document.getElementById('easyFooterTextColor').value = footerText[1];
+      }
+      const titleEl = doc.querySelector(".namu-title");
+      const iconEl = doc.querySelector(".namu-icon");
+      if(titleEl) document.getElementById('easyHeadTitle').value = titleEl.innerText;
+      if(iconEl) document.getElementById('easyIcon').value = iconEl.innerText;
+
+      document.getElementById('footerRows').innerHTML = "";
+      const footerEl = doc.querySelector(".namu-bottom-area");
+      if(footerEl) {
+        const links = footerEl.querySelectorAll("a, span.footer-item");
+        if(links.length > 0) {
+          links.forEach(l => {
+             const href = l.tagName === 'A' ? l.getAttribute('href') : '';
+             addFooterRow(l.innerText, href);
+          });
+        } else if(footerEl.innerText.trim()) {
+           addFooterRow(footerEl.innerText, "");
+        }
+      }
+
+      const scriptTag = doc.querySelector("script");
+      if(scriptTag) {
+        const jsonMatch = scriptTag.innerHTML.match(/genealogyData\s*=\s*(\[[\s\S]*?\]);/);
+        if(jsonMatch && jsonMatch[1]) {
+          let jsonStr = jsonMatch[1].replace(/group:/g, '"group":').replace(/label:/g, '"label":').replace(/href:/g, '"href":');
+          try {
+            const data = JSON.parse(jsonStr);
+            document.getElementById('dataRows').innerHTML = "";
+            data.forEach(d => addDataRow(d.group, d.label, d.href));
+          } catch(e) {}
+        }
+      }
+      renderPreview();
+      generateSkeletonCode();
+    }
+
+    function addDataRow(group="", label="", href="", insertAfterElement = null) {
+      const container = document.getElementById('dataRows');
+      const row = document.createElement('div');
+      row.className = 'data-row';
+      row.innerHTML = `
+        <div class="data-cell"><input type="text" class="inp-group" value="${group}" oninput="renderPreview(); generateSkeletonCode();" placeholder="그룹"></div>
+        <div class="data-cell"><input type="text" class="inp-label" value="${label}" oninput="renderPreview(); generateSkeletonCode();" placeholder="이름"></div>
+        <div class="data-cell"><input type="text" class="inp-href" value="${href}" oninput="renderPreview(); generateSkeletonCode();" placeholder="링크"></div>
+        <div class="data-cell">
+          <button class="btn-icon" onclick="this.parentElement.parentElement.remove(); renderPreview(); generateSkeletonCode();" title="삭제">×</button>
+          <button class="btn-icon btn-add-mid" onclick="insertRowBelow(this)" title="아래에 추가">+</button>
+        </div>
+      `;
+      if (insertAfterElement && insertAfterElement.nextSibling) { container.insertBefore(row, insertAfterElement.nextSibling); } 
+      else { container.appendChild(row); }
+      renderPreview();
+      generateSkeletonCode();
+    }
+
+    function insertRowBelow(btn) { const currentRow = btn.parentElement.parentElement; addDataRow("", "", "", currentRow); }
+
+    function addFooterRow(text="", link="") {
+      const container = document.getElementById('footerRows');
+      const row = document.createElement('div');
+      row.className = 'data-row';
+      row.innerHTML = `
+        <div class="data-cell"><input type="text" class="inp-text" value="${text}" oninput="renderPreview(); generateSkeletonCode();" placeholder="문구"></div>
+        <div class="data-cell"><input type="text" class="inp-link" value="${link}" oninput="renderPreview(); generateSkeletonCode();" placeholder="링크(선택)"></div>
+        <div class="data-cell"><button class="btn-icon" onclick="this.parentElement.parentElement.remove(); renderPreview(); generateSkeletonCode();">×</button></div>
+      `;
+      container.appendChild(row);
+      renderPreview();
+      generateSkeletonCode();
+    }
+
+    function generateHtmlFromEasyMode() {
+      const mainColor = document.getElementById('easyColorMain').value;
+      const subColor = document.getElementById('easyColorSub').value;
+      const footerColor = document.getElementById('easyColorFooter').value;
+      const footerTextColor = document.getElementById('easyFooterTextColor').value;
+      const headTitle = document.getElementById('easyHeadTitle').value;
+      const icon = document.getElementById('easyIcon').value;
+      
+      let footerHtml = "";
+      const footerRows = [];
+      document.querySelectorAll('#footerRows .data-row').forEach(row => {
+        const text = row.querySelector('.inp-text').value.trim();
+        const link = row.querySelector('.inp-link').value.trim();
+        if(text) footerRows.push({text, link});
+      });
+
+      if(footerRows.length > 0) {
+        const itemsHtml = footerRows.map(item => {
+           if(item.link) return `<a href="${item.link}">${item.text}</a>`;
+           return `<span class="footer-item">${item.text}</span>`;
+        }).join("");
+        footerHtml = `<div class="namu-bottom-area">${itemsHtml}</div>`;
+      }
+
+      const rows = [];
+      document.querySelectorAll('#dataRows .data-row').forEach(row => {
+        if(row.classList.contains('data-header')) return;
+        rows.push({
+          group: row.querySelector('.inp-group').value,
+          label: row.querySelector('.inp-label').value,
+          href: row.querySelector('.inp-href').value
+        });
+      });
+      const jsonData = JSON.stringify(rows, null, 2);
+
+      return `<div class="namu-wiki-container">
+  <div class="namu-main-header">
+    <span class="namu-icon">${icon}</span>
+    <span class="namu-title">${headTitle}</span>
+  </div>
+  <details class="namu-details">
+    <summary class="namu-summary">[ <span class="toggle-text">펼치기</span> ]</summary>
+    <div class="namu-body">
+      <div class="namu-genealogy-grid"></div>
+      ${footerHtml}
+    </div>
+  </details>
+</div>
+<style>
+.namu-wiki-container {
+  --nw-color-header: ${mainColor};
+  --nw-color-sub: ${subColor};
+  --nw-color-footer: ${footerColor};
+  --nw-color-footer-text: ${footerTextColor};
+  --nw-color-group: #EFEFEF;
+  --nw-color-border: #ccc;
+  --nw-text-white: #fff;
+  --nw-text-black: #333;
+  border: 2px solid var(--nw-color-header); margin: 30px 0; font-family: sans-serif; box-sizing: border-box;
+}
+.namu-main-header { background: var(--nw-color-header); color: var(--nw-text-white); padding: 10px; text-align: center; font-weight: bold; font-size: 1.1em; display:flex; justify-content:center; align-items:center; gap:8px; }
+.namu-details { background: #fff; display: block; }
+.namu-summary { background: var(--nw-color-sub); color: var(--nw-text-white); text-align: center; padding: 6px; cursor: pointer; list-style: none; font-size: 0.9em; border-top: 1px solid rgba(255,255,255,0.2); user-select: none; }
+.namu-summary::-webkit-details-marker { display: none; }
+.namu-body { background: #fff; padding: 0; }
+.namu-details[open] .namu-body { animation: fadeIn 0.3s ease-out; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.namu-group-header { background: var(--nw-color-group); color: var(--nw-text-black); text-align: center; font-weight: bold; padding: 8px; border-bottom: 1px solid var(--nw-color-border); border-top: 1px solid var(--nw-color-border); }
+.namu-group-header:first-child { border-top: none; }
+
+.namu-bottom-area { 
+  background-color: var(--nw-color-footer); 
+  color: var(--nw-color-footer-text);
+  padding: 10px; 
+  text-align: center; 
+  font-size: 0.9em; 
+  border-top: 2px solid var(--nw-color-header); 
+  display: flex; 
+  justify-content: center; 
+  flex-wrap: wrap; 
+  gap: 15px; 
+}
+.namu-bottom-area a { text-decoration: none; color: inherit; font-weight: bold; }
+.namu-bottom-area a:hover { text-decoration: underline; opacity: 0.8; }
+.namu-bottom-area .footer-item { font-weight: normal; }
+
+.namu-group-grid { display: grid; grid-template-columns: repeat(4, 1fr); width: 100%; }
+.namu-cell { display: flex; align-items: center; justify-content: center; padding: 12px 5px; text-align: center; text-decoration: none; color: var(--nw-text-black); font-size: 0.95em; border-right: 1px solid var(--nw-color-border); border-bottom: 1px solid var(--nw-color-border); background: #fff; transition: background 0.2s; word-break: keep-all; }
+.namu-group-grid .namu-cell:nth-child(4n) { border-right: none; }
+.namu-cell:hover { background-color: #f0f0f0; text-decoration: underline; }
+.namu-cell.active { background-color: #fff0f0; font-weight: bold; color: var(--nw-color-header); box-shadow: inset 0 0 0 2px var(--nw-color-header); }
+
+@media (max-width: 600px) {
+  .namu-group-grid { grid-template-columns: repeat(2, 1fr); }
+  .namu-group-grid .namu-cell { 
+    border-right: 1px solid var(--nw-color-border); 
+    padding: 12px 2px;
+    font-size: 13px;
+    min-height: 50px; 
+    line-height: 1.3;
+  }
+  .namu-group-grid .namu-cell:nth-child(2n) { border-right: none; }
+  .namu-group-grid .namu-cell:nth-child(4n) { border-right: none; }
+}
+</style>
+<script>
+(function(){
+  const unprocessed = document.querySelectorAll(".namu-wiki-container:not(.js-active)");
+  unprocessed.forEach(root => {
+    root.classList.add("js-active");
+    const genealogyData = ${jsonData};
+    const container = root.querySelector(".namu-genealogy-grid");
+    if (container) {
+      const currentPath = location.pathname;
+      const currentFullUrl = location.href;
+      const grouped = genealogyData.reduce((acc, item) => { const g = item.group || "기타"; (acc[g] ||= []).push(item); return acc; }, {});
+      container.innerHTML = "";
+      Object.keys(grouped).forEach(groupName => {
+        const header = document.createElement("div"); header.className = "namu-group-header"; header.textContent = groupName; container.appendChild(header);
+        const grid = document.createElement("div"); grid.className = "namu-group-grid";
+        grouped[groupName].forEach(it => {
+          const el = document.createElement(it.href ? "a" : "div"); el.className = "namu-cell"; el.textContent = it.label;
+          if (it.href) el.href = it.href;
+          if (it.href && (currentPath.indexOf(it.href) !== -1 || currentFullUrl.indexOf(it.href) !== -1)) { el.classList.add("active"); el.setAttribute("aria-current", "page"); }
+          grid.appendChild(el);
+        });
+        container.appendChild(grid);
+      });
+    }
+    const details = root.querySelector(".namu-details");
+    const summaryText = root.querySelector(".toggle-text");
+    if (details && summaryText) { details.addEventListener("toggle", function() { summaryText.textContent = details.open ? "접기" : "펼치기"; }); }
+  });
+})();
+<\/script>`;
+    }
+
+    function renderPreview() {
+      const html = generateHtmlFromEasyMode();
+      const previewBox = document.getElementById('easyPreview');
+      previewBox.innerHTML = html;
+      previewBox.querySelectorAll('script').forEach(oldS => { const newS = document.createElement('script'); newS.text = oldS.innerHTML; oldS.parentNode.replaceChild(newS, oldS); });
+      const details = previewBox.querySelector('details'); if(details) details.open = true;
+    }
+    function saveEasyMode() {
+      const key = document.getElementById('easyKey').value; const title = document.getElementById('easyTitle').value; const content = generateHtmlFromEasyMode();
+      if(!key) return alert("KEY(ID)를 입력해주세요!");
+      if(confirm(`[${key}] 저장하시겠습니까?`)) {
+        fetch(API_URL, { method: "POST", body: JSON.stringify({ mode: "saveLibrary", key: key, title: title || key, content: content }) })
+        .then(r => r.json()).then(res => { 
+          if(res.result === "success") { 
+            alert("✅ 저장되었습니다!\n오른쪽에 생성된 '스켈레톤 코드'를 블로그에 붙여넣으세요."); 
+            loadLibraryList(); 
+          } else { alert("❌ 오류: " + res.msg); } 
+        });
+      }
+    }
+    function deleteCurrent() {
+      const key = document.getElementById('easyKey').value; if(!key) return;
+      if(confirm(`정말 [${key}]를 삭제하시겠습니까?`)) {
+        fetch(API_URL, { method: "POST", body: JSON.stringify({ mode: "deleteLibrary", key: key }) }).then(r => r.json()).then(res => { if(res.result === "success") { alert("삭제되었습니다."); loadLibraryList(); resetForm(); } });
+      }
+    }
+    function resetForm() {
+      document.getElementById('easyKey').value = "NAV_NEW";
+      document.getElementById('easyTitle').value = "";
+      document.getElementById('footerRows').innerHTML = "";
+      document.getElementById('dataRows').innerHTML = "";
+      addDataRow(); renderPreview(); generateSkeletonCode();
+    }
+
+    // 스켈레톤 코드 생성기
+    function generateSkeletonCode() {
+      const key = document.getElementById('easyKey').value || "NAV_KEY";
+      const mainColor = document.getElementById('easyColorMain').value;
+      const subColor = document.getElementById('easyColorSub').value;
+      const footerColor = document.getElementById('easyColorFooter').value;
+      const footerTextColor = document.getElementById('easyFooterTextColor').value;
+      const headTitle = document.getElementById('easyHeadTitle').value;
+      const icon = document.getElementById('easyIcon').value;
+
+     const footerHtml = ""; 
+    
+      const code = `<div class="cheese-template" data-key="${key}" style="--nw-color-header:${mainColor}; --nw-color-sub:${subColor}; --nw-color-footer:${footerColor}; --nw-color-footer-text:${footerTextColor};">
+      <div class="namu-wiki-container" style="border:2px solid ${mainColor}; margin:30px 0; font-family:sans-serif; box-sizing:border-box;">
+        <div class="namu-main-header" style="background:${mainColor}; color:#fff; padding:10px; text-align:center; font-weight:bold; font-size:1.1em; display:flex; justify-content:center; align-items:center; gap:8px;">
+          <span class="namu-icon">${icon}</span>
+          <span class="namu-title">${headTitle}</span>
+        </div>
+        
+        <details class="namu-details" style="background:#fff;">
+          
+          <summary class="namu-summary" style="background:${subColor}; color:#fff; text-align:center; padding:6px; cursor:pointer; list-style:none; font-size:0.9em; user-select:none;">
+            [ <span class="toggle-text">펼치기</span> ]
+          </summary>
+          <div class="namu-body">
+            <div class="namu-genealogy-grid" style="padding:20px; text-align:center; color:#ccc; animation:blink 1.5s infinite;">
+               🧭 네비게이션 로딩 중...
+            </div>
+            ${footerHtml}
+          </div>
+        </details>
+      </div>
+      <style>@keyframes blink{0%{opacity:1}50%{opacity:0.4}100%{opacity:1}}.namu-summary::-webkit-details-marker{display:none}</style>
+    </div>`;
+    
+      document.getElementById('skeletonExport').value = code;
+    }
+
+    function copySkeletonCode() {
+      const copyText = document.getElementById("skeletonExport");
+      copyText.select();
+      copyText.setSelectionRange(0, 99999);
+      navigator.clipboard.writeText(copyText.value).then(() => {
+        alert("복사되었습니다!\n블로그 HTML 모드에 붙여넣으세요.");
+      });
+    }
+
+    window.onload = function() { loadLibraryList(); addDataRow(); renderPreview(); generateSkeletonCode(); };
+  </script>
+</body>
+</html>

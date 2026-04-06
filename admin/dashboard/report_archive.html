@@ -1,0 +1,2526 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>문서 아카이브 - Cheese Lab</title>
+
+  <link rel="stylesheet" href="../admin.css">
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tinymce/6.8.2/tinymce.min.js" referrerpolicy="origin"></script>
+
+  <script>
+    // ✅ 서버 API 주소
+    window.CHEESE_ADMIN_API_BASE = "https://script.google.com/macros/s/AKfycbwn1TrLeSIAe570LRWMJxRzx88u3LQYF38Kme9WhMd-YQsrMsSggrNy3I_2SGKGXTpS/exec";
+
+    // 🚨 필수 설정: 생성된 문서(파일)가 저장될 구글 드라이브 폴더 ID
+    const ARCHIVE_FOLDER_ID = "1MpTCfw8B1Y-77QFr4k5SCPfVQgso8fKi"; 
+  </script>
+  <script src="../admin-common.js"></script>
+
+  <style>
+    /* 아카이브 전용 스타일 */
+    .archive-header {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .archive-title h2 {
+      font-size: 1.8rem;
+      color: #1e293b;
+      margin: 0 0 8px 0;
+      letter-spacing: -0.5px;
+    }
+
+    .archive-title p {
+      color: #64748b;
+      margin: 0;
+      font-size: 0.95rem;
+    }
+
+    .report-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      background: #fff;
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03);
+    }
+
+    .report-date-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-right: 8px;
+    }
+
+    .report-date-group label {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #475569;
+    }
+
+    .btn-gen {
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+      background: #fff;
+      color: #475569;
+      font-weight: 600;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-gen:hover {
+      background: #f8fafc;
+      border-color: #cbd5e1;
+      transform: translateY(-1px);
+    }
+
+    .btn-gen.btn-new {
+      background: #3b82f6;
+      color: #fff;
+      border: none;
+      margin-left: auto;
+      box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.4);
+    }
+
+    .btn-gen.btn-new:hover {
+      background: #2563eb;
+    }
+
+    /* 🌟 [최고급 게시판 디자인] 아카이브 전용 리스트 스타일 */
+    .archive-board-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    /* 검색창 디자인 */
+    .archive-search-wrap {
+      display: flex;
+      align-items: center;
+      background: #fff;
+      border: 1px solid #cbd5e1;
+      border-radius: 12px;
+      padding: 8px 16px;
+      flex: 1;
+      min-width: 250px;
+      max-width: 400px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+      transition: 0.2s;
+    }
+
+    .archive-search-wrap:focus-within {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+
+    .archive-search-wrap input {
+      border: none;
+      outline: none;
+      background: transparent;
+      width: 100%;
+      font-size: 0.95rem;
+      margin-left: 8px;
+      color: #1e293b;
+      font-weight: 500;
+    }
+
+    .archive-search-wrap input::placeholder {
+      color: #94a3b8;
+      font-weight: 400;
+    }
+
+    /* 필터(셀렉트 박스) 디자인 */
+    .archive-filters {
+      display: flex;
+      gap: 10px;
+    }
+
+    .archive-filters select {
+      padding: 10px 16px;
+      border: 1px solid #cbd5e1;
+      border-radius: 12px;
+      background: #fff;
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #475569;
+      outline: none;
+      cursor: pointer;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+      transition: 0.2s;
+    }
+
+    .archive-filters select:hover {
+      border-color: #94a3b8;
+      background: #f8fafc;
+    }
+
+    /* 리스트 테이블 컨테이너 */
+    .archive-table-container {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 16px;
+      box-shadow: 0 4px 10px -2px rgba(0, 0, 0, 0.03);
+      overflow: hidden;
+    }
+
+    .archive-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+
+    .archive-table th {
+      background: #f8fafc;
+      padding: 16px 24px;
+      font-size: 0.85rem;
+      font-weight: 800;
+      color: #64748b;
+      border-bottom: 1px solid #e2e8f0;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .archive-table td {
+      padding: 18px 24px;
+      border-bottom: 1px solid #f1f5f9;
+      vertical-align: middle;
+    }
+
+    /* 마우스 호버 애니메이션 */
+    .archive-table tbody tr {
+      transition: all 0.2s ease;
+      cursor: pointer;
+      background: #fff;
+    }
+
+    .archive-table tbody tr:hover {
+      background: #f8fafc;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+      position: relative;
+      z-index: 1;
+      border-radius: 8px;
+    }
+
+    .archive-table tbody tr:last-child td {
+      border-bottom: none;
+    }
+
+    /* 🌟 [수정] 셀 내용 디자인 (줄바꿈 방지 및 말줄임표 적용) */
+    .cell-type {
+      text-align: center;
+      width: 130px;
+      white-space: nowrap;
+    }
+
+    /* 👈 절대 줄바꿈 안 됨 */
+    .badge-type {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+      white-space: nowrap;
+    }
+
+    .cell-title {
+      font-weight: 800;
+      font-size: 1.1rem;
+      color: #0f172a;
+      line-height: 1.4;
+      margin-bottom: 6px;
+      /* 👈 제목이 너무 길면 1줄로 자르고 ... 처리 */
+      display: -webkit-box;
+      -webkit-line-clamp: 1;
+      line-clamp: 1;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      word-break: break-all;
+    }
+
+    .cell-title-sub {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      color: #64748b;
+      font-weight: 600;
+    }
+
+    .cell-title-sub .sub-badge {
+      background: #f1f5f9;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      color: #475569;
+    }
+
+    .cell-date {
+      text-align: center;
+      width: 140px;
+      color: #64748b;
+      font-size: 0.95rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .cell-action {
+      text-align: center;
+      width: 160px;
+      white-space: nowrap;
+    }
+
+    /* 🌟 [수정] 관리 버튼 디자인 (Flexbox로 묶어 절대 안 깨짐) */
+    .action-btn-group {
+      display: flex;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .action-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      background: #f8fafc;
+      color: #475569;
+      border: 1px solid #e2e8f0;
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: 0.2s;
+      white-space: nowrap;
+    }
+
+    .action-btn:hover {
+      background: #e2e8f0;
+      color: #0f172a;
+      border-color: #cbd5e1;
+    }
+
+    .action-btn.delete {
+      background: #fff1f2;
+      color: #ef4444;
+      border-color: #fecdd3;
+    }
+
+    .action-btn.delete:hover {
+      background: #ffe4e6;
+      color: #dc2626;
+      border-color: #fda4af;
+    }
+
+    /* 페이징 버튼 디자인 */
+    .archive-pagination {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+      margin-top: 30px;
+      margin-bottom: 20px;
+    }
+
+    .archive-page-btn {
+      min-width: 38px;
+      height: 38px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      color: #64748b;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 800;
+      transition: 0.2s;
+      font-size: 0.95rem;
+    }
+
+    .archive-page-btn:hover:not(:disabled) {
+      background: #f8fafc;
+      border-color: #94a3b8;
+      color: #0f172a;
+    }
+
+    .archive-page-btn.active {
+      background: #3b82f6;
+      color: #fff;
+      border-color: #3b82f6;
+      box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3);
+    }
+
+    .archive-page-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      border-color: #e2e8f0;
+    }
+
+    .page-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* 모달 스타일 */
+    .custom-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.4);
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+      backdrop-filter: blur(4px);
+    }
+
+    .custom-modal.open {
+      display: flex;
+    }
+
+    /* 모달 레이어 계층 */
+    #doc-modal {
+      z-index: 2000;
+    }
+
+    #idea-select-modal,
+    #schedule-maker-modal {
+      z-index: 2100;
+    }
+
+    .modal-box {
+      background: #fff;
+      padding: 0;
+      border-radius: 20px;
+      width: 90%;
+      max-width: 500px;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      max-height: 90vh;
+    }
+
+    .modal-box.large-modal {
+      max-width: 1000px;
+      height: 90vh;
+    }
+
+    .modal-header-custom {
+      padding: 16px 24px;
+      border-bottom: 1px solid #e2e8f0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #fff;
+    }
+
+    .modal-title-custom {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: #1e293b;
+    }
+
+    .modal-body-custom {
+      padding: 24px;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .modal-footer-custom {
+      padding: 16px 24px;
+      border-top: 1px solid #e2e8f0;
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+      background: #f8fafc;
+    }
+
+    /* 폼 요소 */
+    .styled-input,
+    .styled-textarea {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      outline: none;
+      transition: 0.2s;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+
+    .styled-input:focus,
+    .styled-textarea:focus {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+
+    .input-label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #64748b;
+      margin-bottom: 6px;
+    }
+
+    /* 아이디어 선택 리스트 스타일 */
+    .idea-select-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 12px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      background: #fff;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+
+    .idea-select-item:hover {
+      border-color: #ea580c;
+      background: #fff7ed;
+    }
+
+    .idea-select-item input[type="checkbox"] {
+      margin-top: 4px;
+      transform: scale(1.2);
+      cursor: pointer;
+    }
+
+    .idea-select-content {
+      flex: 1;
+    }
+
+    .idea-select-title {
+      font-weight: 700;
+      color: #1e293b;
+      font-size: 0.95rem;
+      margin-bottom: 4px;
+    }
+
+    .idea-select-desc {
+      font-size: 0.85rem;
+      color: #64748b;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    /* 다른 스타일 코드들 사이에 아래 코드를 추가해 주세요 */
+    .tox-tinymce-aux {
+      z-index: 99999 !important;
+    }
+
+    /* 인쇄 최적화 */
+    @media print {
+      body * {
+        visibility: hidden;
+      }
+
+      #print-area,
+      #print-area * {
+        visibility: visible;
+      }
+
+      #print-area {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+      }
+
+      .no-print {
+        display: none !important;
+      }
+
+      .modal-box.large-modal {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: auto;
+        box-shadow: none;
+      }
+    }
+
+    /* =======================================================
+       📱 [모바일 최적화 반응형 CSS] 화면이 작아지면 자동으로 카드형 변신!
+       ======================================================= */
+    @media (max-width: 768px) {
+
+      /* 1. 최상단 [보고서/기획서 생성] 버튼들 가로 스크롤(스와이프) 처리 */
+      .report-controls {
+        flex-wrap: nowrap !important;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        /* 부드러운 스크롤 */
+        padding-bottom: 12px;
+        justify-content: flex-start !important;
+      }
+
+      .report-controls::-webkit-scrollbar {
+        height: 4px;
+      }
+
+      .report-controls::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 4px;
+      }
+
+      .btn-gen {
+        flex-shrink: 0;
+      }
+
+      /* 버튼 찌그러짐 원천 차단 */
+
+      /* 2. 게시판 툴바 (검색/필터) 수직으로 꽉 차게 정렬 */
+      .archive-board-header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+        margin-bottom: 16px;
+      }
+
+      .archive-search-wrap {
+        max-width: 100%;
+        width: 100%;
+        box-sizing: border-box;
+      }
+
+      .archive-filters {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        width: 100%;
+      }
+
+      .archive-filters select {
+        width: 100%;
+        box-sizing: border-box;
+        font-size: 0.85rem;
+        padding: 10px;
+      }
+
+      /* 3. 테이블(Table)을 모바일용 카드형(Card) 리스트로 완벽 변환 */
+      .archive-table thead {
+        display: none;
+      }
+
+      /* 좁은 모바일에선 테이블 헤더 제목 숨김 */
+      .archive-table,
+      .archive-table tbody,
+      .archive-table tr,
+      .archive-table td {
+        display: block;
+        width: 100%;
+        box-sizing: border-box;
+      }
+
+      .archive-table tbody tr {
+        padding: 20px;
+        border-bottom: 8px solid #f1f5f9;
+        /* 카드와 카드 사이의 굵은 구분선 */
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        position: relative;
+        background: #fff;
+        border-radius: 0;
+        box-shadow: none;
+      }
+
+      .archive-table tbody tr:hover {
+        transform: none;
+        box-shadow: none;
+      }
+
+      /* 모바일에선 호버 액션 끄기 */
+      .archive-table td {
+        padding: 0 !important;
+        border: none !important;
+        height: auto !important;
+        text-align: left !important;
+      }
+
+      /* 4. 카드 내부 디테일 재배치 */
+      .cell-type {
+        margin-bottom: 4px;
+      }
+
+      .cell-title {
+        font-size: 1.15rem;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        white-space: normal;
+        line-height: 1.5;
+      }
+
+      /* 모바일에선 제목 2줄 허용 */
+      .cell-title-sub {
+        flex-wrap: wrap;
+        line-height: 1.4;
+        margin-bottom: 4px;
+      }
+
+      .cell-date {
+        font-size: 0.85rem;
+        color: #94a3b8;
+      }
+
+      /* 5. 터치(Fat-Finger) 친화적인 큼직한 하단 액션 버튼 */
+      .cell-action {
+        margin-top: 10px;
+        border-top: 1px dashed #e2e8f0;
+        padding-top: 16px;
+      }
+
+      .action-btn-group {
+        display: flex;
+        width: 100%;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .action-btn {
+        flex: 1;
+        padding: 12px 0 !important;
+        font-size: 0.95rem !important;
+        justify-content: center;
+      }
+
+      /* 버튼을 50:50으로 꽉 채움 */
+
+      /* 6. 모달 팝업 가로 스크롤 (일정표, 글쓰기 창) */
+      #schedule-maker-modal .modal-body-custom {
+        overflow-x: auto;
+        padding: 12px;
+      }
+
+      #schedule-maker-modal table {
+        min-width: 800px;
+      }
+
+      /* 테이블 강제 유지하여 모바일에선 스와이프 하도록 만듦 */
+      .modal-box {
+        max-width: 95vw !important;
+        max-height: 95vh !important;
+        border-radius: 12px;
+      }
+
+      .modal-body-custom {
+        padding: 16px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="admin-shell">
+    <div id="admin-header-slot"></div>
+    <main class="admin-main">
+      <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+
+      <section class="admin-content">
+        <div class="dashboard-layout">
+
+          <div class="archive-header">
+            <div class="archive-title">
+              <h2>📂 보고서 & 기획서 아카이브</h2>
+              <p>내용은 구글 드라이브로 안전하게, 관리는 가볍게!</p>
+              <div id="sysVersion" class="sys-version-large">Checking version...</div>
+            </div>
+
+            <div class="report-controls">
+              <div class="report-date-group">
+                <label for="report-base-date">기준일</label>
+                <input type="date" id="report-base-date" class="styled-input"
+                  style="padding: 6px 10px; width: 140px; font-weight: 600; color: #1e293b;">
+              </div>
+
+              <div style="width:1px; height:24px; background:#cbd5e1; margin:0 10px;"></div>
+
+              <div style="display:flex; gap:6px; align-items:center;">
+                <span style="font-size:0.8rem; font-weight:700; color:#3b82f6;">REPORT</span>
+                <button class="btn-gen" onclick="generateAutoReport('daily')">📝 일일</button>
+                <button class="btn-gen" onclick="generateAutoReport('weekly')">📊 주간</button>
+                <button class="btn-gen" onclick="generateAutoReport('monthly')">📅 월간</button>
+              </div>
+
+              <div style="width:1px; height:24px; background:#cbd5e1; margin:0 10px;"></div>
+
+              <div style="display:flex; gap:6px; align-items:center;">
+                <span style="font-size:0.8rem; font-weight:700; color:#ea580c;">PLANNING</span>
+                <button class="btn-gen" style="background:#fff7ed; color:#ea580c; border-color:#fed7aa;"
+                  onclick="generateProposalTemplate()">💡 1-Page 기획서</button>
+                <button class="btn-gen" style="background:#fff7ed; color:#c2410c; border-color:#fed7aa;"
+                  onclick="openIdeaSelector('new')">✨ 아이디어로 기획</button>
+                <button class="btn-gen" style="background:#f5f3ff; color:#7c3aed; border-color:#ddd6fe;"
+                  onclick="openAIPromptModal()">🤖 AI 자동 기획</button>
+              </div>
+
+              <div style="flex:1;"></div>
+              <button class="btn-gen btn-new" onclick="openDocModal(null, '', '', '일반')">+ 빈 문서</button>
+            </div>
+          </div>
+
+          <div class="archive-board-header">
+            <div class="archive-search-wrap">
+              <span style="font-size: 1.1rem; color:#94a3b8; margin-top:2px;">🔍</span>
+              <input type="text" id="doc-search" placeholder="문서 제목을 검색해 보세요..."
+                onkeyup="if(event.key === 'Enter') filterDocs()">
+            </div>
+            <div class="archive-filters">
+              <select id="doc-filter-type" onchange="filterDocs()">
+                <option value="all">📂 전체 문서</option>
+                <option value="보고서">📊 보고서만</option>
+                <option value="기획서">💡 기획서만</option>
+                <option value="일반">📄 일반문서만</option>
+              </select>
+              <select id="doc-sort" onchange="filterDocs()">
+                <option value="desc">⏱️ 최근 수정된 순</option>
+                <option value="asc">⏳ 오래된 순</option>
+                <option value="name">🔤 가나다순</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="archive-table-container">
+            <table class="archive-table">
+              <thead>
+                <tr>
+                  <th class="cell-type">문서 유형</th>
+                  <th>문서 제목 및 상세 정보</th>
+                  <th class="cell-date">최종 수정일</th>
+                  <th class="cell-action">관리</th>
+                </tr>
+              </thead>
+              <tbody id="doc-list-body">
+                <tr>
+                  <td colspan="4"
+                    style="text-align:center; padding: 100px 0; color:#94a3b8; font-weight:800; font-size:1.1rem;">데이터를
+                    불러오는 중입니다...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="archive-pagination" id="doc-pagination"></div>
+
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="doc-modal" class="custom-modal">
+    <div class="modal-box large-modal">
+      <div class="modal-header-custom">
+        <span class="modal-title-custom" id="doc-modal-title">새 문서 작성</span>
+      </div>
+
+      <form id="doc-form" style="display: flex; flex-direction: column; flex: 1; overflow: hidden; margin:0;">
+        <div class="modal-body-custom">
+          <input type="hidden" id="doc-id" value="">
+          <input type="hidden" id="doc-drive-id" value="">
+
+          <div style="display:flex; gap:16px; margin-bottom:20px;">
+            <div style="flex: 1;">
+              <label class="input-label">문서 제목</label>
+              <input type="text" id="doc-title" class="styled-input" placeholder="제목을 입력하세요" required
+                style="font-size:1.1rem; font-weight:700;">
+            </div>
+            <div style="width: 160px;">
+              <label class="input-label">문서 유형</label>
+              <select id="doc-type" class="styled-input">
+                <option value="보고서">📊 보고서</option>
+                <option value="기획서">💡 기획서</option>
+                <option value="일반">📄 일반</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="display:flex; flex-direction:column; flex:1;">
+            <label class="input-label">본문 내용</label>
+            <textarea id="doc-content" style="height: 600px; width: 100%;"></textarea>
+          </div>
+        </div>
+
+        <div class="modal-footer-custom" style="justify-content: space-between;">
+          <div id="modal-tools-left" style="display: flex; gap: 8px;">
+            <button type="button" class="btn" onclick="openIdeaSelector('insert')"
+              style="padding:10px 16px; border-radius:10px; border:1px solid #fed7aa; background:#fff7ed; color:#ea580c; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:6px;">
+              ✨ 아이디어 넣기
+            </button>
+            <button type="button" class="btn" onclick="openScheduleMaker()"
+              style="padding:10px 16px; border-radius:10px; border:1px solid #bae6fd; background:#f0f9ff; color:#0284c7; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:6px;">
+              📅 일정표 넣기
+            </button>
+          </div>
+
+          <div style="display: flex; gap: 8px;">
+            <button type="button" class="btn"
+              style="padding:12px 20px; border-radius:12px; border:1px solid #e2e8f0; background:#fff; color:#64748b; font-weight:700; cursor:pointer;"
+              onclick="closeModal('doc-modal')">취소</button>
+            <button type="button" class="btn"
+              style="padding:12px 20px; border-radius:12px; border:1px solid #3b82f6; background:#fff; color:#3b82f6; font-weight:700; cursor:pointer;"
+              onclick="printReport()">🖨️ PDF</button>
+            <button type="button" class="btn"
+              style="padding:12px 20px; border-radius:12px; border:1px solid #10b981; background:#fff; color:#10b981; font-weight:700; cursor:pointer;"
+              onclick="saveAsImage()">🖼️ 이미지</button>
+            <button type="submit" class="btn" id="btn-save-doc"
+              style="padding:12px 24px; border-radius:12px; border:none; background:#3b82f6; color:#fff; font-weight:700; cursor:pointer; box-shadow:0 4px 6px -1px rgba(59,130,246,0.3);">💾
+              저장</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="idea-select-modal" class="custom-modal">
+    <div class="modal-box" style="width: 500px; max-width: 90vw; background: #fff; border-radius: 16px;">
+      <div class="modal-header-custom" style="background:#fff7ed; border-bottom:1px solid #fed7aa;">
+        <span class="modal-title-custom" style="color:#c2410c;">✨ 아이디어 선택</span>
+        <button type="button" class="btn"
+          onclick="document.getElementById('idea-select-modal').classList.remove('open')"
+          style="background:transparent; border:none; font-size:1.2rem; cursor:pointer;">✕</button>
+      </div>
+      <div class="modal-body-custom" style="padding: 20px; overflow-y: auto;">
+        <p style="margin-top:0; color:#64748b; font-size:0.9rem; margin-bottom:12px;">목록에서 아이디어를 선택하세요.</p>
+        <div id="idea-list-container" style="display:flex; flex-direction:column; gap:8px;"></div>
+      </div>
+      <div class="modal-footer-custom">
+        <button type="button" class="btn"
+          onclick="document.getElementById('idea-select-modal').classList.remove('open')"
+          style="padding:10px 20px; border-radius:8px; border:1px solid #e2e8f0; background:#fff; font-weight:600; cursor:pointer;">취소</button>
+        <button type="button" class="btn" onclick="confirmIdeaSelection()"
+          style="padding:10px 20px; border-radius:8px; border:none; background:#ea580c; color:#fff; font-weight:700; cursor:pointer;">선택
+          완료</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="schedule-maker-modal" class="custom-modal">
+    <div class="modal-box" style="width: 1000px; max-width: 95vw; background: #fff; border-radius: 16px;">
+      <div class="modal-header-custom" style="background:#f0f9ff; border-bottom:1px solid #bae6fd;">
+        <span class="modal-title-custom" style="color:#0369a1;">📅 프로젝트 일정표 만들기 (Auto-Gantt)</span>
+        <button type="button" class="btn" onclick="closeScheduleMaker()"
+          style="background:transparent; border:none; font-size:1.2rem; cursor:pointer;">✕</button>
+      </div>
+      <div class="modal-body-custom" style="padding: 24px; overflow-y: auto; max-height: 70vh;">
+        <div
+          style="background:#fff; border:2px solid #e0f2fe; border-radius:12px; padding:16px; margin-bottom:20px; display:flex; gap:20px; align-items:flex-end;">
+          <div style="flex:0 0 180px;">
+            <label style="display:block; font-size:0.85rem; color:#0284c7; font-weight:700; margin-bottom:6px;">차트 시작
+              월(Month)</label>
+            <input type="month" id="sch-start-month" class="styled-input" style="padding:8px 12px; font-weight:600;">
+          </div>
+          <div style="flex:1;">
+            <label
+              style="display:block; font-size:0.85rem; color:#64748b; font-weight:700; margin-bottom:6px;">프로젝트명</label>
+            <input type="text" id="sch-project-name" class="styled-input" value="블로그 이관 프로젝트" style="padding:8px 12px;">
+          </div>
+          <div>
+            <button type="button" class="btn" onclick="loadSchedulePreset()"
+              style="padding:10px 16px; background:#f0f9ff; color:#0284c7; border:1px solid #bae6fd; font-weight:700; border-radius:8px; cursor:pointer;">⚡
+              예제 불러오기</button>
+          </div>
+        </div>
+        <div style="border:1px solid #e2e8f0; border-radius:12px; overflow:hidden;">
+          <table style="width:100%; border-collapse: collapse; font-size:0.95rem;">
+            <thead>
+              <tr style="background:#f8fafc; color:#475569; text-align:left;">
+                <th style="padding:12px 10px; width:120px;">단계 (Category)</th>
+                <th style="padding:12px 10px;">작업 내용 (Task)</th>
+                <th style="padding:12px 10px; width:130px;">시작일</th>
+                <th style="padding:12px 0px; width:15px; text-align:center;">~</th>
+                <th style="padding:12px 10px; width:130px;">종료일</th>
+                <th style="padding:12px 10px; width:150px;">결과물 (Output)</th>
+                <th style="padding:12px 10px; width:50px; text-align:center;">삭제</th>
+                <th style="padding:12px 10px; width:80px; text-align:center;">관리</th>
+              </tr>
+            </thead>
+            <tbody id="sch-input-list" onpaste="handleTablePaste(event)"></tbody>
+          </table>
+        </div>
+        <button type="button" onclick="addScheduleRow()"
+          style="width:100%; margin-top:16px; padding:14px; border:2px dashed #cbd5e1; background:#fff; color:#64748b; font-weight:700; border-radius:12px; cursor:pointer; transition:0.2s;"
+          onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#fff'">+ 작업 추가하기</button>
+      </div>
+      <div class="modal-footer-custom">
+        <button type="button" class="btn" onclick="closeScheduleMaker()"
+          style="padding:12px 24px; border-radius:12px; background:#f1f5f9; color:#64748b; border:none; cursor:pointer; font-weight:600;">닫기</button>
+        <button type="button" class="btn" onclick="insertSmartSchedule()"
+          style="padding:12px 24px; border-radius:12px; background:#0284c7; color:#fff; border:none; font-weight:700; cursor:pointer; box-shadow:0 4px 6px -1px rgba(2, 132, 199, 0.3);">✨
+          일정표 삽입</button>
+      </div>
+    </div>
+  </div>
+
+
+  <div id="ai-prompt-modal" class="custom-modal">
+    <div class="modal-box" style="width: 500px; max-width: 90vw; background: #fff; border-radius: 16px;">
+      <div class="modal-header-custom" style="background:#f5f3ff; border-bottom:1px solid #ddd6fe;">
+        <span class="modal-title-custom" style="color:#7c3aed;">🤖 AI 기획서 자동 생성</span>
+        <button type="button" class="btn" onclick="closeModal('ai-prompt-modal')"
+          style="background:transparent; border:none; font-size:1.2rem; cursor:pointer;">✕</button>
+      </div>
+      <div class="modal-body-custom" style="padding: 20px;">
+        <label class="input-label" style="color:#6b7280; font-size:0.95rem;">어떤 프로젝트를 기획하고 싶으신가요?</label>
+        <textarea id="ai-prompt-input" class="styled-textarea" style="height: 120px; margin-top: 8px;"
+          placeholder="예: 티스토리 데이터를 워드프레스로 옮길 건데, SEO 유실이 걱정되고 3월 초까지 끝내야 해."></textarea>
+      </div>
+      <div class="modal-footer-custom">
+        <button type="button" class="btn" onclick="closeModal('ai-prompt-modal')"
+          style="padding:10px 20px; border-radius:8px; border:1px solid #e2e8f0; background:#fff; font-weight:600; cursor:pointer;">취소</button>
+        <button type="button" class="btn" onclick="requestAIProposal()"
+          style="padding:10px 20px; border-radius:8px; border:none; background:#7c3aed; color:#fff; font-weight:700; cursor:pointer; box-shadow:0 4px 6px -1px rgba(124, 58, 237, 0.4);">✨
+          마법 부리기</button>
+      </div>
+    </div>
+  </div>
+
+
+  <script>
+    window.CHEESE_ADMIN_ACTIVE_PAGE = "report_archive";
+
+    let g_docs = [];
+    let g_logs = [];
+    let g_goals = [];
+    let g_tasks = [];
+
+    let CURRENT_EDITING_SCHEDULE_EL = null;
+    let CURRENT_IDEA_MODE = 'new';
+
+    document.addEventListener('DOMContentLoaded', () => {
+      tinymce.init({
+        selector: '#doc-content',
+        height: 600,
+        language: 'ko_KR',
+        plugins: 'advlist autolink lists link image charmap preview anchor searchreplace visualblocks code fullscreen insertdatetime media table help wordcount',
+
+        // 👇 툴바 설정 (두 줄로 깔끔하게 배치)
+        toolbar: [
+          'fontfamily fontsize blocks | bold italic underline strikethrough | forecolor backcolor removeformat',
+          'alignleft aligncenter alignright alignjustify | bullist numlist | outdent indent | table link image | undo redo code fullscreen'
+        ],
+
+        // 🔥 점 세 개(더보기) 메뉴를 없애고 창 크기에 맞춰 자동으로 줄바꿈 되도록 설정
+        toolbar_mode: 'wrap',
+
+        menubar: false,
+        branding: false,
+        font_family_formats: 'Pretendard=Pretendard,sans-serif; 맑은 고딕=Malgun Gothic,sans-serif; 돋움=Dotum,sans-serif; 굴림=Gulim,sans-serif; Arial=arial,helvetica,sans-serif;',
+        valid_elements: '*[*]',
+        extended_valid_elements: '*[*]',
+        verify_html: false,
+        setup: function (editor) {
+          editor.on('init', function () {
+            const todayStr = new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+            document.getElementById('report-base-date').value = todayStr;
+            loadAllData();
+
+            // 🚀 [추가] 스핀오프 자동 실행: 바통을 넘겨받아 즉시 AI 요청
+            setTimeout(() => {
+              const spinoffPrompt = sessionStorage.getItem('autoSpinoffPrompt');
+              if (spinoffPrompt) {
+                sessionStorage.removeItem('autoSpinoffPrompt');
+                document.getElementById('ai-prompt-input').value = spinoffPrompt;
+                if (typeof requestAIProposal === 'function') requestAIProposal();
+              }
+            }, 800);
+          });
+
+          editor.on('click', function (e) {
+            const btn = editor.dom.getParent(e.target, '.btn-edit-schedule');
+            if (btn) {
+              const wrapper = editor.dom.getParent(btn, '.schedule-section');
+              if (wrapper) window.editEmbeddedSchedule(wrapper);
+            }
+          });
+        }
+      });
+    });
+    // 🌟 [추가] 페이징 관리를 위한 전역 변수
+    let currentPage = 1;
+    const itemsPerPage = 12; // 한 페이지에 보여줄 문서 개수
+
+    async function loadAllData() {
+      if (typeof showAdminLoading === 'function') showAdminLoading("데이터 불러오는 중...");
+      try {
+        const res = await fetch(window.CHEESE_ADMIN_API_BASE + "?mode=getAllData");
+        const json = await res.json();
+        if (json.result === "success") {
+          g_logs = json.logs || []; g_goals = json.goals || []; g_tasks = json.tasks || [];
+
+          // '일반' 문서도 리스트에 나오도록 조건 추가
+          g_docs = g_tasks.filter(t => t['유형'] === '보고서' || t['유형'] === '기획서' || t['유형'] === '일반');
+
+          filterDocs(); // 데이터 로드 후 필터 및 렌더링 실행
+        }
+      } catch (e) { console.error(e); }
+      finally { if (typeof hideAdminLoading === 'function') hideAdminLoading(); }
+    }
+
+    // 🌟 [신규] 검색, 필터, 정렬을 처리하는 컨트롤러 함수
+    window.filterDocs = function () {
+      currentPage = 1; // 검색이나 필터를 바꾸면 무조건 1페이지로 리셋
+      renderDocs();
+    };
+
+    // 🌟 [수정] 게시판 형태로 문서를 그려주고 페이징을 처리하는 함수
+    function renderDocs() {
+      const tbody = document.getElementById('doc-list-body');
+      if (!tbody) return;
+
+      const typeFilter = document.getElementById('doc-filter-type') ? document.getElementById('doc-filter-type').value : 'all';
+      const sortFilter = document.getElementById('doc-sort') ? document.getElementById('doc-sort').value : 'desc';
+      const keyword = document.getElementById('doc-search') ? document.getElementById('doc-search').value.trim().toLowerCase() : '';
+
+      let filtered = g_docs.filter(doc => {
+        if (typeFilter !== 'all' && doc['유형'] !== typeFilter) return false;
+        if (keyword && !(doc['제목'] || '').toLowerCase().includes(keyword)) return false;
+        return true;
+      });
+
+      filtered.sort((a, b) => {
+        const dateA = a['기한'] || '';
+        const dateB = b['기한'] || '';
+        if (sortFilter === 'desc') return dateB.localeCompare(dateA) || b.ID.localeCompare(a.ID);
+        if (sortFilter === 'asc') return dateA.localeCompare(dateB) || a.ID.localeCompare(b.ID);
+        if (sortFilter === 'name') return (a['제목'] || '').localeCompare(b['제목'] || '');
+        return 0;
+      });
+
+      const totalItems = filtered.length;
+      const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
+      if (currentPage > totalPages) currentPage = totalPages;
+
+      const startIndex = (currentPage - 1) * itemsPerPage;
+      const endIndex = startIndex + itemsPerPage;
+      const pageData = filtered.slice(startIndex, endIndex);
+
+      tbody.innerHTML = "";
+      if (pageData.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding: 100px 0; color:#94a3b8; font-size:1.1rem; font-weight:800; background:#f8fafc;">조건에 맞는 문서가 없습니다 📭</td></tr>`;
+      } else {
+        pageData.forEach(doc => {
+          const isReport = doc['유형'] === '보고서';
+          const isPlan = doc['유형'] === '기획서';
+          const badgeBg = isReport ? '#eff6ff' : (isPlan ? '#fff7ed' : '#f1f5f9');
+          const badgeColor = isReport ? '#2563eb' : (isPlan ? '#ea580c' : '#475569');
+          const icon = isReport ? '📊' : (isPlan ? '💡' : '📄');
+          const rawDate = doc['기한'] ? doc['기한'].split('T')[0] : '-';
+
+          const tr = document.createElement('tr');
+          tr.onclick = () => openDocModal(doc.ID);
+          tr.innerHTML = `
+                  <td class="cell-type">
+                      <span class="badge-type" style="background:${badgeBg}; color:${badgeColor}; border: 1px solid ${badgeColor}33;">
+                          <span>${icon}</span> <span>${doc['유형']}</span>
+                      </span>
+                  </td>
+                  <td>
+                      <div class="cell-title" title="${doc['제목'] || '(제목 없음)'}">${doc['제목'] || '(제목 없음)'}</div>
+                      <div class="cell-title-sub">
+                          <span style="color: #94a3b8;">ID: ${doc.ID}</span>
+                          <span style="color: #cbd5e1;">|</span>
+                          <span class="sub-badge">우선순위: ${doc['우선순위'] || '보통'}</span>
+                      </div>
+                  </td>
+                  <td class="cell-date">${rawDate}</td>
+                  <td class="cell-action">
+                      <div class="action-btn-group">
+                          <button class="action-btn" onclick="openDocModal('${doc.ID}'); event.stopPropagation();">📝 수정</button>
+                          <button class="action-btn delete" onclick="deleteDoc('${doc.ID}'); event.stopPropagation();">🗑️ 삭제</button>
+                      </div>
+                  </td>
+              `;
+          tbody.appendChild(tr);
+        });
+      }
+      renderPagination(totalPages);
+    }
+
+    // 🌟 [수정] 최고급 페이징 버튼 렌더링
+    function renderPagination(totalPages) {
+      const paginationEl = document.getElementById('doc-pagination');
+      if (!paginationEl) return;
+      paginationEl.innerHTML = "";
+
+      if (totalPages <= 1) return;
+
+      const prevBtn = document.createElement('button');
+      prevBtn.className = "archive-page-btn";
+      prevBtn.innerHTML = "&lt;"; // 화살표
+      prevBtn.disabled = currentPage === 1;
+      prevBtn.onclick = () => { if (currentPage > 1) { currentPage--; renderDocs(); } };
+      paginationEl.appendChild(prevBtn);
+
+      let startPage = Math.max(1, currentPage - 2);
+      let endPage = Math.min(totalPages, currentPage + 2);
+
+      for (let i = startPage; i <= endPage; i++) {
+        const btn = document.createElement('button');
+        btn.className = "archive-page-btn " + (i === currentPage ? "active" : "");
+        btn.innerText = i;
+        btn.onclick = () => { currentPage = i; renderDocs(); };
+        paginationEl.appendChild(btn);
+      }
+
+      const nextBtn = document.createElement('button');
+      nextBtn.className = "archive-page-btn";
+      nextBtn.innerHTML = "&gt;"; // 화살표
+      nextBtn.disabled = currentPage === totalPages;
+      nextBtn.onclick = () => { if (currentPage < totalPages) { currentPage++; renderDocs(); } };
+      paginationEl.appendChild(nextBtn);
+    }
+
+    function generateAutoReport(rangeType) {
+      const baseDateStr = document.getElementById('report-base-date').value;
+      if (!baseDateStr) { alert("보고서 기준일을 선택해 주세요."); return; }
+
+      const targetEndDate = new Date(baseDateStr); targetEndDate.setHours(23, 59, 59, 999);
+      let startDate = new Date(baseDateStr); startDate.setHours(0, 0, 0, 0);
+
+      let titlePrefix = "";
+      if (rangeType === 'daily') {
+        titlePrefix = `[보고서] 🧀 Cheese Lab Daily Log(일) - ${targetEndDate.getFullYear()}년 ${targetEndDate.getMonth() + 1}월 ${targetEndDate.getDate()}일`;
+      } else if (rangeType === 'weekly') {
+        const day = startDate.getDay() || 7; startDate.setDate(startDate.getDate() - day + 1);
+        titlePrefix = `[보고서] 🧀 Cheese Lab Weekly Insight(주) -  ${targetEndDate.getMonth() + 1}월 ${Math.ceil(targetEndDate.getDate() / 7)}주차`;
+      } else if (rangeType === 'monthly') {
+        startDate.setDate(1);
+        titlePrefix = `[보고서] 🧀 Cheese Lab Monthly Review(월) -  ${targetEndDate.getFullYear()}년 ${targetEndDate.getMonth() + 1}월 결산`;
+      }
+
+      const targetLogs = g_logs.filter(log => {
+        if (!log['날짜']) return false;
+        const d = new Date(log['날짜']); return d >= startDate && d <= targetEndDate;
+      });
+
+      const activeBigGoals = g_goals.filter(g => g['유형'] === '큰 목표' && g['상태'] !== '완료');
+
+      let ideaCreateLogs = [], ideaRealizeLogs = [];
+      let bugCreateLogs = [], bugFixLogs = [];
+      let publishLogs = [];
+      let reportTagLogs = [];
+      let projectTagLogs = [];   // ✅ 프로젝트 마감 로그
+      let doneLogs = [];
+      let postCount = 0;
+
+      const BUG_IDS = new Set(
+        (g_tasks || [])
+          .filter(t => (t['유형'] || t['type'] || '') === '버그')
+          .map(t => t.ID)
+      );
+
+      function getTag(log) { return (log['태그'] || log['tags'] || "").toString().trim(); }
+      function getTitle(log) { return (log['제목'] || log['title'] || "").toString(); }
+      function getContent(log) { return (log['내용'] || log['content'] || "").toString(); }
+      function extractAfterLabel(text, label) {
+        if (!text) return "";
+        const idx = text.indexOf(label);
+        if (idx === -1) return "";
+        return text.slice(idx + label.length).trim();
+      }
+      function getRelatedId(log) {
+        return (log['관련_목표ID'] || log['relatedId'] || log['관련ID'] || log['관련_작업ID'] || log['related_id'] || "").toString().trim();
+      }
+      function pickMeaningTitle(log) {
+        const title = getTitle(log).trim();
+        const content = getContent(log);
+        const byTitleLabel = extractAfterLabel(content, "제목:");
+        if (byTitleLabel) return byTitleLabel;
+        const byWorkLabel = extractAfterLabel(content, "작업명:");
+        if (byWorkLabel) return byWorkLabel;
+        const byGoalLabel = extractAfterLabel(content, "목표명:");
+        if (byGoalLabel) return byGoalLabel;
+        return title || content.replace(/\n/g, " ").trim();
+      }
+      function escapeHtml(s) {
+        return (s ?? "").toString()
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+      function toHtmlWithNewlines(text) {
+        return escapeHtml(text).replace(/\r?\n/g, "<br/>");
+      }
+
+      targetLogs.forEach(log => {
+        const tag = getTag(log);
+        const title = getTitle(log);
+        const content = getContent(log);
+        const relId = getRelatedId(log);
+
+        const isIdeaCreate = tag === '아이디어' || tag === 'Idea' || title.includes('💡') || content.includes('새로운 아이디어가 추가되었습니다.');
+        const isBugCreate = tag === '버그' || tag === 'BugReport' || title.includes('🐞') || title.includes('버그') || content.includes('🐞 버그 리포트 생성됨:');
+        const isPublishBase = (tag === 'Publish');
+        const isReportTag = /(^|[,\s])report($|[,\s])/i.test(tag);
+        const isProjectTag = /(^|[,\s])project($|[,\s])/i.test(tag); // ✅ 추가
+        const isIdeaRealize = tag === 'Realization' || title.includes('아이디어 실현') || title.includes('🚀') || content.includes('아이디어가 구체적인 작업으로 변환');
+        const publishText = (title + "\n" + content);
+        const isRealPublish = isPublishBase && /발행/.test(publishText) && !/초안|수정|업데이트/.test(publishText);
+        const isPublish = isRealPublish;
+
+        if (isIdeaCreate) { ideaCreateLogs.push(log); return; }
+        if (isIdeaRealize) { ideaRealizeLogs.push(log); return; }
+        if (isBugCreate) { bugCreateLogs.push(log); return; }
+        if (isPublish) { postCount++; publishLogs.push(log); return; }
+        if (isProjectTag) { projectTagLogs.push(log); return; }  // ✅ report보다 위에 두는 걸 추천
+        if (isReportTag) { reportTagLogs.push(log); return; }
+
+        const isBugFix = BUG_IDS.has(relId) && (tag === 'Done' || tag === '완료' || title.includes('완료') || title.includes('해결') || title.includes('Fix') || content.includes('완료') || content.includes('해결'));
+        if (isBugFix) { bugFixLogs.push(log); return; }
+        doneLogs.push(log);
+      });
+
+      let signalHtml = `<ul style="padding-left: 20px; margin: 0; color: #333; line-height: 1.6;">`;
+      if (activeBigGoals.length > 0) {
+        activeBigGoals.forEach(bg => {
+          const percent = getReportGoalProgress(bg.ID, true, targetEndDate);
+          const ddayBadge = getReportDday(bg['마감일'], targetEndDate);
+          let statusColor = percent === 100 ? "#10b981" : (percent > 0 ? "#3b82f6" : "#64748b");
+
+          signalHtml += `<li style="margin-bottom: 12px; list-style: none;">
+                <div style="font-weight:700; color:#1e293b; margin-bottom:4px;">🎯 ${bg['제목']} ${ddayBadge}</div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <div style="flex:1; background:#f1f5f9; height:8px; border-radius:4px; overflow:hidden;">
+                        <div style="width:${percent}%; background:${statusColor}; height:100%;"></div>
+                    </div>
+                    <span style="font-size:0.85em; font-weight:800; color:${statusColor}">${percent}%</span>
+                </div>
+            </li>`;
+        });
+      } else {
+        signalHtml += `<li>🚀 현재 진행 중인 핵심 목표가 없습니다.</li>`;
+      }
+      signalHtml += `</ul>`;
+
+      let bottleneckHtml = `<ul style="padding-left: 20px; margin: 0; color: #b91c1c; line-height: 1.6;">`;
+      let riskCount = 0;
+      const autoRisks = analyzeProjectRisks(activeBigGoals, targetEndDate);
+      if (autoRisks.length > 0) {
+        autoRisks.forEach(risk => { bottleneckHtml += `<li style="margin-bottom:6px;">${risk}</li>`; riskCount++; });
+      }
+      if (bugCreateLogs.length > 0) {
+        bottleneckHtml += `
+        <li style="margin-bottom:6px; color:#ef4444;">
+          <b>🐞 품질 이슈 발견:</b> ${bugCreateLogs.length}건 (기준일 생성)
+          <div style="margin-top:6px; padding-left:14px; color:#b91c1c; font-weight:600;">
+            ${bugCreateLogs.slice(0, 5).map(b => `- ${pickMeaningTitle(b)}`).join('<br/>')}
+            ${bugCreateLogs.length > 5 ? `<br/>...외 ${bugCreateLogs.length - 5}건` : ``}
+          </div>
+        </li>`;
+        riskCount++;
+      }
+      if (bugFixLogs.length > 0) {
+        bottleneckHtml += `
+        <li style="margin-bottom:6px; color:#16a34a; list-style:none;">
+          ✅ <b>수정 완료:</b> ${bugFixLogs.length}건
+          <div style="margin-top:6px; padding-left:14px; color:#14532d; font-weight:600;">
+            ${bugFixLogs.slice(0, 5).map(b => `- ${pickMeaningTitle(b)}`).join('<br/>')}
+            ${bugFixLogs.length > 5 ? `<br/>...외 ${bugFixLogs.length - 5}건` : ``}
+          </div>
+        </li>`;
+        riskCount++;
+      }
+      if (riskCount === 0) bottleneckHtml = `<div style="text-align:center; color:#10b981; padding:20px;">✨ <b>No Bottlenecks</b><br>현재 식별된 지연 요소가 없습니다.</div>`;
+      else bottleneckHtml += `</ul>`;
+
+      let velocityHtml = `<ul style="padding-left: 20px; margin: 0; color: #333; line-height: 1.6;">`;
+      if (projectTagLogs.length > 0) {
+        velocityHtml += `
+		<li style="margin-bottom:10px; list-style:none;">
+		  <div style="
+			border:2px solid #f59e0b;
+			background:#fffbeb;
+			border-radius:12px;
+			padding:12px 14px;
+			font-weight:900;
+			color:#92400e;
+		  ">
+			🏁 <b>[Project Closed]</b> 프로젝트 마감 ${projectTagLogs.length}건
+			<div style="margin-top:8px; padding-left:10px; color:#1e293b; font-weight:700;">
+			  ${projectTagLogs.slice(0, 5).map(p => `- ${pickMeaningTitle(p)}`).join('<br/>')}
+			  ${projectTagLogs.length > 5 ? `<br/>...외 ${projectTagLogs.length - 5}건` : ``}
+			</div>
+		  </div>
+		</li>
+	  `;
+      }
+      if (publishLogs.length > 0) {
+        velocityHtml += `
+        <li style="margin-bottom:6px; color:#2563eb; font-weight:800; list-style:none;">
+          📝 <b>[Shipped]</b> 블로그 포스팅 ${publishLogs.length}건 발행
+          <div style="margin-top:6px; padding-left:14px; color:#1e293b; font-weight:600;">
+            ${publishLogs.slice(0, 5).map(p => `- ${pickMeaningTitle(p)}`).join('<br/>')}
+            ${publishLogs.length > 5 ? `<br/>...외 ${publishLogs.length - 5}건` : ``}
+          </div>
+        </li>
+      `;
+      }
+      if (ideaCreateLogs.length > 0) {
+        velocityHtml += `
+        <li style="margin-bottom:6px; color:#ea580c; font-weight:800; list-style:none;">
+          💡 <b>Innovation</b> 아이디어 ${ideaCreateLogs.length}건 생성
+          <div style="margin-top:6px; padding-left:14px; color:#1e293b; font-weight:600;">
+            ${ideaCreateLogs.slice(0, 5).map(i => `- ${pickMeaningTitle(i)}`).join('<br/>')}
+            ${ideaCreateLogs.length > 5 ? `<br/>...외 ${ideaCreateLogs.length - 5}건` : ``}
+          </div>
+        </li>
+      `;
+      }
+      if (ideaRealizeLogs.length > 0) {
+        velocityHtml += `
+        <li style="margin-bottom:6px; color:#16a34a; font-weight:800; list-style:none;">
+          🚀 <b>Innovation</b> 아이디어 ${ideaRealizeLogs.length}건 실현
+          <div style="margin-top:6px; padding-left:14px; color:#1e293b; font-weight:600;">
+            ${ideaRealizeLogs.slice(0, 5).map(i => `- ${pickMeaningTitle(i)}`).join('<br/>')}
+            ${ideaRealizeLogs.length > 5 ? `<br/>...외 ${ideaRealizeLogs.length - 5}건` : ``}
+          </div>
+        </li>
+      `;
+      }
+      if (reportTagLogs.length > 0) {
+        velocityHtml += `
+        <li style="margin-bottom:6px; color:#0f172a; font-weight:800; list-style:none;">
+          🏷️ <b>Report</b> 꼭 기록할 사항 ${reportTagLogs.length}건
+          <div style="margin-top:6px; padding-left:14px; color:#1e293b; font-weight:600;">
+            ${reportTagLogs.slice(0, 5).map(r => {
+          const t = getTitle(r).trim();
+          const c = getContent(r).trim();
+          const header = t ? escapeHtml(t) : "📝 (제목 없음)";
+          const body = c ? toHtmlWithNewlines(c) : "(내용 없음)";
+          return `- <b>${header}</b><div style="margin:4px 0 10px 0; padding-left:12px; color:#475569; font-weight:600;">${body}</div>`;
+        }).join('')}
+            ${reportTagLogs.length > 5 ? `<br/>...외 ${reportTagLogs.length - 5}건` : ``}
+          </div>
+        </li>
+      `;
+      }
+      if (publishLogs.length === 0 && ideaCreateLogs.length === 0 && ideaRealizeLogs.length === 0) {
+        velocityHtml += `<li style="color:#94a3b8;">금일 기록된 성과(포스팅/아이디어)가 없습니다.</li>`;
+      }
+      velocityHtml += `</ul>`;
+
+      let algoHtml = `<ul style="padding-left: 20px; margin: 0; color: #333; line-height: 1.6;">`;
+      algoHtml += `<li style="margin-bottom:6px;"><b>⚡ Optimization (효율화):</b><br/>(반복 작업 제거 또는 자동화 할 부분 작성)</li>
+    <li><b>⏩ Next Critical Path (내일 할 일):</b><br/>(목표 달성을 위해 반드시 처리해야 할 1순위 작업)</li></ul>`;
+
+      const htmlTemplate = `
+      <div style="font-family:'Pretendard','Malgun Gothic',sans-serif; max-width:900px; margin:0 auto; color:#1e293b;">
+        <h2 style="text-align:center; color:#0f172a; margin-bottom:24px; font-size:1.6rem; letter-spacing:-0.5px;">${titlePrefix}</h2>
+        <table style="width:100%; border-collapse:collapse; table-layout:fixed; border:2px solid #cbd5e1;">
+          <tr>
+            <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;"><h3 style="margin:0 0 12px 0; color:#1e293b; font-size:1.1rem; border-bottom:2px solid #cbd5e1; padding-bottom:8px;">1. 🎯 The Signal (핵심 목표 현황)</h3>${signalHtml}</td>
+            <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fef2f2;"><h3 style="margin:0 0 12px 0; color:#b91c1c; font-size:1.1rem; border-bottom:2px solid #fca5a5; padding-bottom:8px;">2. 🛑 The Bottlenecks (리스크 & 방해요소)</h3>${bottleneckHtml}</td>
+          </tr>
+          <tr>
+            <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f0f9ff;"><h3 style="margin:0 0 12px 0; color:#0369a1; font-size:1.1rem; border-bottom:2px solid #bae6fd; padding-bottom:8px;">3. ⚡ Velocity (실행 속도 & 성과)</h3>${velocityHtml}</td>
+            <td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;"><h3 style="margin:0 0 12px 0; color:#1e293b; font-size:1.1rem; border-bottom:2px solid #cbd5e1; padding-bottom:8px;">4. ⚙️ The Algorithm (최적화 & Next Step)</h3>${algoHtml}</td>
+          </tr>
+        </table>
+        <p style="text-align:right; color:#94a3b8; font-size:0.8rem; margin-top:12px;">※ Generated by Cheese Lab (로그를 기반으로 자동 생성 됨)</p>
+      </div>`;
+
+      openDocModal(null, titlePrefix, htmlTemplate, '보고서');
+    }
+
+    async function openDocModal(docId = null, defaultTitle = "", defaultHtml = "", defaultType = "보고서") {
+      const modal = document.getElementById('doc-modal');
+      modal.classList.add('open');
+      document.getElementById('doc-form').reset();
+      document.getElementById('doc-drive-id').value = "";
+
+      // 🚨 [여기 추가!] 다른 문서 열 때 혹시 남아있을 AI 전용 버튼 지우고, 기본 저장 버튼 살리기
+      document.getElementById('ai-confirm-btn')?.remove();
+      document.getElementById('btn-save-doc').style.display = 'block';
+
+      // ✅ TinyMCE 내용 비우기 (에디터가 로드된 상태인지 확인)
+      if (tinymce.get('doc-content')) {
+        tinymce.get('doc-content').setContent('');
+      }
+
+      const header = modal.querySelector('.modal-header-custom');
+      const titleEl = document.getElementById('doc-modal-title');
+      const toolsLeft = document.getElementById('modal-tools-left');
+      const saveBtn = document.getElementById('btn-save-doc');
+
+      const setModalTheme = (type) => {
+        if (type === '기획서') {
+          header.style.background = '#fff7ed';
+          header.style.borderBottom = '1px solid #fed7aa';
+          titleEl.style.color = '#c2410c';
+          titleEl.innerHTML = '📙 기획서 작성 (Planning)';
+          toolsLeft.style.display = 'flex';
+          saveBtn.style.background = '#ea580c';
+        } else {
+          header.style.background = '#eff6ff';
+          header.style.borderBottom = '1px solid #bfdbfe';
+          titleEl.style.color = '#1e40af';
+          titleEl.innerHTML = '📘 보고서 작성 (Report)';
+          toolsLeft.style.display = 'none';
+          saveBtn.style.background = '#3b82f6';
+        }
+      };
+
+      if (docId) {
+        const doc = g_docs.find(d => d.ID === docId);
+        if (doc) {
+          setModalTheme(doc['유형']);
+          document.getElementById('doc-id').value = doc.ID;
+          document.getElementById('doc-title').value = doc['제목'];
+          document.getElementById('doc-type').value = doc['유형'];
+
+          if (doc['상세내용'] && doc['상세내용'].startsWith("DRIVE:")) {
+            const fileId = doc['상세내용'].split("DRIVE:")[1];
+            document.getElementById('doc-drive-id').value = fileId;
+            if (typeof showAdminLoading === 'function') showAdminLoading("문서 로딩 중...");
+            try {
+              const res = await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify({ mode: "getReportContent", fileId: fileId }) });
+              const json = await res.json();
+              if (json.result === "success" && tinymce.get('doc-content')) {
+                tinymce.get('doc-content').setContent(json.content);
+              }
+            } catch (e) { alert("파일 로드 실패"); }
+            finally { if (typeof hideAdminLoading === 'function') hideAdminLoading(); }
+          } else {
+            if (tinymce.get('doc-content')) tinymce.get('doc-content').setContent(doc['상세내용'] || "");
+          }
+        }
+      } else {
+        setModalTheme(defaultType);
+        document.getElementById('doc-id').value = "";
+        document.getElementById('doc-title').value = defaultTitle;
+        document.getElementById('doc-type').value = defaultType;
+        if (defaultHtml && tinymce.get('doc-content')) tinymce.get('doc-content').setContent(defaultHtml);
+      }
+    }
+
+    document.getElementById('doc-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('btn-save-doc');
+      const originalText = btn.textContent;
+      btn.textContent = "저장 중..."; btn.disabled = true;
+
+      try {
+        const docId = document.getElementById('doc-id').value;
+        const title = document.getElementById('doc-title').value;
+        const type = document.getElementById('doc-type').value;
+        // ✅ TinyMCE 내용 가져오기
+        const contentHtml = tinymce.get('doc-content') ? tinymce.get('doc-content').getContent() : "";
+        const driveId = document.getElementById('doc-drive-id').value;
+        const now = new Date().toISOString().split('T')[0];
+
+        if (typeof showAdminLoading === 'function') showAdminLoading("저장 중...");
+
+        const drivePayload = {
+          mode: "uploadReportContent",
+          folderId: ARCHIVE_FOLDER_ID,
+          fileId: driveId,
+          title: title,
+          content: contentHtml
+        };
+        const driveRes = await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify(drivePayload) });
+        const driveJson = await driveRes.json();
+        let savedFileId = driveId;
+        if (driveJson.result === "success") savedFileId = driveJson.fileId;
+        else throw new Error("드라이브 업로드 실패");
+
+        const dbPayload = {
+          mode: docId ? "editItem" : "addItem",
+          id: docId, type: type, title: title,
+          detail: "DRIVE:" + savedFileId,
+          priority: "보통", dueDate: now, connectedId: "", color: ""
+        };
+        const dbRes = await fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify(dbPayload) });
+        const dbJson = await dbRes.json();
+
+        if (dbJson.result === "success") {
+          closeModal('doc-modal');
+          await loadAllData();
+        } else alert("DB 저장 실패");
+      } catch (err) { console.error(err); alert("오류 발생: " + err.message); }
+      finally {
+        btn.textContent = originalText; btn.disabled = false;
+        if (typeof hideAdminLoading === 'function') hideAdminLoading();
+      }
+    });
+
+    function deleteDoc(id) {
+      if (!confirm("삭제하시겠습니까?")) return;
+      if (typeof showAdminLoading === 'function') showAdminLoading("삭제 중...");
+      fetch(window.CHEESE_ADMIN_API_BASE, { method: "POST", body: JSON.stringify({ mode: "deleteItem", id: id }) })
+        .then(() => loadAllData()).finally(() => { if (typeof hideAdminLoading === 'function') hideAdminLoading(); });
+    }
+
+    function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+    function printReport() {
+      const content = tinymce.get('doc-content') ? tinymce.get('doc-content').getContent() : "";
+      // Escape script tags safely using hex escapes
+      const safeContent = content.replace(/<\x2Fscript/gi, '\x3C\\/script');
+      const docTitle = document.getElementById('doc-title').value;
+      const printWindow = window.open('', '_blank');
+
+      const html = '\x3Chtml>\x3Chead>\x3Ctitle>' + docTitle + '\x3C\x2Ftitle>' +
+        '\x3Cstyle>body{font-family:"Pretendard",sans-serif;padding:40px;}table{width:100%;border-collapse:collapse;border:2px solid #cbd5e1}td{border:1px solid #cbd5e1;padding:20px;}\x3C\x2Fstyle>\x3C\x2Fhead>' +
+        '\x3Cbody>' + safeContent + '\x3Cscript>window.onload=function(){window.print();setTimeout(function(){window.close();},100);}\x3C\x2Fscript>\x3C\x2Fbody>\x3C\x2Fhtml>';
+
+      printWindow.document.write(html);
+      printWindow.document.close();
+    }
+
+    async function saveAsImage() {
+      const title = document.getElementById('doc-title').value || "report";
+      const contentHtml = tinymce.get('doc-content') ? tinymce.get('doc-content').getContent() : "";
+
+      if (!contentHtml || contentHtml === "<p><br></p>" || contentHtml === "") {
+        alert("저장할 내용이 없습니다.");
+        return;
+      }
+
+      // 🌟 [개선 1] 전체적인 좌우 밸런스와 폭을 일정하게 잡아주는 컨테이너 생성
+      const printContainer = document.createElement('div');
+      printContainer.style.position = 'absolute'; // 화면 스크롤에 영향 없도록 독립시킴
+      printContainer.style.top = '-9999px';       // 화면 밖으로 숨김
+      printContainer.style.left = '0';
+      printContainer.style.zIndex = '-1';
+      printContainer.style.width = '1100px';      // PC 화면과 유사한 최적의 고정 넓이
+      printContainer.style.padding = '50px';      // 여백을 깔끔하게 통일
+      printContainer.style.background = '#ffffff';
+      printContainer.style.boxSizing = 'border-box';
+
+      const safeContentHtml = contentHtml.replace(/<\x2Fscript/gi, '\x3C\\/script');
+      // 🌟 [개선 2] 불필요한 강제 스타일을 제거하고, 일정표 삐져나옴 방지 최소한의 CSS만 적용
+      let styleHtml = '\x3Cstyle>' +
+        '.temp-wrap { font-family: "Pretendard", "Malgun Gothic", sans-serif !important; color: #1e293b !important; line-height: 1.6 !important; }' +
+        '.temp-wrap table { border-collapse: collapse !important; }' +
+        '.temp-wrap th, .temp-wrap td { overflow: visible !important; }' +
+        '.temp-wrap .schedule-section tbody td:nth-child(-n+3) { padding: 6px 10px !important; }' +
+        '.temp-wrap .schedule-section tbody td:nth-child(n+4) { padding: 0 !important; }' +
+        '.temp-wrap .schedule-section { padding-right: 50px !important; overflow: visible !important; }' +
+        '.temp-wrap .btn-edit-schedule { display: none !important; }' +
+        '\x3C\x2Fstyle>';
+
+      printContainer.innerHTML = styleHtml + '\x3Cdiv class="temp-wrap">' + safeContentHtml + '\x3C\x2Fdiv>';
+
+      document.body.appendChild(printContainer);
+
+      if (typeof showAdminLoading === 'function') showAdminLoading("고화질 이미지 생성 중...");
+
+      try {
+        // 폰트 및 레이아웃이 완전히 자리 잡을 수 있도록 아주 잠깐(0.3초) 대기
+        await new Promise(r => setTimeout(r, 300));
+
+        // 🌟 [개선 3] 캡처 라이브러리 버그를 덮으려던 onclone 억지 조작 코드를 전부 삭제!
+        const canvas = await html2canvas(printContainer, {
+          scale: 2, // 2배수 고화질 캡처
+          useCORS: true,
+          backgroundColor: '#ffffff',
+          logging: false // 콘솔창 지저분해지는 것 방지
+        });
+
+        const link = document.createElement('a');
+        link.href = canvas.toDataURL('image/png');
+        link.download = `${title}.png`;
+        link.click();
+
+      } catch (err) {
+        console.error("Image Save Error:", err);
+        alert("이미지 생성 실패: " + err.message);
+      } finally {
+        // 성공하든 실패하든 임시 컨테이너는 깔끔하게 지우기
+        document.body.removeChild(printContainer);
+        if (typeof hideAdminLoading === 'function') hideAdminLoading();
+      }
+    }
+
+    function openIdeaSelector(mode = 'new') {
+      CURRENT_IDEA_MODE = mode;
+      const container = document.getElementById('idea-list-container');
+      container.innerHTML = "";
+      const ideas = g_tasks.filter(t => t['유형'] === '아이디어' || (t['제목'] && t['제목'].includes('💡')));
+      if (ideas.length === 0) { alert("아이디어가 없습니다."); return; }
+      ideas.sort((a, b) => b.ID.localeCompare(a.ID));
+
+      ideas.forEach(idea => {
+        const div = document.createElement('div');
+        div.className = 'idea-select-item';
+        div.onclick = (e) => { if (e.target.type !== 'checkbox') div.querySelector('input').click(); };
+        const desc = idea['상세내용'] ? idea['상세내용'].replace(/<[^>]*>?/gm, '').substring(0, 60) : '(내용 없음)';
+        div.innerHTML = `<input type="checkbox" class="idea-chk" value="${idea.ID}"><div class="idea-select-content"><div class="idea-select-title">${idea['제목']}</div><div class="idea-select-desc">${desc}</div></div>`;
+        container.appendChild(div);
+      });
+      document.getElementById('idea-select-modal').classList.add('open');
+    }
+
+    function confirmIdeaSelection() {
+      const checkboxes = document.querySelectorAll('.idea-chk:checked');
+      if (checkboxes.length === 0) { alert("선택된 아이디어가 없습니다."); return; }
+      let selectedIdeas = [];
+      checkboxes.forEach(chk => {
+        const idea = g_tasks.find(t => t.ID === chk.value);
+        if (idea) selectedIdeas.push(idea);
+      });
+      document.getElementById('idea-select-modal').classList.remove('open');
+
+      if (CURRENT_IDEA_MODE === 'insert') {
+        let insertHtml = "";
+        selectedIdeas.forEach(idea => {
+          const desc = idea['상세내용'] || "내용 없음";
+          insertHtml += `<div style="margin-bottom:16px; padding:16px; background:#fff7ed; border-left:4px solid #ea580c; border-radius:4px;"><h4 style="margin:0 0 8px 0; color:#c2410c;">💡 ${idea['제목']}</h4><div style="font-size:0.95rem; color:#431407; line-height:1.6;">${desc}</div></div><br/>`;
+        });
+        // ✅ TinyMCE 커서 위치에 삽입
+        if (tinymce.get('doc-content')) tinymce.get('doc-content').insertContent(insertHtml);
+      } else {
+        generateProposalFromIdeas(selectedIdeas);
+      }
+    }
+
+    function openScheduleMaker() {
+      CURRENT_EDITING_SCHEDULE_EL = null;
+      document.getElementById('schedule-maker-modal').classList.add('open');
+      const today = new Date();
+      document.getElementById('sch-start-month').value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+      document.getElementById('sch-input-list').innerHTML = "";
+      addScheduleRow();
+    }
+
+    function closeScheduleMaker() {
+      document.getElementById('schedule-maker-modal').classList.remove('open');
+      CURRENT_EDITING_SCHEDULE_EL = null;
+    }
+
+    // ✨ 마지막 파라미터로 targetTr(어느 줄 아래에 추가할지)을 받도록 수정
+    function addScheduleRow(cat = "", task = "", sDate = "", eDate = "", output = "", targetTr = null) {
+      const tbody = document.getElementById('sch-input-list');
+      const tr = document.createElement('tr');
+      tr.style.borderBottom = "1px solid #f1f5f9";
+
+      tr.innerHTML = `
+        <td style="padding:8px 10px;"><input type="text" class="styled-input sch-cat" value="${cat}" placeholder="단계" style="width:100%;"></td>
+        <td style="padding:8px 10px;"><input type="text" class="styled-input sch-task" value="${task}" placeholder="할 일" style="width:100%;"></td>
+        <td style="padding:8px 10px;"><input type="date" class="styled-input sch-sdate" value="${sDate}" style="width:100%;"></td>
+        <td style="text-align:center;">➜</td>
+        <td style="padding:8px 10px;"><input type="date" class="styled-input sch-edate" value="${eDate}" style="width:100%;"></td>
+        
+        <td style="padding:8px 10px;"><input type="text" class="styled-input sch-output" value="${output}" placeholder="산출물" style="width:100%;"></td>
+        
+        <td style="padding:8px 10px;">
+            <div style="display:flex; justify-content:center; gap:6px;">
+                <button type="button" onclick="addScheduleRow('', '', '', '', '', this.closest('tr'))" style="border:none; background:#eff6ff; color:#3b82f6; width:28px; height:28px; border-radius:6px; cursor:pointer; font-weight:bold; flex-shrink:0; display:flex; align-items:center; justify-content:center;" title="이 줄 아래에 새 작업 추가">+</button>
+                <button type="button" onclick="this.closest('tr').remove()" style="border:none; background:#fff1f2; color:#ef4444; width:28px; height:28px; border-radius:6px; cursor:pointer; font-weight:bold; flex-shrink:0; display:flex; align-items:center; justify-content:center;" title="이 작업 삭제">×</button>
+            </div>
+        </td>
+    `;
+
+      // 특정 줄 아래(+)를 눌렀다면 그 다음 줄에 삽입, 아니면 맨 밑에 추가
+      if (targetTr) {
+        targetTr.parentNode.insertBefore(tr, targetTr.nextSibling);
+      } else {
+        tbody.appendChild(tr);
+      }
+    }
+
+    // ✨ 파라미터를 btn이 아니라 wrapper로 직접 받도록 변경
+    window.editEmbeddedSchedule = function (wrapper) {
+      if (!wrapper) return;
+      const configRaw = wrapper.getAttribute('data-config');
+      if (!configRaw) { alert("데이터 손상"); return; }
+      try {
+        const config = JSON.parse(decodeURIComponent(configRaw));
+        CURRENT_EDITING_SCHEDULE_EL = wrapper;
+        document.getElementById('schedule-maker-modal').classList.add('open');
+        document.getElementById('sch-start-month').value = config.startMonth;
+        document.getElementById('sch-project-name').value = config.projectName || "프로젝트";
+        document.getElementById('sch-input-list').innerHTML = "";
+
+        config.rows.forEach(r => {
+          const sDate = r.s ? r.s.split('T')[0] : "";
+          const eDate = r.e ? r.e.split('T')[0] : "";
+          // 🚨 결과물(output) 파라미터를 r.output으로 잘 불러오도록 5번째 인자 추가!
+          addScheduleRow(r.cat, r.task, sDate, eDate, r.output || '');
+        });
+      } catch (e) { console.error(e); }
+    };
+
+    function loadSchedulePreset() {
+      if (document.getElementById('sch-input-list').children.length > 0 && !confirm("초기화 후 예제를 불러옵니다.")) return;
+      document.getElementById('sch-input-list').innerHTML = "";
+      document.getElementById('sch-start-month').value = "2026-01";
+      addScheduleRow("1단계", "툴 보완", "2026-01-28", "2026-02-02");
+      addScheduleRow("", "테스트 이관", "2026-01-28", "2026-02-02");
+      addScheduleRow("2단계", "가계도 이관", "2026-02-03", "2026-02-09");
+      addScheduleRow("3단계", "최종 마감", "2026-02-10", "2026-02-14");
+    }
+
+    function insertSmartSchedule() {
+      const startMonthVal = document.getElementById('sch-start-month').value;
+      const projectName = document.getElementById('sch-project-name').value;
+      if (!startMonthVal) { alert("시작 월 선택 필요"); return; }
+
+      let maxDate = new Date(startMonthVal + "-01"); maxDate.setMonth(maxDate.getMonth() + 1);
+      const rows = [];
+      const saveRows = [];
+
+      document.querySelectorAll('#sch-input-list tr').forEach(tr => {
+        const sVal = tr.querySelector('.sch-sdate').value;
+        const eVal = tr.querySelector('.sch-edate').value;
+        if (eVal) { const e = new Date(eVal); if (e > maxDate) maxDate = e; }
+        const rowData = {
+          cat: tr.querySelector('.sch-cat').value,
+          task: tr.querySelector('.sch-task').value,
+          // ✨ output 추가
+          output: tr.querySelector('.sch-output').value,
+          s: sVal ? new Date(sVal) : null,
+          e: eVal ? new Date(eVal) : null
+        };
+        rows.push(rowData);
+        saveRows.push({ ...rowData, s: sVal, e: eVal });
+      });
+
+      const configData = encodeURIComponent(JSON.stringify({ startMonth: startMonthVal, projectName: projectName, rows: saveRows }));
+
+      let gridHtml = "", subHeaderHtml = "";
+      let currentIterDate = new Date(startMonthVal + "-01");
+      const gridMap = [];
+      while (currentIterDate <= maxDate) {
+        const y = currentIterDate.getFullYear(), m = currentIterDate.getMonth(), lastDay = new Date(y, m + 1, 0).getDate();
+        const weeks = Math.ceil(lastDay / 7);
+        gridHtml += `<th colspan="${weeks}" style="border:1px solid #cbd5e1; background:#f0f9ff; padding:8px; font-size:0.9rem; color:#0369a1;">${m + 1}월</th>`;
+        for (let w = 1; w <= weeks; w++) {
+          subHeaderHtml += `<th style="border:1px solid #e2e8f0; background:#f8fafc; padding:4px; font-size:0.75rem; color:#64748b; width:30px; text-align:center;">${w}</th>`;
+          gridMap.push({ y: y, m: m, w: w });
+        }
+        currentIterDate.setMonth(currentIterDate.getMonth() + 1);
+      }
+
+      let tbodyHtml = "";
+      rows.forEach(item => {
+        let cols = "";
+        let startIdx = -1, endIdx = -1;
+        if (item.s && item.e) {
+          const sY = item.s.getFullYear(), sM = item.s.getMonth(), sW = Math.ceil(item.s.getDate() / 7);
+          startIdx = gridMap.findIndex(g => g.y === sY && g.m === sM && g.w === sW);
+          const eY = item.e.getFullYear(), eM = item.e.getMonth(), eW = Math.ceil(item.e.getDate() / 7);
+          for (let i = gridMap.length - 1; i >= 0; i--) if (gridMap[i].y === eY && gridMap[i].m === eM && gridMap[i].w === eW) { endIdx = i; break; }
+        }
+
+        // ✨ 1. 상위/하위 업무 판별 (구분(cat)이 비어있으면 하위 업무로 간주)
+        const isSubTask = !item.cat;
+
+        // ✨ 2. 막대바 디자인 분기 (하위 업무는 얇고 부드러운 색상으로)
+        const barBgColor = isSubTask ? "#94a3b8" : "#3b82f6"; // 하위는 슬레이트 회색, 상위는 파란색
+        const barHeight = isSubTask ? "6px" : "10px"; // 하위는 얇게
+        const barMargin = isSubTask ? "8px" : "6px"; // 얇아진 만큼 세로 중앙 정렬 보정
+
+        const startStr = item.s ? formatMMDD(item.s) : "";
+        const endStr = item.e ? formatMMDD(item.e) : "";
+
+        for (let i = 0; i < gridMap.length; i++) {
+          if (startIdx !== -1 && endIdx !== -1 && i >= startIdx && i <= endIdx) {
+            // 막대 스타일 변수 적용
+            let style = `background:${barBgColor}; height:${barHeight}; margin-top:${barMargin}; opacity:0.8;`;
+            let content = "";
+
+            const fontStyle = `position:absolute; top:-3px; font-size:10px; color:${barBgColor}; font-weight:800; white-space:nowrap;`;
+
+            // 🚨 [새로 추가된 분기] 시작일과 마감일이 같은 당일(1일) 작업인 경우
+            if (startStr === endStr && startStr !== "") {
+              // 막대바 숨김 (배경 투명화 및 정렬 맞춤)
+              style = `background:transparent; height:auto; margin-top:0; display:flex; justify-content:center; align-items:center;`;
+              // 날짜만 예쁜 뱃지 형태로 렌더링
+              content = `<span style="font-size:10px; color:${barBgColor}; font-weight:800; white-space:nowrap; background:#f8fafc; padding:2px 5px; border-radius:4px; border:1px solid ${barBgColor}; opacity:1;">${startStr}</span>`;
+            }
+            // 기존의 일반 막대바 렌더링 로직 (기간이 2일 이상일 때)
+            else if (startIdx === endIdx) {
+              style += "border-radius:5px;";
+              // 시작일: 막대의 가장 왼쪽 바깥으로
+              content += `<span style="${fontStyle} right:100%; margin-right:6px;">${startStr}</span>`;
+              // 마감일: 막대의 가장 오른쪽 바깥으로
+              content += `<span style="${fontStyle} left:100%; margin-left:6px;">${endStr}</span>`;
+            } else if (i === startIdx) {
+              style += "border-radius:5px 0 0 5px;";
+              // 시작일: 막대의 왼쪽 바깥으로
+              content += `<span style="${fontStyle} right:100%; margin-right:6px;">${startStr}</span>`;
+            } else if (i === endIdx) {
+              style += "border-radius:0 5px 5px 0;";
+              // 마감일: 막대의 오른쪽 바깥으로
+              content += `<span style="${fontStyle} left:100%; margin-left:6px;">${endStr}</span>`;
+            }
+
+            // 막대 <div>에 position:relative 를 줘서 absolute 날짜들의 기준점이 되게 합니다.
+            cols += `<td style="border:1px solid #e2e8f0; padding:0; vertical-align:middle; text-align:left; line-height:1;"><div style="${style} position:relative;">${content}</div></td>`;
+          } else {
+            cols += `<td style="border:1px solid #e2e8f0; background:#fff;"></td>`;
+          }
+        }
+
+        // ✨ 3. Task 컬럼 렌더링 분기 (들여쓰기 및 '└' 아이콘 적용)
+        let taskContent = isSubTask
+          ? `<div style="padding-left: 15px; color: #475569; font-size: 0.85rem;"><span style="color:#cbd5e1; margin-right:4px;">└</span> ${item.task}</div>`
+          : `<div style="font-weight: 700; color: #1e293b; font-size: 0.9rem;"><span style="color:#94a3b8; margin-right:4px;">◼</span> ${item.task}</div>`;
+
+        tbodyHtml += `<tr>
+          <td style="border:1px solid #cbd5e1; padding:8px; font-size:0.85rem; text-align:center; vertical-align:middle; ${item.cat ? 'font-weight:700; background:#e0f2fe; color:#0369a1;' : 'background:#fff;'}">${item.cat || ''}</td>
+          <td style="border:1px solid #cbd5e1; padding:6px 10px;">${taskContent}</td>
+          <td style="border:1px solid #cbd5e1; padding:6px 10px; font-size:0.85rem; color:#64748b;">${item.output || ''}</td>
+          ${cols}
+        </tr>`;
+      });
+
+      const scheduleHtml = `
+      <div class="schedule-section" data-config="${configData}" style="font-family:'Pretendard',sans-serif; margin-top:20px; page-break-inside:avoid; position:relative;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid #bbf7d0; padding-bottom:8px; margin-bottom:12px;">
+            <h3 style="margin:0; color:#16a34a; font-size:1.15rem;">5. 세부 실행 일정 (Schedule) <span style="font-size:0.8em; color:#64748b; font-weight:normal;">- ${projectName}</span></h3>
+            <button type="button" class="btn-edit-schedule" contenteditable="false" style="background:#f0fdf4; border:1px solid #bbf7d0; color:#16a34a; border-radius:4px; padding:2px 8px; font-size:0.8rem; cursor:pointer; font-weight:600;">✏️ 수정</button>
+        </div>
+            <table style="width:100%; border-collapse:collapse; table-layout:fixed; border:1px solid #cbd5e1;">
+              <thead>
+                <tr>
+                  <th rowspan="2" style="border:1px solid #cbd5e1; background:#f1f5f9; padding:8px; width:80px;">구분</th>
+                  <th rowspan="2" style="border:1px solid #cbd5e1; background:#f1f5f9; padding:8px; width:200px;">Task</th>
+                  <th rowspan="2" style="border:1px solid #cbd5e1; background:#f1f5f9; padding:8px; width:120px;">결과물</th>
+                  ${gridHtml}
+                </tr>
+                <tr>${subHeaderHtml}</tr>
+              </thead>
+              <tbody>${tbodyHtml}</tbody>
+            </table>
+        <div style="margin-top:8px; font-size:0.8rem; color:#94a3b8; text-align:right;">* 각 칸은 해당 월의 주차(Week)를 의미합니다.</div>
+      </div><br/>
+    `;
+
+      if (CURRENT_EDITING_SCHEDULE_EL) {
+        if (tinymce.get('doc-content')) {
+          const currentCode = tinymce.get('doc-content').getContent();
+          const parser = new DOMParser(); const doc = parser.parseFromString(currentCode, 'text/html');
+          const oldSection = Array.from(doc.querySelectorAll('.schedule-section')).find(el => el.getAttribute('data-config') === CURRENT_EDITING_SCHEDULE_EL.getAttribute('data-config'));
+          if (oldSection) {
+            const tempDiv = doc.createElement('div'); tempDiv.innerHTML = scheduleHtml; oldSection.replaceWith(tempDiv);
+            tinymce.get('doc-content').setContent(doc.body.innerHTML);
+          }
+        }
+        CURRENT_EDITING_SCHEDULE_EL = null;
+      }
+      else {
+        if (tinymce.get('doc-content')) {
+          const currentCode = tinymce.get('doc-content').getContent();
+          if (currentCode.includes('id="schedule-placeholder"')) {
+            const parser = new DOMParser(); const doc = parser.parseFromString(currentCode, 'text/html');
+            const placeholder = doc.getElementById('schedule-placeholder');
+            if (placeholder) {
+              const tempDiv = doc.createElement('div'); tempDiv.innerHTML = scheduleHtml; placeholder.replaceWith(tempDiv);
+              tinymce.get('doc-content').setContent(doc.body.innerHTML);
+            } else {
+              tinymce.get('doc-content').insertContent(scheduleHtml);
+            }
+          } else {
+            tinymce.get('doc-content').insertContent(scheduleHtml);
+          }
+        }
+      }
+
+      closeScheduleMaker();
+    }
+
+    // 📅 날짜를 MM/DD 형식으로 변환하는 헬퍼 함수
+    function formatMMDD(dateObj) {
+      if (!dateObj) return '';
+      const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const day = String(dateObj.getDate()).padStart(2, '0');
+      return `${m}/${day}`;
+    }
+
+    // 🌟 [신규 추가] 공통으로 사용할 '목표 자동 세팅 버튼' 주입 함수
+    // ==========================================================
+    function injectConfirmButton() {
+      const footer = document.querySelector('#doc-modal .modal-footer-custom');
+      if (footer) {
+        let oldBtn = document.getElementById('ai-confirm-btn');
+        if (oldBtn) oldBtn.remove();
+
+        const btnSaveDoc = document.getElementById('btn-save-doc');
+        if (btnSaveDoc) btnSaveDoc.style.display = 'none'; // 기본 저장 버튼 숨김
+
+        let confirmBtn = document.createElement('button');
+        confirmBtn.id = 'ai-confirm-btn';
+        confirmBtn.type = 'button';
+        confirmBtn.className = 'btn';
+        confirmBtn.style.cssText = 'background: #7c3aed; color: #fff; font-weight: bold; border: none; padding: 12px 24px; border-radius:12px; margin-right: auto; box-shadow:0 4px 6px -1px rgba(124,58,237,0.3); cursor:pointer;';
+        confirmBtn.innerHTML = '✨ 기획안 확정 및 목표/할일 자동 세팅';
+        // 👇 새로운 만능 저장 함수 연결
+        confirmBtn.onclick = window.confirmAndSaveProposal;
+        footer.insertBefore(confirmBtn, footer.firstChild);
+      }
+    }
+
+    // ==========================================================
+    // 🌟 [수정] 1-Page 기획서 수동 작성 시에도 보라색 버튼 띄우기!
+    // ==========================================================
+    function generateProposalTemplate() {
+      const today = new Date();
+      const dateStr = `${today.getFullYear()}.${today.getMonth() + 1}.${today.getDate()}`;
+      const htmlTemplate = `<div style="font-family:'Pretendard','Malgun Gothic',sans-serif; max-width:900px; margin:0 auto; color:#1e293b;"><h2 style="text-align:center; color:#ea580c; margin-bottom:12px; font-size:1.8rem; letter-spacing:-0.5px;">[기획서] ${document.getElementById('sch-project-name').value || "새로운 프로젝트"}</h2><div style="text-align:right; margin-bottom:16px; font-size:0.9rem; color:#64748b;">작성일: ${dateStr} / 작성자: OOO</div><table style="width:100%; border-collapse:collapse; table-layout:fixed; border:2px solid #cbd5e1;"><tr><td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;"><h3 style="margin:0 0 12px 0; color:#ea580c; font-size:1.15rem; border-bottom:2px solid #fed7aa; padding-bottom:8px;">1. 기획 배경 및 목적 (Why)</h3><ul style="padding-left:20px; margin:0; font-size:1rem; color:#333; line-height:1.8;"><li><b>배경:</b> 왜 이 기획을 하게 되었는가?</li><li><b>목적:</b> 이 기획을 통해 달성하고자 하는 궁극적인 목표는?</li></ul></td><td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f8fafc;"><h3 style="margin:0 0 12px 0; color:#ea580c; font-size:1.15rem; border-bottom:2px solid #fed7aa; padding-bottom:8px;">2. 현상 및 핵심 문제점 (What)</h3><ul style="padding-left:20px; margin:0; font-size:1rem; color:#333; line-height:1.8;"><li><b>현재 상황:</b> 현재 업무나 서비스의 상태는 어떠한가?</li><li><b>문제점:</b> 해결해야 할 가장 큰 병목이나 원인은?</li></ul></td></tr><tr><td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f8fafc;"><h3 style="margin:0 0 12px 0; color:#ea580c; font-size:1.15rem; border-bottom:2px solid #fed7aa; padding-bottom:8px;">3. 해결 방안 및 핵심 전략 (How)</h3><ul style="padding-left:20px; margin:0; font-size:1rem; color:#333; line-height:1.6;"><li><b>핵심 솔루션:</b> 문제를 어떻게 타개할 것인가?</li><li><b>실행 전략:</b> 타 부서 협업, 리스크 대비책 등 상세 전략</li></ul></td><td style="width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;"><h3 style="margin:0 0 12px 0; color:#ea580c; font-size:1.15rem; border-bottom:2px solid #fed7aa; padding-bottom:8px;">4. 기대 효과 및 소요 예산 (ROI)</h3><ul style="padding-left:20px; margin:0; font-size:1rem; color:#333; line-height:1.8;"><li><b>정량적 효과:</b> 매출 X% 증대, 리드타임 Y시간 단축 등</li><li><b>소요 예산:</b> 투입되어야 할 인력 및 예산</li></ul></td></tr></table><div id="schedule-placeholder" style="margin-top:30px; padding:40px; border:2px dashed #e2e8f0; border-radius:12px; text-align:center; color:#94a3b8; background:#f8fafc;"><p style="font-size:1.1rem; font-weight:bold; margin-bottom:8px;">📅 세부 실행 일정 (Schedule)</p><p style="font-size:0.9rem;">상단의 [📅 일정표 넣기] 버튼을 눌러 이곳에 로드맵을 채워주세요.</p></div></div>`;
+
+      openDocModal(null, "[기획서] 새로운 프로젝트 기획", htmlTemplate, '기획서');
+
+      // 🚨 수동 기획서 모달이 열리면 0.1초 뒤에 보라색 버튼 띄우기!
+      setTimeout(() => { injectConfirmButton(); }, 100);
+    }
+
+    function getReportGoalProgress(goalId, isBigGoal, refDateObj) {
+      let tasks = [];
+      if (isBigGoal) {
+        const midGoalIds = g_goals.filter(m => m['상위ID'] === goalId).map(m => m.ID);
+        tasks = g_tasks.filter(t => t['유형'] !== '아이디어' && t['유형'] !== '버그' && midGoalIds.includes(t['연결_중간목표ID']));
+      } else {
+        tasks = g_tasks.filter(t => t['유형'] !== '아이디어' && t['유형'] !== '버그' && t['연결_중간목표ID'] === goalId);
+      }
+
+      if (tasks.length === 0) return 0;
+
+      const targetDate = refDateObj ? new Date(refDateObj) : new Date();
+      targetDate.setHours(23, 59, 59, 999);
+
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+
+      const doneCount = tasks.filter(t => {
+        if (t['상태'] !== '완료') return false;
+        if (targetDate >= today) return true;
+        if (t['완료일']) { return new Date(t['완료일']) <= targetDate; }
+        const doneLog = g_logs.find(l => {
+          const relId = l['관련_목표ID'] || l['relatedId'] || l['관련ID'] || l['관련_작업ID'] || "";
+          if (relId !== t.ID) return false;
+          const raw = l['날짜'] || l['date'];
+          if (!raw) return false;
+          const lDate = new Date(raw);
+          if (isNaN(lDate.getTime())) return false;
+          if (lDate > targetDate) return false;
+          const status = (l['상태'] || "").toString();
+          const tag = (l['태그'] || l['tags'] || "").toString();
+          const title = (l['제목'] || l['title'] || "").toString();
+          return (
+            status === '완료' || status === 'Done' ||
+            tag === 'Done' || tag === 'Publish' || tag === '완료' || tag === '배포' ||
+            title.includes('완료') || title.includes('달성') || title.includes('배포') ||
+            title.includes('해결') || title.includes('Finish') || title.includes('성공') || title.includes('작업 끝')
+          );
+        });
+        return !!doneLog;
+      }).length;
+
+      return Math.round((doneCount / tasks.length) * 100);
+    }
+
+    function getReportDday(dateStr, baseDateObj) {
+      if (!dateStr) return `<span style="color:#94a3b8; font-size:0.85em; margin-left:6px; font-weight:normal;">(마감 미정)</span>`;
+
+      const targetDate = new Date(dateStr); targetDate.setHours(0, 0, 0, 0);
+      const refDate = baseDateObj ? new Date(baseDateObj) : new Date(); refDate.setHours(0, 0, 0, 0);
+      const diffDays = Math.ceil((targetDate - refDate) / (1000 * 60 * 60 * 24));
+
+      const badgeStyle = "display:inline-flex; align-items:center; justify-content:center; width:fit-content; white-space:nowrap; word-break:keep-all; color:#ef4444; font-size:0.85em; font-weight:900; margin-left:6px; background:#fee2e2; padding:2px 8px; border-radius:4px;";
+
+      if (diffDays > 0) return `<span style="${badgeStyle}">D-${diffDays}</span>`;
+      if (diffDays === 0) return `<span style="${badgeStyle}">D-Day</span>`;
+      return `<span style="${badgeStyle}">D+${Math.abs(diffDays)} 지연</span>`;
+    }
+
+    function getSmartLogTitle(log) {
+      let displayTitle = log['제목'];
+      if (!displayTitle || displayTitle.trim() === "") {
+        const content = log['내용'] || "";
+        displayTitle = content.replace(/\n/g, " ").trim().substring(0, 30);
+        if (content.length > 30) displayTitle += "...";
+      }
+      if (!displayTitle || displayTitle.trim() === "") displayTitle = "(내용 없음)";
+      return displayTitle;
+    }
+
+    function analyzeProjectRisks(activeBigGoals, baseDateObj) {
+      let issues = [];
+      const refDate = baseDateObj ? new Date(baseDateObj) : new Date(); refDate.setHours(0, 0, 0, 0);
+      activeBigGoals.forEach(bg => {
+        const percent = getReportGoalProgress(bg.ID, true, refDate);
+        let diffDays = 999;
+        if (bg['마감일']) {
+          const target = new Date(bg['마감일']); target.setHours(0, 0, 0, 0);
+          diffDays = Math.ceil((target - refDate) / (1000 * 60 * 60 * 24));
+        }
+        if (diffDays < 0 && percent < 100) issues.push(`🚨 <b>[지연]</b> '${bg['제목']}' 프로젝트의 일정이 지연되고 있습니다. (진척률 ${percent}%)`);
+        else if (diffDays >= 0 && diffDays <= 3 && percent < 50) issues.push(`⚠️ <b>[리스크]</b> '${bg['제목']}' 목표 달성이 불투명합니다. 집중적인 리소스 투입이 필요합니다.`);
+      });
+      return issues;
+    }
+
+    // ✨ 엑셀/표 연속 붙여넣기 처리 함수
+    function handleTablePaste(e) {
+      // 클립보드 데이터 텍스트로 가져오기
+      let pasteData = (e.clipboardData || window.clipboardData).getData('text');
+      if (!pasteData) return;
+
+      // 🌟 [추가된 핵심 로직] 탭(\t) 문자가 없으면 단일 텍스트 복사이므로 기본 붙여넣기 허용 후 종료!
+      if (!pasteData.includes('\t')) {
+        return;
+      }
+
+      // 탭(\t)이 포함된 다중 표 데이터일 때만 기본 붙여넣기 동작을 막음
+      e.preventDefault();
+
+      // 엑셀 데이터는 탭(\t)으로 열이, 줄바꿈(\n)으로 행이 구분됨
+      const rows = pasteData.trim().split('\n');
+
+      // 첫 행이 헤더(단계, 작업 내용 등)라면 무시할지 묻기 (선택 사항)
+      let startIndex = 0;
+      if (rows.length > 0 && rows[0].includes('단계') && rows[0].includes('작업 내용')) {
+        startIndex = 1;
+      }
+
+      // 현재 커서가 있는 입력창과 그 부모 행(tr) 찾기
+      let currentRow = e.target.closest('tr');
+      const tbody = document.getElementById('sch-input-list');
+
+      // 기존 빈 행이 하나 있다면 삭제 (깔끔하게 붙여넣기 위해) - 단, 현재 커서가 있는 행은 지우지 않음
+      const existingRows = tbody.querySelectorAll('tr');
+      if (existingRows.length === 1 && existingRows[0] !== currentRow && !existingRows[0].querySelector('.sch-task').value) {
+        existingRows[0].remove();
+      }
+
+      // 한 줄씩 파싱해서 행 추가
+      for (let i = startIndex; i < rows.length; i++) {
+        const cols = rows[i].split('\t').map(c => c.trim());
+
+        // 엑셀 컬럼 순서: 0:단계, 1:작업내용, 2:시작일, 3:종료일, 4:결과물
+        const cat = cols[0] || "";
+        const task = cols[1] || "";
+
+        // 날짜 포맷 변환 (ex: "01/28" -> "2026-01-28")
+        let sDate = cols[2] || "";
+        let eDate = cols[3] || "";
+        const year = document.getElementById('sch-start-month').value.split('-')[0] || new Date().getFullYear();
+
+        if (sDate.includes('/')) {
+          const parts = sDate.split('/');
+          sDate = `${year}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+        }
+        if (eDate.includes('/')) {
+          const parts = eDate.split('/');
+          eDate = `${year}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+        }
+
+        const output = cols[4] || "";
+
+        // 🌟 [수정된 로직] 현재 커서 위치를 기준으로 그 아래에 새 행 추가
+        addScheduleRow(cat, task, sDate, eDate, output, currentRow);
+
+        // 방금 추가된 행을 다음 번 추가 시의 기준으로 설정 (차곡차곡 아래로 쌓이도록)
+        if (currentRow && currentRow.nextSibling) {
+          currentRow = currentRow.nextSibling;
+        }
+      }
+    }
+
+    (function showVersion() {
+      const el = document.getElementById("sysVersion");
+      if (!el) return;
+      const d = new Date(document.lastModified);
+      const pad = (n) => String(n).padStart(2, '0');
+      const versionStr = `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())} [Final-TinyMCE]`;
+
+      el.textContent = `Ver: ${versionStr}`;
+      el.style.color = "#3b82f6";
+      el.style.fontWeight = "bold";
+    })();
+  </script>
+
+  <script>
+    // 🌟 [추가] 멋진 AI 전용 동적 로딩 함수
+    let aiLoaderInterval;
+    function showAILoading(mode) {
+      const steps = mode === "report" ? [
+        "📂 기존 기획안 및 작업 로그 수집 중...",
+        "⚖️ 기획 대비 실제 진행률 비교 분석 중...",
+        "💡 성공 패턴(지식 자산) 및 잔여 리스크 추출 중...",
+        "🚀 다음 프로젝트를 위한 Action Item 구성 중...",
+        "⏳ 잠시만 더 기다려주세요 (AI 쿨타임 조정 중일 수 있습니다)..."
+      ] : [
+        "🧠 사용자 아이디어 및 회고 데이터 분석 중...",
+        "🎯 문제점 진단 및 핵심 전략 도출 중...",
+        "📅 최적의 애자일(Agile) 일정표 수립 중...",
+        "📝 세부 공정 및 Task 쪼개기 진행 중...",
+        "⏳ 잠시만 더 기다려주세요 (AI 쿨타임 조정 중일 수 있습니다)..."
+      ];
+
+      let stepIndex = 0;
+      const loaderHtml = `
+    <div id="ai-dynamic-loader-overlay" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15, 23, 42, 0.85); z-index:999999; display:flex; justify-content:center; align-items:center; font-family:'Pretendard', sans-serif; backdrop-filter: blur(4px);">
+        <div style="background: #1e293b; padding: 40px 50px; border-radius: 20px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); text-align: center; border: 1px solid #334155; min-width: 340px;">
+            <div style="display:inline-block; margin-bottom: 24px;">
+                <div style="width: 50px; height: 50px; border: 4px solid rgba(255,255,255,0.1); border-top-color: #3b82f6; border-radius: 50%; animation: ai-spin 1s linear infinite;"></div>
+            </div>
+            <style>@keyframes ai-spin { 100% { transform: rotate(360deg); } }</style>
+            <h2 style="margin:0 0 16px 0; font-size:1.4rem; color:#f8fafc; font-weight:700;">✨ AI 프로세스 진행 중</h2>
+            <div id="ai-loader-text" style="font-size:1.05rem; color:#94a3b8; font-weight:500; transition: opacity 0.4s ease-in-out;">${steps[0]}</div>
+        </div>
+    </div>`;
+
+      if (document.getElementById('ai-dynamic-loader-overlay')) document.getElementById('ai-dynamic-loader-overlay').remove();
+      document.body.insertAdjacentHTML('beforeend', loaderHtml);
+
+      aiLoaderInterval = setInterval(() => {
+        stepIndex++;
+        if (stepIndex < steps.length) {
+          const textEl = document.getElementById('ai-loader-text');
+          if (textEl) { textEl.style.opacity = 0; setTimeout(() => { textEl.innerHTML = steps[stepIndex]; textEl.style.opacity = 1; }, 400); }
+        } else clearInterval(aiLoaderInterval);
+      }, 3500);
+    }
+    function hideAILoading() {
+      if (aiLoaderInterval) clearInterval(aiLoaderInterval);
+      const overlay = document.getElementById('ai-dynamic-loader-overlay');
+      if (overlay) overlay.remove();
+    }
+
+    function openAIPromptModal() {
+      document.getElementById('ai-prompt-input').value = "";
+      document.getElementById('ai-prompt-modal').classList.add('open');
+    }
+
+    // ==========================================================
+    // 🌟 [수정] AI 기획서 요청 함수 (보라색 버튼 중복 코드 제거)
+    // ==========================================================
+    async function requestAIProposal() {
+      const promptText = document.getElementById('ai-prompt-input').value.trim();
+      if (!promptText) { alert("기획 내용을 적어주세요!"); return; }
+
+      closeModal('ai-prompt-modal');
+      if (typeof showAILoading === 'function') showAILoading('proposal');
+
+      try {
+        const res = await fetch(window.CHEESE_ADMIN_API_BASE, {
+          method: "POST",
+          body: JSON.stringify({ mode: "generateProposal", rawIdea: promptText })
+        });
+        const json = await res.json();
+
+        if (json.result === "success") {
+          const data = json.data || {};
+          openDocModal(null, data.title || "AI 자동 생성 기획서", "", "기획서");
+
+          // 🌟 [완벽 복구] AI가 기호를 섞어 쓰더라도 태그를 완벽하게 분리해 내는 무적의 포맷팅 함수!
+          const formatToSubBullets = (text) => {
+            if (!text) return '내용 없음';
+            if (Array.isArray(text)) text = text.join('\n');
+
+            // 원하시는 예쁜 소제목 매핑
+            const headers = {
+              '배경': '배경: 왜 이 기획을 하게 되었는가?',
+              '목적': '목적: 이 기획을 통해 달성하고자 하는 궁극적인 목표는?',
+              '현상': '현재 상황: 현재 업무나 서비스의 상태는 어떠한가?',
+              '문제점': '문제점: 해결해야 할 가장 큰 병목이나 원인은?',
+              '해결방안': '핵심 솔루션: 문제를 어떻게 타개할 것인가?',
+              '실행전략': '실행 전략: 타 부서 협업, 리스크 대비책 등 상세 전략',
+              '기대효과': '정량적 효과: 매출 X% 증대, 리드타임 Y시간 단축 등',
+              '소요예산': '소요 예산: 투입되어야 할 인력 및 예산'
+            };
+
+            let resultHtml = '';
+            let currentKey = '';
+            let currentList = '';
+
+            String(text).split('\n').forEach(line => {
+              let cleanLine = line.trim();
+              if (!cleanLine) return;
+
+              // 💡 정규식: 앞에 -, *, •, 공백 등 뭐가 오든 키워드만 완벽하게 캐치!
+              const match = cleanLine.match(/^[-\*\•\s]*\[(.*?)\](.*)/);
+
+              if (match) {
+                let key = match[1].replace(/\s/g, '');
+                let content = match[2].trim();
+
+                // 1. 새로운 키워드가 등장하면, 닫혀있던 리스트를 붙이고 새 소제목(Bold) 출력
+                if (key !== currentKey) {
+                  if (currentList !== '') {
+                    resultHtml += `<ul style='padding-left:20px; margin:4px 0 16px 0; line-height:1.6; color:#475569;'>${currentList}</ul>`;
+                    currentList = '';
+                  }
+                  let headerText = headers[key] || `${key}:`;
+                  resultHtml += `<div style='margin-top:8px; color:#1e293b;'><b>${headerText}</b></div>`;
+                  currentKey = key;
+                }
+
+                // 2. 내용은 무조건 현재 리스트(li)에 추가
+                if (content) {
+                  if (content.match(/^[-\*\•]/)) content = content.substring(1).trim();
+                  content = content.replace(/^(배경은|목적은|현상은|문제점은|핵심 솔루션은|실행 전략은|기대 효과는|소요 예산은)\s*/, '');
+                  currentList += `<li style='margin-bottom:4px;'>${content}</li>`;
+                }
+              } else {
+                // 태그 없이 내용만 이어지는 줄도 리스트에 추가
+                let content = cleanLine;
+                if (content.match(/^[-\*\•]/)) content = content.substring(1).trim();
+                if (content) {
+                  currentList += `<li style='margin-bottom:4px;'>${content}</li>`;
+                }
+              }
+            });
+
+            // 마지막에 남은 리스트 닫아주기
+            if (currentList !== '') {
+              resultHtml += `<ul style='padding-left:20px; margin:4px 0 8px 0; line-height:1.6; color:#475569;'>${currentList}</ul>`;
+            }
+
+            return resultHtml || '내용 없음';
+          };
+
+          // 🌟 4분할 표 레이아웃 + formatToSubBullets 적용 완료
+          const editorContent = `
+            <div style='font-family:'Pretendard','Malgun Gothic',sans-serif; max-width:900px; margin:0 auto; color:#1e293b;'>
+                <table style='width:100%; border-collapse:collapse; table-layout:fixed; border:2px solid #cbd5e1;'>
+                    <tr>
+                        <td style='width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;'>
+                            <h3 style='margin:0 0 12px 0; color:#ea580c; font-size:1.15rem; border-bottom:2px solid #fed7aa; padding-bottom:8px;'>1. 기획 배경 및 목적 (Why)</h3>
+                            <div style='font-size:1rem; color:#333; line-height:1.6;'>${formatToSubBullets(data.background_purpose)}</div>
+                        </td>
+                        <td style='width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f8fafc;'>
+                            <h3 style='margin:0 0 12px 0; color:#ea580c; font-size:1.15rem; border-bottom:2px solid #fed7aa; padding-bottom:8px;'>2. 현상 및 핵심 문제점 (What)</h3>
+                            <div style='font-size:1rem; color:#333; line-height:1.6;'>${formatToSubBullets(data.current_issue)}</div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style='width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#f8fafc;'>
+                            <h3 style='margin:0 0 12px 0; color:#ea580c; font-size:1.15rem; border-bottom:2px solid #fed7aa; padding-bottom:8px;'>3. 해결 방안 및 핵심 전략 (How)</h3>
+                            <div style='font-size:1rem; color:#333; line-height:1.6;'>${formatToSubBullets(data.strategy)}</div>
+                        </td>
+                        <td style='width:50%; vertical-align:top; border:1px solid #cbd5e1; padding:20px; background:#fff;'>
+                            <h3 style='margin:0 0 12px 0; color:#ea580c; font-size:1.15rem; border-bottom:2px solid #fed7aa; padding-bottom:8px;'>4. 기대 효과 및 소요 예산 (ROI)</h3>
+                            <div style='font-size:1rem; color:#333; line-height:1.6;'>${formatToSubBullets(data.roi)}</div>
+                        </td>
+                    </tr>
+                </table>
+                <div id='schedule-placeholder'></div>
+            </div>
+            `;
+
+          if (tinymce.get('doc-content')) {
+            tinymce.get('doc-content').setContent(editorContent);
+          }
+
+          let hasSchedule = Array.isArray(data.schedule) && data.schedule.length > 0;
+          if (hasSchedule) {
+            const firstTask = data.schedule[0];
+            const sDate = (firstTask && firstTask.start_date) ? String(firstTask.start_date) : new Date().toISOString();
+
+            document.getElementById('sch-start-month').value = sDate.substring(0, 7);
+            document.getElementById('sch-project-name').value = data.title || "기획 일정";
+            document.getElementById('sch-input-list').innerHTML = "";
+
+            data.schedule.forEach(task => {
+              addScheduleRow(task.category || "", task.task_name || "작업", task.start_date || "", task.end_date || "", task.output || "");
+            });
+            setTimeout(() => { insertSmartSchedule(); }, 500);
+          }
+
+          // 🚨 [수정] 모달에 공통 보라색 버튼 주입 호출!
+          setTimeout(() => { injectConfirmButton(); }, 100);
+
+          setTimeout(() => {
+            alert("✨ AI가 기획안과 일정표를 작성했습니다!\n본문을 수정하거나 일정을 조정한 뒤, 하단의 [✨ 기획안 확정] 버튼을 누르면 대시보드에 세팅됩니다.");
+          }, 600);
+
+        } else {
+          alert("AI 생성 실패: " + json.msg);
+        }
+      } catch (e) {
+        console.error("AI Proposal Error:", e);
+        alert("통신 오류가 발생했습니다. (데이터 포맷 분석 중 에러)");
+      } finally {
+        if (typeof hideAILoading === 'function') hideAILoading();
+      }
+    }
+
+    // ==========================================================
+    // 🌟 [완전 개편] AI 및 수동 기획서 모두 대응하는 '만능 저장 함수'
+    // ==========================================================
+    // (기존 confirmAndSaveAIProposal 함수는 덮어써서 지워주세요!)
+    window.confirmAndSaveProposal = async function () {
+      const finalTitle = document.getElementById('doc-title').value || "새로운 기획서";
+      let contentHtml = "";
+      let updatedSchedule = [];
+
+      // 1. 에디터에서 사용자가 타이핑/수정한 '최종 HTML 본문'과 '일정표'를 긁어옵니다.
+      if (tinymce.get('doc-content')) {
+        contentHtml = tinymce.get('doc-content').getContent();
+
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(contentHtml, 'text/html');
+        const scheduleSection = doc.querySelector('.schedule-section');
+
+        // 표에 삽입된 데이터를 역추적해서 완벽한 일정 배열로 변환!
+        if (scheduleSection) {
+          const configRaw = scheduleSection.getAttribute('data-config');
+          if (configRaw) {
+            const config = JSON.parse(decodeURIComponent(configRaw));
+            updatedSchedule = config.rows.map(r => ({
+              category: r.cat || "",
+              task_name: r.task || "",
+              start_date: r.s || "",
+              end_date: r.e || "",
+              output: r.output || ""
+            }));
+          }
+        }
+      }
+
+      // 일정표를 1개도 안 넣었으면 빠꾸시킵니다.
+      if (updatedSchedule.length === 0) {
+        alert("⚠️ 일정표(Schedule)가 비어 있습니다!\n\n상단의 [📅 일정표 넣기] 버튼을 눌러 일정을 먼저 세팅해 주세요.");
+        return;
+      }
+
+      // 2. 서버로 보낼 최종 데이터 세팅 (수동/자동 통합)
+      const finalData = {
+        title: finalTitle,
+        schedule: updatedSchedule,
+        fullHtml: contentHtml // 👈 사용자가 직접 편집한 100% 원본 텍스트 전달!
+      };
+
+      if (typeof showAdminLoading === 'function') showAdminLoading("DB에 기획서와 일정을 저장하는 중입니다... 💾");
+
+      try {
+        const res = await fetch(window.CHEESE_ADMIN_API_BASE, {
+          method: "POST",
+          body: JSON.stringify({ mode: "saveProposal", pData: finalData })
+        });
+        const json = await res.json();
+
+        if (json.result === "success") {
+          alert("✨ 기획서와 세부 일정이 대시보드에 완벽하게 생성되었습니다!");
+          closeModal('doc-modal');
+
+          // UI 원상복구
+          document.getElementById('ai-confirm-btn')?.remove();
+          const btnSaveDoc = document.getElementById('btn-save-doc');
+          if (btnSaveDoc) btnSaveDoc.style.display = 'block';
+
+          if (typeof loadAllData === 'function') await loadAllData();
+        } else {
+          alert("저장 실패: " + json.msg);
+        }
+      } catch (e) {
+        console.error(e); alert("통신 오류가 발생했습니다.");
+      } finally {
+        if (typeof hideAdminLoading === 'function') hideAdminLoading();
+      }
+    };
+
+    // -------------------------------------------------------------
+    // 🔥 기획서 열람 시 실시간 Todo 리스트(Task) 연동 기능 (어제 코드와 동일)
+    // -------------------------------------------------------------
+    const originalOpenDocModal = window.openDocModal;
+
+    window.openDocModal = function (docId, title, content, type) {
+      if (typeof originalOpenDocModal === 'function') {
+        originalOpenDocModal(docId, title, content, type);
+      }
+      const oldContainer = document.getElementById('realtime-todo-container');
+      if (oldContainer) oldContainer.remove();
+
+      if (type === '기획서' && docId) {
+        const modalBody = document.querySelector('#doc-modal .modal-body-custom');
+        if (modalBody) {
+          const todoContainer = document.createElement('div');
+          todoContainer.id = 'realtime-todo-container';
+          todoContainer.style.marginTop = "20px";
+          todoContainer.innerHTML = '<div style="text-align:center; padding: 30px; color:#64748b; font-weight:bold;">⏳ 현장의 실시간 진행 현황을 불러오는 중입니다...</div>';
+          modalBody.appendChild(todoContainer);
+          fetchAndRenderRealtimeTodos(docId);
+        }
+      }
+    };
+
+    async function fetchAndRenderRealtimeTodos(proposalId) {
+      try {
+        const res = await fetch(window.CHEESE_ADMIN_API_BASE + "?mode=getAllData");
+        const json = await res.json();
+        if (json.result !== "success") throw new Error("데이터 로드 실패");
+
+        const goals = json.goals || [];
+        const tasks = json.tasks || [];
+
+        const relatedMidGoals = goals.filter(g => g['비고'] === proposalId);
+        const midGoalIds = relatedMidGoals.map(g => g['ID']);
+        if (midGoalIds.length === 0) {
+          document.getElementById('realtime-todo-container').innerHTML = '';
+          return;
+        }
+
+        const relatedTasks = tasks.filter(t => midGoalIds.includes(t['연결_중간목표ID']));
+        relatedTasks.sort((a, b) => (a['기한'] || '').localeCompare(b['기한'] || ''));
+
+        let html = `<div style="margin-top: 50px; padding-top: 25px; border-top: 2px dashed #cbd5e1; font-family:'Pretendard','Malgun Gothic',sans-serif;"><h3 style="color: #4f46e5; margin-bottom: 16px; font-size: 1.3rem; display:flex; align-items:center; gap:8px;"><span>🔥</span> 실제 진행 중인 세부 Todo 리스트 (실시간)</h3>`;
+
+        if (relatedTasks.length === 0) {
+          html += `<div style="background:#f8fafc; padding:20px; border-radius:8px; color:#64748b; font-size:0.95rem; text-align:center;">아직 현장에서 추가된 세부 할 일이 없습니다. <br><b>할 일 관리(Todo)</b> 메뉴에서 이 프로젝트에 할 일을 추가해 보세요!</div>`;
+        } else {
+          html += `<div style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;"><table style="width:100%; border-collapse:collapse; text-align:left;"><thead><tr style="background:#f8fafc; color:#475569; font-size:0.9rem;"><th style="padding:12px 15px; border-bottom:1px solid #e2e8f0; width: 80px; text-align:center;">상태</th><th style="padding:12px 15px; border-bottom:1px solid #e2e8f0;">작업명</th><th style="padding:12px 15px; border-bottom:1px solid #e2e8f0; width: 120px;">기한</th><th style="padding:12px 15px; border-bottom:1px solid #e2e8f0; width: 250px;">연결된 공정 (중간목표)</th></tr></thead><tbody>`;
+
+          relatedTasks.forEach(t => {
+            const status = t['상태'] || '대기';
+            let badgeColor = status === '진행중' ? '#3b82f6' : (status === '완료' ? '#22c55e' : '#94a3b8');
+            const parentGoal = relatedMidGoals.find(g => g['ID'] === t['연결_중간목표ID']);
+            const parentName = parentGoal ? parentGoal['제목'] : '-';
+
+            html += `<tr style="border-bottom:1px solid #f1f5f9; font-size:0.95rem; background:#fff;"><td style="padding:12px 15px; text-align:center;"><span style="background:${badgeColor}; color:#fff; padding:4px 10px; border-radius:12px; font-size:0.8rem; font-weight:bold;">${status}</span></td><td style="padding:12px 15px; color:#1e293b; font-weight:500;">${t['제목']}</td><td style="padding:12px 15px; color:#64748b; font-size:0.9rem;">${t['기한'] || '-'}</td><td style="padding:12px 15px; color:#64748b; font-size:0.85rem;">${parentName}</td></tr>`;
+          });
+          html += `</tbody></table></div>`;
+        }
+        html += `</div>`;
+        document.getElementById('realtime-todo-container').innerHTML = html;
+      } catch (e) {
+        document.getElementById('realtime-todo-container').innerHTML = `<div style="background:#fee2e2; color:#ef4444; padding:15px; border-radius:8px; text-align:center; margin-top:20px;">❌ 실시간 데이터를 불러오는 중 오류가 발생했습니다.</div>`;
+      }
+    }
+  </script>
+</body>
+
+</html>

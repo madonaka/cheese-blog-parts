@@ -1,0 +1,2415 @@
+<!-- post_builder.html (수정본: DB저장=Apps Script savePost, next post_id 조회, post_id 자동동기화, 발행은 state.postId 우선) -->
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>게시글 블록 에디터 · Cheese Lab Admin</title>
+
+  <!-- ✅ 페이지 메타(공통 스크립트가 읽음) -->
+  <script>
+    window.CHEESE_ADMIN_ACTIVE_PAGE  = "post_builder";
+    window.CHEESE_ADMIN_PAGE_SUBTITLE = "게시글 블록 에디터";
+    window.CHEESE_ADMIN_PAGE_BADGE    = "v0.1";
+  </script>
+
+  <!-- Drag & Drop (블록 목록 정렬) -->
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
+
+  <!-- 메인 관리자 CSS 재사용 -->
+  <link rel="stylesheet" href="../admin.css" />
+
+  <style>
+    :root{
+      --bg:#f3f4f6;
+      --card:#ffffff;
+      --text:#0f172a;
+      --muted:#64748b;
+      --line:rgba(15,23,42,.12);
+      --shadow:0 10px 28px rgba(15,23,42,.10);
+      --primary:#111827;
+      --soft:#e0f2fe;
+      --radius:18px;
+
+      --headerH:56px;
+      --sidebarW:280px;
+    }
+    *{box-sizing:border-box;}
+    body{
+      margin:0; background:var(--bg); color:var(--text);
+      font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    }
+    a{ color:inherit; text-decoration:none; }
+
+    /* =========================
+       ✅ Admin Shell (slot 기반)
+       ========================= */
+    .admin-shell{
+      min-height:100vh;
+      display:flex;
+      flex-direction:column;
+    }
+    #admin-header-slot{
+      position:sticky;
+      top:0;
+      z-index:50;
+      min-height:var(--headerH);
+    }
+
+    .admin-main{
+      display:flex;
+      flex:1 1 auto;
+      min-height:calc(100vh - var(--headerH));
+    }
+
+    /* ✅ 메뉴 슬롯(좌측 사이드바) */
+    .admin-sidebar{
+      width:var(--sidebarW);
+      flex:0 0 var(--sidebarW);
+      background:#fff;
+      border-right:1px solid var(--line);
+      padding:12px;
+      position:sticky;
+      top:var(--headerH);
+      height:calc(100vh - var(--headerH));
+      overflow:auto;
+    }
+
+    /* ✅ 본문 */
+    .admin-content{
+      flex:1 1 auto;
+      min-width:0;
+      padding:14px 14px 28px;
+    }
+
+    @media (max-width: 980px){
+      /* 패딩만 조정(사이드바는 숨기지 않음: 모바일 드로어에서 사용) */
+      .admin-content{ padding:12px 12px 24px; }
+    }
+    
+    /* Mobile Drawer (admin-common.js가 body.admin-nav-open 을 토글) */
+    @media (max-width: 860px){
+      body{ overflow-x:hidden; }
+    
+      .admin-sidebar{
+        display:block;
+        position:fixed;
+        left:0;
+        top:var(--headerH);
+        height:calc(100vh - var(--headerH));
+        width:min(86vw, 320px);
+        max-width:320px;
+        transform:translateX(-110%);
+        transition:transform .22s ease;
+        z-index:1000;
+        box-shadow:0 12px 30px rgba(15,23,42,.18);
+      }
+      body.admin-nav-open .admin-sidebar{ transform:translateX(0); }
+    
+      /* 오버레이는 admin-common.js가 id="admin-mobile-overlay"로 삽입 */
+      #admin-mobile-overlay, .admin-mobile-overlay{
+        position:fixed; inset:0;
+        background:rgba(15,23,42,.45);
+        display:none;
+        z-index:900;
+      }
+      body.admin-nav-open #admin-mobile-overlay{ display:block; }
+    }
+
+    /* =========================
+       ✅ Page UI (Editor)
+       ========================= */
+    .wrap{ max-width:1200px; margin:0 auto; }
+    .topbar{
+      display:flex; gap:10px; align-items:center; justify-content:space-between;
+      margin-bottom:12px;
+    }
+    .page-title{ font-size:18px; font-weight:900; letter-spacing:-.02em; }
+    .sub{ color:var(--muted); font-size:12px; }
+
+    .grid{
+      display:grid;
+      grid-template-columns: 1.4fr 0.9fr;
+      gap:12px;
+    }
+    @media (max-width: 980px){ .grid{ grid-template-columns:1fr; } }
+
+    .card{
+      background:var(--card);
+      border:1px solid var(--line);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      overflow:hidden;
+    }
+    .card-h{
+      padding:12px 14px;
+      display:flex; align-items:center; justify-content:space-between; gap:10px;
+      border-bottom:1px solid var(--line);
+    }
+    .card-h .h1{ font-weight:900; font-size:14px; }
+    .card-h .hint{ font-size:12px; color:var(--muted); }
+    .card-b{ padding:14px; }
+
+    .btn{
+      border:1px solid var(--line);
+      background:#fff;
+      border-radius:12px;
+      padding:8px 10px;
+      font-weight:900;
+      font-size:12px;
+      cursor:pointer;
+    }
+    .btn:hover{ border-color:rgba(15,23,42,.28); }
+    .btn.primary{ background:var(--primary); border-color:var(--primary); color:#fff; }
+    .btn.small{ padding:7px 9px; border-radius:11px; }
+    .btn.danger{ border-color:rgba(239,68,68,.35); color:#991b1b; }
+
+    .row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .row.right{ justify-content:flex-end; }
+
+    .field{ display:flex; flex-direction:column; gap:6px; margin-bottom:10px; }
+    label{ font-size:12px; color:var(--muted); font-weight:900; }
+    input[type="text"], textarea, select, input[type="number"]{
+      width:100%;
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:10px 10px;
+      font-size:13px;
+      outline:none;
+      background:#fff;
+    }
+    textarea{ min-height:120px; resize:vertical; line-height:1.45; }
+    .mini{ font-size:12px; color:var(--muted); }
+
+    /* 오른쪽 블록 리스트 */
+    .block-list{ display:flex; flex-direction:column; gap:8px; padding:12px; }
+    .block-item{
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:10px 10px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      cursor:grab;
+      background:#fff;
+    }
+    .block-item:active{ cursor:grabbing; }
+    .block-item.selected{
+      border-color: rgba(17,24,39,.55);
+      box-shadow:0 8px 22px rgba(17,24,39,.12);
+    }
+    .block-left{ display:flex; align-items:center; gap:10px; min-width:0; }
+    .badge{
+      font-size:11px;
+      font-weight:900;
+      padding:4px 8px;
+      border-radius:999px;
+      background:var(--soft);
+      border:1px solid rgba(15,23,42,.08);
+      flex:0 0 auto;
+    }
+    .btitle{
+      font-weight:900;
+      font-size:12px;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      max-width:240px;
+    }
+    .bmeta{ font-size:11px; color:var(--muted); }
+    .block-actions{ display:flex; gap:6px; flex:0 0 auto; }
+    .icon-btn{
+      width:32px; height:32px;
+      border-radius:12px;
+      border:1px solid var(--line);
+      background:#fff;
+      cursor:pointer;
+      font-weight:900;
+      line-height:1;
+    }
+    .icon-btn:hover{ border-color:rgba(15,23,42,.28); }
+
+    /* 왼쪽 미리보기 */
+    .preview .frame{
+      border:1px dashed rgba(15,23,42,.20);
+      border-radius:16px;
+      padding:14px;
+      background:#fff;
+    }
+    .preview .frame .p-title{
+      font-size:18px;
+      font-weight:900;
+      letter-spacing:-.02em;
+      margin:0 0 10px;
+    }
+    .preview .frame .p-meta{
+      margin:0 0 14px;
+      color:var(--muted);
+      font-size:12px;
+    }
+    .preview article{ line-height:1.62; font-size:14px; }
+    .preview h2{ margin:18px 0 8px; font-size:16px; letter-spacing:-.01em; }
+    .preview h3{ margin:14px 0 6px; font-size:14px; }
+
+    .summary-box{
+      border:1px solid rgba(15,23,42,.12);
+      background:rgba(224,242,254,.55);
+      border-radius:16px;
+      padding:12px;
+      margin:12px 0;
+    }
+    .ad-box{
+      border:1px dashed rgba(123,44,57,.40);
+      border-radius:16px;
+      padding:12px;
+      margin:12px 0;
+      background:rgba(123,44,57,.03);
+      color:#6b0f22;
+      font-weight:900;
+      font-size:12px;
+    }
+    .divider{ height:1px; background:rgba(15,23,42,.10); margin:16px 0; }
+    .img-wrap img{ max-width:100%; border-radius:14px; border:1px solid rgba(15,23,42,.10); }
+    .toc{
+      border:1px solid rgba(15,23,42,.10);
+      border-radius:16px;
+      padding:10px 12px;
+      margin:10px 0 14px;
+      background:#fff;
+    }
+    .toc .t{ font-weight:900; font-size:12px; margin-bottom:6px; }
+    .toc a{ color:var(--text); text-decoration:none; }
+    .toc a:hover{ text-decoration:underline; }
+    .sources{
+      margin-top:18px; padding-top:14px;
+      border-top:1px solid rgba(15,23,42,.10);
+      color:var(--muted);
+      font-size:12px;
+    }
+    .sources ul{ margin:8px 0 0; padding-left:18px; }
+
+    .mono{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size:12px;
+    }
+
+    /* 인터랙티브 미리보기 iframe */
+    .pv-embed-wrap{
+      border:1px dashed rgba(15,23,42,.18);
+      border-radius:16px;
+      padding:10px;
+      background:#fff;
+      margin:12px 0;
+    }
+    .pv-embed-caption{
+      font-size:12px;
+      color:var(--muted);
+      margin:0 0 8px;
+      font-weight:900;
+    }
+    .pv-iframe{
+      width:100%;
+      border:0;
+      border-radius:14px;
+      background:#fff;
+    }
+    /* =========================
+   ✅ DB Load Modal (카드형)
+       ========================= */
+    .modal-backdrop{
+      position:fixed; inset:0;
+      background:rgba(15,23,42,.45);
+      display:none;
+      align-items:center; justify-content:center;
+      padding:14px;
+      z-index:9999;
+    }
+    .modal-backdrop.on{ display:flex; }
+    
+    .modal{
+      width:min(980px, 100%);
+      max-height:min(86vh, 860px);
+      background:#fff;
+      border:1px solid rgba(15,23,42,.14);
+      border-radius:18px;
+      box-shadow:0 18px 50px rgba(15,23,42,.25);
+      overflow:hidden;
+      display:flex;
+      flex-direction:column;
+    }
+    
+    .modal-h{
+      padding:12px 14px;
+      border-bottom:1px solid rgba(15,23,42,.12);
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:10px;
+    }
+    .modal-title{ font-weight:900; font-size:15px; }
+    .modal-sub{ color:var(--muted); font-size:12px; margin-top:3px; }
+    
+    .modal-b{
+      padding:12px 14px 14px;
+      overflow:auto;
+    }
+    
+    .post-cards{
+      display:grid;
+      grid-template-columns:repeat(3, 1fr);
+      gap:10px;
+      margin-top:10px;
+    }
+    @media (max-width: 980px){
+      .post-cards{ grid-template-columns:repeat(2, 1fr); }
+    }
+    @media (max-width: 560px){
+      .post-cards{ grid-template-columns:1fr; }
+    }
+    
+    .post-card{
+      border:1px solid rgba(15,23,42,.12);
+      border-radius:16px;
+      padding:12px 12px;
+      background:#fff;
+      cursor:pointer;
+      transition:.12s ease;
+    }
+    .post-card:hover{
+      border-color:rgba(17,24,39,.35);
+      box-shadow:0 10px 24px rgba(15,23,42,.10);
+      transform:translateY(-1px);
+    }
+    .post-card .t{
+      font-weight:900;
+      font-size:13px;
+      margin:0 0 8px;
+      line-height:1.3;
+    }
+    .post-card .meta{
+      font-size:12px;
+      color:var(--muted);
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+    }
+    .post-card .pill{
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      font-size:11px;
+      font-weight:900;
+      padding:4px 8px;
+      border-radius:999px;
+      border:1px solid rgba(15,23,42,.10);
+      background:rgba(224,242,254,.6);
+      width:max-content;
+    }
+    .post-card .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+    .modal-status{
+      font-size:12px;
+      color:var(--muted);
+      margin-top:6px;
+    }
+    .modal-error{
+      font-size:12px;
+      color:rgba(185,28,28,1);
+      font-weight:900;
+      margin-top:6px;
+    }
+    @media (max-width: 860px){
+      #admin-header-slot{ z-index:2002 !important; }   /* 헤더 최상단 */
+    
+      .admin-sidebar{ z-index:2001 !important; }       /* ✅ 메뉴가 오버레이 위 */
+      #admin-mobile-overlay{ z-index:2000 !important; }/* ✅ 오버레이는 그 아래 */
+    }
+    
+  </style>
+</head>
+
+<body>
+  <div class="admin-shell">
+    <!-- ✅ 헤더 슬롯 -->
+    <div id="admin-header-slot"></div>
+
+    <div class="admin-main">
+      <!-- ✅ 메뉴 슬롯 -->
+      <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+
+      <!-- ✅ 본문 -->
+      <main class="admin-content">
+        <div class="wrap">
+
+          <div class="topbar">
+            <div>
+              <div class="page-title">게시글 블록 에디터</div>
+              <div class="sub">오른쪽 블록을 드래그로 재정렬하면, 왼쪽 최종 HTML이 즉시 재생성됩니다. (인터랙티브 블록은 미리보기에서 실제로 동작)</div>
+            </div>
+            <div class="row right">
+              <span class="mini mono" id="curPostId" title="현재 편집 중인 post_id">post_id: (new)</span>
+              <span class="mini mono" id="nextPostId" title="신규 저장 시 예상되는 다음 post_id">next: -</span>
+              <button class="btn small" id="btnReset">초기화</button>
+              <button class="btn small" id="btnLoad">불러오기</button>
+              <button class="btn small" id="btnSave">DB 저장</button>
+              <button class="btn small primary" id="btnPublish">블로그 발행</button>
+              <span class="mini" id="publishMsg" style="margin-left:6px;"></span>
+            </div>
+          </div>
+
+          <div class="grid">
+            <!-- LEFT: Preview -->
+            <div class="card">
+              <div class="card-h">
+                <div>
+                  <div class="h1">미리보기(최종 HTML 렌더)</div>
+                  <div class="hint">DB에는 이 HTML을 content_html로 저장하는 구조를 권장</div>
+                </div>
+                <div class="row">
+                  <button class="btn small" id="btnCopyHtml">HTML 복사</button>
+                  <button class="btn small" id="btnDownloadHtml">HTML 저장</button>
+                </div>
+              </div>
+
+              <div class="card-b preview">
+                <div class="field">
+                  <label>글 제목</label>
+                  <input id="postTitle" type="text" placeholder="예: 김구, 임시정부의 중심에 선 이유" />
+                  <!-- ✅ v8: intro 입력 UI가 없더라도 JS가 null 에러로 죽지 않도록 숨김 필드 제공 -->
+                  <input id="postIntro" type="hidden" value="" />
+                </div>
+
+                <div class="field">
+                  <label>템플릿</label>
+                  <select id="templateSelect">
+                    <option value="default">기본(심플)</option>
+                    <option value="profile">인물 프로필형</option>
+                    <option value="timeline">연표형</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>블로그 발행 상태</label>
+                  <select id="publishState">
+                    <option value="draft">초안(비공개)</option>
+                    <option value="published">공개</option>
+                  </select>
+                  <div class="mini">※ “초안”은 Blogger에서 공개되지 않은 상태로 생성됩니다(서버 구현에 따라 동작).</div>
+                </div>
+
+                <div class="field">
+                  <label>옵션</label>
+                  <div class="row">
+                    <label class="mini"><input type="checkbox" id="optTOC" checked /> 목차(TOC)</label>
+                    <label class="mini"><input type="checkbox" id="optSources" checked /> 출처 섹션</label>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label>미리보기</label>
+                  <div class="frame">
+                    <div class="p-title" id="pvTitle">제목이 여기에 표시됩니다</div>
+                    <div class="p-meta">
+                      <span class="mono">blocks:</span> <span id="pvCount">0</span>
+                      &nbsp;·&nbsp; <span class="mono">template:</span> <span id="pvTemplate">default</span>
+                    </div>
+                    <div id="pvBody"></div>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label>최종 HTML(읽기전용)</label>
+                  <textarea id="finalHtml" class="mono" readonly></textarea>
+                </div>
+
+                <details style="margin-top:10px;">
+                  <summary class="mini" style="cursor:pointer; font-weight:900;">발행 API 설정(선택)</summary>
+                  <div style="margin-top:10px;">
+                    <div class="field">
+                      <label>API Base</label>
+                      <input id="pubApiBase" type="text" placeholder="https://script.google.com/macros/s/AKfycbwW16jbVY6MEgvywrzwB3ie8WDnCXPUo1aLtkTTVAE7FOmmKE1T4VmebAIIK8ppY0ye/exec" />
+                      <div class="mini">기본값: window.CHEESE_BLOG_API_BASE → window.CHEESE_ADMIN_API_BASE 순서로 자동 사용</div>
+                    </div>
+                    <div class="field">
+                      <label>발행 mode</label>
+                      <input id="pubMode" type="text" placeholder="예: publishPost" />
+                    </div>
+
+                    <div class="field">
+                      <label>post_id (POSTS 시트 키)</label>
+                      <input id="pubPostId" type="text" placeholder="예: P001" />
+                      <div class="mini">※ Apps Script가 POSTS 시트에서 이 post_id 행을 찾아 HTML을 만든 뒤 발행합니다.</div>
+                    </div>
+
+                    <div class="field">
+                      <label>blogUrl</label>
+                      <input id="pubBlogUrl" type="text" placeholder="https://cheesetestblog.blogspot.com/" />
+                      <div class="mini">※ BLOGGER_BLOG_ID를 고정하지 않았다면 blogUrl이 필요합니다.</div>
+                    </div>
+                    <div class="field">
+                      <label>blogId (선택)</label>
+                      <input id="pubBlogId" type="text" placeholder="(선택) 블로그 ID를 알고 있으면 입력" />
+                      <div class="mini">※ blogId를 넣으면 blogUrl 조회를 생략합니다.</div>
+                    </div>
+
+                    <div class="row right">
+                      <button class="btn small" id="btnSavePubConfig" type="button">설정 저장</button>
+                      <button class="btn small" id="btnResetPubConfig" type="button">설정 초기화</button>
+                    </div>
+                  </div>
+                </details>
+
+              </div>
+            </div>
+
+            <!-- RIGHT: Blocks -->
+            <div class="card">
+              <div class="card-h">
+                <div>
+                  <div class="h1">블록(드래그로 순서 변경)</div>
+                  <div class="hint">블록 클릭 → 아래 편집 패널에서 내용 수정</div>
+                </div>
+                <div class="row">
+                  <button class="btn small" id="btnAddSection">섹션</button>
+                  <button class="btn small" id="btnAddSummary">요약</button>
+                  <button class="btn small" id="btnAddImage">이미지</button>
+                  <button class="btn small" id="btnAddAd">광고</button>
+
+                  <button class="btn small" id="btnAddFlash">플래시카드</button>
+                  <button class="btn small" id="btnAddOrder">드래그 순서</button>
+                  <button class="btn small" id="btnAddQuiz">랜덤 퀴즈</button>
+                </div>
+              </div>
+
+              <div class="block-list" id="blockList"></div>
+
+              <div class="card-b">
+                <div class="field">
+                  <label>선택 블록 편집</label>
+                  <div class="mini">오른쪽 목록에서 블록을 클릭하세요.</div>
+                </div>
+
+                <div id="editorEmpty" class="mini" style="padding:12px; border:1px dashed rgba(15,23,42,.18); border-radius:14px;">
+                  아직 선택된 블록이 없습니다.
+                </div>
+
+                <div id="editorPanel" style="display:none;">
+                  <div class="field">
+                    <label>블록 타입 / ID</label>
+                    <div class="row">
+                      <input id="edType" type="text" readonly class="mono" style="max-width:170px;" />
+                      <input id="edId" type="text" readonly class="mono" />
+                    </div>
+                  </div>
+
+                  <div class="field" id="edTitleWrap">
+                    <label>제목</label>
+                    <input id="edTitle" type="text" placeholder="예: 본론 1. 임시정부" />
+                  </div>
+
+                  <div class="field" id="edBodyWrap">
+                    <label>내용</label>
+                    <textarea id="edBody" placeholder="내용을 입력하세요 (줄바꿈은 자동으로 <p> 처리)"></textarea>
+                  </div>
+
+                  <div class="field" id="edUrlWrap" style="display:none;">
+                    <label>이미지 URL</label>
+                    <input id="edUrl" type="text" placeholder="https://..." />
+                  </div>
+
+                  <div class="field" id="edAdWrap" style="display:none;">
+                    <label>광고 문구(표시용)</label>
+                    <input id="edAdLabel" type="text" placeholder="예: 배너 A / 슬롯 A" />
+                  </div>
+
+                  <!-- 플래시카드 -->
+                  <div id="edFlashWrap" style="display:none;">
+                    <div class="field">
+                      <label>카드(일괄 입력)</label>
+                      <div class="mini">한 줄에 1장: <span class="mono">앞면[TAB]뒷면</span> 또는 <span class="mono">앞면 | 뒷면</span></div>
+                      <textarea id="edFlashBulk" placeholder="예)&#10;을사늑약	1905년 체결&#10;한성조약 | 1882년(임오군란)"></textarea>
+                    </div>
+                    <div class="row">
+                      <button class="btn small" id="btnFlashFromBlock">블록 → 텍스트</button>
+                      <button class="btn small" id="btnFlashToBlock">텍스트 → 블록</button>
+                    </div>
+                  </div>
+
+                  <!-- 드래그 순서 -->
+                  <div id="edOrderWrap" style="display:none;">
+                    <div class="field">
+                      <label>문제 제목</label>
+                      <input id="edOrderTitle" type="text" placeholder="예: 잘 알고 있나 확인해보기!" />
+                    </div>
+                    <div class="field">
+                      <label>보조 문구(옵션)</label>
+                      <input id="edOrderSub" type="text" placeholder="예: 아래 항목을 올바른 순서로 배치하세요." />
+                    </div>
+                    <div class="field">
+                      <label>옵션</label>
+                      <div class="row">
+                        <label class="mini"><input type="checkbox" id="edOrderShuffle" checked /> 보기 섞기</label>
+                      </div>
+                    </div>
+                    <div class="field">
+                      <label>항목(일괄 입력)</label>
+                      <div class="mini">한 줄에 1개 항목(최소 2개)</div>
+                      <textarea id="edOrderItems" placeholder="예)&#10;대한제국 선포&#10;을사늑약&#10;한일병합"></textarea>
+                    </div>
+                    <div class="field">
+                      <label>정답 순서(옵션)</label>
+                      <div class="mini">미입력 시 “입력한 항목 순서”가 정답. 숫자 콤마: <span class="mono">1,3,2</span></div>
+                      <input id="edOrderAnswer" type="text" placeholder="예: 1,2,3" />
+                    </div>
+                  </div>
+
+                  <!-- 랜덤 퀴즈 임베드 -->
+                  <div id="edQuizWrap" style="display:none;">
+                    <div class="field">
+                      <label>examKey</label>
+                      <input id="edQuizKey" type="text" class="mono" placeholder="예: khs-era-01" />
+                      <div class="mini">questions.html / exam_sets 시트에서 쓰는 키(블로그에선 data-exam-key로 사용)</div>
+                    </div>
+                    <div class="field">
+                      <label>표시 제목</label>
+                      <input id="edQuizTitle" type="text" placeholder="예: 한국사 시대 순서 연습문제 ①" />
+                    </div>
+                    <div class="row">
+                      <div class="field" style="flex:1 1 120px; min-width:120px;">
+                        <label>limit</label>
+                        <input id="edQuizLimit" type="number" min="1" max="50" value="5" />
+                      </div>
+                      <div class="field" style="flex:1 1 160px; min-width:160px;">
+                        <label>period(옵션)</label>
+                        <input id="edQuizPeriod" type="text" placeholder="예: 한국사-통사" />
+                      </div>
+                    </div>
+                    <div class="field">
+                      <label>topic(옵션)</label>
+                      <input id="edQuizTopic" type="text" placeholder="예: 시대순서" />
+                    </div>
+                    <div class="mini">※ 이 블록은 블로그에서 치즈 퀴즈 스크립트가 로드되어 있어야 동작합니다.</div>
+                  </div>
+
+                  <div class="row right" style="margin-top:10px;">
+                    <button class="btn small danger" id="btnDeleteBlock">삭제</button>
+                    <button class="btn small primary" id="btnApplyBlock">적용</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div><!-- grid -->
+
+        </div><!-- wrap -->
+      </main>
+    </div>
+  </div>
+  
+    <!-- =========================
+         ✅ 불러오기: DB 목록 모달
+         ========================= -->
+    <div class="modal-backdrop" id="loadModalBackdrop" aria-hidden="true">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="loadModalTitle">
+        <div class="modal-h">
+          <div>
+            <div class="modal-title" id="loadModalTitle">DB에서 불러오기</div>
+            <div class="modal-sub">저장된 글 목록에서 선택하면 에디터에 불러옵니다.</div>
+          </div>
+          <button type="button" class="icon-btn" id="btnCloseLoadModal" aria-label="닫기">×</button>
+        </div>
+    
+        <div class="modal-b">
+          <div class="row" style="margin-bottom:10px;">
+            <input id="loadSearch" type="text" placeholder="검색: 제목 또는 post_id" />
+            <button class="btn small" id="btnRefreshPosts" type="button">새로고침</button>
+            <button class="btn small" id="btnLoadLocalDraft" type="button" title="localStorage 임시저장본을 불러옵니다">로컬 임시 불러오기</button>
+          </div>
+    
+          <div id="loadStatus" class="modal-status"></div>
+          <div id="loadError" class="modal-error" style="display:none;"></div>
+    
+          <div class="post-cards" id="postCards"></div>
+    
+          <div class="row right" style="margin-top:10px;">
+            <button class="btn small" id="btnLoadMorePosts" type="button" style="display:none;">더 보기</button>
+          </div>
+        </div>
+      </div>
+    </div>
+      
+
+  
+  <!-- ✅ 공통 스크립트 -->
+  <script src="../admin-common.js"></script>
+
+  <script>
+    /************************************************************
+     * ✅ Block Editor (post_builder)
+     ************************************************************/
+    const $ = (id) => document.getElementById(id);
+
+    // ✅ 현재 편집 글의 post_id
+    const state = {
+      blocks: [],
+      selectedId: null,
+      postId: '',
+      options: { toc:true, sources:false },
+      lastLoadedBody: ''
+    };
+
+    const uid = () => 'b' + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(2,6);
+
+    // ✅ 스크립트 종료태그 문자열은 "쪼개서" 만든다 (HTML 파서 보호)
+    const CLOSE_SCRIPT = '</scr' + 'ipt>';
+
+    const makeSection = () => ({ id: uid(), type:'section', data:{ title:'소제목', body:'내용을 입력하세요.\n두번째 줄도 가능합니다.' } });
+    const makeSummary = () => ({ id: uid(), type:'summary', data:{ title:'핵심 요약', body:'- 요약 1\n- 요약 2\n- 요약 3' } });
+    const makeImage   = () => ({ id: uid(), type:'image',   data:{ title:'이미지', url:'https://picsum.photos/800/420', alt:'이미지' } });
+    const makeAd      = () => ({ id: uid(), type:'ad',      data:{ label:'광고 슬롯 A' } });
+
+    const makeFlash   = () => ({
+      id: uid(),
+      type:'flashcard',
+      data:{
+        title:'플래시카드',
+        cards:[
+          { front:'을사늑약', back:'1905년 체결' },
+          { front:'한일병합', back:'1910년' },
+        ]
+      }
+    });
+
+    const makeOrder   = () => ({
+      id: uid(),
+      type:'order_quiz',
+      data:{
+        title:'잘 알고 있나 확인해보기!',
+        sub:'아래 항목을 올바른 순서로 배치하세요.',
+        shuffle:true,
+        items:['대한제국 선포','을사늑약','한일병합'],
+        answerNums:''
+      }
+    });
+
+    const makeQuiz    = () => ({
+      id: uid(),
+      type:'quiz_embed',
+      data:{
+        examKey:'khs-era-01',
+        title:'한국사 시대 순서 연습문제 ①',
+        limit:5,
+        period:'한국사-통사',
+        topic:'시대순서'
+      }
+    });
+
+    const blockList = $('blockList');
+    let sortable = null;
+
+    function escapeHtml(s){
+      return String(s ?? '')
+        .replaceAll('&','&amp;')
+        .replaceAll('<','&lt;')
+        .replaceAll('>','&gt;')
+        .replaceAll('"','&quot;')
+        .replaceAll("'",'&#39;');
+    }
+    function escapeAttr(s){ return escapeHtml(s).replaceAll('\n',' '); }
+
+    function blockLabel(type){
+      if (type==='section') return 'SECTION';
+      if (type==='summary') return 'SUMMARY';
+      if (type==='image') return 'IMAGE';
+      if (type==='ad') return 'AD';
+      if (type==='flashcard') return 'FLASH';
+      if (type==='order_quiz') return 'ORDER';
+      if (type==='quiz_embed') return 'QUIZ';
+      return 'BLOCK';
+    }
+    function blockTitle(b){
+      if (b.type==='section') return b.data?.title || '섹션';
+      if (b.type==='summary') return b.data?.title || '요약';
+      if (b.type==='image') return b.data?.title || '이미지';
+      if (b.type==='ad') return b.data?.label || '광고';
+      if (b.type==='flashcard') return (b.data?.title || '플래시카드') + ` (${(b.data?.cards||[]).length}장)`;
+      if (b.type==='order_quiz') return (b.data?.title || '드래그 순서') + ` (${(b.data?.items||[]).length}개)`;
+      if (b.type==='quiz_embed') return (b.data?.title || '랜덤 퀴즈') + ` (${b.data?.examKey||''})`;
+      return b.type;
+    }
+    function currentBlock(){
+      return state.blocks.find(b => b.id===state.selectedId) || null;
+    }
+
+    function parasFromText(text){
+      const lines = String(text || '').split(/\r?\n/);
+      const ps = [];
+      let buf = [];
+      for (const line of lines){
+        const trimmed = line.trim();
+        if (!trimmed){
+          if (buf.length){
+            ps.push('<p>' + escapeHtml(buf.join(' ')) + '</p>');
+            buf = [];
+          }
+          continue;
+        }
+        if (trimmed.startsWith('- ')){
+          if (buf.length){
+            ps.push('<p>' + escapeHtml(buf.join(' ')) + '</p>');
+            buf = [];
+          }
+          ps.push('__UL_START__');
+          ps.push('<li>' + escapeHtml(trimmed.slice(2)) + '</li>');
+          ps.push('__UL_END__');
+          continue;
+        }
+        buf.push(trimmed);
+      }
+      if (buf.length) ps.push('<p>' + escapeHtml(buf.join(' ')) + '</p>');
+
+      const out = [];
+      let inUl = false;
+      for (const item of ps){
+        if (item === '__UL_START__'){
+          if (!inUl){ out.push('<ul>'); inUl = true; }
+          continue;
+        }
+        if (item === '__UL_END__'){ continue; }
+        if (item.startsWith('<li')){ out.push(item); continue; }
+        if (inUl){ out.push('</ul>'); inUl = false; }
+        out.push(item);
+      }
+      if (inUl) out.push('</ul>');
+      return out.join('\n');
+    }
+
+    function shuffleCopy(arr){
+      const a = arr.slice();
+      for(let i=a.length-1;i>0;i--){
+        const j = Math.floor(Math.random()*(i+1));
+        const t=a[i]; a[i]=a[j]; a[j]=t;
+      }
+      return a;
+    }
+
+    function parseOrderNums(text, n){
+      const raw = String(text||'').trim();
+      if(!raw) return null;
+      const nums = raw.split(',')
+        .map(s => s.trim())
+        .filter(Boolean)
+        .map(s => Number(s));
+
+      if(nums.length !== n) return { ok:false, msg:`정답 순서 숫자 개수(${nums.length})가 항목(${n})과 달라요.` };
+      const seen = new Set();
+      for(const x of nums){
+        if(!Number.isInteger(x) || x<1 || x>n) return { ok:false, msg:`정답 순서에 1~${n} 범위 밖 숫자가 있어요: ${x}` };
+        if(seen.has(x)) return { ok:false, msg:'정답 순서에 중복 숫자가 있어요.' };
+        seen.add(x);
+      }
+      return { ok:true, nums };
+    }
+
+    /* ===========================
+       ✅ 인터랙티브 스니펫 생성
+       =========================== */
+    function buildFlashcardSnippet(b){
+      const id = `cheese-fc-${b.id}`;
+      const cards = Array.isArray(b.data?.cards) ? b.data.cards : [];
+      const data = JSON.stringify(cards);
+
+      return [
+`<!-- ▼ 플래시카드 -->
+<div id="${id}" class="cheese-flashcard-wrapper"></div>
+
+<style>
+  .cheese-flashcard-wrapper{display:flex;flex-direction:column;align-items:center;gap:1.2rem;margin:1.5rem 0;}
+  .cheese-flashcard{background:none;border:none;padding:0;width:380px;height:230px;perspective:1000px;cursor:pointer;position:relative;border-radius:22px;overflow:hidden;box-shadow:0 14px 30px rgba(15,23,42,.2);}
+  .cheese-flashcard.is-flipped .cheese-flashcard-inner{transform:rotateY(180deg);}
+  .cheese-flashcard-inner{width:100%;height:100%;position:relative;border-radius:22px;background:#fff;transform-style:preserve-3d;transition:transform .35s ease;}
+  .cheese-flashcard-face{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:1.2rem 1.4rem;box-sizing:border-box;backface-visibility:hidden;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:1.15rem;text-align:center;line-height:1.5;border-radius:22px;}
+  .cheese-flashcard-front{background:#111827;color:#f9fafb;font-weight:800;}
+  .cheese-flashcard-back{background:#e0f2fe;color:#111827;transform:rotateY(180deg);font-weight:800;}
+  .cheese-flashcard-hint{position:absolute;right:.9rem;bottom:.6rem;font-size:.75rem;opacity:.85;pointer-events:none;}
+  @media(max-width:600px){
+    .cheese-flashcard{width:84vw;max-width:340px;height:210px;}
+  }
+</style>
+
+<script>
+(function(){
+  var root = document.getElementById(${JSON.stringify(id)});
+  if(!root) return;
+
+  var cards = ${data};
+
+  function esc(s){
+    return String(s==null?"":s)
+      .replace(/&/g,"&amp;")
+      .replace(/</g,"&lt;")
+      .replace(/>/g,"&gt;")
+      .replace(/"/g,"&quot;")
+      .replace(/'/g,"&#39;");
+  }
+
+  cards.forEach(function(item, idx){
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "cheese-flashcard";
+    btn.setAttribute("aria-label", "카드 " + (idx+1));
+    btn.setAttribute("aria-pressed","false");
+
+    btn.innerHTML =
+      '<div class="cheese-flashcard-inner">' +
+        '<div class="cheese-flashcard-face cheese-flashcard-front">' +
+          '<div>' + esc(item.front) + '</div>' +
+          '<div class="cheese-flashcard-hint">👉 뒤집기</div>' +
+        '</div>' +
+        '<div class="cheese-flashcard-face cheese-flashcard-back">' +
+          '<div>' + esc(item.back) + '</div>' +
+          '<div class="cheese-flashcard-hint">👉 뒤집기</div>' +
+        '</div>' +
+      '</div>';
+
+    btn.addEventListener("click", function(){
+      btn.classList.toggle("is-flipped");
+      btn.setAttribute("aria-pressed", btn.classList.contains("is-flipped") ? "true" : "false");
+    });
+
+    root.appendChild(btn);
+  });
+})();
+` + CLOSE_SCRIPT
+      ].join('\n');
+    }
+
+    function buildOrderQuizSnippet(b){
+      const id = `cheese-oq-${b.id}`;
+      const title = String(b.data?.title || '잘 알고 있나 확인해보기!').trim();
+      const sub   = String(b.data?.sub || '').trim();
+      const items = Array.isArray(b.data?.items) ? b.data.items.filter(x => String(x||'').trim()) : [];
+      const shuffle = !!b.data?.shuffle;
+
+      const n = items.length;
+      const parsed = parseOrderNums(b.data?.answerNums || '', n);
+      const correctNums = (parsed && parsed.ok && parsed.nums) ? parsed.nums : null;
+
+      const baseItems = items.map((label, i) => ({ id:`i${i+1}`, label }));
+      const correctOrder = correctNums ? correctNums.map(x => `i${x}`) : baseItems.map(x => x.id);
+      const viewItems = shuffle ? shuffleCopy(baseItems) : baseItems;
+
+      const viewJson = JSON.stringify(viewItems);
+      const correctJson = JSON.stringify(correctOrder);
+
+      return [
+`<!-- ▼ 드래그 순서 퀴즈 -->
+<div id="${id}" class="cheese-order-quiz"></div>
+
+<style>
+  .cheese-order-quiz{max-width:720px;margin:1.8rem auto;padding:1.2rem 1.1rem;border-radius:16px;background:#f9fafb;box-shadow:0 8px 22px rgba(15,23,42,.10);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;box-sizing:border-box;}
+  .cheese-order-title{font-size:1.35rem;font-weight:900;margin:0 0 .6rem;}
+  .cheese-order-sub{font-size:.95rem;color:#6b7280;margin:0 0 1rem;}
+  .cheese-order-top{display:flex;flex-wrap:wrap;gap:.6rem;padding:.6rem;border:1px dashed rgba(15,23,42,.18);border-radius:14px;background:#fff;}
+  .cheese-order-bottom{display:grid;grid-template-columns:repeat(2,1fr);gap:.7rem;margin-top:.9rem;}
+  @media(min-width:720px){ .cheese-order-bottom{grid-template-columns:repeat(4,1fr);} }
+  .cheese-order-slot{min-height:44px;border-radius:999px;border:2px dashed #d1d5db;background:#fff;display:flex;align-items:center;justify-content:center;font-size:.95rem;color:#9ca3af;box-sizing:border-box;transition:.12s ease;}
+  .cheese-order-slot.is-over{border-color:#6366f1;background:#e0e7ff;transform:translateY(-1px);}
+  .cheese-order-card{border:2px solid #7B2C39;border-radius:999px;padding:.55rem .9rem;background:#111827;color:#f9fafb;font-weight:900;font-size:.95rem;cursor:grab;user-select:none;box-shadow:0 3px 8px rgba(15,23,42,.20);}
+  .cheese-order-card:active{cursor:grabbing;}
+  .cheese-order-controls{display:flex;gap:.6rem;flex-wrap:wrap;justify-content:flex-end;align-items:center;margin-top:1rem;}
+  .cheese-order-btn{border:0;border-radius:999px;padding:.7rem 1.1rem;font-weight:900;cursor:pointer;box-shadow:0 4px 10px rgba(15,23,42,.12);}
+  .cheese-order-btn.check{background:#dc2626;color:#fff;}
+  .cheese-order-btn.reset{background:#e5e7eb;color:#111827;}
+  .cheese-order-result{flex:1;color:#4b5563;font-weight:900;}
+  .cheese-order-result.ok{color:#15803d;}
+  .cheese-order-result.bad{color:#b91c1c;}
+  .cheese-order-help{color:#6b7280;font-size:.85rem;margin-top:.7rem;line-height:1.45;}
+</style>
+
+<script>
+(function(){
+  var root = document.getElementById(${JSON.stringify(id)});
+  if(!root) return;
+
+  var items = ${viewJson};
+  var correct = ${correctJson};
+
+  function esc(s){
+    return String(s==null?"":s)
+      .replace(/&/g,"&amp;")
+      .replace(/</g,"&lt;")
+      .replace(/>/g,"&gt;")
+      .replace(/"/g,"&quot;")
+      .replace(/'/g,"&#39;");
+  }
+
+  root.innerHTML =
+    '<div class="cheese-order-title">' + esc(${JSON.stringify(title)}) + '</div>' +
+    (${JSON.stringify(sub)} ? '<div class="cheese-order-sub">' + esc(${JSON.stringify(sub)}) + '</div>' : '') +
+    '<div class="cheese-order-top" data-top="1"></div>' +
+    '<div class="cheese-order-bottom" data-bottom="1"></div>' +
+    '<div class="cheese-order-controls">' +
+      '<div class="cheese-order-result"></div>' +
+      '<button type="button" class="cheese-order-btn reset">초기화</button>' +
+      '<button type="button" class="cheese-order-btn check">채점하기</button>' +
+    '</div>' +
+    '<div class="cheese-order-help">💡 PC는 드래그&드롭, 모바일은 “카드 탭 → 빈 슬롯 자동 배치” 방식으로도 풀 수 있어요.</div>';
+
+  var top = root.querySelector(".cheese-order-top");
+  var bottom = root.querySelector(".cheese-order-bottom");
+  var resultEl = root.querySelector(".cheese-order-result");
+  var btnReset = root.querySelector(".cheese-order-btn.reset");
+  var btnCheck = root.querySelector(".cheese-order-btn.check");
+
+  function makeSlots(n){
+    bottom.innerHTML = "";
+    for(var i=0;i<n;i++){
+      var s=document.createElement("div");
+      s.className="cheese-order-slot";
+      s.dataset.slotIndex=String(i);
+      s.textContent=(i+1) + "번";
+      bottom.appendChild(s);
+    }
+  }
+
+  function placeToTop(cardEl){
+    if(!cardEl) return;
+    top.appendChild(cardEl);
+  }
+
+  function placeToFirstEmpty(cardEl){
+    var slots = Array.from(bottom.querySelectorAll(".cheese-order-slot"));
+    for(var i=0;i<slots.length;i++){
+      if(!slots[i].querySelector(".cheese-order-card")){
+        slots[i].textContent="";
+        slots[i].appendChild(cardEl);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function resetAll(){
+    resultEl.textContent="";
+    resultEl.className="cheese-order-result";
+    top.innerHTML="";
+    makeSlots(items.length);
+
+    items.forEach(function(it){
+      var c=document.createElement("div");
+      c.className="cheese-order-card";
+      c.draggable=true;
+      c.dataset.itemId=it.id;
+      c.textContent=it.label;
+      top.appendChild(c);
+    });
+  }
+
+  var dragging=null;
+
+  root.addEventListener("dragstart", function(e){
+    var card = e.target.closest(".cheese-order-card");
+    if(!card) return;
+    dragging = card;
+    if(e.dataTransfer){
+      e.dataTransfer.effectAllowed = "move";
+      try{ e.dataTransfer.setData("text/plain", card.dataset.itemId||""); }catch(_){}
+    }
+  });
+
+  root.addEventListener("dragover", function(e){
+    if(!dragging) return;
+    var slot = e.target.closest(".cheese-order-slot");
+    var isTop = e.target.closest("[data-top]");
+    if(!slot && !isTop) return;
+    e.preventDefault();
+    Array.from(root.querySelectorAll(".cheese-order-slot")).forEach(function(x){ x.classList.remove("is-over"); });
+    if(slot) slot.classList.add("is-over");
+  });
+
+  root.addEventListener("drop", function(e){
+    if(!dragging) return;
+    var slot = e.target.closest(".cheese-order-slot");
+    var isTop = e.target.closest("[data-top]");
+    if(!slot && !isTop) return;
+    e.preventDefault();
+
+    Array.from(root.querySelectorAll(".cheese-order-slot")).forEach(function(x){ x.classList.remove("is-over"); });
+
+    if(isTop){
+      placeToTop(dragging);
+    }else{
+      var existing = slot.querySelector(".cheese-order-card");
+      if(existing) placeToTop(existing);
+      slot.textContent="";
+      slot.appendChild(dragging);
+    }
+    dragging=null;
+    resultEl.textContent="";
+    resultEl.className="cheese-order-result";
+  });
+
+  root.addEventListener("dragend", function(){
+    dragging=null;
+    Array.from(root.querySelectorAll(".cheese-order-slot")).forEach(function(x){ x.classList.remove("is-over"); });
+  });
+
+  root.addEventListener("click", function(e){
+    var card = e.target.closest(".cheese-order-card");
+    if(!card) return;
+
+    var inSlot = card.parentElement && card.parentElement.classList.contains("cheese-order-slot");
+    if(inSlot){
+      placeToTop(card);
+      resultEl.textContent="";
+      resultEl.className="cheese-order-result";
+      Array.from(bottom.querySelectorAll(".cheese-order-slot")).forEach(function(s){
+        if(!s.querySelector(".cheese-order-card")){
+          s.textContent=(Number(s.dataset.slotIndex)+1)+"번";
+        }
+      });
+      return;
+    }
+
+    var ok = placeToFirstEmpty(card);
+    if(!ok) return;
+    resultEl.textContent="";
+    resultEl.className="cheese-order-result";
+  });
+
+  btnCheck.addEventListener("click", function(){
+    var slots = Array.from(bottom.querySelectorAll(".cheese-order-slot"));
+    var user = slots.map(function(s){
+      var c = s.querySelector(".cheese-order-card");
+      return c ? (c.dataset.itemId||null) : null;
+    });
+
+    if(user.some(function(x){ return !x; })){
+      resultEl.textContent="아직 빈 칸이 있어요. 모든 칸에 배치해 주세요.";
+      resultEl.className="cheese-order-result bad";
+      return;
+    }
+
+    var ok=true;
+    for(var i=0;i<correct.length;i++){
+      if(user[i] !== correct[i]){ ok=false; break; }
+    }
+
+    if(ok){
+      resultEl.textContent="정답! 아주 잘했습니다 👍";
+      resultEl.className="cheese-order-result ok";
+    }else{
+      resultEl.textContent="순서가 일부 다릅니다. 다시 풀어보세요.";
+      resultEl.className="cheese-order-result bad";
+    }
+  });
+
+  btnReset.addEventListener("click", resetAll);
+
+  resetAll();
+})();
+` + CLOSE_SCRIPT
+      ].join('\n');
+    }
+
+    function buildQuizEmbedSnippet(b){
+      const d = b.data || {};
+      const examKey = String(d.examKey||'').trim();
+      const title = String(d.title||'연습문제').trim();
+      const limit = Number(d.limit||5) || 5;
+      const period = String(d.period||'').trim();
+      const topic = String(d.topic||'').trim();
+
+      const lines = [
+        '<div',
+        '  class="cheese-quiz"',
+        `  data-exam-key="${escapeAttr(examKey)}"`,
+        '  data-source="sheet"',
+        `  data-limit="${escapeAttr(String(limit))}"`,
+        period ? `  data-period="${escapeAttr(period)}"` : '',
+        topic ? `  data-topic="${escapeAttr(topic)}"` : '',
+        '>',
+        `  <h3>${escapeHtml(title)}</h3>`,
+        '  <ol class="cheese-quiz-list"></ol>',
+        '  <div class="cheese-quiz-buttons">',
+        '    <button type="button" class="cheese-quiz-check">채점하기</button>',
+        '    <button type="button" class="cheese-quiz-reset">다시 풀기</button>',
+        '  </div>',
+        '  <div class="cheese-quiz-result"></div>',
+        '</div>',
+      ].filter(Boolean);
+
+      return `<!-- ▼ 랜덤 퀴즈(치즈 퀴즈) -->\n` + lines.join('\n');
+    }
+
+    function renderBlockToFinalHtml(b){
+      if (b.type==='section'){
+        const id = 'sec-' + b.id;
+        return `
+<section class="blk blk--section" id="${escapeAttr(id)}">
+  <h2>${escapeHtml(b.data?.title || '소제목')}</h2>
+  ${parasFromText(b.data?.body || '')}
+</section>`.trim();
+      }
+      if (b.type==='summary'){
+        return `
+<div class="summary-box blk blk--summary">
+  <h3>${escapeHtml(b.data?.title || '핵심 요약')}</h3>
+  ${parasFromText(b.data?.body || '')}
+</div>`.trim();
+      }
+      if (b.type==='image'){
+        const url = b.data?.url || '';
+        const alt = b.data?.alt || '이미지';
+        return `
+<div class="img-wrap blk blk--image">
+  <div class="mini" style="margin:0 0 8px; font-weight:900;">${escapeHtml(b.data?.title || '이미지')}</div>
+  <img src="${escapeAttr(url)}" alt="${escapeAttr(alt)}" />
+</div>`.trim();
+      }
+      if (b.type==='ad'){
+        return `
+<div class="ad-box blk blk--ad">
+  광고 블록 · ${escapeHtml(b.data?.label || '광고')}
+  <div class="mini" style="margin-top:6px; color:#6b0f22;">(운영 환경에 맞춰 배너/슬롯 HTML로 교체)</div>
+</div>`.trim();
+      }
+      if (b.type==='flashcard') return buildFlashcardSnippet(b).trim();
+      if (b.type==='order_quiz') return buildOrderQuizSnippet(b).trim();
+      if (b.type==='quiz_embed') return buildQuizEmbedSnippet(b).trim();
+
+      return `<div class="blk">Unknown block</div>`;
+    }
+
+    function buildTOC(blocks){
+      const items = blocks
+        .filter(b => b.type==='section')
+        .map(b => {
+          const id = 'sec-' + b.id;
+          const t = b.data?.title || '소제목';
+          return `<li><a href="#${escapeAttr(id)}">${escapeHtml(t)}</a></li>`;
+        });
+      if (!items.length) return '';
+      return `
+<nav class="toc">
+  <div class="t">목차</div>
+  <ul style="margin:0; padding-left:18px;">${items.join('\n')}</ul>
+</nav>`.trim();
+    }
+
+    function wrapTemplate(templateId, title, innerHtml){
+      if (templateId === 'profile'){
+        return `
+<article class="post post--profile">
+  <header class="post__head">
+    <h1 style="margin:0 0 6px; font-size:20px; letter-spacing:-.02em;">${escapeHtml(title || '')}</h1>
+    <div style="color:rgba(100,116,139,1); font-size:12px;">인물 프로필 템플릿</div>
+  </header>
+  <div class="divider"></div>
+  ${innerHtml}
+</article>`.trim();
+      }
+      if (templateId === 'timeline'){
+        return `
+<article class="post post--timeline">
+  <header class="post__head">
+    <h1 style="margin:0 0 6px; font-size:20px; letter-spacing:-.02em;">${escapeHtml(title || '')}</h1>
+    <div style="color:rgba(100,116,139,1); font-size:12px;">연표 템플릿</div>
+  </header>
+  <div class="divider"></div>
+  ${innerHtml}
+</article>`.trim();
+      }
+      return `<article class="post post--default">${innerHtml}</article>`;
+    }
+
+    function buildFinalHtml(){
+      const title = $('postTitle').value.trim();
+      const templateId = $('templateSelect').value;
+      const optTOC = $('optTOC').checked;
+      const optSources = $('optSources').checked;
+
+      // ✅ fallback: blocks_json 이 비어있지만, DB에 body(html)가 남아있는 경우
+      // (예: 예전 버전에서 blocks 저장이 안 됐던 글)
+      const rawBody = String(state.lastLoadedBody || '').trim();
+      const hasBlocks = Array.isArray(state.blocks) && state.blocks.length > 0;
+      if (!hasBlocks && rawBody){
+        // body가 이미 완성 HTML(특히 <article> 또는 전체 문서) 형태면 그대로 사용
+        if (/<article[\s>]/i.test(rawBody) || /<html[\s>]/i.test(rawBody)){
+          return rawBody;
+        }
+        // content 조각이면 템플릿으로 감싸서 반환
+        return wrapTemplate(templateId, title, rawBody).trim();
+      }
+
+      const bodyParts = [];
+      if (optTOC) bodyParts.push(buildTOC(state.blocks));
+      bodyParts.push(...state.blocks.map(renderBlockToFinalHtml));
+
+      if (optSources){
+        bodyParts.push(`
+<div class="sources">
+  <div style="font-weight:900;">출처</div>
+  <ul>
+    <li>예시 출처 1</li>
+    <li>예시 출처 2</li>
+  </ul>
+</div>`.trim());
+      }
+
+      return wrapTemplate(templateId, title, bodyParts.filter(Boolean).join('\n\n')).trim();
+    }
+
+    function renderPreview(){
+      const title = $('postTitle').value.trim() || '제목이 여기에 표시됩니다';
+      $('pvTitle').textContent = title;
+      $('pvCount').textContent = String(state.blocks.length);
+      $('pvTemplate').textContent = $('templateSelect').value;
+
+      const final = buildFinalHtml();
+      $('finalHtml').value = final;
+
+      const templateId = $('templateSelect').value;
+      const optTOC = $('optTOC').checked;
+      const optSources = $('optSources').checked;
+
+      const parts = [];
+      if (optTOC) parts.push(buildTOC(state.blocks));
+
+      state.blocks.forEach((b) => {
+        if (b.type === 'flashcard' || b.type === 'order_quiz'){
+          const caption = (b.type==='flashcard') ? '플래시카드(미리보기 실행)' : '드래그 순서 퀴즈(미리보기 실행)';
+          const h = (b.type==='flashcard') ? 320 : 520;
+
+          parts.push(`
+<div class="pv-embed-wrap" data-embed-id="${escapeAttr(b.id)}" data-embed-type="${escapeAttr(b.type)}" data-embed-height="${h}">
+  <div class="pv-embed-caption">${escapeHtml(caption)}</div>
+  <iframe class="pv-iframe" title="${escapeAttr(caption)}"></iframe>
+</div>`.trim());
+          return;
+        }
+
+        if (b.type==='quiz_embed'){
+          const d = b.data || {};
+          parts.push(`
+<div class="summary-box">
+  <div style="font-weight:900; margin-bottom:6px;">랜덤 퀴즈(임베드)</div>
+  <div class="mini mono">examKey: ${escapeHtml(d.examKey||'')}</div>
+  <div class="mini">※ 블로그에서 치즈 퀴즈 스크립트가 로드되면 동작합니다.</div>
+</div>`.trim());
+          return;
+        }
+
+        parts.push(renderBlockToFinalHtml(b));
+      });
+
+      if (optSources){
+        parts.push(`
+<div class="sources">
+  <div style="font-weight:900;">출처</div>
+  <ul>
+    <li>예시 출처 1</li>
+    <li>예시 출처 2</li>
+  </ul>
+</div>`.trim());
+      }
+
+      $('pvBody').innerHTML = wrapTemplate(templateId, title, parts.filter(Boolean).join('\n\n'));
+      hydrateEmbeds();
+    }
+
+    function hydrateEmbeds(){
+      const wraps = Array.from(document.querySelectorAll('[data-embed-id]'));
+      wraps.forEach((wrap) => {
+        const id = wrap.getAttribute('data-embed-id');
+        const type = wrap.getAttribute('data-embed-type');
+        const h = Number(wrap.getAttribute('data-embed-height')||320);
+        const iframe = wrap.querySelector('iframe');
+        if(!iframe) return;
+
+        const b = state.blocks.find(x => x.id === id);
+        if(!b) return;
+
+        let snippet = '';
+        if(type === 'flashcard') snippet = buildFlashcardSnippet(b);
+        if(type === 'order_quiz') snippet = buildOrderQuizSnippet(b);
+
+        iframe.style.height = h + 'px';
+        iframe.srcdoc = `
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <style>body{margin:0;padding:10px;background:#fff;}</style>
+</head>
+<body>
+${snippet}
+</body>
+</html>`.trim();
+      });
+    }
+
+    function ensureSortable(){
+      if (sortable) return;
+
+      sortable = new Sortable(blockList, {
+        animation: 150,
+        draggable: '.block-item',
+        handle: '.block-left',
+        filter: '.icon-btn, button, a, input, textarea, select, label',
+        preventOnFilter: false,
+        forceFallback: true,
+        fallbackOnBody: true,
+        fallbackTolerance: 5,
+        delayOnTouchOnly: true,
+        delay: 150,
+        touchStartThreshold: 5,
+        onEnd: () => {
+          const ids = Array.from(blockList.querySelectorAll('.block-item')).map(n => n.dataset.id);
+          state.blocks = ids.map(id => state.blocks.find(b => b.id===id)).filter(Boolean);
+          setTimeout(() => renderAll(), 0);
+        }
+      });
+    }
+
+    function renderBlockList(){
+      if (sortable){ sortable.destroy(); sortable = null; }
+      blockList.innerHTML = '';
+      state.blocks.forEach((b, idx) => {
+        const el = document.createElement('div');
+        el.className = 'block-item' + (state.selectedId===b.id ? ' selected':'');
+        el.dataset.id = b.id;
+
+        el.innerHTML = `
+<div class="block-left">
+  <span class="badge">${blockLabel(b.type)}</span>
+  <div style="min-width:0;">
+    <div class="btitle" title="${escapeAttr(blockTitle(b))}">${escapeHtml(blockTitle(b))}</div>
+    <div class="bmeta">#${idx+1} · ${escapeHtml(b.type)}</div>
+  </div>
+</div>
+<div class="block-actions">
+  <button class="icon-btn" data-act="up" title="위로">↑</button>
+  <button class="icon-btn" data-act="down" title="아래로">↓</button>
+</div>`;
+
+        el.addEventListener('click', (e) => {
+          const act = e.target?.dataset?.act;
+          if (act === 'up' || act === 'down'){
+            e.stopPropagation();
+            moveBlock(b.id, act==='up' ? -1 : 1);
+            return;
+          }
+          selectBlock(b.id);
+        });
+
+        blockList.appendChild(el);
+      });
+
+      ensureSortable();
+    }
+
+    function moveBlock(id, delta){
+      const i = state.blocks.findIndex(b => b.id===id);
+      if (i < 0) return;
+      const j = i + delta;
+      if (j < 0 || j >= state.blocks.length) return;
+      const tmp = state.blocks[i];
+      state.blocks[i] = state.blocks[j];
+      state.blocks[j] = tmp;
+      renderAll();
+    }
+
+    function selectBlock(id){
+      state.selectedId = id;
+      renderBlockList();
+      fillEditor();
+      renderPreview();
+    }
+
+    function show(el, on){
+      if(!el) return;
+      el.style.display = on ? '' : 'none';
+    }
+
+    function fillEditor(){
+      const b = currentBlock();
+      show($('editorEmpty'), !b);
+      show($('editorPanel'), !!b);
+      if (!b) return;
+
+      $('edType').value = b.type;
+      $('edId').value = b.id;
+
+      show($('edTitleWrap'), false);
+      show($('edBodyWrap'), false);
+      show($('edUrlWrap'), false);
+      show($('edAdWrap'), false);
+      show($('edFlashWrap'), false);
+      show($('edOrderWrap'), false);
+      show($('edQuizWrap'), false);
+
+      if (b.type==='section' || b.type==='summary'){
+        show($('edTitleWrap'), true);
+        show($('edBodyWrap'), true);
+        $('edTitle').value = b.data?.title || '';
+        $('edBody').value  = b.data?.body || '';
+      } else if (b.type==='image'){
+        show($('edTitleWrap'), true);
+        show($('edUrlWrap'), true);
+        $('edTitle').value = b.data?.title || '';
+        $('edUrl').value   = b.data?.url || '';
+      } else if (b.type==='ad'){
+        show($('edAdWrap'), true);
+        $('edAdLabel').value = b.data?.label || '';
+      } else if (b.type==='flashcard'){
+        show($('edTitleWrap'), true);
+        show($('edFlashWrap'), true);
+        $('edTitle').value = b.data?.title || '플래시카드';
+      } else if (b.type==='order_quiz'){
+        show($('edOrderWrap'), true);
+        $('edOrderTitle').value = b.data?.title || '';
+        $('edOrderSub').value = b.data?.sub || '';
+        $('edOrderShuffle').checked = !!b.data?.shuffle;
+        $('edOrderItems').value = (Array.isArray(b.data?.items) ? b.data.items : []).join('\n');
+        $('edOrderAnswer').value = b.data?.answerNums || '';
+      } else if (b.type==='quiz_embed'){
+        show($('edQuizWrap'), true);
+        $('edQuizKey').value = b.data?.examKey || '';
+        $('edQuizTitle').value = b.data?.title || '';
+        $('edQuizLimit').value = String(b.data?.limit || 5);
+        $('edQuizPeriod').value = b.data?.period || '';
+        $('edQuizTopic').value = b.data?.topic || '';
+      }
+    }
+
+    function flashBlockToBulk(){
+      const b = currentBlock();
+      if(!b || b.type!=='flashcard') return;
+      const cards = Array.isArray(b.data?.cards) ? b.data.cards : [];
+      $('edFlashBulk').value = cards.map(c => `${c.front}\t${c.back}`).join('\n');
+    }
+    function flashBulkToBlock(){
+      const b = currentBlock();
+      if(!b || b.type!=='flashcard') return;
+
+      const lines = String($('edFlashBulk').value||'').split(/\r?\n/);
+      const cards = [];
+      lines.forEach(line => {
+        const t = line.trim();
+        if(!t) return;
+
+        let front='', back='';
+        if(t.includes('\t')){
+          const parts = t.split('\t');
+          front = (parts[0]||'').trim();
+          back  = parts.slice(1).join('\t').trim();
+        }else if(t.includes('|')){
+          const parts = t.split('|');
+          front = (parts[0]||'').trim();
+          back  = parts.slice(1).join('|').trim();
+        }else{
+          front = t;
+          back = '';
+        }
+        if(front) cards.push({ front, back });
+      });
+
+      b.data.cards = cards.length ? cards : [{front:'앞면', back:'뒷면'}];
+    }
+
+    function renderAll(){
+      renderBlockList();
+      fillEditor();
+      renderPreview();
+    }
+
+    function addBlock(b){
+      state.blocks.push(b);
+      state.selectedId = b.id;
+      renderAll();
+    }
+
+    $('btnAddSection').addEventListener('click', () => addBlock(makeSection()));
+    $('btnAddSummary').addEventListener('click', () => addBlock(makeSummary()));
+    $('btnAddImage').addEventListener('click', () => addBlock(makeImage()));
+    $('btnAddAd').addEventListener('click', () => addBlock(makeAd()));
+    $('btnAddFlash').addEventListener('click', () => addBlock(makeFlash()));
+    $('btnAddOrder').addEventListener('click', () => addBlock(makeOrder()));
+    $('btnAddQuiz').addEventListener('click', () => addBlock(makeQuiz()));
+
+    $('btnFlashFromBlock').addEventListener('click', flashBlockToBulk);
+    $('btnFlashToBlock').addEventListener('click', () => { flashBulkToBlock(); renderAll(); });
+
+    $('btnApplyBlock').addEventListener('click', () => {
+      const b = currentBlock();
+      if (!b) return;
+
+      if (b.type==='section' || b.type==='summary'){
+        b.data.title = $('edTitle').value.trim() || (b.type==='section' ? '소제목' : '핵심 요약');
+        b.data.body  = $('edBody').value || '';
+      } else if (b.type==='image'){
+        b.data.title = $('edTitle').value.trim() || '이미지';
+        b.data.url   = $('edUrl').value.trim() || 'https://picsum.photos/800/420';
+        b.data.alt   = b.data.title;
+      } else if (b.type==='ad'){
+        b.data.label = $('edAdLabel').value.trim() || '광고';
+      } else if (b.type==='flashcard'){
+        b.data.title = $('edTitle').value.trim() || '플래시카드';
+        flashBulkToBlock();
+      } else if (b.type==='order_quiz'){
+        const items = String($('edOrderItems').value||'')
+          .split(/\r?\n/)
+          .map(s => s.trim())
+          .filter(Boolean);
+
+        if(items.length < 2){
+          alert('드래그 순서 항목은 최소 2개 이상 입력해 주세요.');
+          return;
+        }
+
+        const parsed = parseOrderNums($('edOrderAnswer').value, items.length);
+        if(parsed && parsed.ok === false){
+          alert(parsed.msg);
+          return;
+        }
+
+        b.data.title = $('edOrderTitle').value.trim() || '잘 알고 있나 확인해보기!';
+        b.data.sub = $('edOrderSub').value.trim();
+        b.data.shuffle = $('edOrderShuffle').checked;
+        b.data.items = items;
+        b.data.answerNums = $('edOrderAnswer').value.trim();
+      } else if (b.type==='quiz_embed'){
+        const examKey = $('edQuizKey').value.trim();
+        if(!examKey){
+          alert('examKey는 필수입니다.');
+          return;
+        }
+        b.data.examKey = examKey;
+        b.data.title = $('edQuizTitle').value.trim() || '연습문제';
+        b.data.limit = Math.max(1, Number($('edQuizLimit').value||5) || 5);
+        b.data.period = $('edQuizPeriod').value.trim();
+        b.data.topic = $('edQuizTopic').value.trim();
+      }
+
+      renderAll();
+    });
+
+    $('btnDeleteBlock').addEventListener('click', () => {
+      const b = currentBlock();
+      if (!b) return;
+      state.blocks = state.blocks.filter(x => x.id !== b.id);
+      state.selectedId = null;
+      renderAll();
+    });
+
+    $('templateSelect').addEventListener('change', renderPreview);
+    $('optTOC').addEventListener('change', renderPreview);
+    $('optSources').addEventListener('change', renderPreview);
+    $('postTitle').addEventListener('input', renderPreview);
+
+    $('btnCopyHtml').addEventListener('click', async () => {
+      try{
+        await navigator.clipboard.writeText($('finalHtml').value || '');
+        alert('HTML 복사 완료');
+      }catch(e){
+        alert('복사 실패(권한 확인)');
+      }
+    });
+
+    $('btnDownloadHtml').addEventListener('click', () => {
+      const html = $('finalHtml').value || '';
+      const blob = new Blob([html], {type:'text/html;charset=utf-8'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'post_content_html.html';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    });
+
+    $('btnReset').addEventListener('click', initDemo);
+
+    /************************************************************
+     * ✅ DB Load Modal (listPosts / getPost)
+     *  - listPosts: 목록 조회
+     *  - getPost  : 단건 로드
+     ************************************************************/
+    const loadModalBackdrop = $('loadModalBackdrop');
+    const postCardsEl = $('postCards');
+    const loadSearchEl = $('loadSearch');
+    const loadStatusEl = $('loadStatus');
+    const loadErrorEl = $('loadError');
+    const btnLoadMore = $('btnLoadMorePosts');
+    
+    let _dbPostListCache = [];       // 전체 목록 캐시
+    let _dbNextPageToken = '';       // 페이징 토큰(있을 때만)
+    let _dbLoading = false;
+    
+    function safeJsonParse_(v){
+      try{
+        if (v == null) return null;
+        if (typeof v === 'object') return v;
+        const s = String(v).trim();
+        if (!s) return null;
+        return JSON.parse(s);
+      }catch(e){
+        return null;
+      }
+    }
+    
+    function showLoadError_(msg){
+      if (!loadErrorEl) return;
+      loadErrorEl.style.display = msg ? '' : 'none';
+      loadErrorEl.textContent = msg || '';
+    }
+    function setLoadStatus_(msg){
+      if (!loadStatusEl) return;
+      loadStatusEl.textContent = msg || '';
+    }
+    
+    function openLoadModal_(){
+      if (!loadModalBackdrop) return;
+      loadModalBackdrop.classList.add('on');
+      loadModalBackdrop.setAttribute('aria-hidden','false');
+      showLoadError_('');
+      setLoadStatus_('목록 불러오는 중...');
+      // 열자마자 목록 로드
+      fetchPostList_({ reset:true }).catch((e)=>{
+        showLoadError_('목록 불러오기 실패: ' + (e?.message || e));
+        setLoadStatus_('');
+      });
+      // 포커스
+      setTimeout(()=>{ loadSearchEl?.focus?.(); }, 0);
+    }
+    
+    function closeLoadModal_(){
+      if (!loadModalBackdrop) return;
+      loadModalBackdrop.classList.remove('on');
+      loadModalBackdrop.setAttribute('aria-hidden','true');
+    }
+    
+    function normalizeListItems_(data){
+      const items = data?.items || data?.posts || data?.list || data?.data || [];
+      if (!Array.isArray(items)) return [];
+      return items.map((x)=>({
+        post_id: x.post_id || x.postId || x.id || '',
+        title: x.title || x.post_title || '(제목 없음)',
+        template_id: x.template_id || x.templateId || x.template || 'default',
+        updated_at: x.updated_at || x.updatedAt || x.modified_at || x.modifiedAt || '',
+      })).filter(x => x.post_id);
+    }
+    
+    function formatDate_(s){
+      const t = String(s||'').trim();
+      if (!t) return '-';
+      // ISO면 짧게
+      if (t.includes('T')) return t.replace('T',' ').slice(0,16);
+      return t;
+    }
+    
+    function renderPostCards_(items){
+      if (!postCardsEl) return;
+    
+      const q = String(loadSearchEl?.value || '').trim().toLowerCase();
+      const filtered = q
+        ? items.filter(it =>
+            String(it.title||'').toLowerCase().includes(q) ||
+            String(it.post_id||'').toLowerCase().includes(q)
+          )
+        : items;
+    
+      postCardsEl.innerHTML = '';
+      if (!filtered.length){
+        postCardsEl.innerHTML = `<div class="mini" style="padding:10px; color:var(--muted);">표시할 항목이 없습니다.</div>`;
+        return;
+      }
+    
+      filtered.forEach((it)=>{
+        const card = document.createElement('div');
+        card.className = 'post-card';
+        card.dataset.postId = it.post_id;
+    
+        card.innerHTML = `
+          <div class="pill"><span class="mono">${escapeHtml(it.post_id)}</span> · ${escapeHtml(it.template_id)}</div>
+          <div class="t">${escapeHtml(it.title || '(제목 없음)')}</div>
+          <div class="meta">
+            <div>updated: <span class="mono">${escapeHtml(formatDate_(it.updated_at))}</span></div>
+          </div>
+        `;
+        card.addEventListener('click', async ()=>{
+          await loadPostById_(it.post_id);
+        });
+        postCardsEl.appendChild(card);
+      });
+    }
+    
+    async function callAppsScriptFlex_(apiBase, mode, params={}, methods=['GET','POST']){
+      let lastErr = null;
+    
+      for (const method of methods){
+        try{
+          // URL 만들기
+          const urlObj = new URL(apiBase);
+          urlObj.searchParams.set('mode', mode);
+    
+          const p = new URLSearchParams();
+          Object.entries(params || {}).forEach(([k, v])=>{
+            if (v === undefined || v === null) return;
+            if (typeof v === 'object') p.set(k, JSON.stringify(v));
+            else p.set(k, String(v));
+          });
+    
+          let res, txt;
+    
+          if (method === 'GET'){
+            // GET은 query로 파라미터 부착
+            p.forEach((val, key)=> urlObj.searchParams.set(key, val));
+            res = await fetch(urlObj.toString(), { method:'GET' });
+            txt = await res.text();
+          }else{
+            // POST는 form-urlencoded
+            res = await fetch(urlObj.toString(), {
+              method:'POST',
+              headers:{ 'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8' },
+              body: p.toString(),
+            });
+            txt = await res.text();
+          }
+    
+          let data = null;
+          try{ data = JSON.parse(txt); }catch(e){}
+    
+          if (!res.ok){
+            throw new Error((data && (data.message || data.error)) || txt || ('HTTP ' + res.status));
+          }
+          return data || { ok:true, raw: txt };
+        }catch(e){
+          lastErr = e;
+        }
+      }
+      throw lastErr || new Error('API call failed');
+    }
+    
+    async function fetchPostList_({ reset=false } = {}){
+      if (_dbLoading) return;
+      _dbLoading = true;
+      showLoadError_('');
+    
+      try{
+        const cfg = getPublishConfig_ ? getPublishConfig_() : { api_base:'' };
+        const apiBase = (cfg?.api_base || getApiBase_?.() || '').trim();
+    
+        if (!apiBase){
+          throw new Error('API Base가 비어 있습니다. (발행 API 설정의 API Base에 입력하거나 window.CHEESE_ADMIN_API_BASE 를 세팅하세요)');
+        }
+    
+        if (reset){
+          _dbPostListCache = [];
+          _dbNextPageToken = '';
+          btnLoadMore.style.display = 'none';
+        }
+    
+        setLoadStatus_('목록 불러오는 중...');
+    
+        // 서버가 pageToken을 지원하면 같이 보냄(없어도 무시될 것)
+        const params = {};
+        if (!reset && _dbNextPageToken) params.page_token = _dbNextPageToken;
+    
+        // ✅ listPosts 우선, 만약 서버에서 다른 이름이면 여기만 바꾸면 됨
+        const data = await callAppsScriptFlex_(apiBase, 'listPosts', params, ['GET','POST']);
+    
+        if (!data || data.ok === false){
+          throw new Error(data?.message || data?.error || '응답은 받았지만 ok가 아닙니다');
+        }
+    
+        const items = normalizeListItems_(data);
+        _dbPostListCache = _dbPostListCache.concat(items);
+    
+        // 페이징 토큰(있으면 더 보기 버튼 노출)
+        _dbNextPageToken = data.next_page_token || data.nextPageToken || '';
+        btnLoadMore.style.display = _dbNextPageToken ? '' : 'none';
+    
+        setLoadStatus_(`총 ${_dbPostListCache.length}건`);
+        renderPostCards_(_dbPostListCache);
+      }finally{
+        _dbLoading = false;
+      }
+    }
+    
+    function normalizePost_(data){
+      const p = data?.post || data || {};
+    
+      // blocks_json: 배열/문자열(JSON)/없음 모두 대응
+      let blocks = (p.blocks_json ?? p.blocks ?? []);
+      if (typeof blocks === 'string') blocks = safeJsonParse_(blocks) || [];
+      if (!Array.isArray(blocks)) blocks = [];
+    
+      // options_json: 객체/문자열(JSON)/없음 모두 대응
+      let opt = (p.options_json ?? p.options ?? {});
+      if (typeof opt === 'string') opt = safeJsonParse_(opt) || {};
+      if (!opt || typeof opt !== 'object') opt = {};
+    
+      return {
+        post_id: String(p.post_id || ''),
+        title: String(p.title || ''),
+        intro: String(p.intro || ''),
+        template_id: String(p.template_id || p.templateId || 'default'),
+        options_json: opt,
+        blocks_json: blocks,
+    
+        // 서버 필드명(body)도 읽어오도록 보강
+        content_html: String(p.body || p.content_html || p.html || ''),
+    
+        updated_at: p.updated_at || '',
+        status: String(p.status || ''),
+        blogger_post_id: String(p.blogger_post_id || ''),
+        blogger_url: String(p.blogger_url || '')
+      };
+    }
+    
+    function setCurrentPostId_(postId){
+      state.postId = postId || '';
+      const curEl = $('curPostId');
+      if (curEl) curEl.textContent = 'post_id: ' + (state.postId ? state.postId : '(new)');
+    
+      // 발행 영역 post_id에도 자동 반영
+      const pubPid = $('pubPostId');
+      if (pubPid && state.postId) pubPid.value = state.postId;
+    }
+    
+    async function loadPostById_(postId){
+      showLoadError_('');
+      setLoadStatus_('불러오는 중...');
+    
+      try{
+        const cfg = getPublishConfig_ ? getPublishConfig_() : { api_base:'' };
+        const apiBase = (cfg?.api_base || getApiBase_?.() || '').trim();
+        if (!apiBase) throw new Error('API Base가 비어 있습니다.');
+    
+        const data = await callAppsScriptFlex_(apiBase, 'getPost', { post_id: postId }, ['GET','POST']);
+    
+        if (!data || data.ok === false){
+          throw new Error(data?.message || data?.error || '응답은 받았지만 ok가 아닙니다');
+        }
+    
+        const p = normalizePost_(data);
+    
+        // ✅ 화면 복원
+        $('postTitle').value = p.title || '';
+      $('postIntro').value = p.intro || '';
+      state.lastLoadedBody = String(p.content_html || '');
+      state.options = p.options_json || {};
+        $('templateSelect').value = p.template_id || 'default';
+        $('optTOC').checked = !!((state.options && state.options.toc) ?? true);
+        $('optSources').checked = !!((state.options && state.options.sources) ?? false);
+state.blocks = Array.isArray(p.blocks_json) ? p.blocks_json : [];
+        state.selectedId = state.blocks[0]?.id || null;
+    
+        setCurrentPostId_(p.post_id || postId);
+    
+        renderAll();
+        closeLoadModal_();
+        setPublishMsg_?.('불러오기 완료', true);
+      }catch(e){
+        showLoadError_('불러오기 실패: ' + (e?.message || e));
+        setLoadStatus_('');
+        console.error(e);
+      }
+    }
+    
+    /* ✅ 로컬 임시 저장본 불러오기(기존 기능 유지) */
+    function loadFromLocalDraft_(){
+      const raw = localStorage.getItem('post_builder_draft');
+      if (!raw){ alert('저장된 데이터가 없습니다'); return; }
+      const p = JSON.parse(raw);
+    
+      $('postTitle').value = p.title || '';
+      $('postIntro').value = p.intro || '';
+      state.lastLoadedBody = String(p.content_html || '');
+      state.options = p.options_json || {};
+      $('templateSelect').value = p.template_id || 'default';
+      $('optTOC').checked = !!(p.options_json && p.options_json.toc);
+$('optSources').checked = !!(p.options_json && p.options_json.sources);
+state.blocks = Array.isArray(p.blocks_json) ? p.blocks_json : [];
+      state.selectedId = state.blocks[0]?.id || null;
+    
+      // 로컬은 post_id가 없을 수 있으니 new 처리
+      setCurrentPostId_('');
+      renderAll();
+      closeLoadModal_();
+    }
+    
+    /* ===========================
+       ✅ 모달 UI 바인딩
+       =========================== */
+    $('btnCloseLoadModal')?.addEventListener('click', closeLoadModal_);
+    loadModalBackdrop?.addEventListener('click', (e)=>{
+      // 배경 클릭만 닫기(모달 내부 클릭은 무시)
+      if (e.target === loadModalBackdrop) closeLoadModal_();
+    });
+    document.addEventListener('keydown', (e)=>{
+      if (e.key === 'Escape' && loadModalBackdrop?.classList.contains('on')) closeLoadModal_();
+    });
+    
+    $('btnRefreshPosts')?.addEventListener('click', ()=> fetchPostList_({ reset:true }));
+    $('btnLoadMorePosts')?.addEventListener('click', ()=> fetchPostList_({ reset:false }));
+    $('btnLoadLocalDraft')?.addEventListener('click', loadFromLocalDraft_);
+    
+    loadSearchEl?.addEventListener('input', ()=>{
+      renderPostCards_(_dbPostListCache);
+    });
+
+
+    
+    /************************************************************
+     * ✅ Blog Publish + DB Save (Apps Script 연동)
+     ************************************************************/
+    const LS_PUBCFG = 'post_builder_publish_cfg_v1';
+
+    function getPublishConfig_(){
+      let saved = {};
+      try{ saved = JSON.parse(localStorage.getItem(LS_PUBCFG) || '{}') || {}; }catch(e){}
+
+      const uiBase = (($('pubApiBase')?.value) || '').trim();
+      const uiMode = (($('pubMode')?.value) || '').trim();
+
+      const phBase = (($('pubApiBase')?.getAttribute('placeholder')) || '').trim();
+      const apiBase = (uiBase || saved.api_base || window.CHEESE_BLOG_API_BASE || window.CHEESE_ADMIN_API_BASE || phBase || '').trim();
+      const mode = (uiMode || saved.mode_publish || 'publishPost').trim();
+      return { api_base: apiBase, mode_publish: mode };
+    }
+
+    // ✅ 저장/조회도 같은 api_base를 쓰도록 공용 base getter
+    function getApiBase_(){
+      const cfg = getPublishConfig_();
+      if (cfg?.api_base) return cfg.api_base;
+
+      const phBase = (($('pubApiBase')?.getAttribute('placeholder')) || '').trim();
+      return (window.CHEESE_BLOG_API_BASE || window.CHEESE_ADMIN_API_BASE || phBase || '').trim();
+    }
+
+    function applyPublishConfigToUI_(){
+      const cfg = getPublishConfig_();
+      const baseEl = $('pubApiBase');
+      const modeEl = $('pubMode');
+      if (baseEl) baseEl.value = cfg.api_base || '';
+      if (modeEl) modeEl.value = cfg.mode_publish || 'publishPost';
+    }
+
+    function savePublishConfigFromUI_(){
+      const base = ($('pubApiBase')?.value || '').trim();
+      const mode = ($('pubMode')?.value || '').trim() || 'publishPost';
+      const payload = { api_base: base, mode_publish: mode };
+      localStorage.setItem(LS_PUBCFG, JSON.stringify(payload));
+      setPublishMsg_('설정 저장 완료', true);
+      applyPublishConfigToUI_();
+      refreshNextPostId_(); // ✅ base가 확정되면 next 갱신
+    }
+
+    function resetPublishConfig_(){
+      localStorage.removeItem(LS_PUBCFG);
+      setPublishMsg_('설정 초기화 완료', true);
+      applyPublishConfigToUI_();
+      refreshNextPostId_();
+    }
+
+    function setPublishMsg_(msg, ok=false){
+      const el = $('publishMsg');
+      if (!el) return;
+      el.textContent = msg || '';
+      el.style.color = ok ? 'rgba(22,163,74,1)' : 'rgba(239,68,68,1)';
+      if (!msg) el.style.color = '';
+      if (!msg){
+        el.onclick = null;
+        el.style.cursor = '';
+        el.title = '';
+      }
+    }
+
+    function refreshCurPostId_(){
+      const cur = (state.postId || '').trim();
+      const el = $('curPostId');
+      if (el) el.textContent = 'post_id: ' + (cur ? cur : '(new)');
+
+      // ✅ 발행 입력칸도 같이 동기화
+      if ($('pubPostId')) $('pubPostId').value = cur;
+    }
+
+    async function postToAppsScript_(apiBase, mode, payload){
+      const url = mode
+        ? (apiBase + (apiBase.includes('?') ? '&' : '?') + 'mode=' + encodeURIComponent(mode))
+        : apiBase;
+
+      const form = new URLSearchParams();
+      Object.entries(payload || {}).forEach(([k, v]) => {
+        if (v === undefined || v === null) return;
+        if (typeof v === 'object') form.set(k, JSON.stringify(v));
+        else form.set(k, String(v));
+      });
+
+      const res = await fetch(url, {
+        method:'POST',
+        headers:{ 'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8' },
+        body: form.toString(),
+      });
+
+      const txt = await res.text();
+      let data = null;
+      try{ data = JSON.parse(txt); }catch(e){}
+      if (!res.ok) throw new Error((data && (data.message || data.error)) || txt || ('HTTP ' + res.status));
+      return data || { ok:true, raw: txt };
+    }
+
+    // ✅ 다음 post_id 표시 (Apps Script: mode=getNextPostId 필요)
+    async function refreshNextPostId_(){
+      const apiBase = getApiBase_();
+      const el = $('nextPostId');
+
+      if (!apiBase){
+        if (el) el.textContent = 'next: -';
+        return;
+      }
+      try{
+        // 서버는 doPost + e.parameter 기반이므로 post로 호출
+        const data = await postToAppsScript_(apiBase, 'getNextPostId', {});
+        const nextId = (data?.next_post_id || '').trim() || '-';
+        if (el) el.textContent = 'next: ' + nextId;
+      }catch(e){
+        if (el) el.textContent = 'next: (error)';
+      }
+    }
+
+    // ✅ DB 저장: Apps Script mode=savePost 로 실제 저장
+    
+    // ✅ 저장 전에 finalHtml을 최신 상태로 갱신
+    function updateFinalHtml_(){
+      // ✅ 옵션 체크박스 값도 state로 동기화 (DB 저장용)
+      state.options = { toc: $('optTOC').checked, sources: $('optSources').checked };
+      // renderPreview() 내부에서 finalHtml textarea를 갱신함
+      renderPreview();
+    }
+
+
+    // ✅ 간단 Toast 유틸 (공통 파일 없이도 동작)
+    function toast_(message, durationMs){
+      try{
+        const ms = Number(durationMs || 1800);
+        let el = document.getElementById('cheese-toast');
+        if (!el){
+          el = document.createElement('div');
+          el.id = 'cheese-toast';
+          el.style.position = 'fixed';
+          el.style.left = '50%';
+          el.style.bottom = '18px';
+          el.style.transform = 'translateX(-50%)';
+          el.style.padding = '10px 14px';
+          el.style.borderRadius = '14px';
+          el.style.background = 'rgba(15,23,42,.92)';
+          el.style.color = '#fff';
+          el.style.fontSize = '14px';
+          el.style.lineHeight = '1.2';
+          el.style.boxShadow = '0 10px 28px rgba(15,23,42,.25)';
+          el.style.zIndex = '99999';
+          el.style.opacity = '0';
+          el.style.transition = 'opacity .15s ease';
+          document.body.appendChild(el);
+        }
+        el.textContent = String(message || '');
+        el.style.opacity = '1';
+        clearTimeout(el._hideTimer);
+        el._hideTimer = setTimeout(()=>{ el.style.opacity = '0'; }, ms);
+      }catch(_){
+        // 최후의 fallback
+        try{ alert(String(message||'')); }catch(__){}
+      }
+    }
+
+
+async function saveToDb_(){
+      try{
+        const cfg = getPublishConfig_();
+        const apiBase = (cfg?.api_base || getApiBase_?.() || '').trim();
+        if (!apiBase) throw new Error('API Base가 비어 있습니다.');
+    
+        // 최신 미리보기 HTML 갱신
+        updateFinalHtml_();
+    
+        const payload = {
+          post_id: state.postId || '',
+          title: $('postTitle').value.trim(),
+        intro: $('postIntro').value.trim(),
+    
+          // ✅ 블록 기반 편집 복원용
+          template_id: $('templateSelect').value || 'default',
+          options_json: state.options || {},      // 객체로 보내도 callAppsScriptFlex_가 JSON.stringify 해줌
+          blocks_json: state.blocks || [],        // 배열로 보내도 stringify 됨
+    
+          // ✅ 최종 발행/미리보기용 HTML (백업 겸)
+          body: $('finalHtml').value || ''
+        };
+    
+        const data = await callAppsScriptFlex_(apiBase, 'savePost', payload, ['POST','GET']);
+        if (!data || data.ok === false) throw new Error(data?.message || '저장 실패');
+    
+        // post_id 갱신
+        if (data.post_id) state.postId = String(data.post_id);
+        toast_('DB 저장 완료');
+      }catch(e){
+        alert('DB 저장 실패: ' + (e?.message || e));
+      }
+    }
+
+
+    async function publishToBlog_(){
+      const cfg = getPublishConfig_();
+      if (!cfg.api_base){
+        alert('API Base가 비어 있습니다. (발행 API 설정에서 입력하거나 window.CHEESE_BLOG_API_BASE / window.CHEESE_ADMIN_API_BASE 를 세팅하세요)');
+        return;
+      }
+
+      const mode = (cfg.mode_publish || 'publishPost').trim() || 'publishPost';
+
+      // ✅ state.postId 우선 사용 (입력칸보다 안전)
+      const postId = (state.postId || ($('pubPostId')?.value || '')).trim();
+      if (!postId){
+        alert('먼저 "DB 저장"을 눌러 post_id를 발급받아야 합니다.');
+        return;
+      }
+
+      const isDraft = ($('publishState')?.value || 'draft') === 'draft';
+      const blogUrl = ($('pubBlogUrl')?.value || '').trim();
+      const blogId  = ($('pubBlogId')?.value || '').trim();
+
+      if (!blogId && !blogUrl){
+        alert('blogUrl 또는 blogId가 필요합니다.\n예: https://cheesetestblog.blogspot.com/');
+        return;
+      }
+
+      const payload = { post_id: postId, isDraft: isDraft };
+      if (blogId) payload.blogId = blogId;
+      if (blogUrl) payload.blogUrl = blogUrl;
+
+      const confirmMsg = isDraft ? '초안(비공개)으로 블로그에 발행할까요?' : '공개 글로 블로그에 발행할까요?';
+      if (!confirm(confirmMsg)) return;
+
+      setPublishMsg_('발행 중...', true);
+
+      try{
+        const data = await postToAppsScript_(cfg.api_base, mode, payload);
+        if (!data || data.ok === false){
+          throw new Error(data?.message || data?.error || '응답은 받았지만 ok가 아닙니다');
+        }
+
+        const url = data.url || data.blogger_url || '';
+        const bloggerPostId = data.blogger_post_id || data.id || '';
+
+        if (url){
+          setPublishMsg_('발행 완료 · 링크 열기', true);
+          const msgEl = $('publishMsg');
+          if (msgEl){
+            msgEl.style.cursor = 'pointer';
+            msgEl.onclick = () => window.open(url, '_blank', 'noopener');
+            msgEl.title = url;
+          }
+        }else{
+          setPublishMsg_('발행 완료' + (bloggerPostId ? (' · blogger_post_id: ' + bloggerPostId) : ''), true);
+        }
+
+        try{
+          const last = { post_id: postId, blogger_post_id: bloggerPostId, url, isDraft, at: new Date().toISOString() };
+          localStorage.setItem('post_builder_last_publish', JSON.stringify(last));
+        }catch(e){}
+      }catch(err){
+        console.error(err);
+        setPublishMsg_('발행 실패: ' + (err?.message || String(err)), false);
+        alert('발행 실패\n' + (err?.message || err));
+      }
+    }
+
+    // UI 바인딩
+    $('btnPublish')?.addEventListener('click', publishToBlog_);
+    $('btnSavePubConfig')?.addEventListener('click', savePublishConfigFromUI_);
+    $('btnResetPubConfig')?.addEventListener('click', resetPublishConfig_);
+
+    // ✅ DB 저장 버튼은 Apps Script 저장으로 연결
+    $('btnSave')?.addEventListener('click', saveToDb_);
+
+    // ✅ 불러오기 (DB 목록 모달 열기)
+    $('btnLoad')?.addEventListener('click', openLoadModal_);
+    
+    // ✅ (선택) 로컬 임시저장용: 유지하되 버튼은 없으니 단축키 등으로 쓰고 싶으면 연결 가능
+    function saveLocalDraft_(){
+      const payload = {
+        title: $('postTitle').value.trim(),
+        intro: $('postIntro').value.trim(),
+        template_id: $('templateSelect').value,
+        options: { toc: $('optTOC').checked, sources: $('optSources').checked },
+        blocks_json: JSON.parse(JSON.stringify(state.blocks)),
+        content_html: $('finalHtml').value
+      };
+      localStorage.setItem('post_builder_draft', JSON.stringify(payload));
+    }
+
+
+    // ✅ (선택) 로컬 임시저장용: 유지하되 버튼은 없으니 단축키 등으로 쓰고 싶으면 연결 가능
+    function saveLocalDraft_(){
+      const payload = {
+        title: $('postTitle').value.trim(),
+        intro: $('postIntro').value.trim(),
+        template_id: $('templateSelect').value,
+        options: { toc: $('optTOC').checked, sources: $('optSources').checked },
+        blocks_json: JSON.parse(JSON.stringify(state.blocks)),
+        content_html: $('finalHtml').value
+      };
+      localStorage.setItem('post_builder_draft', JSON.stringify(payload));
+    }
+
+    /************************************************************
+     * ✅ Demo Init
+     ************************************************************/
+    function initDemo(){
+      $('postTitle').value = '김구, 임시정부의 중심에 선 이유';
+      $('templateSelect').value = 'profile';
+      $('optTOC').checked = true;
+      $('optSources').checked = true;
+
+      // ✅ 데모 초기화 시에는 새 글로 취급(필요하면 유지하도록 바꿀 수 있음)
+      state.postId = '';
+      refreshCurPostId_();
+
+      state.blocks = [
+        { id: uid(), type:'summary', data:{ title:'핵심 요약', body:'- 김구의 정치적 중심성\n- 임시정부의 정통성 논쟁\n- 해방 이후의 역할과 한계' } },
+        { id: uid(), type:'section', data:{ title:'1. 상해 임시정부의 구심점', body:'김구는 임시정부 내에서 조직 운영과 대외 활동을 조율했다.\n\n특히 독립운동 노선과 자금 문제에서 영향력을 가졌다.' } },
+        makeFlash(),
+        { id: uid(), type:'ad', data:{ label:'배너 A' } },
+        makeOrder(),
+        { id: uid(), type:'image', data:{ title:'관련 이미지', url:'https://picsum.photos/900/480', alt:'관련 이미지' } },
+        makeQuiz(),
+        { id: uid(), type:'section', data:{ title:'2. 독립운동 노선과 정통성', body:'무장 투쟁·외교 노선의 균형 속에서 내부 갈등이 반복됐다.\n김구는 통합을 강조했지만, 노선 차이는 지속됐다.' } },
+      ];
+
+      state.selectedId = state.blocks[0]?.id || null;
+      renderAll();
+
+      const fc = state.blocks.find(x => x.type==='flashcard');
+      if(fc){
+        state.selectedId = fc.id;
+        renderAll();
+        flashBlockToBulk();
+      }
+
+      // ✅ demo 로드 후 next 표시 갱신
+      refreshNextPostId_();
+    }
+
+    initDemo();
+    applyPublishConfigToUI_();
+    refreshCurPostId_();
+    refreshNextPostId_();
+
+  </script>
+</body>
+</html>

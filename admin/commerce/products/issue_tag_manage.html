@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>이슈 태그 & 섹터 통합 관리 | Cheese Admin</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="../../admin.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        .tag-mgr-container { max-width: 1000px; margin: 40px auto; padding: 0 20px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 30px; }
+        .stat-card { background: #fff; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; text-align: center; }
+        .stat-card h3 { font-size: 0.75rem; color: #64748b; margin-bottom: 8px; text-transform: uppercase; }
+        .stat-card p { font-size: 1.5rem; font-weight: 900; color: #1e293b; }
+
+        .tag-list-card { background: #fff; border-radius: 1rem; border: 1px solid #e2e8f0; overflow: hidden; }
+        .tag-header { background: #f8fafc; padding: 15px 25px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; }
+        
+        .tag-table { width: 100%; border-collapse: collapse; }
+        .tag-table th { text-align: left; padding: 12px 25px; background: #f1f5f9; font-size: 0.8rem; color: #475569; border-bottom: 2px solid #e2e8f0; }
+        .tag-table td { padding: 15px 25px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+        .tag-table tr:hover { background: #fcfdfe; }
+
+        .tag-name-col { display: flex; flex-direction: column; gap: 4px; }
+        .tag-label { font-weight: 800; color: #1e293b; font-size: 0.95rem; }
+        .tag-details { font-size: 0.72rem; color: #94a3b8; }
+
+        .cat-group { display: flex; gap: 6px; }
+        .btn-cat { 
+            padding: 6px 14px; border-radius: 8px; font-size: 0.75rem; font-weight: 800; 
+            border: 1.5px solid #e2e8f0; background: #fff; color: #64748b; cursor: pointer; transition: 0.2s;
+        }
+        .btn-cat:hover { border-color: #cbd5e1; background: #f8fafc; }
+        .btn-cat.active { background: #0f172a; color: #fff; border-color: #0f172a; }
+        
+        .suggest-pill { 
+            display: inline-block; font-size: 0.65rem; background: #eff6ff; color: #3b82f6; 
+            padding: 2px 8px; border-radius: 4px; cursor: pointer; border: 1px solid #dbeafe;
+        }
+
+        .loading-overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.8); z-index: 2000; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #3b82f6; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 15px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="traditional-theme">
+    <div class="admin-shell">
+        <div id="admin-header-slot"></div>
+        <div class="admin-main">
+            <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+
+            <main class="tag-mgr-container">
+                <div style="margin-bottom: 40px;">
+                    <h1 style="font-size: 2rem; font-weight: 900; color: #0f172a;">🎯 이슈 태그 & 섹터 통합 관리</h1>
+                    <p style="color: #64748b;">중요 이슈(E-Force)의 섹터를 분석하고 일괄 분류합니다. 변경 사항은 한 번에 저장됩니다.</p>
+                </div>
+
+                <div class="stats-grid" id="statsRow">
+                    <div class="stat-card"><h3>전체 중요 태그</h3><p id="totalTags">-</p></div>
+                    <div class="stat-card"><h3>미분류 이슈</h3><p id="unclassifiedTags" style="color:#ef4444;">-</p></div>
+                    <div class="stat-card"><h3>분류 완료</h3><p id="classifiedTags" style="color:#22c55e;">-</p></div>
+                    <div class="stat-card"><h3>연동된 문서</h3><p id="totalDocs">-</p></div>
+                </div>
+
+                <div class="tag-list-card">
+                    <div class="tag-header">
+                        <div style="display:flex; gap: 10px; align-items:center;">
+                            <input type="text" id="tagSearch" placeholder="태그명 검색..." style="padding: 8px 15px; border-radius: 8px; border:1px solid #e2e8f0; width: 250px;">
+                            <select id="filterYear" style="padding: 8px 15px; border-radius: 8px; border:1px solid #e2e8f0;">
+                                <option value="all">전체 연도</option>
+                            </select>
+                            <select id="filterCat" style="padding: 8px 15px; border-radius: 8px; border:1px solid #e2e8f0;">
+                                <option value="all">전체 섹터</option>
+                                <option value="un">미분류 전용</option>
+                                <option value="정치">정치</option>
+                                <option value="경제">경제</option>
+                                <option value="사회">사회</option>
+                                <option value="국제">국제</option>
+                            </select>
+                        </div>
+                        <button class="yr-btn yr-btn-primary" onclick="initScan()"><i class="fas fa-sync-alt"></i> 전체 데이터 다시 스캔</button>
+                    </div>
+
+                    <!-- 실시간 로깅 및 상태 표시기 추가 -->
+                    <div id="eforce-mgr-status" style="background:#f8fafc; padding:12px 25px; border-bottom:1px solid #e2e8f0; font-size:0.85rem; font-weight:800; color:#475569;">
+                        하단의 항목을 클릭하면 즉시 데이터베이스에 저장됩니다.
+                    </div>
+
+                    <table class="tag-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 40%;">E-Force 태그명</th>
+                                <th>섹터 지정</th>
+                                <th style="width: 100px; text-align:right;">빈도</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tagListBody">
+                            <tr><td colspan="3" style="text-align:center; padding:100px; color:#94a3b8;">데이터를 스캔 중입니다...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <div id="loadingOverlay" class="loading-overlay" style="display:none;">
+        <div class="spinner"></div>
+        <p id="loadingMsg" style="font-weight: 800; color: #1e293b;">처리 중...</p>
+    </div>
+
+    <script src="../../admin-common.js"></script>
+    <script>
+        let fullDbData = {}; // { docId: yearData }
+        let tagMap = {}; // { label: { currentCat: "", docIds: Set, occurrences: 0 } }
+
+        async function safeFetchDB(payload) {
+            const res = await fetch(window.CHEESE_ADMIN_DB_API, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            return await res.json();
+        }
+
+        async function initScan() {
+            $('#loadingOverlay').show();
+            $('#loadingMsg').text("전체 데이터베이스를 스캔하고 있습니다...");
+            
+            try {
+                const listRes = await safeFetchDB({ action: "get", collection: "historical_issues" });
+                if (!listRes.ok) throw new Error("DB 로드 실패");
+
+                fullDbData = {};
+                tagMap = {};
+
+                const docIds = listRes.data.map(d => d.id);
+                document.getElementById('totalDocs').innerText = docIds.length;
+
+                for (const id of docIds) {
+                    const docRes = await safeFetchDB({ action: "getDoc", collection: "historical_issues", id: id });
+                    if (docRes.ok) {
+                        fullDbData[id] = docRes.data;
+                        analyzeDoc(id, docRes.data);
+                    }
+                }
+
+                renderStats();
+                populateYearFilter();
+                renderTagList();
+                window.showNotification("스캔 완료", "DB의 모든 E-Force 태그를 분석했습니다.", "success");
+            } catch (err) {
+                console.error(err);
+                alert("로드 오류: " + err.message);
+            } finally {
+                $('#loadingOverlay').hide();
+            }
+        }
+
+        function populateYearFilter() {
+            const select = document.getElementById('filterYear');
+            const years = new Set();
+            for (let id in fullDbData) years.add(id.replace('year_', ''));
+            const sorted = Array.from(years).sort().reverse();
+            select.innerHTML = '<option value="all">전체 연도</option>' + sorted.map(y => `<option value="year_${y}">${y}년</option>`).join('');
+        }
+
+        function analyzeDoc(docId, data) {
+            Object.values(data.months || {}).forEach(mInfo => {
+                (mInfo.events || []).forEach(ev => {
+                    const tags = (ev.tags || "").split(',').map(t => t.trim());
+                    const sigTag = tags.find(t => t.startsWith('mnforce-'));
+                    if (sigTag) {
+                        const label = sigTag.replace('mnforce-', '');
+                        const cat = tags.find(t => t.startsWith('cat-'))?.replace('cat-', '');
+                        
+                        if (!tagMap[label]) tagMap[label] = { currentCat: "", docIds: new Set(), occurrences: 0 };
+                        tagMap[label].docIds.add(docId);
+                        tagMap[label].occurrences++;
+                        if (cat) tagMap[label].currentCat = cat;
+                    }
+                });
+            });
+        }
+
+        function renderStats() {
+            const labels = Object.keys(tagMap);
+            let unclassified = 0;
+            let classified = 0;
+
+            labels.forEach(lb => {
+                if (tagMap[lb].currentCat) classified++;
+                else unclassified++;
+            });
+
+            document.getElementById('totalTags').innerText = labels.length;
+            document.getElementById('unclassifiedTags').innerText = unclassified;
+            document.getElementById('classifiedTags').innerText = classified;
+        }
+
+        function renderTagList() {
+            const body = document.getElementById('tagListBody');
+            const search = document.getElementById('tagSearch').value.toLowerCase();
+            const filterCat = document.getElementById('filterCat').value;
+            const filterYear = document.getElementById('filterYear').value;
+            
+            const labels = Object.keys(tagMap).sort().filter(lb => {
+                const info = tagMap[lb];
+                const activeCat = info.currentCat;
+                
+                if (search && !lb.toLowerCase().includes(search)) return false;
+                if (filterCat === 'un' && activeCat) return false;
+                if (filterCat !== 'all' && filterCat !== 'un' && activeCat !== filterCat) return false;
+                if (filterYear !== 'all' && !info.docIds.has(filterYear)) return false;
+                
+                return true;
+            });
+
+            if (labels.length === 0) {
+                body.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:50px; color:#94a3b8;">검색 결과가 없습니다.</td></tr>';
+                return;
+            }
+
+            body.innerHTML = labels.map(lb => {
+                const info = tagMap[lb];
+                const activeCat = info.currentCat;
+                const suggestion = suggestCategory(lb);
+                const yearsStr = Array.from(info.docIds).map(id => id.replace('year_', '')).sort().join(', ');
+                const safeLb = lb.replace(/"/g, '&quot;');
+
+                return `
+                    <tr>
+                        <td>
+                            <div class="tag-name-col">
+                                <span class="tag-label">${lb}</span>
+                                <div style="display:flex; gap: 8px; align-items:center;">
+                                    <span class="tag-details"><i class="far fa-calendar-alt"></i> ${yearsStr}</span>
+                                    ${!activeCat ? `<span class="suggest-pill" data-lb="${safeLb}" data-cat="${suggestion}" style="font-size:0.6rem; margin-left:5px;">추천: ${suggestion}</span>` : ''}
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="cat-group">
+                                ${['정치', '경제', '사회', '국제'].map(c => `
+                                    <button class="btn-cat ${activeCat === c ? 'active' : ''}" 
+                                            data-lb="${safeLb}" data-cat="${c}">${c}</button>
+                                `).join('')}
+                            </div>
+                        </td>
+                        <td style="text-align:right; font-weight: 800; color: #3b82f6;">${info.occurrences}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // 이벤트 위임 방식 클릭 핸들러 (closest 적용으로 신뢰도 높임)
+        document.getElementById('tagListBody').addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-lb]');
+            if (!btn) return;
+
+            const lb = btn.getAttribute('data-lb');
+            const cat = btn.getAttribute('data-cat');
+            
+            if (lb && cat) {
+                updateRealtimeDB(lb, cat);
+            }
+        });
+
+        function suggestCategory(label) {
+            if (label.match(/대통령|선거|정치|계엄|국회|당원|내각|회담/)) return '정치';
+            if (label.match(/증시|금리|환율|기업|산업|경제|물가|반도체|전기요금|가스/)) return '경제';
+            if (label.match(/사건|사고|시위|사회|의사|파업|논란|별세/)) return '사회';
+            if (label.match(/미국|중국|러시아|일본|국제|공습|세계|외교/)) return '국제';
+            return '사회';
+        }
+
+        async function updateRealtimeDB(label, cat) {
+            const status = document.getElementById('eforce-mgr-status');
+            const originalText = status.innerText;
+            status.innerText = `⏳ [${label}]을(를) '${cat}' 섹터로 저장하는 중...`;
+            status.style.color = "#3b82f6";
+
+            try {
+                // 토글 로직: 이미 선택된 섹터면 제거 시도? (여기서는 그냥 덮어쓰기 권장)
+                if (tagMap[label].currentCat === cat) {
+                    // 이미 같은거면 패스하거나 cat- 태그 제거? 여기서는 그냥 둠.
+                }
+
+                const targetDocIds = tagMap[label].docIds;
+
+                for (const docId of targetDocIds) {
+                    const yearData = fullDbData[docId];
+                    let changed = false;
+
+                    Object.values(yearData.months || {}).forEach(mInfo => {
+                        (mInfo.events || []).forEach(ev => {
+                            const tags = (ev.tags || "").split(',').map(t => t.trim());
+                            const sigTag = tags.find(t => t.startsWith('mnforce-'));
+                            if (sigTag) {
+                                const currentLabel = sigTag.replace('mnforce-', '');
+                                if (currentLabel === label) {
+                                    const filtered = tags.filter(t => !t.startsWith('cat-'));
+                                    filtered.push(`cat-${cat}`);
+                                    ev.tags = filtered.join(', ');
+                                    changed = true;
+                                }
+                            }
+                        });
+                    });
+
+                    if (changed) {
+                        await safeFetchDB({ action: "set", collection: "historical_issues", id: docId, data: yearData });
+                    }
+                }
+
+                // 로컬 데이터 갱신
+                tagMap[label].currentCat = cat;
+                renderStats();
+                renderTagList();
+                status.innerText = `✅ [${label}] 저장 완료!`;
+                setTimeout(() => { status.innerText = originalText; status.style.color = ""; }, 2000);
+
+            } catch (err) {
+                console.error(err);
+                status.innerText = "❌ 저장 실패: " + err.message;
+                status.style.color = "red";
+            }
+        }
+
+        document.getElementById('tagSearch').addEventListener('input', renderTagList);
+        document.getElementById('filterCat').addEventListener('change', renderTagList);
+        document.getElementById('filterYear').addEventListener('change', renderTagList);
+
+        $(document).ready(() => {
+            initScan();
+        });
+    </script>
+</body>
+</html>

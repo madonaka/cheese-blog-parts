@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>판매 분석 · Cheese Admin</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="stylesheet" href="../../admin.css" />
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .analysis-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .analysis-card {
+            background: #fff;
+            padding: 24px;
+            border-radius: 16px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02);
+            border: 1px solid #f1f5f9;
+            transition: transform 0.2s;
+        }
+
+        .analysis-card:hover { transform: translateY(-2px); }
+
+        .card-label {
+            font-size: 0.85rem;
+            color: #64748b;
+            margin-bottom: 8px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .card-value {
+            font-size: 1.8rem;
+            font-weight: 800;
+            color: #1e293b;
+        }
+
+        .card-trend {
+            font-size: 0.8rem;
+            margin-top: 8px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .trend-up { color: #10b981; }
+        .trend-down { color: #ef4444; }
+
+        .chart-section {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        @media (max-width: 768px) {
+            .chart-section { grid-template-columns: 1fr; }
+        }
+
+        .chart-container {
+            background: #fff;
+            border-radius: 16px;
+            padding: 24px;
+            border: 1px solid #f1f5f9;
+            height: 350px; /* 고정 높이로 변경하여 무한 증식 방지 */
+            display: flex;
+            flex-direction: column;
+            position: relative; /* Chart.js의 절대 위치 계산을 위해 필요 */
+        }
+
+        .chart-title {
+            font-size: 1rem;
+            font-weight: 800;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chart-title span {
+            font-size: 0.75rem;
+            color: #94a3b8;
+            font-weight: 400;
+        }
+
+        /* Tooltip Styles */
+        .tooltip-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 16px;
+            height: 16px;
+            background: #e2e8f0;
+            color: #64748b;
+            border-radius: 50%;
+            font-size: 10px;
+            margin-left: 6px;
+            cursor: help;
+            position: relative;
+        }
+
+        .tooltip-text {
+            visibility: hidden;
+            width: 220px;
+            background-color: #1e293b;
+            color: #fff;
+            text-align: center;
+            border-radius: 8px;
+            padding: 10px;
+            position: absolute;
+            z-index: 100;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 0.75rem;
+            line-height: 1.4;
+            font-weight: 400;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            pointer-events: none;
+        }
+
+        .tooltip-icon:hover .tooltip-text {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        .tooltip-text::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: #1e293b transparent transparent transparent;
+        }
+
+        .top-products-card {
+            background: #fff;
+            border-radius: 16px;
+            padding: 24px;
+            border: 1px solid #f1f5f9;
+        }
+
+        .product-rank-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid #f8fafc;
+        }
+
+        .product-rank-item:last-child { border-bottom: none; }
+
+        .rank-info { display: flex; align-items: center; gap: 12px; }
+        .rank-number {
+            width: 24px;
+            height: 24px;
+            background: #f1f5f9;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            font-weight: 800;
+            color: #64748b;
+        }
+
+        .rank-name { font-weight: 600; color: #1e293b; font-size: 0.9rem; }
+        .rank-value { font-weight: 700; color: #3b82f6; }
+
+        .recent-orders-card {
+            background: #fff;
+            border-radius: 16px;
+            padding: 24px;
+            border: 1px solid #f1f5f9;
+        }
+
+        table.admin-table th { background: #f8fafc; }
+        .status-badge { padding: 4px 10px; border-radius: 50px; font-size: 0.75rem; font-weight: 700; }
+        .status-completed { background: #dcfce7; color: #166534; }
+    </style>
+</head>
+
+<body>
+    <div class="admin-shell">
+        <div id="admin-header-slot"></div>
+
+        <div class="admin-main">
+            <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+
+            <main>
+                <div style="margin-bottom: 2rem;">
+                    <h1 style="font-size: 1.5rem; font-weight: 800;">판매 데이터 분석</h1>
+                    <p style="font-size: 0.85rem; color: #64748b;">스토어의 매출 현황과 인기 상품을 실시간으로 분석합니다.</p>
+                </div>
+
+                <!-- Filter Section -->
+                <div class="filter-section" style="background: #fff; padding: 20px; border-radius: 16px; border: 1px solid #f1f5f9; margin-bottom: 25px; display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 0.85rem; font-weight: 700; color: #64748b;">기간 설정:</span>
+                        <input type="date" id="start-date" style="padding: 8px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.85rem;">
+                        <span style="color: #94a3b8;">~</span>
+                        <input type="date" id="end-date" style="padding: 8px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.85rem;">
+                    </div>
+                    <div style="display: flex; gap: 5px;">
+                        <button id="btn-period-today" class="period-btn" style="padding: 6px 12px; border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-weight: 600;">오늘</button>
+                        <button id="btn-period-7d" class="period-btn" style="padding: 6px 12px; border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-weight: 600;">최근 7일</button>
+                        <button id="btn-period-30d" class="period-btn" style="padding: 6px 12px; border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-weight: 600;">최근 30일</button>
+                        <button id="btn-period-thisMonth" class="period-btn" style="padding: 6px 12px; border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-weight: 600;">이번 달</button>
+                    </div>
+                    <button id="btn-apply-filter" style="padding: 8px 20px; background: #3b82f6; color: white; border: none; border-radius: 8px; font-size: 0.85rem; font-weight: 700; cursor: pointer; margin-left: auto;">검색 적용</button>
+                </div>
+
+                <!-- Analysis Stats -->
+                <div class="analysis-grid">
+                    <div class="analysis-card" style="background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);">
+                        <div class="card-label">
+                            💎 회원 매출
+                            <div class="tooltip-icon">?
+                                <div class="tooltip-text">회원 자격으로 로그인한 상태에서 결제된 총 금액입니다.</div>
+                            </div>
+                        </div>
+                        <div class="card-value" id="stat-member-revenue" style="color: #3b82f6;">0원</div>
+                        <div class="card-trend" id="stat-member-count">0건</div>
+                    </div>
+                    <div class="analysis-card" style="background: linear-gradient(135deg, #ffffff 0%, #fefce8 100%);">
+                        <div class="card-label">
+                            👤 비회원 매출
+                            <div class="tooltip-icon">?
+                                <div class="tooltip-text">비회원으로 결제된 금액입니다. (회원 전환 후에도 이 지표는 비회원 시점에 발생한 것으로 유지됩니다)</div>
+                            </div>
+                        </div>
+                        <div class="card-value" id="stat-guest-revenue" style="color: #f59e0b;">0원</div>
+                        <div class="card-trend" id="stat-guest-count">0건</div>
+                    </div>
+                    <div class="analysis-card" style="background: linear-gradient(135deg, #1e293b 0%, #334155 100%); color: white; border: none;">
+                        <div class="card-label" style="color: rgba(255,255,255,0.8);">
+                            💰 총 누적 매출
+                            <div class="tooltip-icon" style="background: rgba(255,255,255,0.2); color: white;">?
+                                <div class="tooltip-text">회원 및 비회원 매출을 모두 합산한 전체 결제 금액입니다.</div>
+                            </div>
+                        </div>
+                        <div class="card-value" id="stat-revenue" style="color: #fff;">0원</div>
+                        <div class="card-trend" style="color: rgba(255,255,255,0.7);">회원 + 비회원 합산</div>
+                    </div>
+                </div>
+
+                <div class="analysis-grid" style="margin-top: -10px;">
+                    <div class="analysis-card">
+                        <div class="card-label">
+                            📦 총 주문 건수
+                            <div class="tooltip-icon">?
+                                <div class="tooltip-text">전체 기간 동안 유료 결제가 완료된 총 횟수입니다.</div>
+                            </div>
+                        </div>
+                        <div class="card-value" id="stat-orders">0건</div>
+                        <div class="card-trend">전체 기간 기준</div>
+                    </div>
+                    <div class="analysis-card">
+                        <div class="card-label">
+                            🎯 건당 평균 결제액
+                            <div class="tooltip-icon">?
+                                <div class="tooltip-text">총 매출을 주문 건수로 나눈 값입니다. 고객 한 명이 한 번 결제할 때의 평균 지출액을 의미합니다.</div>
+                            </div>
+                        </div>
+                        <div class="card-value" id="stat-avg">0원</div>
+                        <div class="card-trend">객단가 지표</div>
+                    </div>
+                    <div class="analysis-card">
+                        <div class="card-label">
+                            🛍️ 이달의 신규 매출
+                            <div class="tooltip-icon">?
+                                <div class="tooltip-text">이번 달(1일부터 현재까지) 발생한 누적 매출입니다. 월간 목표 달성률을 체크하기 좋습니다.</div>
+                            </div>
+                        </div>
+                        <div class="card-value" id="stat-month-revenue">0원</div>
+                        <div class="card-trend" id="stat-month-label">이번 달 기준</div>
+                    </div>
+                </div>
+
+                <!-- Charts Row 1 -->
+                <div class="chart-section">
+                    <div class="chart-container">
+                        <div class="chart-title">
+                            📈 주간 매출 추이 <span>최근 7일 기준</span>
+                            <div class="tooltip-icon">?
+                                <div class="tooltip-text">최근 일주일간의 일별 매출 변화입니다. 요일별 구매 패턴이나 단기 마케팅 성과를 확인하세요.</div>
+                            </div>
+                        </div>
+                        <div style="flex: 1; position: relative;">
+                            <canvas id="salesChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="top-products-card" style="height: 350px; overflow-y: auto;">
+                        <div class="chart-title">
+                            🏆 인기 상품 TOP 5 <span>판매 건수 순</span>
+                            <div class="tooltip-icon">?
+                                <div class="tooltip-text">가장 많이 팔린 상위 5개 상품입니다. 어떤 지식 콘텐츠가 고객의 니즈를 가장 잘 충족하는지 보여줍니다.</div>
+                            </div>
+                        </div>
+                        <div id="topProductsList">
+                            <p style="text-align: center; color: #94a3b8; padding: 40px 0;">데이터 분석 중...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Charts Row 2 -->
+                <div class="chart-section" style="margin-bottom: 30px;">
+                    <div class="chart-container">
+                        <div class="chart-title">
+                            📊 월별 매출 성장 <span>최근 6개월</span>
+                            <div class="tooltip-icon">?
+                                <div class="tooltip-text">최근 6개월간의 월별 매출 합계입니다. 스토어의 전반적인 성장세와 계절적 요인을 분석할 수 있습니다.</div>
+                            </div>
+                        </div>
+                        <div style="flex: 1; position: relative;">
+                            <canvas id="monthlyChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">
+                            🕒 시간대별 결제 분포 <span>Golden Hour 분석</span>
+                            <div class="tooltip-icon">?
+                                <div class="tooltip-text">하루 중 결제가 집중되는 시간대입니다. 가장 막대가 높은 시간에 이벤트 공지나 뉴스레터를 보내면 효과적입니다.</div>
+                            </div>
+                        </div>
+                        <div style="flex: 1; position: relative;">
+                            <canvas id="hourlyChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Charts Row 3: Acquisition Analysis -->
+                <div class="chart-section" style="margin-bottom: 30px;">
+                    <div class="chart-container">
+                        <div class="chart-title">
+                            🌍 유입 경로 (Referrer) <span>외부 사이트 유입 비중</span>
+                            <div class="tooltip-icon">?
+                                <div class="tooltip-text">사용자가 어떤 경로로 들어왔는지 보여줍니다. 검색 결과(SEO) 또는 특정 SNS 홍보 효과를 검증하는 지표입니다.</div>
+                            </div>
+                        </div>
+                        <div style="flex: 1; position: relative;">
+                            <canvas id="referrerChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">
+                            🛍️ 상품별 상세 진입 <span>상품 페이지 관심도 분석</span>
+                            <div class="tooltip-icon">?
+                                <div class="tooltip-text">개별 상품 상세 페이지에 유입된 횟수입니다. 결제 전 단계인 '관심' 정도를 파악하여 마케팅 집중 상품을 결정할 수 있습니다.</div>
+                            </div>
+                        </div>
+                        <div id="topEntranceList">
+                            <p style="text-align: center; color: #94a3b8; padding: 40px 0;">데이터 분석 중...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Orders -->
+                <section class="recent-orders-card">
+                    <h3 style="font-size: 1rem; font-weight: 800; margin-bottom: 20px;">최근 주문 내역</h3>
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>주문 일시</th>
+                                <th>주문 상품</th>
+                                <th>결제 금액</th>
+                                <th>상태</th>
+                                <th>주문 번호</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recentOrdersBody">
+                            <tr>
+                                <td colspan="5" style="text-align: center; padding: 50px;">주문 데이터를 불러오는 중입니다...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <script src="../../admin-common.js"></script>
+
+    <script type="text/javascript">
+        // Firebase 직접 접근을 제거하고 Cloud Functions 백엔드를 통해 안전하게 데이터를 처리합니다.
+        async function safeFetchDB(payload) {
+            if (!window.CHEESE_ADMIN_DB_API) throw new Error("API URL이 정의되지 않았습니다.");
+            const res = await fetch(window.CHEESE_ADMIN_DB_API, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!data.ok) throw new Error(data.error);
+            return data;
+        }
+        let salesChart = null;
+        let monthlyChart = null;
+        let hourlyChart = null;
+        let referrerChart = null;
+
+        let allOrdersGlobal = [];
+        let allLogsGlobal = [];
+
+        async function initAnalysis() {
+            try {
+                // 1. 회원 주문 데이터 로드 (orders)
+                const ordersRes = await safeFetchDB({ collection: "orders" });
+                const memberColOrders = ordersRes.data || [];
+
+                // 2. 비회원 주문 데이터 로드 (guest_orders)
+                const guestOrdersRes = await safeFetchDB({ collection: "guest_orders" });
+                const guestColOrders = (guestOrdersRes.data || []).map(d => ({ ...d, is_guest_exclusive: true }));
+
+                // 3. 통합 데이터 생성
+                allOrdersGlobal = [...memberColOrders, ...guestColOrders];
+
+                // 4. 로그 데이터 로드 (유입 경로 분석용)
+                const logsRes = await safeFetchDB({ 
+                    collection: "logs", 
+                    orderByField: "timestamp", 
+                    limitCount: 500 
+                });
+                allLogsGlobal = logsRes.data || [];
+
+                // 초기 기간 설정 및 적용 (최근 30일)
+                setPeriod('30d');
+                applyFilter();
+                
+            } catch (err) {
+                console.error("Analysis Error:", err);
+            }
+        }
+
+        // 특정 기간(오늘, 7일, 30일) 자동 설정 (getKSTDateString 사용)
+        window.setPeriod = function(type) {
+            const end = new Date();
+            const start = new Date();
+            
+            if (type === 'today') {
+                start.setHours(0, 0, 0, 0);
+            } else if (type === '7d') {
+                start.setDate(end.getDate() - 7);
+            } else if (type === '30d') {
+                start.setDate(end.getDate() - 30);
+            } else if (type === 'thisMonth') {
+                start.setDate(1);
+                start.setHours(0, 0, 0, 0);
+            }
+
+            document.getElementById('start-date').value = getKSTDateString(start);
+            document.getElementById('end-date').value = getKSTDateString(end);
+            
+            // 버튼들 스타일 갱신
+            document.querySelectorAll('.period-btn').forEach(btn => {
+                const btnType = btn.id.replace('btn-period-', '');
+                btn.style.background = btnType === type ? '#e2e8f0' : '#f8fafc';
+                btn.style.borderColor = btnType === type ? '#cbd5e1' : '#e2e8f0';
+            });
+            applyFilter();
+        };
+
+        window.applyFilter = function() {
+            const startDate = document.getElementById('start-date').value;
+            const endDate = document.getElementById('end-date').value;
+
+            // 주문 필터링 (한국 시간 기준)
+            const filteredOrders = allOrdersGlobal.filter(o => {
+                const dateRaw = o.created_at || o.timestamp;
+                if (!dateRaw) return false;
+                const d = new Date(dateRaw);
+                const dStr = getKSTDateString(d); // 공통 KST 변환 사용
+                if (startDate && dStr < startDate) return false;
+                if (endDate && dStr > endDate) return false;
+                return true;
+            });
+
+            // 로그 필터링 (한국 시간 기준)
+            const filteredLogs = allLogsGlobal.filter(log => {
+                if (!log.timestamp) return false;
+                const d = new Date(log.timestamp);
+                const dStr = getKSTDateString(d);
+                if (startDate && dStr < startDate) return false;
+                if (endDate && dStr > endDate) return false;
+                return true;
+            });
+
+            // 회원 vs 비회원 재분류
+            const nonMemberOrders = filteredOrders.filter(o => 
+                o.is_guest_exclusive === true || 
+                o.imported_from_guest === true || 
+                o.is_guest === true
+            );
+            const memberOrders = filteredOrders.filter(o => !nonMemberOrders.includes(o));
+
+            calculateStats(filteredOrders, memberOrders, nonMemberOrders);
+            renderSalesChart(filteredOrders, startDate, endDate);
+            renderMonthlyChart(filteredOrders);
+            renderHourlyChart(filteredOrders);
+            renderReferrerChart(filteredLogs);
+            renderEntranceAnalysis(filteredLogs);
+            renderTopProducts(filteredOrders);
+            renderRecentOrders(filteredOrders);
+        }
+
+        // 이벤트 리스너 등록
+        document.addEventListener('DOMContentLoaded', () => {
+            const btnToday = document.getElementById('btn-period-today');
+            const btn7d = document.getElementById('btn-period-7d');
+            const btn30d = document.getElementById('btn-period-30d');
+            const btnMonth = document.getElementById('btn-period-thisMonth');
+            const btnApply = document.getElementById('btn-apply-filter');
+
+            if(btnToday) btnToday.onclick = () => { setPeriod('today'); applyFilter(); };
+            if(btn7d) btn7d.onclick = () => { setPeriod('7d'); applyFilter(); };
+            if(btn30d) btn30d.onclick = () => { setPeriod('30d'); applyFilter(); };
+            if(btnMonth) btnMonth.onclick = () => { setPeriod('thisMonth'); applyFilter(); };
+            if(btnApply) btnApply.onclick = applyFilter;
+        });
+
+        function calculateStats(allOrders, memberOrders, nonMemberOrders) {
+            const totalRevenue = allOrders.reduce((sum, o) => sum + (Number(o.price) || 0), 0);
+            const memberRevenue = memberOrders.reduce((sum, o) => sum + (Number(o.price) || 0), 0);
+            const guestRevenue = nonMemberOrders.reduce((sum, o) => sum + (Number(o.price) || 0), 0);
+            
+            const totalOrdersCount = allOrders.length;
+            const avgPrice = totalOrdersCount > 0 ? Math.round(totalRevenue / totalOrdersCount) : 0;
+
+            const now = new Date();
+            const thisMonth = now.getMonth();
+            const thisYear = now.getFullYear();
+            
+            const monthRevenue = allOrders.filter(o => {
+                if (!o.created_at) return false;
+                const d = new Date(o.created_at);
+                return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
+            }).reduce((sum, o) => sum + (Number(o.price) || 0), 0);
+
+            document.getElementById('stat-revenue').innerText = totalRevenue.toLocaleString() + '원';
+            document.getElementById('stat-member-revenue').innerText = memberRevenue.toLocaleString() + '원';
+            document.getElementById('stat-guest-revenue').innerText = guestRevenue.toLocaleString() + '원';
+            
+            const mCountEl = document.getElementById('stat-member-count');
+            const gCountEl = document.getElementById('stat-guest-count');
+            if(mCountEl) mCountEl.innerText = `${memberOrders.length}건`;
+            if(gCountEl) gCountEl.innerText = `${nonMemberOrders.length}건`;
+            
+            document.getElementById('stat-orders').innerText = totalOrdersCount.toLocaleString() + '건';
+            document.getElementById('stat-avg').innerText = avgPrice.toLocaleString() + '원';
+            document.getElementById('stat-month-revenue').innerText = monthRevenue.toLocaleString() + '원';
+            document.getElementById('stat-month-label').innerText = `총 매출 대비 이번 달 결제액`;
+        }
+
+        function renderSalesChart(orders, start, end) {
+            const dateRange = [];
+            let curr = new Date(start);
+            const last = new Date(end);
+            
+            // 최대 90일까지만 일별 표시
+            while (curr <= last && dateRange.length < 90) {
+                dateRange.push(curr.toISOString().split('T')[0]);
+                curr.setDate(curr.getDate() + 1);
+            }
+
+            const dailySales = dateRange.map(date => {
+                const dayTotal = orders.filter(o => {
+                    if (!o.created_at) return false;
+                    return new Date(o.created_at).toISOString().split('T')[0] === date;
+                }).reduce((sum, o) => sum + (Number(o.price) || 0), 0);
+                return dayTotal;
+            });
+
+            const ctx = document.getElementById('salesChart').getContext('2d');
+            if (salesChart) salesChart.destroy();
+
+            salesChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: dateRange.map(d => d.slice(5)), // MM-DD format
+                    datasets: [{
+                        label: '일일 매출액 (원)',
+                        data: dailySales,
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 3,
+                        fill: true,
+                        tension: 0.4,
+                        pointBackgroundColor: '#3b82f6',
+                        pointRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: '#f1f5f9' } },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        function renderMonthlyChart(orders) {
+            const last6Months = [];
+            for (let i = 5; i >= 0; i--) {
+                const d = new Date();
+                d.setMonth(d.getMonth() - i);
+                last6Months.push({
+                    month: d.getMonth(),
+                    year: d.getFullYear(),
+                    label: `${d.getMonth() + 1}월`
+                });
+            }
+
+            const monthlyData = last6Months.map(m => {
+                return orders.filter(o => {
+                    if (!o.created_at) return false;
+                    const d = new Date(o.created_at);
+                    return d.getMonth() === m.month && d.getFullYear() === m.year;
+                }).reduce((sum, o) => sum + (Number(o.price) || 0), 0);
+            });
+
+            const ctx = document.getElementById('monthlyChart').getContext('2d');
+            if (monthlyChart) monthlyChart.destroy();
+
+            monthlyChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: last6Months.map(m => m.label),
+                    datasets: [{
+                        label: '월별 매출액 (원)',
+                        data: monthlyData,
+                        backgroundColor: '#fbbf24',
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: '#f1f5f9' } },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        function renderHourlyChart(orders) {
+            const hours = Array.from({ length: 24 }, (_, i) => i);
+            const hourlyDist = hours.map(h => {
+                return orders.filter(o => {
+                    if (!o.created_at) return false;
+                    return new Date(o.created_at).getHours() === h;
+                }).length;
+            });
+
+            const ctx = document.getElementById('hourlyChart').getContext('2d');
+            if (hourlyChart) hourlyChart.destroy();
+
+            hourlyChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: hours.map(h => `${h}시`),
+                    datasets: [{
+                        label: '주문 건수',
+                        data: hourlyDist,
+                        backgroundColor: '#8b5cf6',
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: '#f1f5f9' } },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        function renderReferrerChart(logs) {
+            const counts = {};
+            logs.forEach(log => {
+                let ref = log.referrer || 'Direct / Bookmark';
+                if (ref.includes(window.location.hostname)) ref = 'Internal';
+                else if (ref.includes('google')) ref = 'Google';
+                else if (ref.includes('naver')) ref = 'Naver';
+                else if (ref.includes('facebook') || ref.includes('t.co')) ref = 'SNS';
+                else if (ref !== 'Direct / Bookmark') {
+                   try { ref = new URL(ref).hostname; } catch(e) {}
+                }
+                counts[ref] = (counts[ref] || 0) + 1;
+            });
+
+            // 내부 유입 제외 (외부 유입 분석이 목적)
+            delete counts['Internal'];
+
+            const labels = Object.keys(counts);
+            const data = Object.values(counts);
+
+            const ctx = document.getElementById('referrerChart').getContext('2d');
+            if (referrerChart) referrerChart.destroy();
+
+            referrerChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#64748b']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'bottom' } }
+                }
+            });
+        }
+
+        function renderEntranceAnalysis(logs) {
+            const productEntries = {};
+            
+            logs.forEach(log => {
+                const path = log.path || '';
+                // 상품 상세 페이지 주소 패턴 확인 (예: /detail.html?id=xxx 또는 /detail.html?product=xxx)
+                if (path.includes('detail.html')) {
+                    const urlParams = new URLSearchParams(path.split('?')[1] || '');
+                    const productId = urlParams.get('id') || urlParams.get('product') || 'Unknown Item';
+                    
+                    // 로그에 상품명이 포함되어 있을 경우(details 객체 등) 더 정확하나, 여기선 ID로 집계
+                    const label = log.details?.title || `Product ID: ${productId}`;
+                    productEntries[label] = (productEntries[label] || 0) + 1;
+                }
+            });
+
+            const sorted = Object.entries(productEntries)
+                .sort((a,b) => b[1] - a[1])
+                .slice(0, 5);
+
+            const list = document.getElementById('topEntranceList');
+            if (sorted.length === 0) {
+                list.innerHTML = '<p style="text-align: center; color: #94a3b8; padding: 40px 0;">상품 상세 페이지 유입 데이터가 아직 없습니다.</p>';
+                return;
+            }
+
+            list.innerHTML = sorted.map(([name, count], i) => `
+                <div class="product-rank-item">
+                    <div class="rank-info">
+                        <div class="rank-number">${i + 1}</div>
+                        <span class="rank-name">${name}</span>
+                    </div>
+                    <div class="rank-value">${count}회</div>
+                </div>
+            `).join('');
+        }
+
+        function renderTopProducts(orders) {
+            const productStats = {};
+            orders.forEach(o => {
+                if (!productStats[o.title]) productStats[o.title] = { count: 0, revenue: 0 };
+                productStats[o.title].count += 1;
+                productStats[o.title].revenue += (Number(o.price) || 0);
+            });
+
+            const sorted = Object.entries(productStats)
+                .map(([name, stats]) => ({ name, ...stats }))
+                .sort((a, b) => b.count - a.count)
+                .slice(0, 5);
+
+            const list = document.getElementById('topProductsList');
+            if (sorted.length === 0) {
+                list.innerHTML = '<p style="text-align: center; color: #94a3b8; padding: 40px 0;">판매 데이터가 없습니다.</p>';
+                return;
+            }
+
+            list.innerHTML = sorted.map((p, i) => `
+                <div class="product-rank-item">
+                    <div class="rank-info">
+                        <div class="rank-number">${i + 1}</div>
+                        <span class="rank-name">${p.name}</span>
+                    </div>
+                    <div class="rank-value">${p.count}건</div>
+                </div>
+            `).join('');
+        }
+
+        function renderRecentOrders(orders) {
+            const sorted = [...orders].sort((a,b) => {
+                const ta = new Date(a.created_at || 0).getTime();
+                const tb = new Date(b.created_at || 0).getTime();
+                return tb - ta;
+            }).slice(0, 10);
+
+            const tbody = document.getElementById('recentOrdersBody');
+            if (sorted.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 50px;">주문 내역이 없습니다.</td></tr>';
+                return;
+            }
+
+            const html = sorted.map(o => {
+                const date = o.created_at ? new Date(o.created_at).toLocaleString() : 'N/A';
+                const isGuest = o.imported_from_guest || o.is_guest_exclusive || o.is_guest;
+                const shortId = o.id.slice(-8);
+                const titleStr = o.title ? (o.title.length > 18 ? o.title.slice(0, 18) + '...' : o.title) : 'Unknown';
+                const typeBadge = isGuest 
+                    ? '<span class="status-badge" style="background:#fefce8; color:#854d0e; margin-left:5px;">비회원</span>' 
+                    : '<span class="status-badge" style="background:#eff6ff; color:#1e40af; margin-left:5px;">회원</span>';
+                
+                return `
+                    <tr>
+                        <td><span style="font-size: 0.85rem; color: #64748b;">${date}</span></td>
+                        <td style="font-weight: 700;">
+                            ${o.title || "Unknown"}
+                            ${typeBadge}
+                        </td>
+                        <td style="font-weight: 800;">${(Number(o.price) || 0).toLocaleString()}원</td>
+                        <td><span class="status-badge status-completed">결제완료</span></td>
+                        <td><span style="font-size: 0.75rem; color: #94a3b8; font-family: monospace;">${o.id.slice(0, 8)}...</span></td>
+                    </tr>
+                `;
+            }).join('');
+            
+            tbody.innerHTML = html;
+        }
+
+        window.addEventListener('load', () => {
+            if (window.renderAdminHeader) window.renderAdminHeader({ mountId: 'admin-header-slot', badgeText: 'Store', subtitle: '판매 분석' });
+            if (window.renderAdminMenu) window.renderAdminMenu({ mountId: 'admin-menu-slot', active: 'sales_analysis' });
+            initAnalysis();
+        });
+    </script>
+</body>
+
+</html>

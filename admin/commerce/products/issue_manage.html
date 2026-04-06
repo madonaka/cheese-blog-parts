@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>이슈 연대기 관리 · Cheese Admin</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="stylesheet" href="../../admin.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        .issue-manage-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+        .sync-card {
+            background: #fff;
+            border-radius: 1.5rem;
+            padding: 35px;
+            box-shadow: 0 10px 40px rgba(15, 23, 42, 0.05);
+            margin-bottom: 30px;
+            border: 1px solid #e2e8f0;
+        }
+        .form-group { margin-bottom: 20px; }
+        .form-label { display: block; font-size: 0.85rem; font-weight: 800; margin-bottom: 12px; color: #1e293b; }
+        .form-control {
+            width: 100%;
+            padding: 16px 20px;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 14px;
+            font-size: 0.95rem;
+            box-sizing: border-box;
+            outline: none;
+            transition: all 0.2s;
+            background: #f8fafc;
+        }
+        .form-control:focus { border-color: #3b82f6; background: #fff; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1); }
+        .btn-sync {
+            width: 100%;
+            padding: 18px;
+            background: #1e293b;
+            color: #fff;
+            border: none;
+            border-radius: 100px;
+            font-weight: 900;
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+        }
+        .btn-sync:hover { background: #0f172a; transform: translateY(-2px); box-shadow: 0 12px 25px rgba(0,0,0,0.15); }
+        #sync-status {
+            margin-top: 25px;
+            text-align: center;
+            font-weight: 800;
+            font-size: 0.95rem;
+            min-height: 28px;
+            padding: 10px;
+            border-radius: 8px;
+        }
+        .sync-guide {
+            margin-top: 35px;
+            padding: 25px;
+            background: #f1f5f9;
+            border-radius: 20px;
+            border: 1px dashed #cbd5e1;
+        }
+        .guide-title { font-size: 0.85rem; font-weight: 900; color: #475569; margin-bottom: 15px; text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
+        .guide-list { font-size: 0.88rem; color: #475569; line-height: 1.8; padding-left: 20px; margin: 0; }
+        
+        .status-idle { color: #94a3b8; }
+        .status-loading { color: #3b82f6; background: #eff6ff; }
+        .status-success { color: #059669; background: #ecfdf5; }
+        .status-error { color: #dc2626; background: #fef2f2; }
+
+        .tag-logic-preview {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .logic-item {
+            background: #f8fafc;
+            padding: 15px;
+            border-radius: 12px;
+            border: 1px solid #e2e8f0;
+            font-size: 0.8rem;
+        }
+        .logic-badge { padding: 3px 8px; border-radius: 5px; font-weight: 950; font-size: 0.7rem; margin-right: 8px; }
+    </style>
+</head>
+<body>
+    <div class="admin-shell">
+        <div id="admin-header-slot"></div>
+        <div class="admin-main">
+            <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+
+            <main>
+                <div class="issue-manage-header">
+                    <div>
+                        <h1 style="font-size: 1.8rem; font-weight: 900; letter-spacing: -0.5px;">이슈 연대기 동기화 🏛️</h1>
+                        <p style="font-size: 0.9rem; color: #64748b;">구글 시트(엑셀)의 최신 기록을 데이터베이스에 반영합니다.</p>
+                    </div>
+                </div>
+
+                <div class="sync-card">
+                    <div class="form-group">
+                        <label class="form-label">구글 시트 웹 게시 주소 (TSV 권장)</label>
+                        <input type="text" id="csv-url" class="form-control" placeholder="https://docs.google.com/spreadsheets/d/.../pub?output=tsv" />
+                    </div>
+                    
+                    <button class="btn-sync" onclick="window.startSync()">
+                        <i class="fas fa-bolt"></i> 데이터베이스 업데이트 시작
+                    </button>
+
+                    <div id="sync-status" class="status-idle">상태: 대기 중</div>
+
+                    <div class="tag-logic-preview">
+                        <div class="logic-item">
+                            <span class="logic-badge" style="background: #ef4444; color: #fff;">CRITICAL</span>
+                            <code>mnforce-</code> → 강조 배지 (빨간색)
+                        </div>
+                        <div class="logic-item">
+                            <span class="logic-badge" style="background: #1e3a8a; color: #fff;">STANDARD</span>
+                            <code>important-</code> → 중요 배지 (네이비)
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sync-guide">
+                    <span class="guide-title"><i class="fas fa-lightbulb"></i> 업로드 및 동기화 팁</span>
+                    <ul class="guide-list">
+                        <li>제목에 쉼표(,)가 많은 경우, <b>[탭으로 구분된 값(.tsv)]</b> 형식을 사용하세요.</li>
+                        <li><b>[웹에 게시]</b> 시 형식을 선택한 후 생성된 URL을 위 칸에 붙여넣습니다.</li>
+                        <li>새로운 연도 데이터가 감지되면 아카이브 목록에 자동으로 추가됩니다.</li>
+                        <li><code>hidden</code> 열에 '숨김' 또는 'TRUE'라고 적힌 행은 동기화에서 제외됩니다.</li>
+                    </ul>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="../../admin-common.js"></script>
+    <script type="text/javascript">
+        // ─────────────────────────────────────────────
+        // 🚀 이슈 연대기 고도화 동기화 엔진
+        // ─────────────────────────────────────────────
+
+        async function safeFetchDB(payload) {
+            if (!window.CHEESE_ADMIN_DB_API) throw new Error("API 엔드포인트가 정의되지 않았습니다.");
+            const res = await fetch(window.CHEESE_ADMIN_DB_API, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!data.ok) throw new Error(data.error || "Firebase 통신 중 오류가 발생했습니다.");
+            return data;
+        }
+
+        async function startSync() {
+            const urlInput = document.getElementById('csv-url').value;
+            const status = document.getElementById('sync-status');
+            
+            if (!urlInput) {
+                alert("구글 시트 웹 게시 주소를 입력해 주세요.");
+                return;
+            }
+
+            status.className = "status-loading";
+            status.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> 소스 데이터 분석 중...';
+
+            try {
+                const response = await fetch(urlInput);
+                const rawText = await response.text();
+                
+                // 1. 구분자 자동 감지 (탭 vs 쉼표)
+                const isTSV = urlInput.includes('output=tsv') || rawText.split('\n')[0].split('\t').length > 3;
+                const separator = isTSV ? '\t' : ',';
+                console.log("[Sync] Detected Separator:", isTSV ? "TAB" : "COMMA");
+
+                // 2. 통합 파서 (탭/쉼표 지원)
+                function parseData(text, sep) {
+                    const rows = [];
+                    const lines = text.split(/\r?\n/).filter(line => line.trim());
+                    
+                    lines.forEach(line => {
+                        if (sep === '\t') {
+                            // TSV: 단순 탭 분리 및 따옴표 제거
+                            rows.push(line.split('\t').map(c => c.trim().replace(/^"|"$/g, '')));
+                        } else {
+                            // CSV: 따옴표 내 쉼표 보호 파싱
+                            const cells = [];
+                            let cur = '', inQ = false;
+                            for (let i = 0; i < line.length; i++) {
+                                const char = line[i];
+                                if (char === '"') inQ = !inQ;
+                                else if (char === ',' && !inQ) { cells.push(cur.trim().replace(/^"|"$/g, '')); cur = ''; }
+                                else cur += char;
+                            }
+                            cells.push(cur.trim().replace(/^"|"$/g, ''));
+                            rows.push(cells);
+                        }
+                    });
+                    return rows;
+                }
+
+                const rows = parseData(rawText, separator);
+                const headers = rows[0];
+                const yearGroup = {};
+
+                // 3. 데이터 매핑 및 그룹화
+                rows.slice(1).forEach(row => {
+                    const getCol = (key) => {
+                        const idx = headers.indexOf(key);
+                        return idx !== -1 ? (row[idx] || '').trim() : '';
+                    }
+
+                    const hidden = getCol('hidden');
+                    if (hidden === 'TRUE' || hidden === '숨김') return;
+
+                    const dateStart = getCol('date_start');
+                    if (!dateStart || !dateStart.includes('-')) return;
+
+                    const yr = dateStart.split('-')[0];
+                    const mn = dateStart.split('-')[1];
+
+                    if (!yearGroup[yr]) yearGroup[yr] = { yearTitle: `${yr} 이슈 연대기`, months: {} };
+                    if (!yearGroup[yr].months[mn]) yearGroup[yr].months[mn] = { summary: "", events: [] };
+
+                    yearGroup[yr].months[mn].events.push({
+                        id: getCol('id'),
+                        date_start: dateStart,
+                        title: getCol('title'),
+                        content_raw: getCol('content_raw'),
+                        tags: getCol('tags'),
+                        image_url: getCol('image_url'),
+                        country: getCol('country')
+                    });
+                });
+
+                const syncedYears = Object.keys(yearGroup);
+                if (syncedYears.length === 0) throw new Error("유효한 데이터를 찾지 못했습니다. 헤더명(date_start 등)을 확인해 주세요.");
+
+                status.innerHTML = `<i class="fas fa-cloud-upload-alt"></i> 파이어베이스 저장 중 (${syncedYears.length}개 연도)...`;
+                
+                // 4. Firestore 저장 및 설정 업데이트
+                for (const y of syncedYears) {
+                    await safeFetchDB({
+                        action: "set",
+                        collection: "historical_issues",
+                        id: "year_" + y,
+                        data: yearGroup[y]
+                    });
+                }
+
+                // 기 노출 설정(archive_config) 자동 갱신
+                const configRes = await safeFetchDB({ action: "getDoc", collection: "archive_config", id: "year_settings" });
+                let yearConfig = configRes.ok && configRes.data ? (configRes.data.years || {}) : {};
+                
+                syncedYears.forEach(y => {
+                    if (!yearConfig[y]) yearConfig[y] = { visible: true, label: "동기화 완료" };
+                });
+
+                await safeFetchDB({
+                    action: "set",
+                    collection: "archive_config",
+                    id: "year_settings",
+                    data: { years: yearConfig, updatedAt: new Date().toISOString() }
+                });
+
+                status.className = "status-success";
+                status.innerHTML = `<i class="fas fa-check-circle"></i> ${syncedYears.sort().join(', ')}년 업데이트 완료!`;
+                
+                if (window.showNotification) {
+                    window.showNotification("동기화 성공", `${syncedYears.length}개 연도 데이터가 반영되었습니다.`, "success");
+                }
+
+            } catch (err) {
+                console.error("[Sync Error]", err);
+                status.className = "status-error";
+                status.innerHTML = `<i class="fas fa-exclamation-triangle"></i> 오류: ${err.message}`;
+            }
+        }
+
+        window.startSync = startSync;
+    </script>
+</body>
+</html>

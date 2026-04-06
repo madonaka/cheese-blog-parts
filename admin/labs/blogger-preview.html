@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>Blogger 발행 · Cheese Admin</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+  <!-- 공통 관리자 스타일 -->
+  <link rel="stylesheet" href="../admin.css" />
+
+  <style>
+    .pv-card{
+      background:#fff;
+      border:1px solid rgba(15,23,42,.10);
+      border-radius:18px;
+      box-shadow:0 10px 28px rgba(15,23,42,.08);
+      padding:14px;
+      margin-bottom:14px;
+    }
+    .pv-title{ margin:0 0 10px; font-size:18px; font-weight:700; }
+    .pv-row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .pv-input{
+      padding:10px 12px;
+      border:1px solid rgba(15,23,42,.18);
+      border-radius:12px;
+      min-width:180px;
+      outline:none;
+    }
+    .pv-btn{
+      padding:10px 14px;
+      border-radius:12px;
+      border:1px solid rgba(15,23,42,.25);
+      background:#111827;
+      color:#fff;
+      cursor:pointer;
+      font-weight:700;
+    }
+    .pv-btn.secondary{
+      background:#334155;
+    }
+    .pv-btn.good{
+      background:#16a34a;
+    }
+    .pv-btn:disabled{ opacity:.55; cursor:not-allowed; }
+    .pv-status{ font-size:13px; color:#64748b; }
+    .pv-preview{
+      border:1px dashed rgba(15,23,42,.22);
+      border-radius:16px;
+      padding:16px;
+      min-height:160px;
+      background:#fff;
+    }
+    .pv-meta{
+      display:flex; justify-content:space-between; align-items:center;
+      gap:10px; flex-wrap:wrap; margin-bottom:10px;
+    }
+    .pv-banner{
+      padding:10px 12px;
+      border:1px solid rgba(15,23,42,.12);
+      border-radius:12px;
+      background:#fff;
+      font-size:13px;
+    }
+    .pv-banner a{ color:#0f172a; font-weight:700; text-decoration:underline; }
+
+    /* 미리보기 내부 글 스타일 */
+    .pv-preview article.post h1{ margin:0 0 10px; font-size:22px; }
+    .pv-preview article.post .intro{ color:#475569; margin:0 0 12px; }
+    .pv-preview article.post .content{ line-height:1.75; }
+    .pv-preview h2{ margin:18px 0 10px; font-size:18px; }
+  </style>
+</head>
+
+<body>
+  <div class="admin-shell">
+    <!-- ✅ 헤더 슬롯 -->
+    <div id="admin-header-slot"></div>
+
+    <div class="admin-main">
+      <!-- ✅ 메뉴 슬롯 -->
+      <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+
+      <!-- ✅ 본문 -->
+      <main class="admin-content">
+        <div class="wrap">
+
+          <div class="pv-card">
+            <h1 class="pv-title">Blogger 발행</h1>
+
+            <div class="pv-row">
+              <input id="postId" class="pv-input" value="P001" placeholder="post_id (예: P001)" />
+              <button id="btnPreview" class="pv-btn">미리보기</button>
+              <button id="btnPublishDraft" class="pv-btn secondary">초안 발행</button>
+              <button id="btnPublishPublic" class="pv-btn good">공개 발행</button>
+              <span id="status" class="pv-status"></span>
+            </div>
+
+            <div style="margin-top:10px;" class="pv-status">
+              블로그 URL: <b>https://cheesetestblog.blogspot.com/</b>
+              <span style="margin-left:8px; color:#94a3b8;">(blogId는 API가 자동 조회)</span>
+            </div>
+
+            <div id="resultBanner" style="margin-top:10px; display:none;" class="pv-banner"></div>
+          </div>
+
+          <div class="pv-card">
+            <div class="pv-meta">
+              <div style="font-weight:800;">미리보기 결과</div>
+              <div id="metaLine" class="pv-status"></div>
+            </div>
+
+            <div id="previewBox" class="pv-preview">
+              <div style="color:#64748b;">여기에 결과가 표시됩니다.</div>
+            </div>
+          </div>
+
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- ✅ 공통 로더(헤더/메뉴 채우기) -->
+  <script src="../admin-common.js"></script>
+
+  <script>
+    // ✅ Apps Script Web App URL (네가 예전에 준 URL)
+    const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbwW16jbVY6MEgvywrzwB3ie8WDnCXPUo1aLtkTTVAE7FOmmKE1T4VmebAIIK8ppY0ye/exec";
+
+    // ✅ 네 테스트 블로그 URL
+    const BLOG_URL = "https://cheesetestblog.blogspot.com/";
+
+    const $ = (sel) => document.querySelector(sel);
+
+    window.addEventListener("DOMContentLoaded", async () => {
+      // 헤더/메뉴 로더(있으면 호출)
+      try {
+        if (typeof loadAdminHeader === "function") await loadAdminHeader("#admin-header-slot");
+        if (typeof loadAdminMenu === "function") await loadAdminMenu("#admin-menu-slot");
+        if (typeof mountAdminHeader === "function") await mountAdminHeader("#admin-header-slot");
+        if (typeof mountAdminMenu === "function") await mountAdminMenu("#admin-menu-slot");
+        if (typeof initAdminLayout === "function") await initAdminLayout();
+      } catch (e) {
+        console.warn("header/menu loader skipped:", e);
+      }
+
+      $("#btnPreview").addEventListener("click", previewPost);
+      $("#btnPublishDraft").addEventListener("click", () => publishPost(true));
+      $("#btnPublishPublic").addEventListener("click", () => publishPost(false));
+    });
+
+    function setBusy(isBusy, msg){
+      $("#btnPreview").disabled = isBusy;
+      $("#btnPublishDraft").disabled = isBusy;
+      $("#btnPublishPublic").disabled = isBusy;
+      $("#status").textContent = msg || "";
+      if (isBusy) hideBanner();
+    }
+
+    function showBanner(html){
+      const el = $("#resultBanner");
+      el.style.display = "block";
+      el.innerHTML = html;
+    }
+    function hideBanner(){
+      const el = $("#resultBanner");
+      el.style.display = "none";
+      el.innerHTML = "";
+    }
+
+    async function previewPost() {
+      const postId = $("#postId").value.trim();
+      const box = $("#previewBox");
+      const metaEl = $("#metaLine");
+
+      if (!postId) {
+        $("#status").textContent = "post_id를 입력해줘.";
+        return;
+      }
+
+      setBusy(true, "미리보기 불러오는 중...");
+      metaEl.textContent = "";
+      box.innerHTML = `<div style="color:#64748b;">렌더링 중...</div>`;
+
+      try {
+        const qs = new URLSearchParams({ mode: "renderPost", post_id: postId });
+        const res = await fetch(`${WEBAPP_URL}?${qs.toString()}`, { method:"GET", cache:"no-store" });
+
+        const text = await res.text();
+        const data = safeJsonParse(text);
+
+        if (!data || !data.ok) {
+          $("#status").textContent = "미리보기 실패";
+          box.innerHTML = `<pre style="white-space:pre-wrap; margin:0;">${escapeHtml(text)}</pre>`;
+          return;
+        }
+
+        $("#status").textContent = "미리보기 완료";
+        metaEl.textContent = `post_id: ${data.post_id || postId}`;
+        box.innerHTML = data.html;
+
+      } catch (err) {
+        $("#status").textContent = "미리보기 에러";
+        box.innerHTML = `<pre style="white-space:pre-wrap; margin:0;">${escapeHtml(String(err))}</pre>`;
+      } finally {
+        setBusy(false, "");
+      }
+    }
+
+    async function publishPost(isDraft){
+      const postId = $("#postId").value.trim();
+      const box = $("#previewBox");
+      const metaEl = $("#metaLine");
+
+      if (!postId) {
+        $("#status").textContent = "post_id를 입력해줘.";
+        return;
+      }
+
+      setBusy(true, isDraft ? "초안 발행 중..." : "공개 발행 중...");
+
+      try{
+        // ✅ publishPost 호출 (blogUrl로 blogId 자동 조회)
+        const qs = new URLSearchParams({
+          mode: "publishPost",
+          post_id: postId,
+          isDraft: String(isDraft),
+          blogUrl: BLOG_URL
+        });
+
+        const res = await fetch(`${WEBAPP_URL}?${qs.toString()}`, { method:"GET", cache:"no-store" });
+        const text = await res.text();
+        const data = safeJsonParse(text);
+
+        if (!data || !data.ok) {
+          $("#status").textContent = "발행 실패";
+          box.innerHTML = `<pre style="white-space:pre-wrap; margin:0;">${escapeHtml(text)}</pre>`;
+          return;
+        }
+
+        $("#status").textContent = isDraft ? "초안 발행 성공" : "공개 발행 성공";
+        metaEl.textContent = `post_id: ${data.post_id || postId} · blogger_post_id: ${data.blogger_post_id || ""}`;
+
+        const url = data.url || "";
+        if (url) {
+          showBanner(
+            `<div><b>발행 결과</b></div>
+             <div style="margin-top:6px;">URL: <a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(url)}</a></div>
+             <div style="margin-top:4px;">blogger_post_id: ${escapeHtml(data.blogger_post_id || "")}</div>
+             <div style="margin-top:4px;">상태: ${escapeHtml(data.isDraft ? "draft" : "public")}</div>`
+          );
+        } else {
+          showBanner(`<div><b>발행 결과</b></div><div style="margin-top:6px;">응답에 url이 없습니다.</div>`);
+        }
+
+      } catch(err){
+        $("#status").textContent = "발행 에러";
+        box.innerHTML = `<pre style="white-space:pre-wrap; margin:0;">${escapeHtml(String(err))}</pre>`;
+      } finally {
+        setBusy(false, "");
+      }
+    }
+
+    function safeJsonParse(text){
+      try { return JSON.parse(text); } catch(e){ return null; }
+    }
+
+    function escapeHtml(s){
+      return String(s)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+  </script>
+</body>
+</html>
