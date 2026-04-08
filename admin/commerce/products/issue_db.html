@@ -575,7 +575,8 @@
 
     <script src="../../admin-common.js"></script>
     <script>
-        let allIssues = [];
+        let allIssues = [];       // 현재 필터 적용된 이벤트 목록
+        let allIssuesUnfiltered = []; // E-Force 부모 검색용 전체 이벤트 목록 (필터 무관)
         let availableYears = [];
         let yearConfig = {}; // { "2026": { visible: true, label: "View Chronicle" }, ... }
         
@@ -947,36 +948,39 @@
             tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 80px;">데이터 분석 중...</td></tr>';
             
             try {
-                let targets = [];
-                if (year) {
-                    targets = ["year_" + year];
-                } else {
-                    targets = availableYears.map(y => "year_" + y);
-                }
-
                 let mergedEvents = [];
-                for (const t of targets) {
+                // 전체 연도 fetch (E-Force 부모 검색은 필터 무관하게 전체 연도에서 검색해야 하므로)
+                const allTargets = availableYears.map(y => "year_" + y);
+                let unfilteredEvents = [];
+
+                for (const t of allTargets) {
                     const res = await safeFetchDB({ action: "getDoc", collection: "historical_issues", id: t });
                     if (res.ok && res.data.months) {
+                        const yr = t.replace('year_', '');
                         Object.keys(res.data.months).forEach(mn => {
-                            if (month && mn !== month) return; // 월 필터 적용
                             (res.data.months[mn].events || []).forEach(ev => {
-                                ev._year = t.replace('year_', '');
+                                ev._year = yr;
                                 ev._month = mn;
-                                mergedEvents.push(ev);
+                                unfilteredEvents.push(ev);
+                                // 현재 필터(연도/월)에 해당하는 것만 mergedEvents에 추가
+                                if ((!year || yr === year) && (!month || mn === month)) {
+                                    mergedEvents.push(ev);
+                                }
                             });
                         });
                     }
                 }
 
                 if (keyword) {
-                    mergedEvents = mergedEvents.filter(ev => 
-                        (ev.title && ev.title.toLowerCase().includes(keyword)) || 
+                    mergedEvents = mergedEvents.filter(ev =>
+                        (ev.title && ev.title.toLowerCase().includes(keyword)) ||
                         (ev.content_raw && ev.content_raw.toLowerCase().includes(keyword))
                     );
                 }
 
+                unfilteredEvents.sort((a,b) => (b.date_start || '').localeCompare(a.date_start || ''));
                 mergedEvents.sort((a,b) => (b.date_start || '').localeCompare(a.date_start || ''));
+                allIssuesUnfiltered = unfilteredEvents;
                 allIssues = mergedEvents;
                 renderTable();
             } catch (err) {
@@ -1373,8 +1377,9 @@
             const q = query.toLowerCase().trim();
 
             // 상위 사건(parent)만 연결 대상으로 표시 (하위 사건에 하위 사건을 연결하는 것을 방지)
+            // allIssuesUnfiltered 사용: 연도/월 필터와 무관하게 전체 연도에서 검색
             const candidates = [];
-            allIssues.forEach(ev => {
+            allIssuesUnfiltered.forEach(ev => {
                 if (ev.eforce_role === 'child') return; // 하위 사건은 연결 대상에서 제외
                 const tags = (ev.tags || '').split(',').map(t => t.trim());
                 tags.forEach(t => {
