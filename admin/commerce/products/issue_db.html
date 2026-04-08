@@ -1146,19 +1146,14 @@
                         const efVal = t.replace('E-', '');
                         document.getElementById('chk-tag-link').checked = true;
                         document.getElementById('eforce-input-group').style.display = 'block';
-                        // 이 이벤트 자신이 해당 E-Force ID의 부모인지 자식인지 판별
-                        // → 같은 ID가 다른 이벤트에도 존재하면 '하위(child)', 혼자면 '상위(parent)'
-                        const othersWithSameTag = allIssues.filter(other =>
-                            other.id !== ev.id &&
-                            (other.tags || '').split(',').map(x => x.trim()).includes(t)
-                        );
-                        if (othersWithSameTag.length > 0) {
-                            // 하위 사건 모드
+                        // eforce_role 필드로 상위/하위 판별 (저장 시 명시적으로 기록한 값)
+                        // 필드가 없는 구형 데이터는 상위(parent)로 간주
+                        const role = ev.eforce_role || 'parent';
+                        if (role === 'child') {
                             eforceModeVal = 'child';
                             window.setEForceMode('child');
                             document.getElementById('input-link-val-child').value = efVal;
                         } else {
-                            // 상위 사건(부모) 모드
                             eforceModeVal = 'parent';
                             window.setEForceMode('parent');
                             document.getElementById('input-link-val').value = efVal;
@@ -1229,7 +1224,9 @@
             }
 
             // 5. E-Force (Link ID)
+            let eforceRole = null;
             if (document.getElementById('chk-tag-link').checked) {
+                eforceRole = eforceModeVal; // 'parent' | 'child'
                 const isChild = eforceModeVal === 'child';
                 const linkVal = isChild
                     ? (document.getElementById('input-link-val-child')?.value.trim() || '')
@@ -1248,6 +1245,7 @@
                 content_raw: document.getElementById('edit-content').value,
                 image_url: document.getElementById('edit-image').value
             };
+            if (eforceRole) updatedEvent.eforce_role = eforceRole;
 
             try {
                 const res = await safeFetchDB({ action: "getDoc", collection: "historical_issues", id: "year_" + yr });
@@ -1374,9 +1372,10 @@
             const container = document.getElementById('eforce-child-results');
             const q = query.toLowerCase().trim();
 
-            // E-Force ID를 가진 이벤트만 필터
+            // 상위 사건(parent)만 연결 대상으로 표시 (하위 사건에 하위 사건을 연결하는 것을 방지)
             const candidates = [];
             allIssues.forEach(ev => {
+                if (ev.eforce_role === 'child') return; // 하위 사건은 연결 대상에서 제외
                 const tags = (ev.tags || '').split(',').map(t => t.trim());
                 tags.forEach(t => {
                     if (t.startsWith('E-') && t.length > 2) {
