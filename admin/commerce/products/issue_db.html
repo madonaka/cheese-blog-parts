@@ -174,6 +174,77 @@
         .tab-panel.active { display: block; width: 100%; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 
+        /* ===== 일괄 처리 액션 바 ===== */
+        .bulk-action-bar {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #0f172a;
+            color: #fff;
+            border-radius: 100px;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.28);
+            z-index: 1000;
+            font-size: 0.88rem;
+            font-weight: 700;
+            white-space: nowrap;
+            transition: opacity 0.2s, transform 0.2s;
+            opacity: 0;
+            pointer-events: none;
+        }
+        .bulk-action-bar.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .bulk-count-badge {
+            background: #3b82f6;
+            color: #fff;
+            border-radius: 100px;
+            padding: 3px 10px;
+            font-size: 0.8rem;
+            font-weight: 900;
+        }
+        .bulk-divider { width: 1px; height: 18px; background: rgba(255,255,255,0.2); }
+        .bulk-btn {
+            padding: 6px 14px;
+            border-radius: 100px;
+            border: none;
+            font-size: 0.82rem;
+            font-weight: 800;
+            cursor: pointer;
+            transition: opacity 0.15s;
+        }
+        .bulk-btn:hover { opacity: 0.85; }
+        .bulk-btn-apply { background: #22c55e; color: #fff; }
+        .bulk-btn-reject { background: #ef4444; color: #fff; }
+        .bulk-btn-reset  { background: rgba(255,255,255,0.15); color: #fff; }
+        .bulk-btn-cancel { background: transparent; color: rgba(255,255,255,0.6); font-size: 0.78rem; }
+
+        /* 체크박스 컬럼 */
+        .col-check { width: 40px; text-align: center; }
+        .row-checkbox { width: 17px; height: 17px; cursor: pointer; accent-color: #3b82f6; }
+
+        /* ===== 검수 상태 셀렉트 ===== */
+        .review-select {
+            padding: 5px 8px;
+            border-radius: 8px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            border: none;
+            cursor: pointer;
+            outline: none;
+            transition: background 0.2s, color 0.2s;
+            width: 100%;
+            min-width: 80px;
+        }
+        .review-select.status-0 { background: #f1f5f9; color: #64748b; }
+        .review-select.status-1 { background: #dcfce7; color: #166534; }
+        .review-select.status-2 { background: #fee2e2; color: #991b1b; }
+
         /* ===== Mobile Responsive Styles ===== */
         @media (max-width: 768px) {
             .admin-main { padding: 10px; padding-top: calc(var(--admin-header-h) + 10px) !important; }
@@ -260,15 +331,23 @@
                 overflow: hidden !important;
             }
 
+            /* 검수 셀렉트: 카드 하단에 full-width 로 배치 */
+            table#issueTable td.col-review {
+                display: block !important;
+                padding-top: 12px !important;
+                border-top: 1px solid #f1f5f9 !important;
+                margin-top: 12px !important;
+            }
+
             /* Action Buttons: 모서리 우측 상단 고정 */
-            table#issueTable td.col-actions { 
-                position: absolute !important; 
-                top: 20px !important; 
-                right: 20px !important; 
+            table#issueTable td.col-actions {
+                position: absolute !important;
+                top: 20px !important;
+                right: 20px !important;
                 width: auto !important;
-                display: flex !important; 
+                display: flex !important;
                 flex-direction: row !important;
-                gap: 8px !important; 
+                gap: 8px !important;
                 padding: 0 !important; /* 패딩 제거 */
             }
             
@@ -333,6 +412,16 @@
                             <i class="fas fa-edit"></i> 수동 폼 작성하기
                         </button>
                     </div>
+
+                    <div style="background: #fff; border-radius: 1rem; padding: 1.5rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02); display: flex; align-items: center; justify-content: space-between; margin-top: 16px;">
+                        <div>
+                            <h2 style="font-size: 1.1rem; font-weight: 800; color: #1e293b; margin:0;">📋 CSV 대량 업로드</h2>
+                            <p style="font-size: 0.8rem; color: #64748b; margin-top: 4px;">엑셀/스프레드시트에서 내보낸 CSV 파일로 여러 이벤트를 한번에 등록합니다.</p>
+                        </div>
+                        <button class="btn-save" style="background: #059669;" onclick="openCsvModal()">
+                            <i class="fas fa-file-csv"></i> CSV 파일 선택
+                        </button>
+                    </div>
                 </section>
 
                 <!-- ======================== TAB: 전체 이벤트 검수 ======================== -->
@@ -371,19 +460,21 @@
                         <table id="issueTable" class="admin-table" style="table-layout: fixed;">
                             <thead>
                                 <tr>
+                                    <th class="col-check"><input type="checkbox" id="select-all-checkbox" class="row-checkbox" onchange="toggleSelectAll(this.checked)" title="현재 페이지 전체 선택"></th>
                                     <th style="width: 120px;">날짜</th>
                                     <th style="width: 100px;">태그</th>
                                     <th>이벤트 제목</th>
+                                    <th style="width: 110px;">검수</th>
                                     <th style="width: 100px;">관리</th>
                                 </tr>
                             </thead>
                             <tbody id="issueTableBody">
                                 <tr>
-                                    <td colspan="4" style="text-align: center; color: #64748b;">데이터를 불러오는 중입니다...</td>
+                                    <td colspan="6" style="text-align: center; color: #64748b;">데이터를 불러오는 중입니다...</td>
                                 </tr>
                             </tbody>
                         </table>
-                        
+
                         <!-- Pagination Container -->
                         <div id="pagination-container" style="display: flex; justify-content: center; gap: 8px; padding: 20px 0; align-items: center; margin-top: 10px;"></div>
                     </div>
@@ -573,6 +664,98 @@
         </div>
     </div>
 
+    <!-- CSV Import Modal -->
+    <div class="modal-overlay" id="csvModal">
+        <div class="modal-card" style="max-width: 900px;">
+            <h3 style="font-size: 1.3rem; font-weight: 800; margin-bottom: 6px;">📋 CSV 대량 업로드</h3>
+            <p style="font-size: 0.82rem; color: #64748b; margin-bottom: 20px;">아래 칼럼 순서에 맞는 CSV 파일을 선택하면, 데이터를 미리보기한 후 한번에 DB에 저장합니다.</p>
+
+            <!-- 칼럼 안내 -->
+            <div style="background: #f8fafc; border-radius: 10px; padding: 14px; margin-bottom: 20px; font-size: 0.78rem; border: 1px solid #e2e8f0;">
+                <div style="font-weight: 800; color: #1e293b; margin-bottom: 8px;">📌 CSV 칼럼 (헤더 행 포함 필수)</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px;">
+                    <span style="background:#dbeafe; color:#1e40af; padding:2px 8px; border-radius:4px; font-weight:700;">date</span>
+                    <span style="background:#dbeafe; color:#1e40af; padding:2px 8px; border-radius:4px; font-weight:700;">title</span>
+                    <span style="background:#e2e8f0; color:#475569; padding:2px 8px; border-radius:4px;">content</span>
+                    <span style="background:#e2e8f0; color:#475569; padding:2px 8px; border-radius:4px;">image_url</span>
+                    <span style="background:#e2e8f0; color:#475569; padding:2px 8px; border-radius:4px;">important</span>
+                    <span style="background:#e2e8f0; color:#475569; padding:2px 8px; border-radius:4px;">mnforce_category</span>
+                    <span style="background:#e2e8f0; color:#475569; padding:2px 8px; border-radius:4px;">mnforce_keyword</span>
+                    <span style="background:#e2e8f0; color:#475569; padding:2px 8px; border-radius:4px;">economy</span>
+                    <span style="background:#e2e8f0; color:#475569; padding:2px 8px; border-radius:4px;">mourning</span>
+                    <span style="background:#e2e8f0; color:#475569; padding:2px 8px; border-radius:4px;">eforce_id</span>
+                    <span style="background:#e2e8f0; color:#475569; padding:2px 8px; border-radius:4px;">eforce_role</span>
+                    <span style="background:#e2e8f0; color:#475569; padding:2px 8px; border-radius:4px;">extra_tags</span>
+                </div>
+                <div style="color: #64748b; line-height: 1.6;">
+                    <span style="background:#dbeafe; color:#1e40af; padding:1px 5px; border-radius:3px; font-size:0.72rem;">파란색</span> = 필수 &nbsp;|&nbsp;
+                    <b>date</b>: YYYY-MM-DD &nbsp;|&nbsp;
+                    <b>mnforce_category</b>: 정치/경제/사회/국제 &nbsp;|&nbsp;
+                    <b>economy</b>/<b>mourning</b>: Y 입력 시 태그 추가 &nbsp;|&nbsp;
+                    <b>eforce_role</b>: parent 또는 child &nbsp;|&nbsp;
+                    <b>extra_tags</b>: 쉼표로 구분
+                </div>
+            </div>
+
+            <!-- 파일 업로드 영역 -->
+            <div id="csv-drop-zone" style="border: 2px dashed #cbd5e1; border-radius: 12px; padding: 24px; text-align: center; cursor: pointer; transition: all 0.2s; margin-bottom: 16px;"
+                 onclick="document.getElementById('csv-file-input').click()"
+                 ondragover="event.preventDefault(); this.style.borderColor='#3b82f6'; this.style.background='#eff6ff';"
+                 ondragleave="this.style.borderColor='#cbd5e1'; this.style.background='transparent';"
+                 ondrop="event.preventDefault(); this.style.borderColor='#cbd5e1'; this.style.background='transparent'; handleCsvDrop(event);">
+                <i class="fas fa-file-upload" style="font-size: 1.8rem; color: #94a3b8; margin-bottom: 8px; display: block;"></i>
+                <div style="font-weight: 700; color: #475569;">CSV 파일을 드래그하거나 클릭하여 선택</div>
+                <div style="font-size: 0.78rem; color: #94a3b8; margin-top: 4px;">UTF-8 인코딩 권장. 헤더 행이 반드시 포함되어야 합니다.</div>
+            </div>
+            <input type="file" id="csv-file-input" accept=".csv" style="display:none;" onchange="handleCsvFileSelect(this)">
+
+            <!-- OR 구분선 -->
+            <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px;">
+                <div style="flex:1; height:1px; background:#e2e8f0;"></div>
+                <span style="font-size:0.8rem; color:#94a3b8; font-weight:700; white-space:nowrap;">또는 직접 붙여넣기</span>
+                <div style="flex:1; height:1px; background:#e2e8f0;"></div>
+            </div>
+
+            <!-- 텍스트 직접 붙여넣기 -->
+            <div style="margin-bottom:20px;">
+                <label style="display:block; font-size:0.85rem; font-weight:800; color:#475569; margin-bottom:8px;"><i class="fas fa-paste"></i> CSV 텍스트 직접 붙여넣기</label>
+                <textarea id="csv-paste-input" class="form-control" style="height:130px; resize:vertical; font-family:monospace; font-size:0.8rem; background:#f8fafc; margin-bottom:0;" placeholder="헤더 행을 포함한 CSV 텍스트를 여기에 붙여넣으세요 (Ctrl+V)&#10;&#10;예시:&#10;date,title,content,important,mnforce_category,...&#10;2026-03-13,탄핵심판 결정,헌법재판소에서...,헌법개정안,정치,..."></textarea>
+                <button type="button" onclick="handleCsvPasteImport()" style="margin-top:10px; width:100%; padding:13px; background:#1e293b; color:#fff; border:none; border-radius:10px; font-size:0.95rem; font-weight:800; cursor:pointer; transition: background 0.2s;" onmouseover="this.style.background='#334155'" onmouseout="this.style.background='#1e293b'">
+                    <i class="fas fa-bolt"></i> 일괄 등록
+                </button>
+            </div>
+
+            <!-- 미리보기 테이블 -->
+            <div id="csv-preview-area" style="display:none;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                    <div style="font-size:0.9rem; font-weight:800; color:#1e293b;">미리보기 <span id="csv-row-count" style="color:#3b82f6;"></span></div>
+                    <button type="button" onclick="document.getElementById('csv-file-input').click()" style="background:#f1f5f9; border:none; padding:6px 14px; border-radius:8px; font-size:0.8rem; font-weight:700; cursor:pointer;">다시 선택</button>
+                </div>
+                <div style="overflow-x:auto; max-height: 300px; border: 1px solid #e2e8f0; border-radius: 10px;">
+                    <table style="width:100%; border-collapse:collapse; font-size:0.78rem;">
+                        <thead>
+                            <tr style="background:#f8fafc;">
+                                <th style="padding:8px 10px; text-align:left; font-weight:800; border-bottom:1px solid #e2e8f0; white-space:nowrap; position:sticky; top:0; background:#f8fafc;">날짜</th>
+                                <th style="padding:8px 10px; text-align:left; font-weight:800; border-bottom:1px solid #e2e8f0; position:sticky; top:0; background:#f8fafc;">제목</th>
+                                <th style="padding:8px 10px; text-align:left; font-weight:800; border-bottom:1px solid #e2e8f0; position:sticky; top:0; background:#f8fafc;">태그 (조합 결과)</th>
+                                <th style="padding:8px 10px; text-align:left; font-weight:800; border-bottom:1px solid #e2e8f0; white-space:nowrap; position:sticky; top:0; background:#f8fafc;">내용 미리보기</th>
+                                <th style="padding:8px 10px; text-align:left; font-weight:800; border-bottom:1px solid #e2e8f0; white-space:nowrap; position:sticky; top:0; background:#f8fafc;">상태</th>
+                            </tr>
+                        </thead>
+                        <tbody id="csv-preview-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="btn-group" style="margin-top: 24px;">
+                <button type="button" class="btn-cancel" onclick="closeCsvModal()">취소</button>
+                <button type="button" id="csv-import-btn" class="btn-save" style="background:#059669; display:none;" onclick="importCsvData()">
+                    <i class="fas fa-database"></i> DB에 저장하기
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script src="../../admin-common.js"></script>
     <script>
         let allIssues = [];       // 현재 필터 적용된 이벤트 목록
@@ -695,6 +878,7 @@
                             date_start: date_start,
                             title: title || '',
                             content_raw: content || '',
+                            review_status: 0,
                             tags: tagsArr.join(', '),
                             image_url: ''
                         };
@@ -945,7 +1129,7 @@
             const keyword = document.getElementById('search-keyword').value.toLowerCase();
             const tbody = document.getElementById('issueTableBody');
             
-            tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 80px;">데이터 분석 중...</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 80px;">데이터 분석 중...</td></tr>';
             
             try {
                 let mergedEvents = [];
@@ -985,16 +1169,17 @@
                 renderTable();
             } catch (err) {
                 console.error(err);
-                tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: red;">데이터를 불러오지 못했습니다.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: red;">데이터를 불러오지 못했습니다.</td></tr>';
             }
         }
 
         function renderTable() {
+            if (typeof clearSelection === 'function') clearSelection(); // 페이지/필터 전환 시 선택 초기화
             const tbody = document.getElementById('issueTableBody');
             const pagination = document.getElementById('pagination-container');
             
             if (allIssues.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 50px;">조건에 맞는 데이터가 없습니다.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 50px;">조건에 맞는 데이터가 없습니다.</td></tr>';
                 if(pagination) pagination.innerHTML = '';
                 return;
             }
@@ -1018,8 +1203,11 @@
                     return `<span class="tag-pill ${cls}">${t.replace('mnforce-', '').replace('important-', '')}</span>`;
                 }).join('');
 
+                const rs = ev.review_status ?? 0;
+
                 return `
                     <tr>
+                        <td class="col-check"><input type="checkbox" class="row-checkbox" data-id="${ev.id}" onchange="updateBulkBar()"></td>
                         <td class="col-date" style="font-family: monospace; font-weight: 700;">
                             <div style="font-size: 0.95rem; margin-bottom: 2px;">${ev.date_start || ''}</div>
                             <div style="font-size: 0.65rem; color: #94a3b8; cursor: pointer;" onclick="copyToClipboard('${ev.id}')" title="ID 복사">
@@ -1030,6 +1218,14 @@
                         <td class="col-title" style="overflow: hidden; text-overflow: ellipsis;">
                             <div class="card-title-text" style="font-weight: 800; color: #0f172a; margin-bottom: 4px;">${ev.title || '(제목 없음)'}</div>
                             <div class="card-desc-text" style="font-size: 0.8rem; color: #64748b; line-height: 1.4;">${(ev.content_raw || '').replace(/<[^>]*>?/gm, '').substring(0, 100)}${ev.content_raw && ev.content_raw.length > 100 ? '...' : ''}</div>
+                        </td>
+                        <td class="col-review">
+                            <select class="review-select status-${rs}"
+                                    onchange="updateReviewStatus('${ev.id}', parseInt(this.value)); this.className='review-select status-'+this.value;">
+                                <option value="0" ${rs === 0 ? 'selected' : ''}>❓ 미확인</option>
+                                <option value="1" ${rs === 1 ? 'selected' : ''}>✅ 반영</option>
+                                <option value="2" ${rs === 2 ? 'selected' : ''}>❌ 미반영</option>
+                            </select>
                         </td>
                         <td class="col-actions">
                             <button class="btn btn-edit" style="background:#f1f5f9; border:none;" onclick="openModal('${ev.id}')" title="수정"><i class="fas fa-edit"></i></button>
@@ -1241,13 +1437,16 @@
                 }
             }
 
+            // 기존 이벤트의 review_status 보존, 신규는 0(미확인)
+            const existingEv = allIssues.find(i => i.id === id);
             const updatedEvent = {
                 id: id,
                 date_start: dateStr,
                 tags: finalTagsArr.join(', '),
                 title: document.getElementById('edit-title').value,
                 content_raw: document.getElementById('edit-content').value,
-                image_url: document.getElementById('edit-image').value
+                image_url: document.getElementById('edit-image').value,
+                review_status: existingEv ? (existingEv.review_status ?? 0) : 0
             };
             if (eforceRole) updatedEvent.eforce_role = eforceRole;
 
@@ -1313,6 +1512,126 @@
                     loadIssues();
                 }
             } catch (err) { console.error(err); }
+        };
+
+        // ===== 검수 상태 변경 =====
+        window.updateReviewStatus = async (evId, status) => {
+            const ev = allIssues.find(i => i.id === evId);
+            if (!ev) return;
+
+            try {
+                const res = await safeFetchDB({ action: "getDoc", collection: "historical_issues", id: "year_" + ev._year });
+                if (!res.ok || !res.data) return;
+
+                const yearData = res.data;
+                let found = false;
+                Object.keys(yearData.months).forEach(mn => {
+                    const idx = (yearData.months[mn].events || []).findIndex(e => e.id === evId);
+                    if (idx > -1) {
+                        yearData.months[mn].events[idx].review_status = status;
+                        found = true;
+                    }
+                });
+                if (!found) return;
+
+                await safeFetchDB({ action: "set", collection: "historical_issues", id: "year_" + ev._year, data: yearData });
+
+                // 로컬 상태도 즉시 반영
+                ev.review_status = status;
+
+                const labels = ['미확인', '반영', '미반영'];
+                window.showNotification("검수 상태 변경", `[${labels[status]}] 으로 변경되었습니다.`, "success");
+            } catch (err) {
+                console.error(err);
+                window.showNotification("저장 실패", "검수 상태 저장 중 오류가 발생했습니다.", "error");
+            }
+        };
+
+        // ===== 일괄 처리 =====
+        function getCheckedIds() {
+            return [...document.querySelectorAll('.row-checkbox[data-id]:checked')].map(el => el.dataset.id);
+        }
+
+        window.toggleSelectAll = (checked) => {
+            document.querySelectorAll('.row-checkbox[data-id]').forEach(el => el.checked = checked);
+            updateBulkBar();
+        };
+
+        window.updateBulkBar = () => {
+            const ids = getCheckedIds();
+            const bar = document.getElementById('bulkActionBar');
+            const badge = document.getElementById('bulkCountBadge');
+            const allChk = document.getElementById('select-all-checkbox');
+
+            badge.textContent = ids.length;
+            bar.classList.toggle('visible', ids.length > 0);
+
+            // 전체선택 체크박스 중간 상태 처리
+            const total = document.querySelectorAll('.row-checkbox[data-id]').length;
+            if (allChk) {
+                allChk.indeterminate = ids.length > 0 && ids.length < total;
+                allChk.checked = total > 0 && ids.length === total;
+            }
+        };
+
+        window.clearSelection = () => {
+            document.querySelectorAll('.row-checkbox').forEach(el => { el.checked = false; el.indeterminate = false; });
+            updateBulkBar();
+        };
+
+        window.bulkUpdateReviewStatus = async (status) => {
+            const ids = getCheckedIds();
+            if (ids.length === 0) return;
+
+            const labels = ['미확인', '반영', '미반영'];
+            if (!confirm(`선택한 ${ids.length}건을 [${labels[status]}] 처리하시겠습니까?`)) return;
+
+            const bar = document.getElementById('bulkActionBar');
+            bar.style.pointerEvents = 'none';
+            bar.style.opacity = '0.5';
+
+            try {
+                // 연도별로 이벤트를 그룹화하여 연도당 DB 1회만 쓰기
+                const byYear = {};
+                ids.forEach(id => {
+                    const ev = allIssues.find(i => i.id === id);
+                    if (!ev) return;
+                    if (!byYear[ev._year]) byYear[ev._year] = [];
+                    byYear[ev._year].push(ev);
+                });
+
+                for (const yr of Object.keys(byYear)) {
+                    const res = await safeFetchDB({ action: "getDoc", collection: "historical_issues", id: "year_" + yr });
+                    if (!res.ok || !res.data) continue;
+
+                    const yearData = res.data;
+                    const targetIds = new Set(byYear[yr].map(e => e.id));
+
+                    Object.keys(yearData.months).forEach(mn => {
+                        (yearData.months[mn].events || []).forEach(ev => {
+                            if (targetIds.has(ev.id)) ev.review_status = status;
+                        });
+                    });
+
+                    await safeFetchDB({ action: "set", collection: "historical_issues", id: "year_" + yr, data: yearData });
+                }
+
+                // 로컬 상태 일괄 반영
+                ids.forEach(id => {
+                    const ev = allIssues.find(i => i.id === id);
+                    if (ev) ev.review_status = status;
+                });
+
+                window.showNotification("일괄 처리 완료", `${ids.length}건을 [${labels[status]}] 처리했습니다.`, "success");
+                clearSelection();
+                renderTable(); // 검수 셀렉트 UI 갱신
+            } catch (err) {
+                console.error(err);
+                window.showNotification("오류", "일괄 처리 중 오류가 발생했습니다.", "error");
+            } finally {
+                bar.style.pointerEvents = '';
+                bar.style.opacity = '';
+            }
         };
 
         // ===== ID 복사 및 연관 ID 추천 로직 =====
@@ -1440,7 +1759,284 @@
             }
         });
 
+        // ===== CSV 대량 업로드 =====
+        let csvParsedRows = [];
+
+        window.openCsvModal = () => {
+            csvParsedRows = [];
+            document.getElementById('csv-preview-area').style.display = 'none';
+            document.getElementById('csv-import-btn').style.display = 'none';
+            document.getElementById('csv-file-input').value = '';
+            document.getElementById('csv-paste-input').value = '';
+            document.getElementById('csvModal').classList.add('show');
+        };
+
+        window.closeCsvModal = () => {
+            document.getElementById('csvModal').classList.remove('show');
+        };
+
+        function handleCsvDrop(e) {
+            const file = e.dataTransfer.files[0];
+            if (file) processCsvFile(file);
+        }
+
+        function handleCsvFileSelect(input) {
+            const file = input.files[0];
+            if (file) processCsvFile(file);
+        }
+
+        function processCsvFile(file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                let text = e.target.result;
+                if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); // UTF-8 BOM 제거
+                parseCsvAndPreview(text);
+            };
+            reader.readAsText(file, 'UTF-8');
+        }
+
+        // RFC 4180 준수 CSV 파서 (따옴표 안의 쉼표/줄바꿈 지원)
+        function parseCSV(text) {
+            const rows = [];
+            let row = [];
+            let field = '';
+            let inQuotes = false;
+            let i = 0;
+            while (i < text.length) {
+                const ch = text[i];
+                if (inQuotes) {
+                    if (ch === '"') {
+                        if (text[i + 1] === '"') { field += '"'; i += 2; continue; }
+                        inQuotes = false;
+                    } else {
+                        field += ch;
+                    }
+                } else {
+                    if (ch === '"') {
+                        inQuotes = true;
+                    } else if (ch === ',') {
+                        row.push(field); field = '';
+                    } else if (ch === '\n') {
+                        row.push(field); rows.push(row); row = []; field = '';
+                    } else if (ch !== '\r') {
+                        field += ch;
+                    }
+                }
+                i++;
+            }
+            if (field || row.length > 0) { row.push(field); rows.push(row); }
+            return rows;
+        }
+
+        const CSV_COLS = ['date', 'title', 'content', 'image_url', 'important', 'mnforce_category', 'mnforce_keyword', 'economy', 'mourning', 'eforce_id', 'eforce_role', 'extra_tags'];
+
+        function csvRowToEvent(colMap, rowArr, rowIndex) {
+            const get = (key) => colMap[key] !== undefined && colMap[key] !== -1 ? (rowArr[colMap[key]] || '').trim() : '';
+
+            const dateStr = get('date');
+            const title = get('title');
+            const content = get('content');
+            const imageUrl = get('image_url');
+            const important = get('important');
+            const mnforceCategory = get('mnforce_category');
+            const mnforceKeyword = get('mnforce_keyword');
+            const economy = get('economy').toUpperCase() === 'Y';
+            const mourning = get('mourning').toUpperCase() === 'Y';
+            const eforceId = get('eforce_id');
+            const eforceRole = get('eforce_role') || 'parent';
+            const extraTags = get('extra_tags');
+
+            const errors = [];
+            if (!dateStr) errors.push('date 필수');
+            else if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) errors.push('date 형식 오류(YYYY-MM-DD)');
+            if (!title) errors.push('title 필수');
+
+            const yr = dateStr ? dateStr.split('-')[0] : null;
+            const mn = dateStr ? dateStr.split('-')[1] : null;
+
+            let tagsArr = [];
+            if (important) tagsArr.push('important-' + important);
+            if (mnforceCategory) {
+                const cat = mnforceCategory.trim();
+                if (['정치', '경제', '사회', '국제'].includes(cat)) {
+                    const coreTag = mnforceKeyword ? `mnforce-${cat}-${mnforceKeyword}` : `mnforce-${cat}`;
+                    tagsArr.push(coreTag);
+                    tagsArr.push('cat-' + cat);
+                } else {
+                    errors.push('mnforce_category 오류(정치/경제/사회/국제)');
+                }
+            }
+            if (economy) tagsArr.push('economy');
+            if (mourning) tagsArr.push('mourning');
+            if (eforceId) tagsArr.push('E-' + eforceId);
+            if (extraTags) extraTags.split(',').forEach(t => { const s = t.trim(); if (s) tagsArr.push(s); });
+
+            const ev = {
+                id: 'evt_csv_' + Date.now() + '_' + rowIndex,
+                date_start: dateStr,
+                title,
+                content_raw: content,
+                image_url: imageUrl,
+                tags: tagsArr.join(', '),
+                review_status: 0
+            };
+            if (eforceId) ev.eforce_role = eforceRole;
+
+            return { ev, yr, mn, errors };
+        }
+
+        // 첫 행이 헤더인지 판별: CSV_COLS 중 하나라도 포함되어 있으면 헤더로 간주
+        function isHeaderRow(row) {
+            const normalized = row.map(c => c.trim().toLowerCase());
+            return CSV_COLS.some(col => normalized.includes(col));
+        }
+
+        function parseCsvAndPreview(text, fromPaste = false) {
+            const rows = parseCSV(text).filter(r => r.some(c => c.trim()));
+            if (rows.length < 1) {
+                alert('데이터가 없습니다.');
+                return;
+            }
+
+            let colMap = {};
+            let dataRows;
+
+            if (isHeaderRow(rows[0])) {
+                // 헤더 행이 있는 경우
+                const header = rows[0].map(h => h.trim().toLowerCase());
+                CSV_COLS.forEach(col => { colMap[col] = header.indexOf(col); });
+                dataRows = rows.slice(1);
+            } else if (fromPaste) {
+                // 붙여넣기 + 헤더 없음: 칼럼 순서 그대로 매핑
+                if (rows.length < 1) { alert('데이터가 없습니다.'); return; }
+                CSV_COLS.forEach((col, i) => { colMap[col] = i; });
+                dataRows = rows;
+            } else {
+                alert('CSV 파일에 헤더 행이 필요합니다.\n첫 번째 행에 date, title 등 칼럼명이 있어야 합니다.');
+                return;
+            }
+
+            if (dataRows.length === 0) {
+                alert('데이터 행이 없습니다.');
+                return;
+            }
+
+            const parsed = dataRows.map((row, i) => csvRowToEvent(colMap, row, i));
+            csvParsedRows = parsed;
+
+            const tbody = document.getElementById('csv-preview-tbody');
+            tbody.innerHTML = parsed.map(item => {
+                const isError = item.errors.length > 0;
+                const tagsHtml = (item.ev.tags || '').split(',').map(t => {
+                    const tt = t.trim();
+                    if (!tt) return '';
+                    let bg = '#f1f5f9', color = '#475569';
+                    if (tt.startsWith('mnforce-')) { bg = '#fee2e2'; color = '#991b1b'; }
+                    else if (tt.startsWith('important-') || tt.startsWith('E-')) { bg = '#dbeafe'; color = '#1e40af'; }
+                    else if (tt === 'economy') { bg = '#d1fae5'; color = '#065f46'; }
+                    else if (tt === 'mourning') { bg = '#f3f4f6'; color = '#374151'; }
+                    return `<span style="background:${bg};color:${color};padding:1px 5px;border-radius:3px;font-size:0.7rem;font-weight:700;display:inline-block;margin:1px;">${tt}</span>`;
+                }).join('');
+
+                return `<tr style="border-bottom:1px solid #f1f5f9;${isError ? 'background:#fff5f5;' : ''}">
+                    <td style="padding:7px 10px;white-space:nowrap;font-family:monospace;font-weight:700;color:${isError ? '#ef4444' : '#0f172a'};">${item.ev.date_start || '-'}</td>
+                    <td style="padding:7px 10px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.ev.title || '-'}</td>
+                    <td style="padding:7px 10px;">${tagsHtml || '-'}</td>
+                    <td style="padding:7px 10px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#64748b;">${(item.ev.content_raw || '').substring(0, 60)}</td>
+                    <td style="padding:7px 10px;white-space:nowrap;">${isError
+                        ? `<span style="color:#ef4444;font-weight:800;font-size:0.75rem;">⚠ ${item.errors.join(', ')}</span>`
+                        : `<span style="color:#059669;font-weight:800;font-size:0.75rem;">✓ 정상</span>`
+                    }</td>
+                </tr>`;
+            }).join('');
+
+            const validCount = parsed.filter(p => p.errors.length === 0).length;
+            const errorCount = parsed.length - validCount;
+            document.getElementById('csv-row-count').textContent = `총 ${parsed.length}행 (정상 ${validCount}건${errorCount > 0 ? ', 오류 ' + errorCount + '건' : ''})`;
+            document.getElementById('csv-preview-area').style.display = 'block';
+            document.getElementById('csv-import-btn').style.display = validCount > 0 ? 'inline-block' : 'none';
+        }
+
+        // 텍스트 붙여넣기 → 파싱 → (오류 없으면 즉시 저장 / 오류 있으면 미리보기 표시)
+        window.handleCsvPasteImport = async () => {
+            const text = document.getElementById('csv-paste-input').value.trim();
+            if (!text) { alert('CSV 텍스트를 입력해주세요.'); return; }
+
+            parseCsvAndPreview(text, true);
+
+            const hasErrors = csvParsedRows.some(p => p.errors.length > 0);
+            if (hasErrors) {
+                // 오류 행이 있으면 미리보기만 표시하고 멈춤. 정상 행은 "DB에 저장하기"로 저장 가능.
+                window.showNotification("파싱 완료 — 오류 확인 필요", "오류가 있는 행은 빨간색으로 표시됩니다. 정상 행만 저장됩니다.", "info");
+                return;
+            }
+
+            // 오류 없으면 바로 저장
+            await importCsvData();
+        };
+
+        window.importCsvData = async () => {
+            const validRows = csvParsedRows.filter(p => p.errors.length === 0);
+            if (validRows.length === 0) { alert('저장할 수 있는 정상 데이터가 없습니다.'); return; }
+
+            const importBtn = document.getElementById('csv-import-btn');
+            importBtn.disabled = true;
+            importBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 저장 중...';
+
+            try {
+                let eventsByYear = {};
+                validRows.forEach((item, index) => {
+                    const ev = Object.assign({}, item.ev, { id: 'evt_csv_' + Date.now() + '_' + index });
+                    if (!eventsByYear[item.yr]) eventsByYear[item.yr] = [];
+                    eventsByYear[item.yr].push({ ev, mn: item.mn });
+                });
+
+                for (const yr of Object.keys(eventsByYear)) {
+                    const res = await safeFetchDB({ action: "getDoc", collection: "historical_issues", id: "year_" + yr });
+                    let yearData = (res.ok && res.data) ? res.data : { yearTitle: yr + " 이슈 연대기", months: {} };
+                    if (!yearData.months) yearData.months = {};
+
+                    eventsByYear[yr].forEach(item => {
+                        if (!yearData.months[item.mn]) yearData.months[item.mn] = { summary: "", events: [] };
+                        yearData.months[item.mn].events.push(item.ev);
+                    });
+
+                    await safeFetchDB({ action: "set", collection: "historical_issues", id: "year_" + yr, data: yearData });
+
+                    if (!availableYears.includes(yr)) {
+                        availableYears.push(yr);
+                        populateYearFilter();
+                    }
+                }
+
+                window.showNotification("CSV 저장 완료", `총 ${validRows.length}건의 데이터가 DB에 저장되었습니다.`, "success");
+                closeCsvModal();
+                loadIssues();
+                const manageTab = document.querySelector('.tab-btn[data-tab="tab-manage"]');
+                if (manageTab) manageTab.click();
+
+            } catch (err) {
+                console.error(err);
+                alert("저장 중 오류가 발생했습니다: " + err.message);
+            } finally {
+                importBtn.disabled = false;
+                importBtn.innerHTML = '<i class="fas fa-database"></i> DB에 저장하기';
+            }
+        };
+
         init();
     </script>
+
+    <!-- 일괄 처리 플로팅 액션 바 -->
+    <div class="bulk-action-bar" id="bulkActionBar">
+        <span>선택됨</span>
+        <span class="bulk-count-badge" id="bulkCountBadge">0</span>
+        <div class="bulk-divider"></div>
+        <button class="bulk-btn bulk-btn-apply"  onclick="bulkUpdateReviewStatus(1)">✅ 반영</button>
+        <button class="bulk-btn bulk-btn-reject" onclick="bulkUpdateReviewStatus(2)">❌ 미반영</button>
+        <button class="bulk-btn bulk-btn-reset"  onclick="bulkUpdateReviewStatus(0)">❓ 미확인</button>
+        <div class="bulk-divider"></div>
+        <button class="bulk-btn bulk-btn-cancel" onclick="clearSelection()">취소</button>
+    </div>
 </body>
 </html>
