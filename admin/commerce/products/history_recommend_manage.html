@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>역사 추천 콘텐츠 관리 · Cheese Admin</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="stylesheet" href="../../admin.css" />
+    <!-- Quill Editor -->
+    <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+    <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
+    <style>
+        /* Quill UI Custom */
+        .ql-toolbar.ql-snow { border-top-left-radius: 12px; border-top-right-radius: 12px; border-color: #e2e8f0; background: #f8fafc; }
+        .ql-container.ql-snow { border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; border-color: #e2e8f0; font-family: inherit; font-size: 0.88rem; }
+        .ql-editor { min-height: 120px; }
+        .ql-editor.ql-blank::before { color: #94a3b8; font-style: normal; }
+
+        /* ── 필터 바 ── */
+        .filter-bar {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+        .filter-btn {
+            padding: 7px 16px;
+            border-radius: 20px;
+            border: 1.5px solid #e2e8f0;
+            background: #fff;
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: #64748b;
+            cursor: pointer;
+            transition: 0.15s;
+        }
+        .filter-btn:hover { border-color: #94a3b8; color: #1e293b; }
+        .filter-btn.active { background: #1e293b; color: #fff; border-color: #1e293b; }
+
+        /* ── 콘텐츠 테이블 ── */
+        .recommend-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        .recommend-table th {
+            text-align: left;
+            padding: 10px 12px;
+            font-size: 0.75rem;
+            font-weight: 800;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 2px solid #f1f5f9;
+            white-space: nowrap;
+        }
+        .recommend-table td {
+            padding: 14px 12px;
+            border-bottom: 1px solid #f1f5f9;
+            vertical-align: middle;
+            color: #1e293b;
+        }
+        .recommend-table tr:hover td { background: #f8fafc; }
+
+        .era-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.72rem;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+        .era-gojoseon          { background: #f0ebe3; color: #5c4a32; }
+        .era-samguk            { background: #fde8e8; color: #8b2c2c; }
+        .era-nambukguk         { background: #e8f0fd; color: #2c5c8b; }
+        .era-goryeo            { background: #e8f3e8; color: #4a6741; }
+        .era-joseon            { background: #f0ebe3; color: #6b4a2c; }
+        .era-japanese_colonial { background: #f0f0f0; color: #3d3d3d; }
+        .era-modern            { background: #e8eef5; color: #1a3d5c; }
+
+        .type-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            background: #f1f5f9;
+            color: #64748b;
+        }
+        .type-youtube { background: #fee2e2; color: #991b1b; }
+        .type-book    { background: #e8f5e9; color: #2e7d32; }
+        .type-article { background: #fff3e0; color: #e65100; }
+        .type-blog    { background: #f3e5f5; color: #6a1b9a; }
+
+        .visible-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            border: none;
+            transition: 0.15s;
+        }
+        .visible-on  { background: #dcfce7; color: #166534; }
+        .visible-off { background: #f1f5f9; color: #94a3b8; }
+
+        .thumb-preview {
+            width: 72px;
+            height: 40px;
+            object-fit: cover;
+            border-radius: 4px;
+            background: #f1f5f9;
+            display: block;
+        }
+        .thumb-placeholder {
+            width: 72px;
+            height: 40px;
+            border-radius: 4px;
+            background: #f1f5f9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+            color: #cbd5e1;
+        }
+
+        .row-actions { display: flex; gap: 6px; }
+        .btn-edit   { padding: 6px 12px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; cursor: pointer; border: 1px solid #e2e8f0; background: #fff; color: #1e293b; transition: 0.15s; }
+        .btn-edit:hover { background: #f1f5f9; }
+        .btn-del    { padding: 6px 12px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; cursor: pointer; border: 1px solid #fee2e2; background: #fff; color: #991b1b; transition: 0.15s; }
+        .btn-del:hover { background: #fee2e2; }
+
+        /* ── 모달 공통 ── */
+        .modal-overlay {
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,0.45);
+            display: none; align-items: flex-start; justify-content: center;
+            z-index: 2000; padding: 40px 16px; overflow-y: auto;
+        }
+        .modal-overlay.show { display: flex; }
+        .modal-box {
+            background: #fff;
+            border-radius: 20px;
+            width: 640px;
+            max-width: 100%;
+            padding: 36px;
+            position: relative;
+        }
+        .modal-title {
+            font-size: 1.1rem;
+            font-weight: 800;
+            color: #1e293b;
+            margin: 0 0 28px;
+        }
+        .modal-close {
+            position: absolute;
+            top: 18px; right: 20px;
+            background: none; border: none;
+            font-size: 1.4rem; cursor: pointer; color: #94a3b8;
+        }
+        .modal-close:hover { color: #1e293b; }
+
+        /* ── 폼 ── */
+        .form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .form-col-full { grid-column: 1 / -1; }
+        .form-item label {
+            display: block;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: #64748b;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }
+        .styled-input {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            font-size: 0.88rem;
+            outline: none;
+            box-sizing: border-box;
+            transition: border-color 0.15s;
+            background: #fff;
+        }
+        .styled-input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+        textarea.styled-input { resize: vertical; min-height: 80px; }
+
+        .form-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 28px;
+            padding-top: 20px;
+            border-top: 1px solid #f1f5f9;
+        }
+
+        /* ── 빈 상태 / 로딩 ── */
+        .empty-row td {
+            text-align: center;
+            padding: 60px 20px;
+            color: #94a3b8;
+            font-weight: 700;
+        }
+
+        @media (max-width: 768px) {
+            .form-grid-2 { grid-template-columns: 1fr; }
+            .recommend-table th:nth-child(3),
+            .recommend-table td:nth-child(3),
+            .recommend-table th:nth-child(5),
+            .recommend-table td:nth-child(5) { display: none; }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="admin-shell">
+        <div id="admin-header-slot"></div>
+
+        <div class="admin-main">
+            <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+
+            <main>
+                <!-- 페이지 헤더 -->
+                <div style="margin-bottom: 2rem; display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 12px;">
+                    <div>
+                        <h1 style="font-size: 1.5rem; font-weight: 800; margin: 0 0 4px;">역사 추천 콘텐츠 관리</h1>
+                        <p style="font-size: 0.85rem; color: #64748b; margin: 0;">
+                            소비자 페이지(<code>/recommend</code>)에 표시될 역사 콘텐츠를 등록·수정·삭제합니다.
+                        </p>
+                    </div>
+                    <button class="btn-primary" onclick="openFormModal()" style="padding: 11px 22px; display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 1.1rem;">+</span> 콘텐츠 등록
+                    </button>
+                </div>
+
+                <!-- 시대 필터 -->
+                <div class="filter-bar" id="era-filter-bar">
+                    <button class="filter-btn active" data-era="all" onclick="setEraFilter('all', this)">전체</button>
+                    <button class="filter-btn" data-era="gojoseon"          onclick="setEraFilter('gojoseon', this)">고조선</button>
+                    <button class="filter-btn" data-era="samguk"            onclick="setEraFilter('samguk', this)">삼국시대</button>
+                    <button class="filter-btn" data-era="nambukguk"         onclick="setEraFilter('nambukguk', this)">남북국시대</button>
+                    <button class="filter-btn" data-era="goryeo"            onclick="setEraFilter('goryeo', this)">고려</button>
+                    <button class="filter-btn" data-era="joseon"            onclick="setEraFilter('joseon', this)">조선</button>
+                    <button class="filter-btn" data-era="japanese_colonial" onclick="setEraFilter('japanese_colonial', this)">일제강점기</button>
+                    <button class="filter-btn" data-era="modern"            onclick="setEraFilter('modern', this)">현대사</button>
+                </div>
+
+                <!-- 콘텐츠 목록 테이블 -->
+                <div class="card" style="overflow-x: auto;">
+                    <table class="recommend-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 80px;">썸네일</th>
+                                <th>제목</th>
+                                <th style="width: 110px;">시대</th>
+                                <th style="width: 80px;">유형</th>
+                                <th style="width: 90px;">출처</th>
+                                <th style="width: 80px;">순서</th>
+                                <th style="width: 90px;">공개</th>
+                                <th style="width: 110px;">작업</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recommend-tbody">
+                            <tr class="empty-row">
+                                <td colspan="8">데이터를 불러오는 중...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <p id="item-count" style="font-size: 0.8rem; color: #94a3b8; margin-top: 10px;"></p>
+            </main>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════
+         등록 / 수정 모달
+    ════════════════════════════════════ -->
+    <div id="form-modal" class="modal-overlay">
+        <div class="modal-box">
+            <button class="modal-close" onclick="closeFormModal()">×</button>
+            <h2 class="modal-title" id="modal-title">콘텐츠 등록</h2>
+
+            <div class="form-grid-2">
+                <!-- 시대 -->
+                <div class="form-item">
+                    <label>시대 *</label>
+                    <select id="f-eraId" class="styled-input">
+                        <option value="">— 선택 —</option>
+                        <option value="gojoseon">고조선</option>
+                        <option value="samguk">삼국시대</option>
+                        <option value="nambukguk">남북국시대</option>
+                        <option value="goryeo">고려</option>
+                        <option value="joseon">조선</option>
+                        <option value="japanese_colonial">일제강점기</option>
+                        <option value="modern">현대사</option>
+                    </select>
+                </div>
+
+                <!-- 콘텐츠 유형 -->
+                <div class="form-item">
+                    <label>유형 *</label>
+                    <select id="f-contentType" class="styled-input" onchange="onTypeChange()">
+                        <option value="youtube">YouTube 영상</option>
+                        <option value="book">책</option>
+                        <option value="article">기사</option>
+                        <option value="blog">블로그</option>
+                    </select>
+                </div>
+
+                <!-- 제목 -->
+                <div class="form-item form-col-full">
+                    <label>제목 *</label>
+                    <input type="text" id="f-title" class="styled-input" placeholder="예: 고려의 건국, 왕건의 비밀">
+                </div>
+
+                <!-- URL -->
+                <div class="form-item form-col-full">
+                    <label>링크 URL *</label>
+                    <input type="url" id="f-url" class="styled-input" placeholder="https://www.youtube.com/watch?v=..." oninput="autoFillThumbnail()">
+                </div>
+
+                <!-- 썸네일 URL -->
+                <div class="form-item form-col-full">
+                    <label>썸네일 URL <span id="thumb-hint" style="font-weight:400; text-transform:none; color:#94a3b8;">(YouTube URL 입력 시 자동 완성)</span></label>
+                    <input type="url" id="f-thumbnailUrl" class="styled-input" placeholder="https://img.youtube.com/vi/{videoId}/hqdefault.jpg">
+                </div>
+
+                <!-- 출처 -->
+                <div class="form-item">
+                    <label>출처</label>
+                    <input type="text" id="f-source" class="styled-input" placeholder="KBS 역사스페셜" value="KBS 역사스페셜">
+                </div>
+
+                <!-- 방영/게재일 -->
+                <div class="form-item">
+                    <label>방영·게재일</label>
+                    <input type="date" id="f-publishedAt" class="styled-input">
+                </div>
+
+                <!-- 요약 -->
+                <div class="form-item form-col-full">
+                    <label>요약 설명</label>
+                    <div id="f-summary-editor" style="height: 160px; font-family: inherit;"></div>
+                </div>
+
+                <!-- 태그 -->
+                <div class="form-item form-col-full">
+                    <label>태그 <span style="font-weight:400; text-transform:none; color:#94a3b8;">(쉼표로 구분)</span></label>
+                    <input type="text" id="f-tags" class="styled-input" placeholder="왕건, 후삼국, 고려 건국">
+                </div>
+
+                <!-- 정렬 순서 -->
+                <div class="form-item">
+                    <label>정렬 순서</label>
+                    <input type="number" id="f-order" class="styled-input" placeholder="1" min="1">
+                </div>
+
+                <!-- 공개 여부 -->
+                <div class="form-item">
+                    <label>공개 여부</label>
+                    <select id="f-isVisible" class="styled-input">
+                        <option value="true">공개</option>
+                        <option value="false">비공개</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-footer">
+                <button class="btn-ghost" onclick="closeFormModal()">취소</button>
+                <button class="btn-primary" onclick="saveItem()" id="save-btn" style="min-width: 100px;">저장</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="../../admin-common.js"></script>
+
+    <script type="module">
+        // ── Admin API 헬퍼 ──────────────────────────────────────────
+        async function safeFetchDB(payload) {
+            if (!window.CHEESE_ADMIN_DB_API) throw new Error("Admin API URL not configured.");
+            const res = await fetch(window.CHEESE_ADMIN_DB_API, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!data.ok) throw new Error(data.error || "API Error");
+            return data;
+        }
+
+        // ── 상태 ────────────────────────────────────────────────────
+        const ERA_LABEL = {
+            gojoseon: '고조선', samguk: '삼국시대', nambukguk: '남북국시대',
+            goryeo: '고려', joseon: '조선', japanese_colonial: '일제강점기', modern: '현대사'
+        };
+        const TYPE_LABEL = { youtube: 'YouTube', book: '책', article: '기사', blog: '블로그' };
+
+        let allItems = [];
+        let currentEraFilter = 'all';
+        let editingId = null;
+        let quill = null;
+
+        // Quill 초기화
+        function initQuill() {
+            if (quill) return;
+            quill = new Quill('#f-summary-editor', {
+                theme: 'snow',
+                modules: {
+                    toolbar: [
+                        ['bold', 'italic', 'underline'],
+                        [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                        [{ 'color': [] }, { 'background': [] }],
+                        ['clean']
+                    ]
+                },
+                placeholder: '영상의 핵심 요약이나 노트를 작성해주세요 (노트북LM 요약본 등)...'
+            });
+        }
+
+        // ── 데이터 로드 ─────────────────────────────────────────────
+        async function loadItems() {
+            const tbody = document.getElementById('recommend-tbody');
+            tbody.innerHTML = '<tr class="empty-row"><td colspan="8">데이터를 불러오는 중...</td></tr>';
+            try {
+                const res = await safeFetchDB({ action: "get", collection: "history_recommendations" });
+                allItems = res.data || [];
+                renderTable();
+            } catch (err) {
+                console.error("[RecommendManage] Load failed:", err);
+                tbody.innerHTML = `<tr class="empty-row"><td colspan="8" style="color:#ef4444;">로드 실패: ${err.message}</td></tr>`;
+            }
+        }
+
+        // ── 테이블 렌더 ─────────────────────────────────────────────
+        function renderTable() {
+            const tbody = document.getElementById('recommend-tbody');
+            const counter = document.getElementById('item-count');
+
+            const filtered = currentEraFilter === 'all'
+                ? allItems
+                : allItems.filter(i => i.eraId === currentEraFilter);
+
+            filtered.sort((a, b) => {
+                if (a.eraId !== b.eraId) return (a.eraId || '').localeCompare(b.eraId || '');
+                return (a.order ?? 999) - (b.order ?? 999);
+            });
+
+            counter.textContent = `총 ${filtered.length}건 표시 중 (전체 ${allItems.length}건)`;
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = '<tr class="empty-row"><td colspan="8">등록된 콘텐츠가 없습니다.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = filtered.map(item => {
+                const eraLabel = ERA_LABEL[item.eraId] ?? item.eraId ?? '-';
+                const typeLabel = TYPE_LABEL[item.contentType] ?? item.contentType ?? '-';
+                const visibleClass = item.isVisible !== false ? 'visible-on' : 'visible-off';
+                const visibleText  = item.isVisible !== false ? '● 공개' : '○ 비공개';
+                const thumb = item.thumbnailUrl
+                    ? `<img src="${item.thumbnailUrl}" class="thumb-preview" alt="" onerror="this.style.display='none'">`
+                    : `<div class="thumb-placeholder">▶</div>`;
+
+                return `
+                    <tr>
+                        <td>${thumb}</td>
+                        <td style="max-width: 240px;">
+                            <div style="font-weight: 700; margin-bottom: 2px; line-height: 1.4; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">${item.title ?? '-'}</div>
+                            ${item.publishedAt ? `<div style="font-size:0.72rem; color:#94a3b8;">${item.publishedAt}</div>` : ''}
+                        </td>
+                        <td><span class="era-badge era-${item.eraId}">${eraLabel}</span></td>
+                        <td><span class="type-badge type-${item.contentType}">${typeLabel}</span></td>
+                        <td style="font-size:0.78rem; color:#64748b; max-width:80px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${item.source ?? '-'}</td>
+                        <td style="text-align:center; color:#94a3b8; font-weight:700;">${item.order ?? '-'}</td>
+                        <td>
+                            <button class="${visibleClass} visible-toggle" onclick="toggleVisible('${item.id}', ${item.isVisible !== false})">
+                                ${visibleText}
+                            </button>
+                        </td>
+                        <td>
+                            <div class="row-actions">
+                                <button class="btn-edit" onclick="openEditModal('${item.id}')">수정</button>
+                                <button class="btn-del"  onclick="deleteItem('${item.id}')">삭제</button>
+                            </div>
+                        </td>
+                    </tr>`;
+            }).join('');
+        }
+
+        // ── 시대 필터 ────────────────────────────────────────────────
+        window.setEraFilter = (era, el) => {
+            currentEraFilter = era;
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            el.classList.add('active');
+            renderTable();
+        };
+
+        // ── 등록/수정 모달 ───────────────────────────────────────────
+        window.openFormModal = () => {
+            editingId = null;
+            document.getElementById('modal-title').textContent = '콘텐츠 등록';
+            document.getElementById('save-btn').textContent = '등록';
+            resetForm();
+            initQuill();
+            document.getElementById('form-modal').classList.add('show');
+        };
+
+        window.openEditModal = (id) => {
+            const item = allItems.find(i => i.id === id);
+            if (!item) return;
+            editingId = id;
+            document.getElementById('modal-title').textContent = '콘텐츠 수정';
+            document.getElementById('save-btn').textContent = '저장';
+            initQuill();
+            fillForm(item);
+            document.getElementById('form-modal').classList.add('show');
+        };
+
+        window.closeFormModal = () => {
+            document.getElementById('form-modal').classList.remove('show');
+            editingId = null;
+        };
+
+        function resetForm() {
+            if (quill) quill.setContents([]);
+            ['f-eraId','f-contentType','f-title','f-url','f-thumbnailUrl',
+             'f-source','f-publishedAt','f-tags','f-order','f-isVisible'].forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                if (id === 'f-contentType') el.value = 'youtube';
+                else if (id === 'f-source') el.value = 'KBS 역사스페셜';
+                else if (id === 'f-isVisible') el.value = 'true';
+                else el.value = '';
+            });
+        }
+
+        function fillForm(item) {
+            document.getElementById('f-eraId').value         = item.eraId ?? '';
+            document.getElementById('f-contentType').value   = item.contentType ?? 'youtube';
+            document.getElementById('f-title').value         = item.title ?? '';
+            document.getElementById('f-url').value           = item.url ?? '';
+            document.getElementById('f-thumbnailUrl').value  = item.thumbnailUrl ?? '';
+            document.getElementById('f-source').value        = item.source ?? 'KBS 역사스페셜';
+            document.getElementById('f-publishedAt').value   = item.publishedAt ?? '';
+            
+            if (quill) {
+                quill.root.innerHTML = item.summary ?? '';
+            }
+
+            document.getElementById('f-tags').value          = Array.isArray(item.tags) ? item.tags.join(', ') : (item.tags ?? '');
+            document.getElementById('f-order').value         = item.order ?? '';
+            document.getElementById('f-isVisible').value     = (item.isVisible !== false) ? 'true' : 'false';
+        }
+
+        // YouTube URL에서 썸네일 자동 완성
+        window.autoFillThumbnail = () => {
+            const url = document.getElementById('f-url').value;
+            const thumbInput = document.getElementById('f-thumbnailUrl');
+            if (thumbInput.value) return; // 이미 입력된 경우 덮어쓰지 않음
+            const match = url.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+            if (match) {
+                thumbInput.value = `https://img.youtube.com/vi/${match[1]}/hqdefault.jpg`;
+            }
+        };
+
+        window.onTypeChange = () => {
+            const type = document.getElementById('f-contentType').value;
+            const sourceInput = document.getElementById('f-source');
+            if (type === 'youtube' && !sourceInput.value) sourceInput.value = 'KBS 역사스페셜';
+        };
+
+        // ── 저장 (등록 / 수정) ──────────────────────────────────────
+        window.saveItem = async () => {
+            const eraId       = document.getElementById('f-eraId').value;
+            const contentType = document.getElementById('f-contentType').value;
+            const title       = document.getElementById('f-title').value.trim();
+            const url         = document.getElementById('f-url').value.trim();
+
+            if (!eraId || !title || !url) {
+                alert('시대, 제목, URL은 필수 항목입니다.');
+                return;
+            }
+
+            const tagsRaw = document.getElementById('f-tags').value;
+            const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(t => t) : [];
+            const orderVal = document.getElementById('f-order').value;
+
+            const data = {
+                eraId,
+                contentType,
+                title,
+                url,
+                thumbnailUrl: document.getElementById('f-thumbnailUrl').value.trim() || null,
+                source:       document.getElementById('f-source').value.trim() || 'KBS 역사스페셜',
+                publishedAt:  document.getElementById('f-publishedAt').value || null,
+                summary:      quill ? quill.root.innerHTML : null,
+                tags,
+                order:        orderVal ? Number(orderVal) : null,
+                isVisible:    document.getElementById('f-isVisible').value === 'true',
+            };
+
+            const saveBtn = document.getElementById('save-btn');
+            saveBtn.disabled = true;
+            saveBtn.textContent = '저장 중...';
+
+            try {
+                if (editingId) {
+                    await safeFetchDB({ action: "update", collection: "history_recommendations", id: editingId, data });
+                } else {
+                    data.createdAt = new Date().toISOString();
+                    await safeFetchDB({ action: "create", collection: "history_recommendations", data });
+                }
+                closeFormModal();
+                await loadItems();
+            } catch (err) {
+                console.error("[RecommendManage] Save failed:", err);
+                alert('저장 실패: ' + err.message);
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.textContent = editingId ? '저장' : '등록';
+            }
+        };
+
+        // ── 공개 토글 ────────────────────────────────────────────────
+        window.toggleVisible = async (id, currentVisible) => {
+            try {
+                await safeFetchDB({
+                    action: "update",
+                    collection: "history_recommendations",
+                    id,
+                    data: { isVisible: !currentVisible }
+                });
+                await loadItems();
+            } catch (err) {
+                console.error("[RecommendManage] Toggle visible failed:", err);
+                alert('변경 실패: ' + err.message);
+            }
+        };
+
+        // ── 삭제 ─────────────────────────────────────────────────────
+        window.deleteItem = async (id) => {
+            const item = allItems.find(i => i.id === id);
+            if (!confirm(`"${item?.title ?? id}" 를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) return;
+            try {
+                await safeFetchDB({ action: "delete", collection: "history_recommendations", id });
+                await loadItems();
+            } catch (err) {
+                console.error("[RecommendManage] Delete failed:", err);
+                alert('삭제 실패: ' + err.message);
+            }
+        };
+
+        // ── 초기화 ───────────────────────────────────────────────────
+        window.addEventListener('load', () => {
+            if (window.renderAdminHeader) window.renderAdminHeader({ mountId: 'admin-header-slot', badgeText: 'Content', subtitle: '역사 추천 콘텐츠 관리' });
+            if (window.renderAdminMenu)   window.renderAdminMenu({ mountId: 'admin-menu-slot', active: 'history_recommend_manage' });
+
+            const checkApi = setInterval(() => {
+                if (window.CHEESE_ADMIN_DB_API) {
+                    clearInterval(checkApi);
+                    loadItems();
+                }
+            }, 100);
+
+            // 모달 외부 클릭 시 닫기
+            document.getElementById('form-modal').addEventListener('click', e => {
+                if (e.target === document.getElementById('form-modal')) closeFormModal();
+            });
+        });
+    </script>
+</body>
+
+</html>

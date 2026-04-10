@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>YouTube 채널 동기화 · Cheese Admin</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="stylesheet" href="../../admin.css" />
+    <style>
+        /* ── 섹션 공통 ── */
+        .section-card { margin-bottom: 28px; }
+        .section-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 18px; padding-bottom: 14px;
+            border-bottom: 2px solid #f1f5f9;
+        }
+        .section-title { font-size: 1rem; font-weight: 800; color: #1e293b; margin: 0; }
+        .section-sub   { font-size: 0.8rem; color: #94a3b8; margin-top: 2px; }
+
+        /* ── API 키 설정 ── */
+        .api-key-row { display: flex; gap: 10px; align-items: center; }
+        .api-key-row input { flex: 1; }
+        .api-status { font-size: 0.78rem; font-weight: 700; margin-top: 8px; }
+        .api-status.ok  { color: #16a34a; }
+        .api-status.err { color: #dc2626; }
+
+        /* ── 채널 등록 입력 ── */
+        .channel-add-row { display: flex; gap: 10px; }
+        .channel-add-row input { flex: 1; }
+
+        /* ── 채널 카드 목록 ── */
+        .channel-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; margin-top: 16px; }
+        .channel-card {
+            background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 14px;
+            padding: 16px; display: flex; gap: 14px; align-items: flex-start;
+            transition: border-color 0.15s;
+        }
+        .channel-card:hover { border-color: #94a3b8; }
+        .channel-card.active { border-color: #3b82f6; background: #eff6ff; }
+        .channel-thumb { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; flex-shrink: 0; background: #e2e8f0; }
+        .channel-info { flex: 1; min-width: 0; }
+        .channel-name { font-size: 0.9rem; font-weight: 800; color: #1e293b; margin: 0 0 4px; }
+        .channel-meta { font-size: 0.75rem; color: #94a3b8; }
+        .channel-actions { display: flex; flex-direction: column; gap: 6px; }
+        .btn-sync  { padding: 6px 12px; border-radius: 7px; font-size: 0.75rem; font-weight: 700; border: none; cursor: pointer; background: #3b82f6; color: #fff; transition: 0.15s; white-space: nowrap; }
+        .btn-sync:hover { background: #2563eb; }
+        .btn-sync:disabled { background: #94a3b8; cursor: not-allowed; }
+        .btn-ch-del { padding: 6px 12px; border-radius: 7px; font-size: 0.75rem; font-weight: 700; border: 1px solid #fecaca; background: #fff; color: #dc2626; cursor: pointer; transition: 0.15s; white-space: nowrap; }
+        .btn-ch-del:hover { background: #fee2e2; }
+
+        /* ── 영상 목록 섹션 ── */
+        #video-section { display: none; }
+        .video-filter-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+        .vf-btn { padding: 6px 14px; border-radius: 16px; border: 1.5px solid #e2e8f0; background: #fff; font-size: 0.78rem; font-weight: 700; color: #64748b; cursor: pointer; transition: 0.15s; }
+        .vf-btn:hover  { border-color: #94a3b8; color: #1e293b; }
+        .vf-btn.active { background: #1e293b; color: #fff; border-color: #1e293b; }
+
+        /* ── 영상 카드 그리드 ── */
+        .video-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+        .video-card {
+            background: #fff; border: 1.5px solid #e2e8f0; border-radius: 12px;
+            overflow: hidden; transition: box-shadow 0.15s, transform 0.15s;
+        }
+        .video-card:hover { box-shadow: 0 6px 18px rgba(0,0,0,0.09); transform: translateY(-2px); }
+        .video-card.registered { border-color: #bbf7d0; }
+
+        .video-thumb-wrap { position: relative; width: 100%; padding-top: 56.25%; background: #f1f5f9; overflow: hidden; }
+        .video-thumb-wrap img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+        .video-status-badge {
+            position: absolute; top: 8px; right: 8px;
+            padding: 3px 9px; border-radius: 10px;
+            font-size: 0.68rem; font-weight: 800;
+        }
+        .badge-registered { background: #16a34a; color: #fff; }
+        .badge-none       { background: rgba(0,0,0,0.45); color: #fff; }
+
+        .video-duration {
+            position: absolute; bottom: 8px; right: 8px;
+            background: rgba(0,0,0,0.8); color: #fff;
+            padding: 2px 5px; border-radius: 4px;
+            font-size: 0.72rem; font-weight: 700;
+        }
+
+        .video-body { padding: 14px; }
+        .video-title {
+            font-size: 0.88rem; font-weight: 700; line-height: 1.45;
+            margin: 0 0 6px; color: #1e293b;
+            overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+        }
+        .video-date { font-size: 0.72rem; color: #94a3b8; margin-bottom: 12px; }
+        .video-era-label { font-size: 0.72rem; font-weight: 700; color: #16a34a; margin-bottom: 8px; }
+        .video-action { display: flex; gap: 8px; }
+        .btn-register { flex: 1; padding: 8px; border-radius: 8px; border: none; font-size: 0.78rem; font-weight: 800; cursor: pointer; background: #1e293b; color: #fff; transition: 0.15s; }
+        .btn-register:hover { background: #0f172a; }
+        .btn-unregister { flex: 1; padding: 8px; border-radius: 8px; border: 1.5px solid #fecaca; background: #fff; font-size: 0.78rem; font-weight: 700; cursor: pointer; color: #dc2626; transition: 0.15s; }
+        .btn-unregister:hover { background: #fee2e2; }
+
+        .load-more-wrap { text-align: center; margin-top: 24px; }
+        .btn-load-more { padding: 12px 32px; border-radius: 10px; border: 2px solid #e2e8f0; background: #fff; font-size: 0.85rem; font-weight: 800; color: #1e293b; cursor: pointer; transition: 0.15s; }
+        .btn-load-more:hover { border-color: #94a3b8; }
+        .btn-load-more:disabled { color: #94a3b8; cursor: not-allowed; }
+
+        /* ── 동기화 진행 표시 ── */
+        .sync-progress { font-size: 0.82rem; color: #3b82f6; font-weight: 700; margin-top: 8px; display: none; }
+
+        /* ── 모달 ── */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: none; align-items: flex-start; justify-content: center; z-index: 2000; padding: 60px 16px; overflow-y: auto; }
+        .modal-overlay.show { display: flex; }
+        .modal-box { background: #fff; border-radius: 20px; width: 480px; max-width: 100%; padding: 32px; position: relative; }
+        .modal-close { position: absolute; top: 16px; right: 18px; background: none; border: none; font-size: 1.4rem; cursor: pointer; color: #94a3b8; }
+        .modal-close:hover { color: #1e293b; }
+        .modal-title { font-size: 1.05rem; font-weight: 800; color: #1e293b; margin: 0 0 20px; }
+
+        .modal-video-preview { display: flex; gap: 12px; align-items: flex-start; padding: 14px; background: #f8fafc; border-radius: 10px; margin-bottom: 20px; }
+        .modal-thumb { width: 100px; height: 56px; object-fit: cover; border-radius: 6px; flex-shrink: 0; background: #e2e8f0; }
+        .modal-video-title { font-size: 0.85rem; font-weight: 700; color: #1e293b; line-height: 1.4; margin: 0 0 4px; }
+        .modal-video-date  { font-size: 0.72rem; color: #94a3b8; }
+
+        .form-item { margin-bottom: 16px; }
+        .form-item label { display: block; font-size: 0.72rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px; }
+        .styled-input { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 0.88rem; outline: none; box-sizing: border-box; transition: border-color 0.15s; }
+        .styled-input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+        textarea.styled-input { resize: vertical; min-height: 72px; }
+
+        .modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+
+        .empty-state { text-align: center; padding: 60px 20px; color: #94a3b8; font-weight: 700; font-size: 0.9rem; }
+
+        @media (max-width: 600px) {
+            .video-grid { grid-template-columns: 1fr; }
+            .channel-list { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="admin-shell">
+        <div id="admin-header-slot"></div>
+
+        <div class="admin-main">
+            <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+
+            <main>
+                <div style="margin-bottom: 2rem;">
+                    <h1 style="font-size: 1.5rem; font-weight: 800; margin: 0 0 4px;">YouTube 채널 동기화</h1>
+                    <p style="font-size: 0.85rem; color: #64748b; margin: 0;">채널을 등록하고 영상을 <code>/recommend</code> 페이지에 노출할지 관리합니다.</p>
+                </div>
+
+                <!-- ① API 키 설정 -->
+                <div class="card section-card">
+                    <div class="section-header">
+                        <div>
+                            <p class="section-title">YouTube Data API v3 키 설정</p>
+                            <p class="section-sub">Google Cloud Console에서 발급한 API 키를 입력하세요. (HTTP referrer 제한 권장)</p>
+                        </div>
+                    </div>
+                    <div class="api-key-row">
+                        <input type="password" id="api-key-input" class="styled-input" placeholder="AIzaSy...">
+                        <button class="btn-primary" onclick="saveApiKey()" style="padding: 10px 20px; white-space: nowrap;">저장</button>
+                        <button class="btn-ghost" onclick="toggleShowKey()" id="show-key-btn" style="padding: 10px 16px; white-space: nowrap;">표시</button>
+                    </div>
+                    <p class="api-status" id="api-status"></p>
+                </div>
+
+                <!-- ② 채널 관리 -->
+                <div class="card section-card">
+                    <div class="section-header">
+                        <div>
+                            <p class="section-title">채널 관리</p>
+                            <p class="section-sub">채널 URL, @핸들, 또는 채널 ID를 입력하세요.</p>
+                        </div>
+                    </div>
+                    <div class="channel-add-row">
+                        <input type="text" id="channel-input" class="styled-input" placeholder="예: https://www.youtube.com/@KBS역사스페셜 또는 UCxxxxxx">
+                        <button class="btn-primary" onclick="addChannel()" id="add-ch-btn" style="padding: 10px 20px; white-space: nowrap;">채널 추가</button>
+                    </div>
+                    <p id="channel-add-msg" style="font-size: 0.8rem; color: #94a3b8; margin-top: 8px; display: none;"></p>
+                    <div class="channel-list" id="channel-list">
+                        <p class="empty-state" style="grid-column: 1/-1; padding: 30px 0;">등록된 채널이 없습니다.</p>
+                    </div>
+                </div>
+
+                <!-- ③ 영상 목록 -->
+                <div class="card section-card" id="video-section">
+                    <div class="section-header">
+                        <div>
+                            <p class="section-title" id="video-channel-name">영상 목록</p>
+                            <p class="section-sub" id="video-count-text"></p>
+                        </div>
+                        <div style="display: flex; gap: 8px;">
+                            <button class="btn-ghost" onclick="copyVideoLinks()" style="padding: 7px 14px; font-size: 0.8rem;">🔗 링크 복사</button>
+                            <button class="btn-ghost" onclick="closeVideoSection()" style="padding: 7px 14px; font-size: 0.8rem;">닫기</button>
+                        </div>
+                    </div>
+
+                    <div class="video-filter-bar">
+                        <button class="vf-btn active" data-filter="all"        onclick="setFilter('all', this)">전체</button>
+                        <button class="vf-btn"        data-filter="none"       onclick="setFilter('none', this)">미등록</button>
+                        <button class="vf-btn"        data-filter="registered" onclick="setFilter('registered', this)">등록됨</button>
+                    </div>
+
+                    <div class="video-grid" id="video-grid">
+                        <p class="empty-state" style="grid-column:1/-1;">채널을 선택하면 영상 목록이 표시됩니다.</p>
+                    </div>
+
+                    <div class="load-more-wrap" id="load-more-wrap" style="display: none;">
+                        <button class="btn-load-more" id="load-more-btn" onclick="fetchMoreVideos()">더 불러오기 (50개)</button>
+                        <p id="load-more-info" style="font-size:0.78rem; color:#94a3b8; margin-top: 8px;"></p>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- 추천 등록 모달 -->
+    <div id="register-modal" class="modal-overlay">
+        <div class="modal-box">
+            <button class="modal-close" onclick="closeModal()">×</button>
+            <h2 class="modal-title">추천 페이지에 등록</h2>
+
+            <div class="modal-video-preview">
+                <img id="modal-thumb" class="modal-thumb" src="" alt="">
+                <div>
+                    <p class="modal-video-title" id="modal-video-title"></p>
+                    <p class="modal-video-date" id="modal-video-date"></p>
+                </div>
+            </div>
+
+            <div class="form-item">
+                <label>시대 선택 *</label>
+                <select id="m-eraId" class="styled-input">
+                    <option value="">— 선택 —</option>
+                    <option value="gojoseon">고조선</option>
+                    <option value="samguk">삼국시대</option>
+                    <option value="nambukguk">남북국시대</option>
+                    <option value="goryeo">고려</option>
+                    <option value="joseon">조선</option>
+                    <option value="japanese_colonial">일제강점기</option>
+                    <option value="modern">현대사</option>
+                </select>
+            </div>
+            <div class="form-item">
+                <label>제목 (수정 가능)</label>
+                <input type="text" id="m-title" class="styled-input">
+            </div>
+            <div class="form-item">
+                <label>요약 설명</label>
+                <textarea id="m-summary" class="styled-input" placeholder="3줄 이내 간략 설명"></textarea>
+            </div>
+            <div class="form-item">
+                <label>큐레이터의 관점 (Perspective) *</label>
+                <textarea id="m-perspective" class="styled-input" placeholder="영상에 대한 본인만의 역사적 해석이나 관점을 적어주세요."></textarea>
+            </div>
+            <div class="form-item">
+                <label>문제 풀어보기 링크 (Quiz URL)</label>
+                <input type="url" id="m-quizUrl" class="styled-input" placeholder="https://...">
+            </div>
+            <div class="form-item">
+                <label>출처 (방송사/채널명)</label>
+                <input type="text" id="m-source" class="styled-input" value="KBS 역사스페셜">
+            </div>
+            <div class="form-item">
+                <label>방영일/게시일</label>
+                <input type="text" id="m-publishedAt" class="styled-input" placeholder="YYYY.MM.DD">
+            </div>
+            <div class="form-item">
+                <label>태그 (콤마로 구분)</label>
+                <input type="text" id="m-tags" class="styled-input" placeholder="세종대왕, 훈민정음, 한글">
+            </div>
+            <div class="form-item">
+                <label>정렬 순서</label>
+                <input type="number" id="m-order" class="styled-input" placeholder="1" min="1">
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn-ghost" onclick="closeModal()">취소</button>
+                <button class="btn-primary" onclick="submitRegister()" id="modal-submit-btn" style="min-width: 100px;">등록</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="../../admin-common.js"></script>
+
+    <script type="module">
+        const YT_API = 'https://www.googleapis.com/youtube/v3';
+
+        const ERA_LABEL = {
+            gojoseon: '고조선', samguk: '삼국시대', nambukguk: '남북국시대',
+            goryeo: '고려', joseon: '조선', japanese_colonial: '일제강점기', modern: '현대사'
+        };
+
+        // ── 상태 ──────────────────────────────────────────────────────────
+        let apiKey = '';
+        let youtubeConfigDocId = null;
+        let savedChannels = [];
+        let currentChannel = null;        // 현재 선택된 채널
+        let currentPlaylistId = '';
+        let nextPageToken = '';
+        let videoItems = [];              // YouTube API에서 가져온 영상 목록
+        let registeredMap = new Map();    // videoId → { docId, eraId }
+        let videoFilter = 'all';
+        let pendingVideo = null;          // 등록 모달에 올라온 영상 데이터
+
+        // ── Admin API ─────────────────────────────────────────────────────
+        async function safeFetchDB(payload) {
+            if (!window.CHEESE_ADMIN_DB_API) throw new Error("Admin API URL not configured.");
+            const res = await fetch(window.CHEESE_ADMIN_DB_API, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!data.ok) throw new Error(data.error || "API Error");
+            return data;
+        }
+
+        // ── 설정 로드 ─────────────────────────────────────────────────────
+        async function loadConfig() {
+            try {
+                const res = await safeFetchDB({ action: "get", collection: "settings" });
+                const settings = res.data || [];
+                const cfg = settings.find(s => s.type === 'youtube_config');
+                if (cfg) {
+                    youtubeConfigDocId = cfg.id;
+                    apiKey = cfg.apiKey || '';
+                    savedChannels = cfg.channels || [];
+                    if (apiKey) {
+                        document.getElementById('api-key-input').value = apiKey;
+                        setApiStatus(true);
+                    }
+                    renderChannelList();
+                }
+            } catch (e) {
+                console.warn("[YTSync] Config load failed:", e);
+            }
+        }
+
+        async function persistConfig() {
+            const data = { type: 'youtube_config', apiKey, channels: savedChannels };
+            if (youtubeConfigDocId) {
+                await safeFetchDB({ action: "update", collection: "settings", id: youtubeConfigDocId, data });
+            } else {
+                await safeFetchDB({ action: "create", collection: "settings", data });
+                // 생성 후 ID 획득을 위해 재조회
+                const res = await safeFetchDB({ action: "get", collection: "settings" });
+                const cfg = (res.data || []).find(s => s.type === 'youtube_config');
+                if (cfg) youtubeConfigDocId = cfg.id;
+            }
+        }
+
+        // ── API 키 ────────────────────────────────────────────────────────
+        window.saveApiKey = async () => {
+            const key = document.getElementById('api-key-input').value.trim();
+            if (!key) { alert("API 키를 입력해주세요."); return; }
+            apiKey = key;
+            try {
+                await persistConfig();
+                setApiStatus(true);
+            } catch (err) {
+                alert("저장 실패: " + err.message);
+            }
+        };
+
+        function setApiStatus(ok) {
+            const el = document.getElementById('api-status');
+            el.textContent = ok ? "✓ API 키가 설정되어 있습니다." : "";
+            el.className = `api-status ${ok ? 'ok' : 'err'}`;
+        }
+
+        window.toggleShowKey = () => {
+            const input = document.getElementById('api-key-input');
+            const btn   = document.getElementById('show-key-btn');
+            const isHidden = input.type === 'password';
+            input.type = isHidden ? 'text' : 'password';
+            btn.textContent = isHidden ? '숨김' : '표시';
+        };
+
+        // ── 채널 추가 ─────────────────────────────────────────────────────
+        function parseChannelInput(input) {
+            input = input.trim();
+            const byChannel = input.match(/youtube\.com\/channel\/(UC[^/?&]+)/);
+            if (byChannel) return { type: 'id', value: byChannel[1] };
+            const byHandle = input.match(/youtube\.com\/@([^/?&]+)/);
+            if (byHandle) return { type: 'handle', value: byHandle[1] };
+            if (input.startsWith('@')) return { type: 'handle', value: input.slice(1) };
+            if (input.startsWith('UC'))return { type: 'id', value: input };
+            return { type: 'handle', value: input };
+        }
+
+        window.addChannel = async () => {
+            if (!apiKey) { alert("먼저 YouTube API 키를 저장해주세요."); return; }
+            const raw = document.getElementById('channel-input').value.trim();
+            if (!raw) return;
+
+            const btn = document.getElementById('add-ch-btn');
+            btn.disabled = true;
+            btn.textContent = '조회 중...';
+            showChannelMsg('');
+
+            try {
+                const parsed = parseChannelInput(raw);
+                const param = parsed.type === 'id'
+                    ? `id=${encodeURIComponent(parsed.value)}`
+                    : `forHandle=${encodeURIComponent(parsed.value)}`;
+
+                const res = await fetch(`${YT_API}/channels?part=snippet,contentDetails,statistics&${param}&key=${apiKey}`);
+                const data = await res.json();
+                if (data.error) throw new Error(data.error.message);
+                if (!data.items?.length) throw new Error('채널을 찾을 수 없습니다. 채널 ID 또는 @핸들을 확인해주세요.');
+
+                const ch = data.items[0];
+                if (savedChannels.find(c => c.id === ch.id)) {
+                    showChannelMsg('이미 등록된 채널입니다.');
+                    return;
+                }
+
+                savedChannels.push({
+                    id: ch.id,
+                    name: ch.snippet.title,
+                    thumbnailUrl: ch.snippet.thumbnails?.default?.url || '',
+                    uploadsPlaylistId: ch.contentDetails.relatedPlaylists.uploads,
+                    videoCount: parseInt(ch.statistics?.videoCount ?? 0, 10)
+                });
+
+                await persistConfig();
+                document.getElementById('channel-input').value = '';
+                renderChannelList();
+                showChannelMsg(`✓ "${ch.snippet.title}" 채널이 등록됐습니다.`);
+            } catch (err) {
+                showChannelMsg('오류: ' + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '채널 추가';
+            }
+        };
+
+        function showChannelMsg(msg) {
+            const el = document.getElementById('channel-add-msg');
+            el.textContent = msg;
+            el.style.display = msg ? 'block' : 'none';
+        }
+
+        window.deleteChannel = async (channelId) => {
+            const ch = savedChannels.find(c => c.id === channelId);
+            if (!confirm(`"${ch?.name}" 채널을 목록에서 제거하시겠습니까?\n(Firestore 데이터는 삭제되지 않습니다.)`)) return;
+            savedChannels = savedChannels.filter(c => c.id !== channelId);
+            await persistConfig();
+            if (currentChannel?.id === channelId) closeVideoSection();
+            renderChannelList();
+        };
+
+        function renderChannelList() {
+            const container = document.getElementById('channel-list');
+            if (!savedChannels.length) {
+                container.innerHTML = '<p class="empty-state" style="grid-column:1/-1; padding:30px 0;">등록된 채널이 없습니다.</p>';
+                return;
+            }
+            container.innerHTML = savedChannels.map(ch => `
+                <div class="channel-card ${currentChannel?.id === ch.id ? 'active' : ''}" id="ch-card-${ch.id}">
+                    <img class="channel-thumb" src="${ch.thumbnailUrl || ''}" alt="" onerror="this.src=''">
+                    <div class="channel-info">
+                        <p class="channel-name">${ch.name}</p>
+                        <p class="channel-meta">영상 약 ${Number(ch.videoCount).toLocaleString()}개</p>
+                        <p class="sync-progress" id="sync-progress-${ch.id}"></p>
+                    </div>
+                    <div class="channel-actions">
+                        <button class="btn-sync" id="sync-btn-${ch.id}" onclick="openChannelVideos('${ch.id}')">영상 보기</button>
+                        <button class="btn-ch-del" onclick="deleteChannel('${ch.id}')">삭제</button>
+                    </div>
+                </div>`).join('');
+        }
+
+        // ── 채널 영상 목록 열기 ───────────────────────────────────────────
+        window.openChannelVideos = async (channelId) => {
+            const ch = savedChannels.find(c => c.id === channelId);
+            if (!ch) return;
+
+            currentChannel = ch;
+            currentPlaylistId = ch.uploadsPlaylistId;
+            nextPageToken = '';
+            videoItems = [];
+            videoFilter = 'all';
+            document.querySelectorAll('.vf-btn').forEach(b => b.classList.remove('active'));
+            document.querySelector('.vf-btn[data-filter="all"]').classList.add('active');
+
+            document.getElementById('video-channel-name').textContent = ch.name;
+            document.getElementById('video-section').style.display = 'block';
+            document.getElementById('video-grid').innerHTML = '<p class="empty-state" style="grid-column:1/-1;">영상을 불러오는 중...</p>';
+            document.getElementById('video-count-text').textContent = '';
+            renderChannelList(); // 활성 채널 표시
+
+            // 추천 등록 현황 로드 (병렬)
+            await Promise.all([loadRecommendations(), fetchMoreVideos()]);
+        };
+
+        window.closeVideoSection = () => {
+            currentChannel = null;
+            document.getElementById('video-section').style.display = 'none';
+            renderChannelList();
+        };
+
+        // ── 추천 등록 현황 로드 ──────────────────────────────────────────
+        async function loadRecommendations() {
+            try {
+                const res = await safeFetchDB({ action: "get", collection: "history_recommendations" });
+                registeredMap = new Map();
+                (res.data || []).forEach(item => {
+                    const vid = extractVideoId(item.url);
+                    if (vid) registeredMap.set(vid, { docId: item.id, eraId: item.eraId });
+                });
+            } catch (err) {
+                console.warn("[YTSync] Recommendations load failed:", err);
+                registeredMap = new Map();
+            }
+        }
+
+        function extractVideoId(url) {
+            if (!url) return null;
+            const m = url.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+            return m ? m[1] : null;
+        }
+
+        /**
+         * ISO 8601 Duration 포맷(PT#H#M#S)을 H:MM:SS 또는 MM:SS 형태로 변환
+         */
+        function formatDuration(isoDuration) {
+            if (!isoDuration) return '';
+            const match = isoDuration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+            if (!match) return '';
+            const h = parseInt(match[1] || 0);
+            const m = parseInt(match[2] || 0);
+            const s = parseInt(match[3] || 0);
+            if (h > 0) {
+                return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+            }
+            return `${m}:${s.toString().padStart(2, '0')}`;
+        }
+
+        // ── YouTube 영상 페이지 로드 ─────────────────────────────────────
+        window.fetchMoreVideos = async () => {
+            if (!apiKey || !currentPlaylistId) return;
+
+            const loadMoreBtn = document.getElementById('load-more-btn');
+            if (loadMoreBtn) loadMoreBtn.disabled = true;
+
+            try {
+                // 1. 플레이리스트 아이템(기본 정보) 가져오기
+                const url = `${YT_API}/playlistItems?part=snippet,contentDetails&playlistId=${currentPlaylistId}&maxResults=50&key=${apiKey}${nextPageToken ? `&pageToken=${nextPageToken}` : ''}`;
+                const res = await fetch(url);
+                const data = await res.json();
+                if (data.error) throw new Error(data.error.message);
+
+                const items = data.items || [];
+                const videoIds = items.map(i => i.contentDetails?.videoId).filter(id => !!id && id !== 'deleted');
+
+                // 2. 영상들의 상세 정보(재생 시간 등)를 한 번에 가져오기
+                let durationMap = {};
+                if (videoIds.length > 0) {
+                    try {
+                        const detailUrl = `${YT_API}/videos?part=contentDetails&id=${videoIds.join(',')}&key=${apiKey}`;
+                        const detailRes = await fetch(detailUrl);
+                        const detailData = await detailRes.json();
+                        (detailData.items || []).forEach(v => {
+                            durationMap[v.id] = formatDuration(v.contentDetails?.duration);
+                        });
+                    } catch (e) {
+                        console.warn("[YTSync] Duration fetch failed:", e);
+                    }
+                }
+
+                items.forEach(item => {
+                    const videoId = item.contentDetails?.videoId || item.snippet?.resourceId?.videoId;
+                    if (!videoId || videoId === 'deleted') return;
+                    videoItems.push({
+                        videoId,
+                        title: item.snippet.title,
+                        description: item.snippet.description || '',
+                        thumbnailUrl: item.snippet.thumbnails?.medium?.url || item.snippet.thumbnails?.default?.url || '',
+                        publishedAt: item.snippet.publishedAt?.slice(0, 10) || '',
+                        duration: durationMap[videoId] || '' // 추가된 부분
+                    });
+                });
+
+                nextPageToken = data.nextPageToken || '';
+                renderVideoGrid();
+                updateLoadMoreBtn(data.pageInfo?.totalResults);
+            } catch (err) {
+                document.getElementById('video-grid').innerHTML = `<p class="empty-state" style="grid-column:1/-1; color:#dc2626;">영상 로드 실패: ${err.message}</p>`;
+            } finally {
+                if (loadMoreBtn) loadMoreBtn.disabled = false;
+            }
+        };
+
+        function updateLoadMoreBtn(totalResults) {
+            const wrap = document.getElementById('load-more-wrap');
+            const info = document.getElementById('load-more-info');
+            if (nextPageToken) {
+                wrap.style.display = 'block';
+                info.textContent = totalResults
+                    ? `${videoItems.length} / ${Number(totalResults).toLocaleString()}개 로드됨`
+                    : `${videoItems.length}개 로드됨`;
+            } else {
+                wrap.style.display = 'block';
+                document.getElementById('load-more-btn').disabled = true;
+                document.getElementById('load-more-btn').textContent = '전체 로드 완료';
+                info.textContent = `총 ${videoItems.length}개`;
+            }
+        }
+
+        // ── 영상 그리드 렌더 ─────────────────────────────────────────────
+        window.setFilter = (filter, el) => {
+            videoFilter = filter;
+            document.querySelectorAll('.vf-btn').forEach(b => b.classList.remove('active'));
+            el.classList.add('active');
+            renderVideoGrid();
+        };
+
+        window.copyVideoLinks = () => {
+            const filtered = videoItems.filter(v => {
+                if (videoFilter === 'registered') return registeredMap.has(v.videoId);
+                if (videoFilter === 'none')       return !registeredMap.has(v.videoId);
+                return true;
+            });
+
+            if (!filtered.length) {
+                alert("복사할 영상이 없습니다.");
+                return;
+            }
+
+            const text = filtered.map(v => `${v.title}: https://www.youtube.com/watch?v=${v.videoId}`).join('\n');
+            navigator.clipboard.writeText(text).then(() => {
+                alert(`현재 표시된 ${filtered.length}개 영상의 링크가 복사되었습니다.`);
+            }).catch(err => {
+                console.error("복사 실패:", err);
+                alert("링크 복사에 실패했습니다.");
+            });
+        };
+
+        window.copySingleLink = (videoId) => {
+            const url = `https://www.youtube.com/watch?v=${videoId}`;
+            navigator.clipboard.writeText(url).then(() => {
+                // 개별 복사는 알림창 대신 콘솔이나 가벼운 알림이 좋지만, 
+                // 직관적인 확인을 위해 일단 alert를 사용합니다.
+                console.log("Copied:", url);
+                alert("링크가 복사되었습니다.");
+            }).catch(err => alert("복사 실패"));
+        };
+
+        function renderVideoGrid() {
+            const grid = document.getElementById('video-grid');
+            const countEl = document.getElementById('video-count-text');
+
+            const filtered = videoItems.filter(v => {
+                if (videoFilter === 'registered') return registeredMap.has(v.videoId);
+                if (videoFilter === 'none')       return !registeredMap.has(v.videoId);
+                return true;
+            });
+
+            countEl.textContent = `${filtered.length}개 표시`;
+
+            if (!filtered.length) {
+                grid.innerHTML = '<p class="empty-state" style="grid-column:1/-1;">해당하는 영상이 없습니다.</p>';
+                return;
+            }
+
+            grid.innerHTML = filtered.map(v => {
+                const regInfo = registeredMap.get(v.videoId);
+                const isReg = !!regInfo;
+                const eraLabel = regInfo ? (ERA_LABEL[regInfo.eraId] ?? regInfo.eraId) : '';
+                return `
+                    <div class="video-card ${isReg ? 'registered' : ''}" id="vc-${v.videoId}">
+                        <div class="video-thumb-wrap">
+                            <img src="${v.thumbnailUrl}" alt="" loading="lazy" onerror="this.style.display='none'">
+                            <span class="video-status-badge ${isReg ? 'badge-registered' : 'badge-none'}">
+                                ${isReg ? '등록됨' : '미등록'}
+                            </span>
+                            ${v.duration ? `<span class="video-duration">${v.duration}</span>` : ''}
+                        </div>
+                        <div class="video-body">
+                            <p class="video-title">${v.title}</p>
+                            <p class="video-date">${v.publishedAt || ''}</p>
+                            ${isReg ? `<p class="video-era-label">✓ ${eraLabel}</p>` : ''}
+                            <div class="video-action">
+                                ${isReg
+                                    ? `<button class="btn-unregister" onclick="unregisterVideo('${v.videoId}')">노출 해제</button>`
+                                    : `<button class="btn-register"   onclick="openRegisterModal('${v.videoId}')">추천 등록 →</button>`
+                                }
+                                <button class="btn-ghost" onclick="copySingleLink('${v.videoId}')" style="padding: 8px; border-radius: 8px; font-size: 0.9rem;" title="링크 복사">🔗</button>
+                            </div>
+                        </div>
+                    </div>`;
+            }).join('');
+        }
+
+        // ── 추천 등록 모달 ────────────────────────────────────────────────
+        window.openRegisterModal = (videoId) => {
+            pendingVideo = videoItems.find(v => v.videoId === videoId);
+            if (!pendingVideo) return;
+
+            document.getElementById('modal-thumb').src    = pendingVideo.thumbnailUrl;
+            document.getElementById('modal-video-title').textContent = pendingVideo.title;
+            document.getElementById('modal-video-date').textContent  = pendingVideo.publishedAt || '';
+            document.getElementById('m-eraId').value   = '';
+            document.getElementById('m-title').value   = pendingVideo.title;
+            document.getElementById('m-summary').value = '';
+            document.getElementById('m-perspective').value = '';
+            document.getElementById('m-quizUrl').value = '';
+            document.getElementById('m-source').value  = currentChannel?.name || 'KBS 역사스페셜';
+            document.getElementById('m-publishedAt').value = (pendingVideo.publishedAt || '').replace(/-/g, '.');
+            document.getElementById('m-tags').value = '';
+            document.getElementById('m-order').value   = '';
+            document.getElementById('register-modal').classList.add('show');
+        };
+
+        window.closeModal = () => {
+            document.getElementById('register-modal').classList.remove('show');
+            pendingVideo = null;
+        };
+
+        window.submitRegister = async () => {
+            if (!pendingVideo) return;
+            const eraId = document.getElementById('m-eraId').value;
+            if (!eraId) { alert("시대를 선택해주세요."); return; }
+
+            const btn = document.getElementById('modal-submit-btn');
+            btn.disabled = true;
+            btn.textContent = '등록 중...';
+
+            const orderVal = document.getElementById('m-order').value;
+            const tagsVal  = document.getElementById('m-tags').value.trim();
+            const tags     = tagsVal ? tagsVal.split(',').map(t => t.trim()).filter(t => !!t) : [];
+
+            const data = {
+                eraId,
+                contentType: 'youtube',
+                title:        document.getElementById('m-title').value.trim() || pendingVideo.title,
+                url:         `https://www.youtube.com/watch?v=${pendingVideo.videoId}`,
+                thumbnailUrl: pendingVideo.thumbnailUrl || null,
+                source:       document.getElementById('m-source').value.trim() || (currentChannel?.name ?? 'KBS 역사스페셜'),
+                publishedAt:  document.getElementById('m-publishedAt').value.trim() || pendingVideo.publishedAt || null,
+                summary:      document.getElementById('m-summary').value.trim() || null,
+                perspective:  document.getElementById('m-perspective').value.trim() || null,
+                quizUrl:      document.getElementById('m-quizUrl').value.trim() || null,
+                tags,
+                order:        orderVal ? Number(orderVal) : null,
+                isVisible:    true,
+                createdAt:    new Date().toISOString(),
+            };
+
+            try {
+                await safeFetchDB({ action: "create", collection: "history_recommendations", data });
+                // 등록 현황 갱신 (전체 재조회 없이 로컬 Map에 추가)
+                registeredMap.set(pendingVideo.videoId, { docId: '__pending__', eraId });
+                // 실제 docId는 다음 풀 로드 시 채워짐
+                await loadRecommendations(); // 재조회로 docId 확보
+                closeModal();
+                renderVideoGrid();
+            } catch (err) {
+                alert("등록 실패: " + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '등록';
+            }
+        };
+
+        // ── 추천 노출 해제 ────────────────────────────────────────────────
+        window.unregisterVideo = async (videoId) => {
+            const regInfo = registeredMap.get(videoId);
+            if (!regInfo || !regInfo.docId || regInfo.docId === '__pending__') {
+                await loadRecommendations();
+                return;
+            }
+            if (!confirm("이 영상을 추천 페이지에서 제거하시겠습니까?")) return;
+            try {
+                await safeFetchDB({ action: "delete", collection: "history_recommendations", id: regInfo.docId });
+                registeredMap.delete(videoId);
+                renderVideoGrid();
+            } catch (err) {
+                alert("해제 실패: " + err.message);
+            }
+        };
+
+        // ── 초기화 ────────────────────────────────────────────────────────
+        window.addEventListener('load', () => {
+            if (window.renderAdminHeader) window.renderAdminHeader({ mountId: 'admin-header-slot', badgeText: 'Content', subtitle: 'YouTube 채널 동기화' });
+            if (window.renderAdminMenu)   window.renderAdminMenu({ mountId: 'admin-menu-slot', active: 'youtube_sync' });
+
+            const checkApi = setInterval(() => {
+                if (window.CHEESE_ADMIN_DB_API) {
+                    clearInterval(checkApi);
+                    loadConfig();
+                }
+            }, 100);
+
+            document.getElementById('register-modal').addEventListener('click', e => {
+                if (e.target === document.getElementById('register-modal')) closeModal();
+            });
+
+            document.getElementById('channel-input').addEventListener('keydown', e => {
+                if (e.key === 'Enter') addChannel();
+            });
+        });
+    </script>
+</body>
+
+</html>
