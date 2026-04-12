@@ -341,6 +341,17 @@
             document.getElementById('stat-pending').innerText = allUsers.filter(u => u.status === 'withdrawal_pending').length;
         }
 
+        // withdrawal_at 기준으로 유예 만료 여부와 남은 일수를 계산
+        function getWithdrawalInfo(withdrawalAtIso) {
+            if (!withdrawalAtIso) return { expired: false, daysLeft: null };
+            const withdrawalDate = new Date(withdrawalAtIso);
+            const now = new Date();
+            const diffMs = now - withdrawalDate;
+            const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+            if (diffDays > 7) return { expired: true, daysLeft: 0 };
+            return { expired: false, daysLeft: 7 - diffDays };
+        }
+
         function renderUserTable() {
             const tbody = document.getElementById('userTableBody');
             const search = document.getElementById('userSearch').value.toLowerCase();
@@ -370,28 +381,40 @@
             }
 
             tbody.innerHTML = paginatedData.map(u => {
-                const statusLabel = u.status === 'withdrawal_pending' ? '탈퇴 유예' : (u.status === 'withdrawn_permanent' ? '영구 탈퇴' : (u.status === 'blocked' ? '차단됨' : '정상'));
-                const statusClass = u.status === 'withdrawal_pending' ? 'status-pending' : (u.status === 'withdrawn_permanent' ? 'status-purged' : (u.status === 'blocked' ? 'status-blocked' : 'status-active'));
+                const isPending = u.status === 'withdrawal_pending';
+                const wInfo = isPending ? getWithdrawalInfo(u.withdrawal_at) : null;
+
+                let statusLabel, statusClass;
+                if (isPending && wInfo.expired) {
+                    statusLabel = '탈퇴 유예 (만료)';
+                    statusClass = 'status-blocked';
+                } else if (isPending) {
+                    statusLabel = `탈퇴 유예 (D-${wInfo.daysLeft})`;
+                    statusClass = 'status-pending';
+                } else if (u.status === 'withdrawn_permanent') {
+                    statusLabel = '영구 탈퇴';
+                    statusClass = 'status-purged';
+                } else if (u.status === 'blocked') {
+                    statusLabel = '차단됨';
+                    statusClass = 'status-blocked';
+                } else {
+                    statusLabel = '정상';
+                    statusClass = 'status-active';
+                }
+
                 const photo = u.photo_url || "https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg";
-                
-                // 서버에서 이미 ISO 문자열로 변환해 주므로 바로 new Date()로 감쌉니다.
                 const createdDate = u.created_at ? new Date(u.created_at).toLocaleDateString() : '-';
-                
-                // 이름이 없으면 이메일 아이디 부분 사용, 최근 접속일 필드 호환 처리
                 const displayName = u.displayName || u.email?.split('@')[0] || 'Member';
                 const lastLoginTs = u.last_login_at || u.last_login;
                 const lastLogin = lastLoginTs ? new Date(lastLoginTs).toLocaleString() : '-';
 
-                // 구매 통계 계산
                 const userOrders = allOrders.filter(o => o.uid === u.id);
                 const orderCount = userOrders.length;
                 const totalAmount = userOrders.reduce((sum, o) => sum + (Number(o.price) || 0), 0);
-                
-                // 단골 여부 (2건 이상 구매)
                 const isLoyal = orderCount >= 2;
 
                 return `
-                    <tr>
+                    <tr ${isPending && wInfo.expired ? 'style="background: #fff5f5;"' : ''}>
                         <td>
                             <div class="user-info">
                                 <img src="${photo}" class="user-avatar" />
@@ -456,14 +479,40 @@
             const user = allUsers.find(u => u.id === id);
             if (!user) return;
 
-            // 해당 유저의 주문 내역 필터링
             const userOrders = allOrders.filter(o => o.uid === id);
-
             const content = document.getElementById('userDetailContent');
             const createdDate = user.created_at ? new Date(user.created_at).toLocaleString() : '-';
-            const withdrawalDate = user.withdrawal_at ? new Date(user.withdrawal_at).toLocaleString() : '-';
-            
+
+            const isPending = user.status === 'withdrawal_pending';
+            const wInfo = isPending ? getWithdrawalInfo(user.withdrawal_at) : null;
+            const withdrawalDateStr = user.withdrawal_at ? new Date(user.withdrawal_at).toLocaleString() : '-';
+            const deadlineDate = user.withdrawal_at
+                ? new Date(new Date(user.withdrawal_at).getTime() + 7 * 24 * 60 * 60 * 1000).toLocaleString()
+                : '-';
+
+            let statusText, statusColor;
+            if (isPending && wInfo.expired) {
+                statusText = '탈퇴 유예 만료 (파기 대기 중)';
+                statusColor = '#ef4444';
+            } else if (isPending) {
+                statusText = `탈퇴 유예 (D-${wInfo.daysLeft}, 복구 가능)`;
+                statusColor = '#f97316';
+            } else if (user.status === 'withdrawn_permanent') {
+                statusText = '영구 탈퇴 (개인정보 파기 완료)';
+                statusColor = '#888';
+            } else if (user.status === 'blocked') {
+                statusText = '차단됨 (관리자 제한)';
+                statusColor = '#ef4444';
+            } else {
+                statusText = '정상 (활동 중)';
+                statusColor = '#10b981';
+            }
+
             content.innerHTML = `
+                ${isPending && wInfo.expired ? `
+                <div style="background: #fee2e2; border: 1px solid #fca5a5; border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; font-size: 0.85rem; color: #991b1b; font-weight: 600;">
+                    유예 기간이 만료되었습니다. Cloud Function 스케줄러가 다음 실행 시 자동으로 개인정보를 파기합니다.
+                </div>` : ''}
                 <div style="display: flex; gap: 20px; align-items: center; margin-bottom: 25px;">
                     <img src="${user.photo_url || 'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg'}" style="width: 80px; height: 80px; border-radius: 50%;" />
                     <div>
@@ -472,7 +521,7 @@
                         <p style="margin: 5px 0 0; font-size: 0.8rem; color: #94a3b8;">UID: ${user.id}</p>
                     </div>
                 </div>
-                
+
                 <div style="background: #f8fafc; padding: 20px; border-radius: 12px; font-size: 0.9rem; margin-bottom: 25px;">
                     <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
                         <span style="color: #64748b;">최초 가입일</span>
@@ -480,22 +529,16 @@
                     </div>
                     <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
                         <span style="color: #64748b;">현재 상태</span>
-                        <span style="font-weight: 700; color: ${user.status === 'blocked' ? '#ef4444' : (user.status === 'withdrawal_pending' ? '#f97316' : (user.status === 'withdrawn_permanent' ? '#888' : '#10b981'))};">
-                            ${(() => {
-                                switch(user.status) {
-                                    case 'active': return '정상 (활동 중)';
-                                    case 'withdrawal_pending': return '탈퇴 유예 (신청 후 7일 이내)';
-                                    case 'withdrawn_permanent': return '영구 탈퇴 (개인정보 파기 완료)';
-                                    case 'blocked': return '차단됨 (관리자 제한)';
-                                    default: return '정상 (활동 중)';
-                                }
-                            })()}
-                        </span>
+                        <span style="font-weight: 700; color: ${statusColor};">${statusText}</span>
                     </div>
-                    ${user.status === 'withdrawal_pending' ? `
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 10px; color: #ef4444;">
-                        <span style="font-weight: 600;">탈퇴 신청일</span>
-                        <span style="font-weight: 600;">${withdrawalDate}</span>
+                    ${isPending ? `
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                        <span style="color: #64748b;">탈퇴 신청일</span>
+                        <span style="font-weight: 600; color: #ef4444;">${withdrawalDateStr}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                        <span style="color: #64748b;">파기 예정일</span>
+                        <span style="font-weight: 600; color: ${wInfo.expired ? '#ef4444' : '#64748b'};">${deadlineDate}</span>
                     </div>
                     ` : ''}
                 </div>
@@ -518,11 +561,12 @@
             const isBlocked = user.status === 'blocked';
             blockBtn.innerText = isBlocked ? "차단 해제" : "계정 차단";
             blockBtn.style.background = isBlocked ? "#3b82f6" : "#ef4444";
-            
+            blockBtn.style.display = isPending ? 'none' : '';
+
             blockBtn.onclick = async () => {
                 const nextStatus = isBlocked ? "active" : "blocked";
                 if (!confirm(`회원 상태를 [${nextStatus}]로 변경하시겠습니까?`)) return;
-                
+
                 try {
                     await safeFetchDB({ action: "update", collection: "users", id: id, data: { status: nextStatus } });
                     alert("변경되었습니다.");
