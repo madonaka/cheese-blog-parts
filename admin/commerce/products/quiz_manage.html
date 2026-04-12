@@ -937,14 +937,19 @@
                                     <div class="card-head">
                                         <h3><i class="fas fa-list-ol" style="color:var(--primary);"></i>&nbsp; 문항 목록</h3>
                                         <span class="q-count-badge" id="q-count-badge">0문항</span>
+                                        <button class="btn btn-ghost btn-sm" onclick="openQuestionBank()"
+                                            title="문제 은행에서 기존 문제를 선택해 추가"
+                                            style="border-style:dashed; border-color:#6366f1; color:#6366f1;">
+                                            <i class="fas fa-database"></i> 문제 은행에서 선택
+                                        </button>
                                         <button class="btn btn-primary btn-sm" onclick="addNewQuestion()">
-                                            <i class="fas fa-plus"></i> 문항 추가
+                                            <i class="fas fa-plus"></i> 직접 추가
                                         </button>
                                     </div>
 
                                     <div class="q-list" id="q-list">
                                         <div class="empty-state" id="q-empty">
-                                            아직 문항이 없습니다. 위 버튼으로 추가하세요.
+                                            아직 문항이 없습니다. 위 버튼으로 추가하거나<br>문제 은행에서 선택하세요.
                                         </div>
                                     </div>
                                 </div>
@@ -968,6 +973,44 @@
             <button class="btn btn-sm" id="confirm-delete-btn"
                 style="background:var(--danger); color:#fff;"
                 onclick="confirmDelete()">삭제</button>
+        </div>
+    </div>
+</div>
+
+<!-- 문제 은행 선택 모달 -->
+<div class="modal-overlay" id="qbank-modal" style="z-index:1100;">
+    <div class="modal-card" style="max-width:640px; width:96vw; max-height:88vh; display:flex; flex-direction:column; padding:0; border-radius:14px; overflow:hidden;">
+        <div style="padding:18px 22px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px; flex-shrink:0;">
+            <h3 style="flex:1; margin:0; font-size:1rem; font-weight:800;"><i class="fas fa-database" style="color:#6366f1;"></i> 문제 은행에서 선택</h3>
+            <button class="btn btn-ghost btn-sm" onclick="closeQBankModal()">닫기</button>
+        </div>
+        <!-- 필터 -->
+        <div style="padding:10px 16px; border-bottom:1px solid var(--border); display:flex; gap:8px; flex-wrap:wrap; flex-shrink:0; background:#f8fafc;">
+            <input type="text" id="qbank-search" placeholder="문제 본문 검색..." oninput="renderQBankList()"
+                style="flex:1; min-width:120px; padding:6px 10px; border:1px solid var(--border); border-radius:6px; font-size:0.82rem; font-family:inherit; outline:none;">
+            <select id="qbank-diff" onchange="renderQBankList()"
+                style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:0.78rem; font-family:inherit;">
+                <option value="">전체 난이도</option>
+                <option value="하">하</option>
+                <option value="중">중</option>
+                <option value="상">상</option>
+            </select>
+            <select id="qbank-source" onchange="renderQBankList()"
+                style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:0.78rem; font-family:inherit;">
+                <option value="">전체 출처</option>
+                <option value="original">자체 제작</option>
+                <option value="csat">한능검 기출</option>
+                <option value="mock">모의고사</option>
+            </select>
+        </div>
+        <div id="qbank-list" style="flex:1; overflow-y:auto; min-height:200px;">
+            <div style="padding:40px; text-align:center; color:var(--text-sub); font-size:0.85rem;">불러오는 중...</div>
+        </div>
+        <div style="padding:12px 18px; border-top:1px solid var(--border); text-align:right; flex-shrink:0; background:#f8fafc;">
+            <span id="qbank-selected-count" style="font-size:0.8rem; color:var(--text-sub); margin-right:12px;">0개 선택됨</span>
+            <button class="btn btn-primary btn-sm" onclick="addSelectedFromBank()" id="btn-add-from-bank" disabled>
+                <i class="fas fa-plus"></i> 선택한 문제 추가
+            </button>
         </div>
     </div>
 </div>
@@ -1369,10 +1412,13 @@ async function saveSetInfo() {
     // 레거시 category 자동 설정 (첫 번째 eraTag 기반)
     const legacyCat = document.getElementById('set-category').value || (eraTags[0] ? eraToLegacyCat(eraTags[0]) : 'joseon');
 
+    const activeSubjectChip = document.querySelector('#subject-chips .subject-chip.active');
+    const subjectVal = activeSubjectChip?.dataset.val || currentSubject || 'korean';
+
     const payload = {
         title,
         category:         legacyCat,
-        subject:          currentSubject,
+        subject:          subjectVal,
         examType,
         examMeta,
         eraTags,
@@ -1516,14 +1562,24 @@ function renderQList() {
 }
 
 function renderQEditorHTML(i, q) {
-    const choiceInputs = (q.choices || ['', '', '', '']).map((c, ci) => `
-        <div class="choice-row">
-            <div class="choice-num ${ci === q.correct ? 'correct' : ''}" id="cnum-${i}-${ci}">${ci + 1}</div>
-            <input type="text" class="form-control" id="choice-${i}-${ci}"
-                value="${escAttr(c || '')}" placeholder="보기 ${ci + 1}"
-                oninput="syncChoiceNum(${i}, ${ci})">
-        </div>`
-    ).join('');
+    const choiceInputs = (q.choices || ['', '', '', '']).map((c, ci) => {
+        const cImg = (q.choiceImages && q.choiceImages[ci]) || {url:'', desc:''};
+        return `
+        <div style="border:1px dashed #e2e8f0; padding:10px; border-radius:6px; margin-bottom:8px; background:#fff;">
+            <div class="choice-row" style="margin-bottom:6px;">
+                <div class="choice-num ${ci === q.correct ? 'correct' : ''}" id="cnum-${i}-${ci}">${ci + 1}</div>
+                <input type="text" class="form-control" id="choice-${i}-${ci}"
+                    value="${escAttr(c || '')}" placeholder="보기 ${ci + 1} 텍스트"
+                    oninput="syncChoiceNum(${i}, ${ci})">
+            </div>
+            <div style="display:flex; gap:8px; align-items:center; padding-left:30px;">
+                <i class="far fa-image" style="color:#94a3b8;" title="이미지 (선택)"></i>
+                <input type="text" class="form-control" id="cimg-url-${i}-${ci}" placeholder="이미지 URL (링크 입력 또는 이미지 복붙[Ctrl+V])" style="font-size:0.8rem; padding:4px 8px; flex:1;" value="${escAttr(cImg.url)}" onpaste="handleImagePaste(event, 'cimg-url-${i}-${ci}', 'cimg-preview-${i}-${ci}')" oninput="document.getElementById('cimg-preview-${i}-${ci}').src=this.value; document.getElementById('cimg-preview-${i}-${ci}').style.display=this.value?'block':'none';">
+                <input type="text" class="form-control" id="cimg-desc-${i}-${ci}" placeholder="이미지 설명(Alt)" style="font-size:0.8rem; padding:4px 8px; width:120px;" value="${escAttr(cImg.desc)}">
+            </div>
+            <img id="cimg-preview-${i}-${ci}" src="${escAttr(cImg.url)}" style="max-height:80px; margin-top:6px; margin-left:30px; display:${cImg.url ? 'block' : 'none'}; border:1px solid #e2e8f0; border-radius:4px; object-fit:contain;">
+        </div>`;
+    }).join('');
 
     const correctRadios = [0, 1, 2, 3].map(ci => `
         <label class="correct-radio-label">
@@ -1589,6 +1645,15 @@ function renderQEditorHTML(i, q) {
             <label class="form-label">문제 본문</label>
             <textarea class="form-control" id="qtext-${i}" rows="3"
                 placeholder="예: 다음 중 세종대왕이 설치한 기관으로 옳은 것은?">${escHtml(q.text || '')}</textarea>
+            
+            <div style="margin-top:6px; background:#fff; padding:10px; border:1px dashed #e2e8f0; border-radius:6px;">
+                <label class="form-label" style="font-size:0.7rem; margin-bottom:4px;"><i class="far fa-image"></i> 본문 첨부 이미지 (선택)</label>
+                <div style="display:flex; gap:8px;">
+                    <input type="text" class="form-control" id="qimg-url-${i}" placeholder="이미지 URL (링크 입력 또는 이미지 복붙[Ctrl+V])" value="${escAttr(q.image?.url || '')}" onpaste="handleImagePaste(event, 'qimg-url-${i}', 'qimg-preview-${i}')" oninput="document.getElementById('qimg-preview-${i}').src=this.value; document.getElementById('qimg-preview-${i}').style.display=this.value?'block':'none';">
+                    <input type="text" class="form-control" id="qimg-desc-${i}" placeholder="이미지 설명(Alt) - 시각장애인용" value="${escAttr(q.image?.desc || '')}" style="width:180px;">
+                </div>
+                <img id="qimg-preview-${i}" src="${escAttr(q.image?.url || '')}" style="max-height:120px; margin-top:8px; display:${q.image?.url ? 'block' : 'none'}; border:1px solid #e2e8f0; border-radius:4px; object-fit:contain;">
+            </div>
         </div>
 
         <div class="form-group qe-full">
@@ -1598,6 +1663,15 @@ function renderQEditorHTML(i, q) {
             </label>
             <textarea class="form-control" id="qcontext-${i}" rows="2"
                 placeholder="(없으면 비워두세요)">${escHtml(q.context || '')}</textarea>
+            
+            <div style="margin-top:6px; background:#fff; padding:10px; border:1px dashed #e2e8f0; border-radius:6px;">
+                <label class="form-label" style="font-size:0.7rem; margin-bottom:4px;"><i class="far fa-image"></i> 지문 첨부 이미지 (선택)</label>
+                <div style="display:flex; gap:8px;">
+                    <input type="text" class="form-control" id="qctximg-url-${i}" placeholder="이미지 URL (링크 입력 또는 이미지 복붙[Ctrl+V])" value="${escAttr(q.contextImage?.url || '')}" onpaste="handleImagePaste(event, 'qctximg-url-${i}', 'qctximg-preview-${i}')" oninput="document.getElementById('qctximg-preview-${i}').src=this.value; document.getElementById('qctximg-preview-${i}').style.display=this.value?'block':'none';">
+                    <input type="text" class="form-control" id="qctximg-desc-${i}" placeholder="이미지 설명(Alt) - 시각장애인용" value="${escAttr(q.contextImage?.desc || '')}" style="width:180px;">
+                </div>
+                <img id="qctximg-preview-${i}" src="${escAttr(q.contextImage?.url || '')}" style="max-height:120px; margin-top:8px; display:${q.contextImage?.url ? 'block' : 'none'}; border:1px solid #e2e8f0; border-radius:4px; object-fit:contain;">
+            </div>
         </div>
 
         <div class="form-group">
@@ -1696,12 +1770,27 @@ function saveQuestion(i) {
 
     q.text        = document.getElementById(`qtext-${i}`)?.value.trim() || '';
     q.context     = document.getElementById(`qcontext-${i}`)?.value.trim() || '';
+    
+    q.image = {
+        url: document.getElementById(`qimg-url-${i}`)?.value.trim() || '',
+        desc: document.getElementById(`qimg-desc-${i}`)?.value.trim() || ''
+    };
+    q.contextImage = {
+        url: document.getElementById(`qctximg-url-${i}`)?.value.trim() || '',
+        desc: document.getElementById(`qctximg-desc-${i}`)?.value.trim() || ''
+    };
+    
     q.difficulty  = document.getElementById(`qdiff-${i}`)?.value || '중';
     q.hint        = document.getElementById(`qhint-${i}`)?.value.trim() || '';
     q.explanation = document.getElementById(`qexplan-${i}`)?.value.trim() || '';
     q.choices     = [0, 1, 2, 3].map(ci =>
         document.getElementById(`choice-${i}-${ci}`)?.value.trim() || ''
     );
+    q.choiceImages = [0, 1, 2, 3].map(ci => ({
+        url: document.getElementById(`cimg-url-${i}-${ci}`)?.value.trim() || '',
+        desc: document.getElementById(`cimg-desc-${i}-${ci}`)?.value.trim() || ''
+    }));
+    
     q.source  = document.getElementById(`qsource-${i}`)?.value.trim() || '';
     
     const eraTags = [];
@@ -1712,7 +1801,7 @@ function saveQuestion(i) {
     // correct는 radio onchange에서 이미 반영됨
 
     if (!q.text)                { showNotif('문제 본문을 입력하세요.', 'error'); return; }
-    if (q.choices.some(c => !c)) { showNotif('보기 4개를 모두 입력하세요.', 'error'); return; }
+    if (q.choices.some((c, ci) => !c && !(q.choiceImages[ci] && q.choiceImages[ci].url))) { showNotif('보기 4개를 모두 입력하세요. (텍스트 또는 이미지)', 'error'); return; }
 
     autoSaveQuestions();
     openQIndex = null;
@@ -1856,15 +1945,83 @@ function showNotif(msg, type) {
 }
 
 /* ════════════════════════════════════════
+   이미지 붙여넣기 (캡처 업로드) 유틸
+════════════════════════════════════════ */
+async function handleImagePaste(e, urlInputId, previewImgId) {
+    const items = (e.clipboardData || e.originalEvent?.clipboardData)?.items;
+    if (!items) return;
+
+    let imageFile = null;
+    for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') === 0) {
+            imageFile = items[i].getAsFile();
+            break;
+        }
+    }
+
+    if (!imageFile) return;
+
+    e.preventDefault(); // 기본 붙여넣기 텍스트 방지
+
+    const urlInput = document.getElementById(urlInputId);
+    const oldVal = urlInput.value;
+    urlInput.value = "이미지 업로드 중...";
+    const btnSave = document.getElementById('btn-save-set');
+    if (btnSave) btnSave.disabled = true;
+
+    try {
+        const reader = new FileReader();
+        const base64 = await new Promise((resolve, reject) => {
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.onerror = reject;
+            reader.readAsDataURL(imageFile);
+        });
+
+        // admin-common.js 의 CHEESE_STORE_API_BASE 사용
+        const response = await fetch(CHEESE_STORE_API_BASE, {
+            method: "POST",
+            body: JSON.stringify({
+                mode: "uploadStoreFile",
+                fileName: "quiz_img_" + Date.now() + ".png",
+                mimeType: imageFile.type,
+                base64Data: base64
+            })
+        });
+
+        const result = await response.json();
+        if (!result.ok) throw new Error(result.error || "GAS 업로드 실패");
+
+        const url = `https://drive.google.com/thumbnail?id=${result.fileId}&sz=w1200`;
+        urlInput.value = url;
+        const previewEl = document.getElementById(previewImgId);
+        if(previewEl) {
+            previewEl.src = url;
+            previewEl.style.display = 'block';
+        }
+        
+        showNotif("이미지 업로드가 완료되었습니다.", "success");
+        // 자동 저장 트리거
+        autoSaveQuestions();
+
+    } catch (err) {
+        alert("이미지 업로드 실패: " + err.message);
+        urlInput.value = oldVal;
+    } finally {
+        if (btnSave) btnSave.disabled = false;
+    }
+}
+
+/* ════════════════════════════════════════
    역사 분야(subject) 선택
 ════════════════════════════════════════ */
 function setSubject(val) {
-    currentSubject = val;
+    const safeVal = val || 'korean';
+    currentSubject = safeVal;
     document.querySelectorAll('#subject-chips .subject-chip').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.val === val);
+        btn.classList.toggle('active', btn.dataset.val === safeVal);
     });
     // 시대 태그 목록을 해당 분야로 갱신 (기존 체크 초기화)
-    renderEraTags(val, []);
+    renderEraTags(safeVal, []);
 }
 
 /* ════════════════════════════════════════
@@ -2066,6 +2223,152 @@ function switchTab(tabId) {
     if (tabId === 'info') {
         setTimeout(() => initAutoResize(document.getElementById('panel-info')), 30);
     }
+}
+
+/* ════════════════════════════════════════
+   문제 은행 선택 모달
+════════════════════════════════════════ */
+let qBankQuestions   = [];   // 로드된 전체 questions 컬렉션 목록
+let qBankSelected    = new Set();  // 선택된 문제 ID 집합
+
+async function openQuestionBank() {
+    if (!currentSetId) {
+        showNotif('먼저 퀴즈 기본 정보를 저장하세요.', 'error');
+        return;
+    }
+    qBankSelected.clear();
+    document.getElementById('qbank-search').value = '';
+    document.getElementById('qbank-diff').value   = '';
+    document.getElementById('qbank-source').value = '';
+    document.getElementById('qbank-selected-count').textContent = '0개 선택됨';
+    document.getElementById('btn-add-from-bank').disabled = true;
+    document.getElementById('qbank-modal').classList.add('show');
+    document.getElementById('qbank-list').innerHTML =
+        '<div style="padding:40px; text-align:center; color:var(--text-sub); font-size:0.85rem;">불러오는 중...</div>';
+
+    try {
+        const res = await safeFetchDB({ collection: 'questions', orderByField: 'created_at' });
+        qBankQuestions = res.data || [];
+        renderQBankList();
+    } catch (e) {
+        document.getElementById('qbank-list').innerHTML =
+            `<div style="padding:40px; text-align:center; color:var(--danger);">로드 실패: ${e.message}</div>`;
+    }
+}
+
+function closeQBankModal() {
+    document.getElementById('qbank-modal').classList.remove('show');
+}
+
+function renderQBankList() {
+    const search = document.getElementById('qbank-search').value.trim().toLowerCase();
+    const diff   = document.getElementById('qbank-diff').value;
+    const source = document.getElementById('qbank-source').value;
+
+    const filtered = qBankQuestions.filter(q => {
+        if (diff   && q.difficulty !== diff) return false;
+        if (source && q.examSource !== source) return false;
+        if (search && !(q.text || '').toLowerCase().includes(search)) return false;
+        return true;
+    });
+
+    const listEl = document.getElementById('qbank-list');
+    if (filtered.length === 0) {
+        listEl.innerHTML = '<div style="padding:40px; text-align:center; color:var(--text-sub); font-size:0.85rem;">조건에 맞는 문제가 없습니다.</div>';
+        return;
+    }
+
+    // 이미 세트에 포함된 문제 ID 집합
+    const alreadyInSet = new Set(
+        (currentQs || []).map(q => q._bankId).filter(Boolean)
+    );
+
+    listEl.innerHTML = filtered.map(q => {
+        const isAlready  = alreadyInSet.has(q.id);
+        const isSelected = qBankSelected.has(q.id);
+        const diffColors = { '하': '#dcfce7', '중': '#fef9c3', '상': '#fee2e2' };
+        const diffText   = { '하': '#166534', '중': '#854d0e', '상': '#991b1b' };
+        const d = q.difficulty || '중';
+        const src = q.examSource === 'csat' ? '한능검'
+                  : q.examSource === 'mock' ? '모의고사' : '자체 제작';
+
+        return `
+        <div style="padding:10px 16px; border-bottom:1px solid var(--border); display:flex; gap:10px; align-items:flex-start;
+            background:${isAlready ? '#f0fdf4' : isSelected ? '#eff6ff' : '#fff'}; cursor:${isAlready ? 'default' : 'pointer'};"
+            onclick="${isAlready ? '' : `toggleQBankItem('${q.id}', this)`}">
+            <div style="padding-top:2px; flex-shrink:0;">
+                ${isAlready
+                    ? '<i class="fas fa-check-circle" style="color:#22c55e; font-size:1rem;"></i>'
+                    : `<input type="checkbox" ${isSelected ? 'checked' : ''} style="width:16px; height:16px; accent-color:var(--primary); cursor:pointer;"
+                        onchange="toggleQBankItem('${q.id}', this.closest('div'))" onclick="event.stopPropagation()">`
+                }
+            </div>
+            <div style="flex:1; min-width:0;">
+                <div style="display:flex; gap:6px; align-items:center; margin-bottom:4px;">
+                    <span style="font-size:0.68rem; font-weight:800; padding:2px 7px; border-radius:4px; background:${diffColors[d]}; color:${diffText[d]};">${d}</span>
+                    <span style="font-size:0.68rem; color:var(--text-sub);">${src}</span>
+                    ${q.source ? `<span style="font-size:0.68rem; color:var(--text-sub);">${escHtml(q.source)}</span>` : ''}
+                    ${isAlready ? '<span style="font-size:0.68rem; color:#22c55e; font-weight:700;">이미 추가됨</span>' : ''}
+                </div>
+                <div style="font-size:0.83rem; color:#1e293b; line-height:1.4; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; word-break:keep-all;">
+                    ${escHtml(q.text || '(문제 없음)')}
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function toggleQBankItem(id, el) {
+    if (qBankSelected.has(id)) {
+        qBankSelected.delete(id);
+    } else {
+        qBankSelected.add(id);
+    }
+    const count = qBankSelected.size;
+    document.getElementById('qbank-selected-count').textContent = count + '개 선택됨';
+    document.getElementById('btn-add-from-bank').disabled = count === 0;
+
+    // 해당 행 배경 토글
+    if (el) {
+        el.style.background = qBankSelected.has(id) ? '#eff6ff' : '#fff';
+        const cb = el.querySelector('input[type="checkbox"]');
+        if (cb) cb.checked = qBankSelected.has(id);
+    }
+}
+
+async function addSelectedFromBank() {
+    if (qBankSelected.size === 0) return;
+
+    const toAdd = qBankQuestions.filter(q => qBankSelected.has(q.id));
+    let added = 0;
+
+    for (const q of toAdd) {
+        // questions 컬렉션 문서를 세트 인라인 형식으로 변환
+        currentQs.push({
+            _bankId:     q.id,       // 원본 ID 참조 (중복 방지용)
+            text:        q.text,
+            context:     q.context || '',
+            contextImage:q.contextImage || { url: '', desc: '' },
+            image:       q.image || { url: '', desc: '' },
+            choices:     q.choices || [],
+            choiceImages:q.choiceImages || [],
+            correct:     q.correct ?? 0,
+            difficulty:  q.difficulty || '중',
+            hint:        q.hint || '',
+            explanation: q.explanation || '',
+            source:      q.source || '',
+            eraTags:     q.eraTags || []
+        });
+        added++;
+    }
+
+    if (added > 0) {
+        renderQList();
+        await autoSaveQuestions();
+        window.showNotification('추가 완료', `문제 은행에서 ${added}개 문제를 추가했습니다.`, 'success');
+    }
+
+    closeQBankModal();
 }
 </script>
 </body>
