@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>아티클 관리 · Cheese Admin</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="stylesheet" href="../admin.css" />
+
+    <!-- Quill 에디터 -->
+    <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+    <script src="https://cdn.quilljs.com/1.3.6/quill.min.js"></script>
+
+    <style>
+        :root {
+            --bg: #f3f4f6;
+            --card: #ffffff;
+            --text: #0f172a;
+            --sub: #475569;
+            --line: rgba(15,23,42,0.10);
+            --shadow: 0 10px 28px rgba(15,23,42,0.08);
+            --r: 16px;
+            --accent: #1e293b;
+        }
+
+        .am-wrap { padding: 14px; max-width: 1100px; margin: 0 auto; }
+        .am-title { font-size: 20px; font-weight: 1000; letter-spacing: -0.02em; margin: 10px 0 18px; }
+
+        .am-layout { display: grid; grid-template-columns: 360px 1fr; gap: 16px; align-items: start; }
+
+        .am-card {
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: var(--r);
+            padding: 16px;
+            box-shadow: var(--shadow);
+            margin-bottom: 14px;
+        }
+        .am-card-title {
+            font-size: 13px;
+            font-weight: 1000;
+            color: var(--text);
+            margin: 0 0 14px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--line);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        /* 목록 */
+        .am-list { list-style: none; padding: 0; margin: 0; max-height: 600px; overflow-y: auto; }
+        .am-list-item {
+            padding: 10px 12px;
+            border-bottom: 1px solid #f1f5f9;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: background 0.12s;
+        }
+        .am-list-item:hover { background: #f0f7ff; }
+        .am-list-item.active { background: #eff6ff; border-left: 3px solid #3b82f6; }
+        .am-list-item:last-child { border-bottom: none; }
+        .am-li-title { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 4px;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .am-li-meta { font-size: 11px; color: #94a3b8; display: flex; gap: 8px; }
+        .am-li-badge {
+            font-size: 10px; font-weight: 900; padding: 1px 7px; border-radius: 99px;
+        }
+        .am-li-badge.published { background: #dcfce7; color: #15803d; }
+        .am-li-badge.draft     { background: #fef9c3; color: #854d0e; }
+
+        /* 폼 */
+        .am-field { margin-bottom: 14px; }
+        .am-label { font-size: 11px; font-weight: 900; color: var(--sub); display: block; margin-bottom: 6px; }
+        .am-input, .am-select, .am-textarea {
+            width: 100%; padding: 10px 12px;
+            border: 1px solid var(--line);
+            border-radius: 10px; font-size: 13px; font-weight: 600;
+            background: #f8fafc; outline: none; box-sizing: border-box;
+            font-family: system-ui, sans-serif;
+            transition: border-color 0.15s;
+        }
+        .am-input:focus, .am-select:focus, .am-textarea:focus {
+            border-color: #3b82f6; background: #fff;
+        }
+        .am-textarea { min-height: 80px; resize: vertical; }
+        .am-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+        /* Quill 에디터 래퍼 */
+        .am-quill-wrap {
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            overflow: hidden;
+            background: #fff;
+        }
+        .am-quill-wrap .ql-toolbar { border: none; border-bottom: 1px solid var(--line); }
+        .am-quill-wrap .ql-container { border: none; font-size: 14px; min-height: 420px; }
+        .am-quill-wrap .ql-editor { min-height: 420px; }
+
+        /* 썸네일 미리보기 */
+        .am-thumb-preview {
+            width: 100%; max-height: 160px; object-fit: cover;
+            border-radius: 8px; margin-top: 8px; display: none;
+        }
+        .am-thumb-status { font-size: 11px; color: #64748b; margin-top: 4px; }
+
+        /* 버튼 */
+        .am-btn-row { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+        .am-btn {
+            padding: 10px 18px; border-radius: 10px; font-size: 13px; font-weight: 900;
+            cursor: pointer; border: 1px solid var(--line); background: #fff;
+            font-family: system-ui, sans-serif; transition: all 0.15s;
+        }
+        .am-btn:hover { background: #f1f5f9; }
+        .am-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+        .am-btn.primary:hover { background: #0f172a; }
+        .am-btn.danger { background: #fff; color: #b91c1c; border-color: #fca5a5; }
+        .am-btn.danger:hover { background: #fef2f2; }
+        .am-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* 상태 메시지 */
+        .am-status { font-size: 12px; font-weight: 700; padding: 8px 12px; border-radius: 8px; margin-top: 10px; }
+        .am-status.ok  { background: #dcfce7; color: #15803d; }
+        .am-status.err { background: #fee2e2; color: #b91c1c; }
+        .am-hidden { display: none !important; }
+
+        @media (max-width: 900px) {
+            .am-layout { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+    <script src="../admin-common.js"></script>
+    <script>
+        window.CHEESE_ADMIN_ACTIVE_PAGE = "article_manage";
+        window.CHEESE_ADMIN_PAGE_SUBTITLE = "아티클 관리";
+    </script>
+
+    <div class="admin-shell">
+        <div id="admin-header-slot"></div>
+
+        <div class="admin-main">
+            <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+
+            <main class="admin-content">
+                <div class="am-wrap">
+                    <h2 class="am-title">역사 아티클 관리</h2>
+
+                    <div class="am-layout">
+                        <!-- ── 좌: 글 목록 ── -->
+                        <div>
+                            <div class="am-card">
+                                <div class="am-card-title">
+                                    <span>글 목록</span>
+                                    <button class="am-btn" onclick="newArticle()">+ 새 글</button>
+                                </div>
+                                <ul class="am-list" id="am-list">
+                                    <li style="padding:20px; text-align:center; color:#94a3b8; font-size:13px;">불러오는 중...</li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <!-- ── 우: 편집 폼 ── -->
+                        <div>
+                            <div class="am-card">
+                                <div class="am-card-title">
+                                    <span id="am-form-title">새 아티클 작성</span>
+                                    <span id="am-doc-id" style="font-size:11px; color:#94a3b8; font-weight:700;"></span>
+                                </div>
+
+                                <!-- 기본 정보 -->
+                                <div class="am-field">
+                                    <label class="am-label">제목 *</label>
+                                    <input id="am-title" class="am-input" type="text" placeholder="아티클 제목을 입력하세요">
+                                </div>
+
+                                <div class="am-row2">
+                                    <div class="am-field">
+                                        <label class="am-label">대분류 *</label>
+                                        <select id="am-cat-main" class="am-select">
+                                            <option value="">선택</option>
+                                            <option value="한국사">한국사</option>
+                                            <option value="중국사">중국사</option>
+                                            <option value="일본사">일본사</option>
+                                        </select>
+                                    </div>
+                                    <div class="am-field">
+                                        <label class="am-label">난이도 *</label>
+                                        <select id="am-cat-sub" class="am-select">
+                                            <option value="">선택</option>
+                                            <option value="입문">🌱 입문</option>
+                                            <option value="심화">🔥 심화</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="am-field">
+                                    <label class="am-label">요약 (목록 카드에 표시)</label>
+                                    <textarea id="am-summary" class="am-textarea" placeholder="2~3줄 요약 문장..."></textarea>
+                                </div>
+
+                                <div class="am-row2">
+                                    <div class="am-field">
+                                        <label class="am-label">작성자</label>
+                                        <input id="am-author" class="am-input" type="text" placeholder="예: 치즈 편집팀">
+                                    </div>
+                                    <div class="am-field">
+                                        <label class="am-label">상태</label>
+                                        <select id="am-status" class="am-select">
+                                            <option value="draft">임시저장</option>
+                                            <option value="published">발행</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <!-- 썸네일 -->
+                                <div class="am-field">
+                                    <label class="am-label">썸네일 이미지</label>
+                                    <input id="am-thumb-file" type="file" accept="image/*" style="font-size:13px;">
+                                    <div id="am-thumb-status" class="am-thumb-status"></div>
+                                    <img id="am-thumb-preview" class="am-thumb-preview" alt="썸네일 미리보기">
+                                    <input id="am-thumb-url" type="hidden">
+                                </div>
+
+                                <!-- 본문 (Quill) -->
+                                <div class="am-field">
+                                    <label class="am-label">본문 *</label>
+                                    <div class="am-quill-wrap">
+                                        <div id="am-editor"></div>
+                                    </div>
+                                </div>
+
+                                <!-- 저장/삭제 버튼 -->
+                                <div class="am-btn-row">
+                                    <button class="am-btn primary" id="am-save-btn" onclick="saveArticle()">저장</button>
+                                    <button class="am-btn" onclick="clearForm()">초기화</button>
+                                    <button class="am-btn danger am-hidden" id="am-delete-btn" onclick="deleteArticle()">삭제</button>
+                                </div>
+                                <div id="am-status-msg" class="am-status am-hidden"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        // ── safeFetchDB: adminDataApi 경유 ──
+        async function safeFetchDB(payload) {
+            if (!window.CHEESE_ADMIN_DB_API) throw new Error("API 엔드포인트가 정의되지 않았습니다.");
+            const res = await fetch(window.CHEESE_ADMIN_DB_API, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!data.ok) throw new Error(data.error || "Firebase 오류가 발생했습니다.");
+            return data;
+        }
+
+        // ── Quill 초기화 ──
+        let quill;
+        document.addEventListener('DOMContentLoaded', () => {
+            quill = new Quill('#am-editor', {
+                theme: 'snow',
+                placeholder: '본문을 입력하세요...',
+                modules: {
+                    toolbar: {
+                        container: [
+                            [{ header: [1, 2, 3, false] }],
+                            ['bold', 'italic', 'underline', 'strike'],
+                            [{ color: [] }, { background: [] }],
+                            [{ list: 'ordered' }, { list: 'bullet' }],
+                            [{ indent: '-1' }, { indent: '+1' }],
+                            ['blockquote', 'code-block'],
+                            ['link', 'image'],
+                            ['clean']
+                        ],
+                        handlers: { image: imageHandler }
+                    }
+                }
+            });
+
+            // 썸네일 파일 선택 이벤트
+            const thumbFile = document.getElementById('am-thumb-file');
+            if (thumbFile) thumbFile.addEventListener('change', uploadThumbnail);
+
+            loadList();
+        });
+
+        // ── 이미지 핸들러: Google Drive 업로드 ──
+        async function imageHandler() {
+            const input = document.createElement('input');
+            input.type   = 'file';
+            input.accept = 'image/*';
+            input.onchange = async () => {
+                const file = input.files[0];
+                if (!file) return;
+
+                if (!window.uploadFileToGoogleDrive) {
+                    showStatus('이미지 업로드 기능이 초기화되지 않았습니다.', 'err');
+                    return;
+                }
+
+                showStatus('이미지 업로드 중...', null);
+                const result = await window.uploadFileToGoogleDrive(file);
+                if (result && result.downloadUrl) {
+                    const range = quill.getSelection(true);
+                    quill.insertEmbed(range.index, 'image', result.downloadUrl);
+                    quill.setSelection(range.index + 1);
+                    clearStatus();
+                } else {
+                    showStatus('이미지 업로드에 실패했습니다.', 'err');
+                }
+            };
+            input.click();
+        }
+
+        // ── 썸네일 업로드 ──
+        async function uploadThumbnail() {
+            const file = document.getElementById('am-thumb-file').files[0];
+            if (!file) return;
+
+            if (!window.uploadFileToGoogleDrive) {
+                showStatus('이미지 업로드 기능이 초기화되지 않았습니다.', 'err');
+                return;
+            }
+
+            const statusEl  = document.getElementById('am-thumb-status');
+            const previewEl = document.getElementById('am-thumb-preview');
+            const urlInput  = document.getElementById('am-thumb-url');
+
+            if (statusEl) statusEl.textContent = '썸네일 업로드 중...';
+
+            const result = await window.uploadFileToGoogleDrive(file);
+            if (result && result.downloadUrl) {
+                urlInput.value = result.downloadUrl;
+                if (previewEl) { previewEl.src = result.downloadUrl; previewEl.style.display = 'block'; }
+                if (statusEl) statusEl.textContent = '✅ 썸네일 업로드 완료';
+            } else {
+                if (statusEl) statusEl.textContent = '❌ 썸네일 업로드 실패';
+            }
+        }
+
+        // ── 목록 로드 ──
+        let allArticles = [];
+        async function loadList() {
+            try {
+                const res = await safeFetchDB({ action: "get", collection: "articles" });
+                allArticles = (res.data || []).sort((a, b) => {
+                    const ta = a.published_at?.seconds ?? a.created_at?.seconds ?? 0;
+                    const tb = b.published_at?.seconds ?? b.created_at?.seconds ?? 0;
+                    return tb - ta;
+                });
+                renderList();
+            } catch (e) {
+                document.getElementById('am-list').innerHTML =
+                    `<li style="padding:20px; text-align:center; color:#ef4444; font-size:13px;">목록 로드 실패: ${e.message}</li>`;
+            }
+        }
+
+        function renderList() {
+            const ul = document.getElementById('am-list');
+            if (!ul) return;
+            if (allArticles.length === 0) {
+                ul.innerHTML = `<li style="padding:20px; text-align:center; color:#94a3b8; font-size:13px;">등록된 아티클이 없습니다.</li>`;
+                return;
+            }
+            ul.innerHTML = allArticles.map(a => {
+                const badgeCls = a.status === 'published' ? 'published' : 'draft';
+                const badgeLabel = a.status === 'published' ? '발행' : '임시';
+                const cat = [a.category_main, a.category_sub].filter(Boolean).join(' · ');
+                return `
+                    <li class="am-list-item" data-id="${escAttr(a.id)}" onclick="loadArticle('${escAttr(a.id)}')">
+                        <div class="am-li-title">${escHtml(a.title ?? '(제목 없음)')}</div>
+                        <div class="am-li-meta">
+                            <span class="am-li-badge ${badgeCls}">${badgeLabel}</span>
+                            <span>${escHtml(cat)}</span>
+                        </div>
+                    </li>`;
+            }).join('');
+        }
+
+        // ── 단일 아티클 로드 (수정용) ──
+        async function loadArticle(id) {
+            showStatus('불러오는 중...', null);
+            try {
+                const res = await safeFetchDB({ action: "getDoc", collection: "articles", id });
+                const a   = res.data;
+                if (!a) throw new Error('문서 없음');
+
+                document.getElementById('am-form-title').textContent = '아티클 수정';
+                document.getElementById('am-doc-id').textContent = id;
+
+                document.getElementById('am-title').value    = a.title    ?? '';
+                document.getElementById('am-cat-main').value = a.category_main ?? '';
+                document.getElementById('am-cat-sub').value  = a.category_sub  ?? '';
+                document.getElementById('am-summary').value  = a.summary  ?? '';
+                document.getElementById('am-author').value   = a.author   ?? '';
+                document.getElementById('am-status').value   = a.status   ?? 'draft';
+                document.getElementById('am-thumb-url').value = a.thumbnail ?? '';
+
+                const previewEl = document.getElementById('am-thumb-preview');
+                if (previewEl && a.thumbnail) {
+                    previewEl.src = a.thumbnail;
+                    previewEl.style.display = 'block';
+                }
+
+                quill.root.innerHTML = a.content ?? '';
+
+                document.getElementById('am-delete-btn').classList.remove('am-hidden');
+
+                // 목록 active 표시
+                document.querySelectorAll('.am-list-item').forEach(li => {
+                    li.classList.toggle('active', li.dataset.id === id);
+                });
+
+                clearStatus();
+
+            } catch (e) {
+                showStatus('로드 실패: ' + e.message, 'err');
+            }
+        }
+
+        // ── 저장 ──
+        async function saveArticle() {
+            const title    = document.getElementById('am-title').value.trim();
+            const catMain  = document.getElementById('am-cat-main').value;
+            const catSub   = document.getElementById('am-cat-sub').value;
+            const summary  = document.getElementById('am-summary').value.trim();
+            const author   = document.getElementById('am-author').value.trim();
+            const status   = document.getElementById('am-status').value;
+            const thumbUrl = document.getElementById('am-thumb-url').value.trim();
+            const content  = quill.root.innerHTML;
+            const docIdEl  = document.getElementById('am-doc-id');
+
+            if (!title)   { showStatus('제목을 입력하세요.', 'err'); return; }
+            if (!catMain) { showStatus('대분류를 선택하세요.', 'err'); return; }
+            if (!catSub)  { showStatus('난이도를 선택하세요.', 'err'); return; }
+            if (!content || content === '<p><br></p>') { showStatus('본문을 입력하세요.', 'err'); return; }
+
+            const docId = docIdEl.textContent.trim() || generateId();
+            const now   = new Date().toISOString();
+
+            const data = {
+                title,
+                category_main: catMain,
+                category_sub:  catSub,
+                summary,
+                author,
+                status,
+                content,
+                thumbnail: thumbUrl || null,
+                updated_at: now
+            };
+
+            // 신규 글이면 created_at / view_count 추가
+            if (!docIdEl.textContent.trim()) {
+                data.created_at   = now;
+                data.view_count   = 0;
+                data.published_at = status === 'published' ? now : null;
+            } else if (status === 'published') {
+                // 기존 글이 published로 바뀔 때 published_at 설정 (없으면)
+                const existing = allArticles.find(a => a.id === docId);
+                if (!existing?.published_at) data.published_at = now;
+            }
+
+            const saveBtn = document.getElementById('am-save-btn');
+            saveBtn.disabled    = true;
+            saveBtn.textContent = '저장 중...';
+            showStatus('저장 중...', null);
+
+            try {
+                await safeFetchDB({ action: "set", collection: "articles", id: docId, data });
+
+                docIdEl.textContent = docId;
+                document.getElementById('am-form-title').textContent = '아티클 수정';
+                document.getElementById('am-delete-btn').classList.remove('am-hidden');
+
+                showStatus('✅ 저장 완료!', 'ok');
+                await loadList();
+
+                // 목록 active 갱신
+                document.querySelectorAll('.am-list-item').forEach(li => {
+                    li.classList.toggle('active', li.dataset.id === docId);
+                });
+
+            } catch (e) {
+                showStatus('저장 실패: ' + e.message, 'err');
+            } finally {
+                saveBtn.disabled    = false;
+                saveBtn.textContent = '저장';
+            }
+        }
+
+        // ── 삭제 ──
+        async function deleteArticle() {
+            const docId = document.getElementById('am-doc-id').textContent.trim();
+            if (!docId) return;
+            if (!confirm('정말로 이 아티클을 삭제하시겠습니까?\n삭제하면 복구할 수 없습니다.')) return;
+
+            showAdminLoading('삭제 중...');
+            try {
+                await safeFetchDB({ action: "delDoc", collection: "articles", id: docId });
+                clearForm();
+                showStatus('✅ 삭제 완료', 'ok');
+                await loadList();
+            } catch (e) {
+                showStatus('삭제 실패: ' + e.message, 'err');
+            } finally {
+                hideAdminLoading();
+            }
+        }
+
+        // ── 폼 초기화 ──
+        function newArticle() { clearForm(); }
+
+        function clearForm() {
+            document.getElementById('am-form-title').textContent = '새 아티클 작성';
+            document.getElementById('am-doc-id').textContent = '';
+            document.getElementById('am-title').value    = '';
+            document.getElementById('am-cat-main').value = '';
+            document.getElementById('am-cat-sub').value  = '';
+            document.getElementById('am-summary').value  = '';
+            document.getElementById('am-author').value   = '';
+            document.getElementById('am-status').value   = 'draft';
+            document.getElementById('am-thumb-url').value = '';
+            document.getElementById('am-thumb-file').value = '';
+            const previewEl = document.getElementById('am-thumb-preview');
+            if (previewEl) { previewEl.src = ''; previewEl.style.display = 'none'; }
+            const statusEl = document.getElementById('am-thumb-status');
+            if (statusEl) statusEl.textContent = '';
+            if (quill) quill.root.innerHTML = '';
+            document.getElementById('am-delete-btn').classList.add('am-hidden');
+            document.querySelectorAll('.am-list-item').forEach(li => li.classList.remove('active'));
+            clearStatus();
+        }
+
+        // ── 상태 메시지 ──
+        function showStatus(msg, type) {
+            const el = document.getElementById('am-status-msg');
+            if (!el) return;
+            el.textContent = msg;
+            el.className   = 'am-status' + (type ? ` ${type}` : '');
+            el.classList.remove('am-hidden');
+        }
+        function clearStatus() {
+            const el = document.getElementById('am-status-msg');
+            if (el) el.classList.add('am-hidden');
+        }
+
+        // ── 유틸 ──
+        function generateId() {
+            return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+        }
+        function escHtml(str) {
+            return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        }
+        function escAttr(str) { return String(str).replace(/"/g,'&quot;'); }
+    </script>
+</body>
+</html>
