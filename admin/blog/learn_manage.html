@@ -398,9 +398,71 @@
             cursor: pointer;
             color: var(--primary);
             padding: 0;
-            font-size: 0.72rem;
-            line-height: 1;
+            font-size: 0.7rem;
+            display: flex;
+            align-items: center;
         }
+
+        /* ── 이미지 업로드 & 썸네일 ── */
+        .step-img-preview {
+            max-width: 100%;
+            max-height: 140px;
+            border-radius: 8px;
+            margin-top: 8px;
+            display: none;
+            border: 1px solid var(--border);
+            object-fit: contain;
+            background: #f1f5f9;
+        }
+
+        .img-upload-area {
+            position: relative;
+            border: 2px dashed var(--border);
+            border-radius: 8px;
+            padding: 12px;
+            background: #fff;
+            transition: all 0.2s;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .img-upload-area.drag-over {
+            border-color: var(--primary);
+            background: #f0f7ff;
+            transform: scale(1.02);
+        }
+
+        .img-upload-hint {
+            font-size: 0.72rem;
+            color: var(--text-sub);
+            text-align: center;
+            pointer-events: none;
+        }
+
+        .set-item-thumb {
+            width: 50px;
+            height: 50px;
+            border-radius: 6px;
+            object-fit: cover;
+            background: #e2e8f0;
+            border: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        .set-item-main {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .set-item {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .set-item-cat { flex-shrink: 0; }
+        .set-item-level { flex-shrink: 0; }
 
         /* ── 퀴즈 목록 ── */
         .quiz-list { display: flex; flex-direction: column; gap: 10px; }
@@ -919,7 +981,6 @@ async function loadSequenceList() {
     listEl.innerHTML = '<div class="empty-state">불러오는 중...</div>';
 
     try {
-        // 올바른 API 형식: action 없이 collection + orderByField, 응답은 res.data
         const res = await safeFetchDB({ collection: 'learn_sequences', orderByField: 'created_at' });
         allSequences = (res.data ?? []);
         renderSequenceList();
@@ -948,15 +1009,26 @@ function renderSequenceList() {
         const lvlClass    = 'lvl-' + (d.level ?? 'intermediate');
         const lvlLabel    = { beginner: '입문', intermediate: '중급', advanced: '심화' }[d.level] ?? '';
         const isPublished = d.status === 'published';
+        
+        const thumbUrl = d.steps?.[0]?.image_url || '';
+        const thumbHtml = thumbUrl 
+            ? `<img src="${thumbUrl}" class="set-item-thumb" onerror="this.src='https://via.placeholder.com/50?text=No+Img'">`
+            : `<div class="set-item-thumb" style="display:flex; align-items:center; justify-content:center; font-size:1.2rem; color:#cbd5e1;"><i class="fas fa-image"></i></div>`;
+
         return `
         <div class="set-item${currentSeqId === d.id ? ' active' : ''}" onclick="openSequence('${d.id}')">
-            <span class="set-item-cat ${catClass}">${catLabel}</span>
-            ${lvlLabel ? `<span class="set-item-level ${lvlClass}">${lvlLabel}</span>` : ''}
-            <div class="set-item-title">${d.title ?? '(제목 없음)'}</div>
-            <div class="set-item-meta">
-                <span class="pub-dot ${isPublished ? 'pub' : 'draft'}"></span>
-                <span>${isPublished ? '공개' : '초안'}</span>
-                <span>${(d.tags ?? []).slice(0,2).join(', ')}</span>
+            ${thumbHtml}
+            <div class="set-item-main">
+                <div style="display:flex; align-items:center; gap:6px; margin-bottom:4px;">
+                    <span class="set-item-cat ${catClass}">${catLabel}</span>
+                    ${lvlLabel ? `<span class="set-item-level ${lvlClass}">${lvlLabel}</span>` : ''}
+                </div>
+                <div class="set-item-title">${d.title ?? '(제목 없음)'}</div>
+                <div class="set-item-meta">
+                    <span class="pub-dot ${isPublished ? 'pub' : 'draft'}"></span>
+                    <span>${isPublished ? '공개' : '초안'}</span>
+                    <span>${(d.tags ?? []).slice(0,2).join(', ')}</span>
+                </div>
             </div>
         </div>`;
     }).join('');
@@ -991,7 +1063,6 @@ function openNewSequenceForm() {
 
 // ── 시퀀스 열기 ──────────────────────────
 function openSequence(docId) {
-    // 목록 캐시에서 찾기 (별도 API 호출 불필요)
     const d = allSequences.find(s => s.id === docId);
     if (!d) { toast('데이터를 찾을 수 없습니다. 새로고침 후 시도하세요.', true); return; }
 
@@ -1002,10 +1073,8 @@ function openSequence(docId) {
     document.getElementById('editor-area').style.display = 'flex';
     document.getElementById('btn-delete-seq').style.display = '';
 
-    // 목록 하이라이트 갱신
     renderSequenceList();
 
-    // 임베드 배열 로드
     stepsData      = (d.steps           ?? []);
     quizzesData    = (d.quizzes          ?? []);
     flashcardsData = (d.flashcards       ?? []);
@@ -1145,7 +1214,6 @@ async function buildAndSavePayload() {
         throw new Error('잘못된 ID');
     }
 
-    // 각 폼 동기화
     syncStepsFromForm();
     syncQuizzesFromForm();
     syncFlashcardsFromForm();
@@ -1240,10 +1308,19 @@ function renderStepList() {
                     <input type="text" class="form-control" placeholder="예: step_01" value="${step.id ?? ''}" data-step-id="${i}">
                 </div>
                 <div class="form-group">
-                    <label class="form-label">이미지 URL (선택)</label>
-                    <div style="display:flex; gap:6px; align-items:center;">
-                        <input type="text" class="form-control" placeholder="이미지 URL을 붙여넣으세요 (없으면 비워두세요)" value="${step.image_url ?? ''}" data-step-img="${i}" style="flex:1;">
-                        ${step.image_url ? `<img src="${step.image_url}" style="width:40px; height:40px; object-fit:cover; border-radius:6px; border:1px solid var(--border);" alt="">` : ''}
+                    <label class="form-label">청크 이미지 (직접 드래그하거나 붙여넣으세요)</label>
+                    <div class="img-upload-area" id="img-area-${i}" 
+                         ondragover="handleStepDragOver(event, ${i})" 
+                         ondragleave="handleStepDragLeave(event, ${i})" 
+                         ondrop="handleStepDrop(event, ${i})">
+                        <input type="text" class="form-control" placeholder="이미지 URL (직접 입력도 가능)" 
+                               value="${step.image_url ?? ''}" data-step-img="${i}"
+                               onpaste="handleStepImagePaste(event, ${i})"
+                               oninput="syncStepPreview(${i})">
+                        <div class="img-upload-hint"><i class="fas fa-upload"></i> 이미지를 여기에 드래그하거나 붙여넣으세요</div>
+                        <img id="step-preview-${i}" src="${step.image_url ?? ''}" class="step-img-preview" 
+                             style="display: ${step.image_url ? 'block' : 'none'}"
+                             onerror="this.style.display='none'">
                     </div>
                 </div>
                 <div class="form-group">
@@ -1659,6 +1736,91 @@ async function confirmDeleteSequence() {
     } catch (e) {
         toast('삭제 실패: ' + e.message, true);
     }
+}
+
+// ── 이미지 업로드 & 핸들러 ─────────────────
+async function uploadImageFile(file, idx) {
+    const urlInput = document.querySelector(`[data-step-img="${idx}"]`);
+    const oldVal = urlInput.value;
+    urlInput.value = '업로드 중...';
+    urlInput.disabled = true;
+
+    try {
+        const reader = new FileReader();
+        const base64 = await new Promise((resolve, reject) => {
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+
+        // admin-common.js 에 정의된 CHEESE_STORE_API_BASE 사용
+        const response = await fetch(window.CHEESE_STORE_API_BASE, {
+            method: 'POST',
+            body: JSON.stringify({
+                mode: 'uploadStoreFile',
+                fileName: 'learn_step_' + Date.now() + '.png',
+                mimeType: file.type,
+                base64Data: base64
+            })
+        });
+
+        const result = await response.json();
+        if (!result.ok) throw new Error(result.error || '업로드 실패');
+
+        // 구글 드라이브 썸네일 URL 생성 (폭 1200px)
+        const url = `https://drive.google.com/thumbnail?id=${result.fileId}&sz=w1200`;
+        urlInput.value = url;
+        syncStepPreview(idx);
+        toast('이미지가 업로드되었습니다.');
+    } catch (err) {
+        toast('이미지 업로드 실패: ' + err.message, true);
+        urlInput.value = oldVal;
+    } finally {
+        urlInput.disabled = false;
+    }
+}
+
+function syncStepPreview(idx) {
+    const url = document.querySelector(`[data-step-img="${idx}"]`)?.value || '';
+    const img = document.getElementById(`step-preview-${idx}`);
+    if (img) {
+        img.src = url;
+        img.style.display = url ? 'block' : 'none';
+    }
+}
+
+function handleStepDragOver(e, idx) {
+    e.preventDefault();
+    document.getElementById(`img-area-${idx}`).classList.add('drag-over');
+}
+
+function handleStepDragLeave(e, idx) {
+    e.preventDefault();
+    document.getElementById(`img-area-${idx}`).classList.remove('drag-over');
+}
+
+function handleStepDrop(e, idx) {
+    e.preventDefault();
+    document.getElementById(`img-area-${idx}`).classList.remove('drag-over');
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+        uploadImageFile(files[0], idx);
+    }
+}
+
+async function handleStepImagePaste(e, idx) {
+    const items = (e.clipboardData || e.originalEvent?.clipboardData)?.items;
+    if (!items) return;
+    let imageFile = null;
+    for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') === 0) {
+            imageFile = items[i].getAsFile();
+            break;
+        }
+    }
+    if (!imageFile) return;
+    e.preventDefault();
+    uploadImageFile(imageFile, idx);
 }
 
 // ── 초기화 ──────────────────────────────
