@@ -578,6 +578,67 @@
         ::-webkit-scrollbar { width: 5px; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
 
+        /* ── 모바일 전용 버튼 (데스크톱에서는 숨김) ── */
+        .btn-mobile-back { display: none; }
+
+        /* ── 모바일 최적화 (@media 768px) ── */
+        @media (max-width: 768px) {
+            main { height: calc(100vh - var(--admin-header-h)); overflow: hidden; }
+
+            /* 2-패널: 세로 스택 + 한 번에 하나씩 표시 */
+            .two-panel { flex-direction: column; overflow: hidden; }
+
+            .set-panel {
+                width: 100%;
+                height: 100%;
+                max-height: 100%;
+                border-right: none;
+                border-bottom: 1px solid var(--border);
+            }
+
+            .editor-panel { display: none; width: 100%; }
+
+            .two-panel.mobile-editor-open .set-panel { display: none; }
+            .two-panel.mobile-editor-open .editor-panel { display: flex; }
+
+            .btn-mobile-back { display: inline-flex !important; }
+
+            /* 상단 바 */
+            .page-topbar { padding: 10px 14px; gap: 8px; flex-wrap: wrap; }
+            .page-topbar h1 { font-size: 0.9rem; }
+
+            /* 에디터 상단 */
+            .editor-topbar { padding: 10px 12px; gap: 6px; flex-wrap: wrap; }
+            .editor-topbar h2 { font-size: 0.82rem; white-space: normal; width: 100%; order: -1; }
+
+            /* 탭 가로 스크롤 */
+            .editor-tabs { overflow-x: auto; padding: 0 6px; -webkit-overflow-scrolling: touch; }
+            .editor-tab { padding: 10px 10px; font-size: 0.75rem; }
+
+            /* 탭 패널 */
+            .tab-panel { padding: 12px 10px; }
+            .card-body { padding: 12px; }
+
+            /* form-grid 1열 */
+            .form-grid { grid-template-columns: 1fr; }
+
+            /* subject-chip 스크롤 */
+            .subject-chip-group { overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
+            .subject-chip { padding: 6px 10px; font-size: 0.75rem; white-space: nowrap; }
+
+            /* 플래시카드: 1열 */
+            .flashcard-row { grid-template-columns: 1fr; }
+
+            /* 타임라인: 축소하되 행 유지 */
+            .timeline-row { grid-template-columns: 46px 1fr 64px auto; gap: 5px; }
+
+            /* 주석: 3열 유지하되 첫 열 축소 */
+            .footnote-row { grid-template-columns: 90px 1fr auto; }
+
+            /* 왼쪽 패널 필터 */
+            .set-panel-filter { flex-direction: column; }
+        }
+
         /* ── spinner ── */
         .spinner {
             display: inline-block;
@@ -620,6 +681,9 @@
             <!-- 상단 바 -->
             <div class="page-topbar">
                 <h1><i class="fas fa-layer-group" style="color:var(--primary);"></i>&nbsp; 마이크로 학습 관리</h1>
+                <button class="btn btn-ghost btn-sm" onclick="openBulkImportModal()">
+                    <i class="fas fa-file-import"></i> 일괄 가져오기
+                </button>
                 <button class="btn btn-ghost btn-sm" onclick="loadSequenceList()">
                     <i class="fas fa-sync-alt"></i> 새로고침
                 </button>
@@ -670,6 +734,9 @@
                     <div id="editor-area" style="display:none; flex-direction:column; flex:1; min-height:0; overflow:hidden;">
 
                         <div class="editor-topbar">
+                            <button class="btn btn-ghost btn-sm btn-mobile-back" onclick="closeMobileEditor()">
+                                <i class="fas fa-arrow-left"></i> 목록
+                            </button>
                             <h2 id="editor-title-text">학습 시퀀스 편집</h2>
                             <button class="btn btn-danger btn-sm" id="btn-delete-seq" onclick="promptDeleteSequence()" style="display:none;">
                                 <i class="fas fa-trash-alt"></i> 삭제
@@ -936,6 +1003,101 @@
     </div>
 </div>
 
+<!-- 일괄 가져오기 모달 -->
+<div class="modal-overlay" id="bulk-import-modal">
+    <div class="modal-card" style="max-width:620px; width:95vw; max-height:88vh; display:flex; flex-direction:column; padding:0; border-radius:14px; overflow:hidden;">
+        <div style="padding:16px 22px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px; flex-shrink:0;">
+            <h3 style="flex:1; margin:0; font-size:1rem; font-weight:800;"><i class="fas fa-file-import" style="color:var(--primary);"></i> 학습 시퀀스 일괄 가져오기</h3>
+            <button class="btn btn-ghost btn-sm" onclick="closeBulkImportModal()">닫기</button>
+        </div>
+
+        <div style="flex:1; overflow-y:auto; padding:20px;">
+
+            <!-- 파일 선택 -->
+            <div style="margin-bottom:14px;">
+                <label class="form-label">JSON 파일 선택</label>
+                <div style="display:flex; gap:8px; align-items:center; margin-top:4px;">
+                    <input type="file" id="bulk-file-input" accept=".json" style="display:none;" onchange="onBulkFileSelect(event)">
+                    <button class="btn btn-ghost btn-sm" onclick="document.getElementById('bulk-file-input').click()">
+                        <i class="fas fa-folder-open"></i> 파일 선택
+                    </button>
+                    <span id="bulk-file-name" style="font-size:0.8rem; color:var(--text-sub);">선택된 파일 없음</span>
+                </div>
+            </div>
+
+            <div style="text-align:center; color:var(--text-sub); font-size:0.78rem; margin:10px 0;">또는</div>
+
+            <!-- JSON 직접 입력 -->
+            <div style="margin-bottom:14px;">
+                <label class="form-label">JSON 직접 붙여넣기</label>
+                <textarea id="bulk-json-input" class="form-control"
+                    style="min-height:160px; font-family:monospace; font-size:0.78rem; margin-top:4px;"
+                    placeholder='[{"id":"kr-abc123","title":"제목","category":"korean","level":"intermediate","status":"draft","steps":[...],...}]'
+                    oninput="onBulkJsonChange()"></textarea>
+            </div>
+
+            <!-- 형식 예시 토글 -->
+            <div style="margin-bottom:14px;">
+                <button class="btn btn-ghost btn-sm" onclick="toggleBulkSample()" style="font-size:0.75rem;">
+                    <i class="fas fa-code"></i> 형식 예시 보기/숨기기
+                </button>
+                <pre id="bulk-sample" style="display:none; margin-top:8px; padding:12px; background:#f8fafc; border:1px solid var(--border); border-radius:8px; font-size:0.72rem; overflow-x:auto; line-height:1.6;">[
+  {
+    "id": "kr-example-01",
+    "title": "고구려의 광개토대왕",
+    "category": "korean",
+    "level": "intermediate",
+    "status": "draft",
+    "description": "한 줄 소개",
+    "tags": ["고구려", "광개토대왕"],
+    "topics": ["war"],
+    "full_text": "아웃트로 전체 본문",
+    "steps": [
+      { "id": "step_01", "text": "내용 2~3문장", "keywords": ["키워드"], "order": 1 }
+    ],
+    "quizzes": [
+      { "type": "ox", "question": "문제", "answer": "O", "hint": "", "remedial_mode": "flashcard", "order": 1 }
+    ],
+    "flashcards": [
+      { "front": "앞면", "back": "뒷면" }
+    ],
+    "timeline_events": [
+      { "label": "이벤트명", "year": "391", "order": 1 }
+    ]
+  }
+]</pre>
+            </div>
+
+            <!-- 미리보기 -->
+            <div id="bulk-preview" style="display:none;">
+                <div style="font-size:0.8rem; font-weight:700; color:var(--text-sub); text-transform:uppercase; letter-spacing:0.3px; margin-bottom:8px;">
+                    감지된 항목 <span id="bulk-preview-count" style="color:var(--primary);"></span>개
+                </div>
+                <div id="bulk-preview-list" style="display:flex; flex-direction:column; gap:4px; max-height:180px; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:8px;"></div>
+            </div>
+
+            <!-- 에러 -->
+            <div id="bulk-error" style="display:none; margin-top:10px; padding:10px 14px; background:#fef2f2; border:1px solid #fca5a5; border-radius:8px; font-size:0.8rem; color:#dc2626;"></div>
+
+            <!-- 진행 상태 -->
+            <div id="bulk-progress" style="display:none; margin-top:12px;">
+                <div style="font-size:0.8rem; color:var(--text-sub); margin-bottom:6px;" id="bulk-progress-text">0 / 0 저장 중...</div>
+                <div style="height:6px; background:#e2e8f0; border-radius:3px; overflow:hidden;">
+                    <div id="bulk-progress-bar" style="height:100%; background:var(--primary); border-radius:3px; transition:width 0.2s; width:0%;"></div>
+                </div>
+            </div>
+
+        </div>
+
+        <div style="padding:12px 20px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:8px; flex-shrink:0; background:#f8fafc;">
+            <button class="btn btn-ghost" onclick="closeBulkImportModal()">취소</button>
+            <button class="btn btn-primary" id="btn-bulk-import" disabled onclick="startBulkImport()">
+                <i class="fas fa-file-import"></i> 가져오기
+            </button>
+        </div>
+    </div>
+</div>
+
 <!-- 삭제 확인 모달 -->
 <div class="modal-overlay" id="delete-modal">
     <div class="modal-card">
@@ -1050,6 +1212,14 @@ function renderSequenceList() {
     }).join('');
 }
 
+// ── 모바일: 에디터 패널 전환 ──────────────
+function openMobileEditor() {
+    document.querySelector('.two-panel')?.classList.add('mobile-editor-open');
+}
+function closeMobileEditor() {
+    document.querySelector('.two-panel')?.classList.remove('mobile-editor-open');
+}
+
 // ── 새 시퀀스 폼 열기 ──────────────────────
 function openNewSequenceForm() {
     isNewSeq    = true;
@@ -1064,6 +1234,7 @@ function openNewSequenceForm() {
     document.getElementById('editor-placeholder').style.display = 'none';
     const area = document.getElementById('editor-area');
     area.style.display = 'flex';
+    openMobileEditor();
 
     document.getElementById('editor-title-text').textContent = '새 학습 시퀀스';
     document.getElementById('btn-delete-seq').style.display = 'none';
@@ -1088,6 +1259,7 @@ function openSequence(docId) {
     document.getElementById('editor-placeholder').style.display = 'none';
     document.getElementById('editor-area').style.display = 'flex';
     document.getElementById('btn-delete-seq').style.display = '';
+    openMobileEditor();
 
     renderSequenceList();
 
@@ -1756,6 +1928,7 @@ async function confirmDeleteSequence() {
         currentSeqId = null;
         document.getElementById('editor-area').style.display = 'none';
         document.getElementById('editor-placeholder').style.display = '';
+        closeMobileEditor();
         renderSequenceList();
     } catch (e) {
         toast('삭제 실패: ' + e.message, true);
@@ -1859,6 +2032,141 @@ document.addEventListener('input', (e) => {
         autoResize(e.target);
     }
 });
+
+// ════════════════════════════════════════
+// ── 일괄 가져오기 ──
+// ════════════════════════════════════════
+
+let bulkParsedData = null;
+
+function openBulkImportModal() {
+    document.getElementById('bulk-import-modal').classList.add('open');
+    resetBulkModal();
+}
+
+function closeBulkImportModal() {
+    document.getElementById('bulk-import-modal').classList.remove('open');
+}
+
+function resetBulkModal() {
+    document.getElementById('bulk-json-input').value = '';
+    document.getElementById('bulk-file-input').value = '';
+    document.getElementById('bulk-file-name').textContent = '선택된 파일 없음';
+    document.getElementById('bulk-preview').style.display = 'none';
+    document.getElementById('bulk-error').style.display = 'none';
+    document.getElementById('bulk-progress').style.display = 'none';
+    document.getElementById('btn-bulk-import').disabled = true;
+    bulkParsedData = null;
+}
+
+function toggleBulkSample() {
+    const el = document.getElementById('bulk-sample');
+    el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+function onBulkFileSelect(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    document.getElementById('bulk-file-name').textContent = file.name;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        document.getElementById('bulk-json-input').value = e.target.result;
+        onBulkJsonChange();
+    };
+    reader.readAsText(file, 'utf-8');
+}
+
+function onBulkJsonChange() {
+    const raw = document.getElementById('bulk-json-input').value.trim();
+    const errEl = document.getElementById('bulk-error');
+    const previewEl = document.getElementById('bulk-preview');
+
+    if (!raw) {
+        errEl.style.display = 'none';
+        previewEl.style.display = 'none';
+        document.getElementById('btn-bulk-import').disabled = true;
+        bulkParsedData = null;
+        return;
+    }
+
+    try {
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) throw new Error('최상위 구조가 배열([...])이어야 합니다.');
+        if (parsed.length === 0) throw new Error('항목이 하나도 없습니다.');
+
+        const invalid = parsed.filter(item => !item.id || !item.title);
+        if (invalid.length > 0) throw new Error(`id 또는 title이 없는 항목이 ${invalid.length}개 있습니다.`);
+
+        bulkParsedData = parsed;
+        errEl.style.display = 'none';
+
+        document.getElementById('bulk-preview-count').textContent = parsed.length;
+        document.getElementById('bulk-preview-list').innerHTML = parsed.map(item => {
+            const catLabel = { korean: '한국사', japanese: '일본사', chinese: '중국사', world: '세계사' }[item.category] ?? item.category ?? '';
+            const stepsCount = (item.steps ?? []).length;
+            return `<div style="padding:6px 8px; border-radius:6px; font-size:0.8rem; display:flex; gap:8px; align-items:center; background:#fff; border:1px solid var(--border);">
+                <span style="font-family:monospace; font-size:0.72rem; color:var(--text-sub); flex-shrink:0;">${item.id}</span>
+                <span style="flex:1; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${item.title}</span>
+                ${catLabel ? `<span style="font-size:0.68rem; background:#e8eeff; color:var(--primary); padding:1px 6px; border-radius:4px; flex-shrink:0;">${catLabel}</span>` : ''}
+                ${stepsCount ? `<span style="font-size:0.68rem; color:var(--text-sub); flex-shrink:0;">${stepsCount}청크</span>` : ''}
+            </div>`;
+        }).join('');
+        previewEl.style.display = 'block';
+        document.getElementById('btn-bulk-import').disabled = false;
+    } catch (e) {
+        bulkParsedData = null;
+        errEl.textContent = '⚠ JSON 파싱 오류: ' + e.message;
+        errEl.style.display = 'block';
+        previewEl.style.display = 'none';
+        document.getElementById('btn-bulk-import').disabled = true;
+    }
+}
+
+async function startBulkImport() {
+    if (!bulkParsedData || bulkParsedData.length === 0) return;
+
+    const btn = document.getElementById('btn-bulk-import');
+    const progressEl = document.getElementById('bulk-progress');
+    const progressText = document.getElementById('bulk-progress-text');
+    const progressBar = document.getElementById('bulk-progress-bar');
+
+    btn.disabled = true;
+    progressEl.style.display = 'block';
+
+    const total = bulkParsedData.length;
+    let success = 0, failed = 0;
+    const now = new Date().toISOString();
+
+    for (let i = 0; i < total; i++) {
+        const item = bulkParsedData[i];
+        progressText.textContent = `${i + 1} / ${total} 저장 중... (${item.title})`;
+        progressBar.style.width = `${Math.round(((i + 1) / total) * 100)}%`;
+
+        try {
+            const { id, ...data } = item;
+            if (!data.updated_at) data.updated_at = now;
+            if (!data.created_at) data.created_at = now;
+            await safeFetchDB({ action: 'set', collection: 'learn_sequences', id, data });
+            success++;
+        } catch (e) {
+            console.error(`가져오기 실패 [${item.id}]:`, e);
+            failed++;
+        }
+    }
+
+    progressText.textContent = `완료: ${success}개 저장, ${failed > 0 ? failed + '개 실패' : '실패 없음'}`;
+    progressBar.style.width = '100%';
+    progressBar.style.background = failed > 0 ? '#f59e0b' : '#22c55e';
+
+    toast(failed > 0 ? `${success}개 저장, ${failed}개 실패` : `${success}개 모두 저장 완료!`);
+
+    if (success > 0) {
+        await loadSequenceList();
+        setTimeout(closeBulkImportModal, 1200);
+    } else {
+        btn.disabled = false;
+    }
+}
 
 // ── 초기화 ──────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
