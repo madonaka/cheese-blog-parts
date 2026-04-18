@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>인물 기록 · Cheese Admin</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <link rel="stylesheet" href="../admin.css" />
+  <script src="../admin-common.js"></script>
+  <script>
+    window.CHEESE_ADMIN_ACTIVE_PAGE = "character_manage";
+    window.CHEESE_ADMIN_PAGE_SUBTITLE = "인물 기록";
+  </script>
+  <style>
+    :root {
+      --bg: #f3f4f6; --card: #fff; --text: #0f172a; --sub: #475569;
+      --line: rgba(15,23,42,0.10); --shadow: 0 10px 28px rgba(15,23,42,0.08);
+      --r: 16px; --accent: #1e293b; --accent2: #059669;
+    }
+    .cm-wrap { padding: 20px; max-width: 1200px; margin: 0 auto; }
+    .cm-title { font-size: 20px; font-weight: 900; margin: 8px 0 18px; }
+    .cm-top { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+    .cm-search { flex: 1; min-width: 180px; padding: 9px 14px; border: 1.5px solid var(--line); border-radius: 10px; font-size: 14px; }
+    .cm-filter { padding: 9px 12px; border: 1.5px solid var(--line); border-radius: 10px; font-size: 13px; background: #fff; }
+    .cm-btn { padding: 9px 18px; border: none; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; background: var(--accent); color: #fff; white-space: nowrap; }
+    .cm-btn:hover { opacity: 0.85; }
+
+    /* 테이블 */
+    .cm-table-wrap { background: var(--card); border-radius: var(--r); box-shadow: var(--shadow); overflow: hidden; border: 1px solid var(--line); }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { background: #f8fafc; padding: 11px 14px; text-align: left; font-weight: 700; color: var(--sub); border-bottom: 1px solid var(--line); }
+    td { padding: 11px 14px; border-bottom: 1px solid var(--line); color: var(--text); vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #f8fafc; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; background: #d1fae5; color: #059669; margin-right: 4px; margin-bottom: 2px; }
+    .action-btn { padding: 4px 10px; border-radius: 7px; font-size: 12px; cursor: pointer; border: 1.5px solid; background: transparent; margin-right: 4px; }
+    .edit-btn { color: #3b82f6; border-color: #bfdbfe; }
+    .del-btn { color: #ef4444; border-color: #fecaca; }
+    .empty-msg { padding: 40px; text-align: center; color: #94a3b8; font-size: 14px; }
+    .alt-name { font-size: 11px; color: #94a3b8; }
+
+    /* 모달 */
+    .cm-modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 1000; align-items: flex-start; justify-content: center; padding: 20px; overflow-y: auto; }
+    .cm-modal-bg.open { display: flex; }
+    .cm-modal { background: #fff; border-radius: 20px; padding: 0; width: 680px; max-width: 95vw; box-shadow: 0 24px 60px rgba(0,0,0,0.2); margin: auto; overflow: hidden; }
+    .cm-modal-header { padding: 24px 28px 0; }
+    .cm-modal-title { font-size: 18px; font-weight: 900; margin: 0 0 16px; }
+
+    /* 탭 */
+    .cm-tabs { display: flex; border-bottom: 2px solid var(--line); padding: 0 28px; }
+    .cm-tab-btn { padding: 10px 18px; font-size: 13px; font-weight: 700; border: none; background: transparent; cursor: pointer; color: #94a3b8; border-bottom: 2px solid transparent; margin-bottom: -2px; }
+    .cm-tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .cm-tab-panel { display: none; padding: 20px 28px; }
+    .cm-tab-panel.active { display: block; }
+
+    /* 폼 요소 */
+    .cm-field { margin-bottom: 14px; }
+    .cm-field label { display: block; font-size: 12px; font-weight: 700; color: var(--sub); margin-bottom: 5px; }
+    .cm-field input, .cm-field textarea, .cm-field select {
+      width: 100%; padding: 9px 12px; border: 1.5px solid var(--line); border-radius: 10px;
+      font-size: 14px; box-sizing: border-box; font-family: inherit;
+    }
+    .cm-field textarea { resize: vertical; min-height: 64px; }
+    .cm-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+    /* 별명 배열 */
+    .alt-names-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+    .alt-name-row { display: flex; gap: 6px; }
+    .alt-name-row input { flex: 1; padding: 8px 10px; border: 1.5px solid var(--line); border-radius: 8px; font-size: 13px; }
+    .alt-name-row button { padding: 8px 10px; border: 1.5px solid #fecaca; border-radius: 8px; color: #ef4444; background: transparent; cursor: pointer; }
+    .add-row-btn { padding: 7px 14px; border: 1.5px dashed #cbd5e1; border-radius: 8px; background: transparent; color: #64748b; font-size: 12px; cursor: pointer; }
+    .add-row-btn:hover { border-color: var(--accent2); color: var(--accent2); }
+
+    /* 그룹 태그 입력 */
+    .tags-input-wrap { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px; border: 1.5px solid var(--line); border-radius: 10px; cursor: text; min-height: 42px; align-items: center; }
+    .tag-chip { display: flex; align-items: center; gap: 3px; padding: 3px 10px; background: #d1fae5; border-radius: 20px; font-size: 12px; color: var(--accent2); font-weight: 700; }
+    .tag-chip button { border: none; background: none; cursor: pointer; color: #059669; font-size: 14px; line-height: 1; padding: 0; }
+    .tags-input { border: none; outline: none; font-size: 13px; min-width: 80px; flex: 1; }
+
+    /* 등장 위치 */
+    .section-label { font-size: 13px; font-weight: 800; color: var(--text); margin: 0 0 10px; padding-bottom: 6px; border-bottom: 2px solid var(--line); }
+    .appearance-entry { margin-bottom: 10px; background: #f8fafc; border-radius: 10px; padding: 12px; }
+    .appearance-row { display: grid; grid-template-columns: 1fr 120px auto; gap: 8px; margin-bottom: 6px; }
+    .appearance-row select, .appearance-row input { padding: 7px 10px; border: 1.5px solid var(--line); border-radius: 8px; font-size: 13px; box-sizing: border-box; width: 100%; }
+    .remove-row-btn { padding: 7px 10px; border: 1.5px solid #fecaca; border-radius: 8px; color: #ef4444; background: transparent; cursor: pointer; font-size: 12px; align-self: start; }
+    .app-note-input { width: 100%; padding: 7px 10px; border: 1.5px solid var(--line); border-radius: 8px; font-size: 13px; box-sizing: border-box; }
+
+    /* 연관 관계 검색 */
+    .rel-search-row { display: flex; gap: 8px; margin-bottom: 8px; }
+    .rel-search-row input { flex: 1; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 8px; font-size: 13px; }
+    .rel-search-results { max-height: 130px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 8px; display: none; }
+    .rel-search-results.visible { display: block; }
+    .rel-result-item { padding: 8px 12px; font-size: 13px; cursor: pointer; border-bottom: 1px solid var(--line); }
+    .rel-result-item:last-child { border-bottom: none; }
+    .rel-result-item:hover { background: #f1f5f9; }
+    .selected-tags-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
+    .sel-tag { display: flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; }
+    .sel-tag.char { background: #dbeafe; color: #1d4ed8; }
+    .sel-tag.event { background: #ede9fe; color: #7c3aed; }
+    .sel-tag button { border: none; background: none; cursor: pointer; font-size: 14px; line-height: 1; padding: 0; }
+    .sel-tag.char button { color: #1d4ed8; }
+    .sel-tag.event button { color: #7c3aed; }
+
+    .cm-modal-footer { display: flex; gap: 8px; padding: 16px 28px 24px; }
+    .cm-modal-footer button { flex: 1; padding: 11px; border: none; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; }
+    .save-btn { background: var(--accent); color: #fff; }
+    .cancel-btn { background: #e2e8f0; color: var(--text); }
+  </style>
+</head>
+<body>
+<div class="admin-shell">
+  <div id="admin-header-slot"></div>
+  <div class="admin-main">
+    <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+    <main class="admin-content">
+      <div class="cm-wrap">
+        <h2 class="cm-title">인물 기록</h2>
+        <div class="cm-top">
+          <input class="cm-search" id="cm-search" placeholder="이름 또는 별명 검색..." oninput="renderList()">
+          <select class="cm-filter" id="cm-group-filter" onchange="renderList()">
+            <option value="">전체 그룹</option>
+          </select>
+          <button class="cm-btn" onclick="openModal()">+ 인물 추가</button>
+        </div>
+        <div class="cm-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>이름</th>
+                <th>별명/이명</th>
+                <th>시대 / 역할</th>
+                <th>그룹</th>
+                <th>등장 책</th>
+                <th>연관</th>
+                <th>관리</th>
+              </tr>
+            </thead>
+            <tbody id="cm-tbody">
+              <tr><td colspan="7" class="empty-msg">불러오는 중...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- 모달 -->
+<div class="cm-modal-bg" id="cm-modal-bg">
+  <div class="cm-modal">
+    <div class="cm-modal-header">
+      <h3 class="cm-modal-title" id="cm-modal-title">인물 추가</h3>
+      <input type="hidden" id="cm-id">
+    </div>
+    <div class="cm-tabs">
+      <button class="cm-tab-btn active" data-tab="basic" onclick="switchTab('basic')">기본 정보</button>
+      <button class="cm-tab-btn" data-tab="appearances" onclick="switchTab('appearances')">등장 위치</button>
+      <button class="cm-tab-btn" data-tab="relations" onclick="switchTab('relations')">연관 관계</button>
+    </div>
+
+    <!-- 탭1: 기본 정보 -->
+    <div class="cm-tab-panel active" id="tab-basic">
+      <div class="cm-field">
+        <label>대표 이름 *</label>
+        <input type="text" id="cm-name" placeholder="예: 이순신">
+      </div>
+      <div class="cm-field">
+        <label>별명 / 이명 (이름이 바뀌는 경우 포함)</label>
+        <div class="alt-names-list" id="alt-names-list"></div>
+        <button class="add-row-btn" onclick="addAltName()">+ 별명 추가</button>
+      </div>
+      <div class="cm-field-row">
+        <div class="cm-field">
+          <label>시대</label>
+          <input type="text" id="cm-era" placeholder="예: 조선 선조">
+        </div>
+        <div class="cm-field">
+          <label>역할/직책</label>
+          <input type="text" id="cm-role" placeholder="예: 삼도수군통제사">
+        </div>
+      </div>
+      <div class="cm-field">
+        <label>그룹 태그 (Enter 또는 쉼표로 추가)</label>
+        <div class="tags-input-wrap" id="groups-tags-wrap" onclick="document.getElementById('groups-input').focus()">
+          <input class="tags-input" id="groups-input" placeholder="그룹 입력..." onkeydown="handleGroupKey(event)" oninput="handleGroupInput(event)">
+        </div>
+      </div>
+      <div class="cm-field">
+        <label>메모</label>
+        <textarea id="cm-memo" placeholder="이 인물에 대한 메모..."></textarea>
+      </div>
+    </div>
+
+    <!-- 탭2: 등장 위치 -->
+    <div class="cm-tab-panel" id="tab-appearances">
+      <div class="section-label">📚 등장 위치</div>
+      <div id="cm-appearances-list"></div>
+      <button class="add-row-btn" onclick="addAppearanceRow()">+ 등장 위치 추가</button>
+    </div>
+
+    <!-- 탭3: 연관 관계 -->
+    <div class="cm-tab-panel" id="tab-relations">
+      <div class="section-label" style="margin-bottom:12px;">👥 연관 인물</div>
+      <div class="rel-search-row">
+        <input type="text" id="char-rel-input" placeholder="인물 이름 검색..." oninput="searchRelChars()">
+      </div>
+      <div class="rel-search-results" id="char-rel-results"></div>
+      <div class="selected-tags-wrap" id="selected-rel-chars" style="margin-bottom:20px;"></div>
+
+      <div class="section-label" style="margin-bottom:12px;">⚡ 연관 사건</div>
+      <div class="rel-search-row">
+        <input type="text" id="event-rel-input" placeholder="사건명 검색..." oninput="searchRelEvents()">
+      </div>
+      <div class="rel-search-results" id="event-rel-results"></div>
+      <div class="selected-tags-wrap" id="selected-rel-events"></div>
+    </div>
+
+    <div class="cm-modal-footer">
+      <button class="cancel-btn" onclick="closeModal()">취소</button>
+      <button class="save-btn" onclick="saveChar()">저장</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  async function safeFetchDB(payload) {
+    if (!window.CHEESE_ADMIN_DB_API) throw new Error("API 엔드포인트가 정의되지 않았습니다.");
+    const res = await fetch(window.CHEESE_ADMIN_DB_API, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "Firebase 오류");
+    return data;
+  }
+
+  let ALL_CHARS = [];
+  let ALL_BOOKS = [];
+  let ALL_EVENTS = [];
+  let currentGroups = [];
+  let selectedRelCharIds = [];
+  let selectedRelEventIds = [];
+
+  function esc(s) {
+    return String(s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+
+  async function loadAll() {
+    try {
+      const [cRes, bRes, eRes] = await Promise.all([
+        safeFetchDB({ action: "get", collection: "reading_characters", orderByField: "created_at" }),
+        safeFetchDB({ action: "get", collection: "reading_books" }),
+        safeFetchDB({ action: "get", collection: "reading_book_events" })
+      ]);
+      ALL_CHARS = cRes.data || [];
+      ALL_BOOKS = bRes.data || [];
+      ALL_EVENTS = eRes.data || [];
+      buildGroupFilter();
+      renderList();
+    } catch (e) {
+      const tbody = document.getElementById("cm-tbody");
+      if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="empty-msg" style="color:#ef4444;">불러오기 실패: ${e.message}</td></tr>`;
+    }
+  }
+
+  function buildGroupFilter() {
+    const allGroups = new Set();
+    ALL_CHARS.forEach(c => (c.groups || []).forEach(g => allGroups.add(g)));
+    const sel = document.getElementById("cm-group-filter");
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = `<option value="">전체 그룹</option>` +
+      [...allGroups].sort().map(g => `<option value="${esc(g)}" ${g === cur ? "selected" : ""}>${esc(g)}</option>`).join("");
+  }
+
+  function renderList() {
+    const q = (document.getElementById("cm-search")?.value || "").toLowerCase();
+    const gFilter = document.getElementById("cm-group-filter")?.value || "";
+    const filtered = ALL_CHARS.filter(c => {
+      const matchQ = !q ||
+        (c.name || "").toLowerCase().includes(q) ||
+        (c.alt_names || []).some(n => n.toLowerCase().includes(q));
+      const matchG = !gFilter || (c.groups || []).includes(gFilter);
+      return matchQ && matchG;
+    });
+    const tbody = document.getElementById("cm-tbody");
+    if (!tbody) return;
+    if (!filtered.length) {
+      tbody.innerHTML = `<tr><td colspan="7" class="empty-msg">등록된 인물이 없습니다.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = filtered.map(c => {
+      const altNames = (c.alt_names || []).filter(Boolean).join(", ");
+      const bookTitles = [...new Set((c.appearances || []).map(a => a.book_title || "").filter(Boolean))];
+      const groups = (c.groups || []).map(g => `<span class="badge">${esc(g)}</span>`).join("");
+      const relCount = `인물 ${(c.related_character_ids||[]).length} / 사건 ${(c.related_event_ids||[]).length}`;
+      return `<tr>
+        <td><strong>${esc(c.name || "(이름 없음)")}</strong></td>
+        <td class="alt-name">${altNames ? esc(altNames) : "-"}</td>
+        <td style="font-size:12px;">${[c.era, c.role].filter(Boolean).map(esc).join(" · ") || "-"}</td>
+        <td>${groups || "-"}</td>
+        <td style="font-size:12px; color:#64748b;">${bookTitles.map(esc).join(", ") || "-"}</td>
+        <td style="font-size:12px; color:#64748b;">${relCount}</td>
+        <td>
+          <button class="action-btn edit-btn" onclick="openModal('${c.id}')">수정</button>
+          <button class="action-btn del-btn" onclick="deleteChar('${c.id}', '${esc(c.name || "")}')">삭제</button>
+        </td>
+      </tr>`;
+    }).join("");
+  }
+
+  /* ── 탭 전환 ── */
+  function switchTab(tab) {
+    document.querySelectorAll(".cm-tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+    document.querySelectorAll(".cm-tab-panel").forEach(p => p.classList.toggle("active", p.id === "tab-" + tab));
+  }
+
+  /* ── 별명 배열 ── */
+  function addAltName(value) {
+    const list = document.getElementById("alt-names-list");
+    if (!list) return;
+    const row = document.createElement("div");
+    row.className = "alt-name-row";
+    row.innerHTML = `
+      <input type="text" class="alt-name-input" placeholder="예: 李舜臣, 충무공" value="${esc(value || "")}">
+      <button onclick="this.closest('.alt-name-row').remove()">✕</button>
+    `;
+    list.appendChild(row);
+  }
+
+  function getAltNames() {
+    return Array.from(document.querySelectorAll(".alt-name-input"))
+      .map(i => i.value.trim()).filter(Boolean);
+  }
+
+  /* ── 그룹 태그 ── */
+  function handleGroupKey(e) {
+    const inp = document.getElementById("groups-input");
+    if (!inp) return;
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      const val = inp.value.replace(",", "").trim();
+      if (val && !currentGroups.includes(val)) {
+        currentGroups.push(val);
+        renderGroupTags();
+      }
+      inp.value = "";
+    } else if (e.key === "Backspace" && !inp.value && currentGroups.length) {
+      currentGroups.pop();
+      renderGroupTags();
+    }
+  }
+
+  function handleGroupInput(e) {
+    const inp = document.getElementById("groups-input");
+    if (!inp) return;
+    if (inp.value.includes(",")) {
+      const parts = inp.value.split(",");
+      parts.slice(0, -1).forEach(p => {
+        const v = p.trim();
+        if (v && !currentGroups.includes(v)) currentGroups.push(v);
+      });
+      inp.value = parts[parts.length - 1];
+      renderGroupTags();
+    }
+  }
+
+  function removeGroup(g) {
+    currentGroups = currentGroups.filter(x => x !== g);
+    renderGroupTags();
+  }
+
+  function renderGroupTags() {
+    const wrap = document.getElementById("groups-tags-wrap");
+    const inp = document.getElementById("groups-input");
+    if (!wrap || !inp) return;
+    wrap.querySelectorAll(".tag-chip").forEach(el => el.remove());
+    const chips = currentGroups.map(g =>
+      Object.assign(document.createElement("span"), {
+        className: "tag-chip",
+        innerHTML: `${esc(g)} <button onclick="removeGroup('${esc(g)}')" type="button">×</button>`
+      })
+    );
+    chips.forEach(c => wrap.insertBefore(c, inp));
+  }
+
+  /* ── 등장 위치 ── */
+  function addAppearanceRow(data) {
+    const list = document.getElementById("cm-appearances-list");
+    if (!list) return;
+    const d = data || {};
+    const bookOptions = ALL_BOOKS.map(b =>
+      `<option value="${b.id}" ${b.id === d.book_id ? "selected" : ""}>${esc(b.title)}</option>`
+    ).join("");
+    const entry = document.createElement("div");
+    entry.className = "appearance-entry";
+    entry.innerHTML = `
+      <div class="appearance-row">
+        <select class="app-book-id" style="width:100%">
+          <option value="">책 선택</option>
+          ${bookOptions}
+        </select>
+        <input class="app-chapter" type="text" placeholder="장/절" value="${esc(d.chapter || "")}">
+        <button class="remove-row-btn" onclick="this.closest('.appearance-entry').remove()">✕</button>
+      </div>
+      <input class="app-note-input" type="text" placeholder="등장 맥락 메모" value="${esc(d.note || "")}">
+    `;
+    list.appendChild(entry);
+  }
+
+  function getAppearances() {
+    return Array.from(document.querySelectorAll("#cm-appearances-list .appearance-entry")).map(row => {
+      const bookId = row.querySelector(".app-book-id")?.value || "";
+      const book = ALL_BOOKS.find(b => b.id === bookId);
+      return {
+        book_id: bookId,
+        book_title: book ? book.title : "",
+        chapter: row.querySelector(".app-chapter")?.value.trim() || "",
+        note: row.querySelector(".app-note-input")?.value.trim() || ""
+      };
+    }).filter(a => a.book_id);
+  }
+
+  /* ── 연관 인물 검색 ── */
+  function searchRelChars() {
+    const q = (document.getElementById("char-rel-input")?.value || "").toLowerCase();
+    const res = document.getElementById("char-rel-results");
+    if (!res) return;
+    if (!q) { res.classList.remove("visible"); return; }
+    const editingId = document.getElementById("cm-id")?.value || "";
+    const matches = ALL_CHARS.filter(c =>
+      c.id !== editingId &&
+      !selectedRelCharIds.includes(c.id) &&
+      ((c.name||"").toLowerCase().includes(q) || (c.alt_names||[]).some(n => n.toLowerCase().includes(q)))
+    ).slice(0, 8);
+    if (!matches.length) { res.classList.remove("visible"); return; }
+    res.innerHTML = matches.map(c =>
+      `<div class="rel-result-item" onclick="selectRelChar('${c.id}')">
+        ${esc(c.name||"")}${(c.alt_names||[]).length ? ` <span style="color:#94a3b8;font-size:11px;">(${(c.alt_names||[]).join(", ")})</span>` : ""}
+      </div>`
+    ).join("");
+    res.classList.add("visible");
+  }
+
+  function selectRelChar(id) {
+    if (!selectedRelCharIds.includes(id)) selectedRelCharIds.push(id);
+    renderRelChars();
+    const inp = document.getElementById("char-rel-input");
+    if (inp) inp.value = "";
+    const res = document.getElementById("char-rel-results");
+    if (res) res.classList.remove("visible");
+  }
+
+  function removeRelChar(id) {
+    selectedRelCharIds = selectedRelCharIds.filter(x => x !== id);
+    renderRelChars();
+  }
+
+  function renderRelChars() {
+    const el = document.getElementById("selected-rel-chars");
+    if (!el) return;
+    el.innerHTML = selectedRelCharIds.map(id => {
+      const c = ALL_CHARS.find(x => x.id === id);
+      return `<span class="sel-tag char">${esc(c ? c.name : id)} <button onclick="removeRelChar('${id}')" type="button">×</button></span>`;
+    }).join("");
+  }
+
+  /* ── 연관 사건 검색 ── */
+  function searchRelEvents() {
+    const q = (document.getElementById("event-rel-input")?.value || "").toLowerCase();
+    const res = document.getElementById("event-rel-results");
+    if (!res) return;
+    if (!q) { res.classList.remove("visible"); return; }
+    const matches = ALL_EVENTS.filter(e =>
+      !selectedRelEventIds.includes(e.id) &&
+      (e.title||"").toLowerCase().includes(q)
+    ).slice(0, 8);
+    if (!matches.length) { res.classList.remove("visible"); return; }
+    res.innerHTML = matches.map(e =>
+      `<div class="rel-result-item" onclick="selectRelEvent('${e.id}')">${esc(e.title||"")}</div>`
+    ).join("");
+    res.classList.add("visible");
+  }
+
+  function selectRelEvent(id) {
+    if (!selectedRelEventIds.includes(id)) selectedRelEventIds.push(id);
+    renderRelEvents();
+    const inp = document.getElementById("event-rel-input");
+    if (inp) inp.value = "";
+    const res = document.getElementById("event-rel-results");
+    if (res) res.classList.remove("visible");
+  }
+
+  function removeRelEvent(id) {
+    selectedRelEventIds = selectedRelEventIds.filter(x => x !== id);
+    renderRelEvents();
+  }
+
+  function renderRelEvents() {
+    const el = document.getElementById("selected-rel-events");
+    if (!el) return;
+    el.innerHTML = selectedRelEventIds.map(id => {
+      const e = ALL_EVENTS.find(x => x.id === id);
+      return `<span class="sel-tag event">${esc(e ? e.title : id)} <button onclick="removeRelEvent('${id}')" type="button">×</button></span>`;
+    }).join("");
+  }
+
+  /* ── 모달 열기/닫기 ── */
+  function openModal(id) {
+    const modal = document.getElementById("cm-modal-bg");
+    if (!modal) return;
+    selectedRelCharIds = [];
+    selectedRelEventIds = [];
+    currentGroups = [];
+
+    const altList = document.getElementById("alt-names-list");
+    if (altList) altList.innerHTML = "";
+    const appList = document.getElementById("cm-appearances-list");
+    if (appList) appList.innerHTML = "";
+
+    switchTab("basic");
+
+    if (id) {
+      const c = ALL_CHARS.find(x => x.id === id);
+      if (!c) return;
+      document.getElementById("cm-modal-title").textContent = "인물 수정";
+      document.getElementById("cm-id").value = c.id;
+      document.getElementById("cm-name").value = c.name || "";
+      document.getElementById("cm-era").value = c.era || "";
+      document.getElementById("cm-role").value = c.role || "";
+      document.getElementById("cm-memo").value = c.memo || "";
+      (c.alt_names || []).forEach(n => addAltName(n));
+      currentGroups = [...(c.groups || [])];
+      (c.appearances || []).forEach(a => addAppearanceRow(a));
+      selectedRelCharIds = [...(c.related_character_ids || [])];
+      selectedRelEventIds = [...(c.related_event_ids || [])];
+    } else {
+      document.getElementById("cm-modal-title").textContent = "인물 추가";
+      document.getElementById("cm-id").value = "";
+      ["cm-name","cm-era","cm-role","cm-memo"].forEach(eid => {
+        const el = document.getElementById(eid);
+        if (el) el.value = "";
+      });
+    }
+
+    renderGroupTags();
+    renderRelChars();
+    renderRelEvents();
+    modal.classList.add("open");
+  }
+
+  function closeModal() {
+    const modal = document.getElementById("cm-modal-bg");
+    if (modal) modal.classList.remove("open");
+  }
+
+  /* ── 저장 ── */
+  async function saveChar() {
+    const name = (document.getElementById("cm-name")?.value || "").trim();
+    if (!name) { alert("대표 이름을 입력하세요."); return; }
+
+    // 그룹 입력창에 타이핑 중인 값도 포함
+    const groupInput = document.getElementById("groups-input");
+    if (groupInput?.value.trim() && !currentGroups.includes(groupInput.value.trim())) {
+      currentGroups.push(groupInput.value.trim());
+      groupInput.value = "";
+    }
+
+    const id = document.getElementById("cm-id")?.value || ("char_" + Date.now());
+    const isNew = !document.getElementById("cm-id")?.value;
+    const prevChar = ALL_CHARS.find(c => c.id === id);
+
+    const data = {
+      name,
+      alt_names: getAltNames(),
+      era: (document.getElementById("cm-era")?.value || "").trim(),
+      role: (document.getElementById("cm-role")?.value || "").trim(),
+      groups: [...currentGroups],
+      memo: (document.getElementById("cm-memo")?.value || "").trim(),
+      appearances: getAppearances(),
+      related_character_ids: [...selectedRelCharIds],
+      related_event_ids: [...selectedRelEventIds],
+      updated_at: new Date().toISOString()
+    };
+    if (isNew) data.created_at = new Date().toISOString();
+
+    try {
+      await safeFetchDB({ action: "set", collection: "reading_characters", id, data });
+
+      // 연관 인물 양방향 동기
+      const prevCharIds = prevChar ? (prevChar.related_character_ids || []) : [];
+      const addedChars = selectedRelCharIds.filter(cid => !prevCharIds.includes(cid));
+      const removedChars = prevCharIds.filter(cid => !selectedRelCharIds.includes(cid));
+
+      // 연관 사건 양방향 동기
+      const prevEventIds = prevChar ? (prevChar.related_event_ids || []) : [];
+      const addedEvents = selectedRelEventIds.filter(eid => !prevEventIds.includes(eid));
+      const removedEvents = prevEventIds.filter(eid => !selectedRelEventIds.includes(eid));
+
+      await Promise.all([
+        ...addedChars.map(async cid => {
+          const target = ALL_CHARS.find(x => x.id === cid);
+          if (!target) return;
+          const ids = [...new Set([...(target.related_character_ids || []), id])];
+          await safeFetchDB({ action: "set", collection: "reading_characters", id: cid, data: { related_character_ids: ids } });
+          target.related_character_ids = ids;
+        }),
+        ...removedChars.map(async cid => {
+          const target = ALL_CHARS.find(x => x.id === cid);
+          if (!target) return;
+          const ids = (target.related_character_ids || []).filter(x => x !== id);
+          await safeFetchDB({ action: "set", collection: "reading_characters", id: cid, data: { related_character_ids: ids } });
+          target.related_character_ids = ids;
+        }),
+        ...addedEvents.map(async eid => {
+          const ev = ALL_EVENTS.find(x => x.id === eid);
+          if (!ev) return;
+          const ids = [...new Set([...(ev.related_character_ids || []), id])];
+          await safeFetchDB({ action: "set", collection: "reading_book_events", id: eid, data: { related_character_ids: ids } });
+          ev.related_character_ids = ids;
+        }),
+        ...removedEvents.map(async eid => {
+          const ev = ALL_EVENTS.find(x => x.id === eid);
+          if (!ev) return;
+          const ids = (ev.related_character_ids || []).filter(x => x !== id);
+          await safeFetchDB({ action: "set", collection: "reading_book_events", id: eid, data: { related_character_ids: ids } });
+          ev.related_character_ids = ids;
+        })
+      ]);
+
+      closeModal();
+      if (isNew) ALL_CHARS.unshift({ ...data, id });
+      else {
+        const idx = ALL_CHARS.findIndex(c => c.id === id);
+        if (idx >= 0) ALL_CHARS[idx] = { ...data, id };
+      }
+      buildGroupFilter();
+      renderList();
+    } catch (e) {
+      alert("저장 실패: " + e.message);
+    }
+  }
+
+  async function deleteChar(id, name) {
+    if (!confirm(`"${name}" 인물을 삭제하시겠습니까?`)) return;
+    try {
+      await safeFetchDB({ action: "delete", collection: "reading_characters", id });
+      ALL_CHARS = ALL_CHARS.filter(c => c.id !== id);
+      buildGroupFilter();
+      renderList();
+    } catch (e) {
+      alert("삭제 실패: " + e.message);
+    }
+  }
+
+  document.getElementById("cm-modal-bg").addEventListener("click", function(e) {
+    if (e.target === this) closeModal();
+  });
+
+  document.addEventListener("DOMContentLoaded", loadAll);
+</script>
+</body>
+</html>

@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>책 관리 · Cheese Admin</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <link rel="stylesheet" href="../admin.css" />
+  <script src="../admin-common.js"></script>
+  <script>
+    window.CHEESE_ADMIN_ACTIVE_PAGE = "book_manage";
+    window.CHEESE_ADMIN_PAGE_SUBTITLE = "책 관리";
+  </script>
+  <style>
+    :root {
+      --bg: #f3f4f6; --card: #fff; --text: #0f172a; --sub: #475569;
+      --line: rgba(15,23,42,0.10); --shadow: 0 10px 28px rgba(15,23,42,0.08);
+      --r: 16px; --accent: #1e293b; --accent2: #3b82f6;
+    }
+    .bm-wrap { padding: 20px; max-width: 960px; margin: 0 auto; }
+    .bm-title { font-size: 20px; font-weight: 900; margin: 8px 0 18px; }
+    .bm-top { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; }
+    .bm-search { flex: 1; padding: 9px 14px; border: 1.5px solid var(--line); border-radius: 10px; font-size: 14px; }
+    .bm-btn { padding: 9px 18px; border: none; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; background: var(--accent); color: #fff; }
+    .bm-btn:hover { opacity: 0.85; }
+    .bm-btn.secondary { background: #e2e8f0; color: var(--text); }
+
+    .bm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+    .bm-card {
+      background: var(--card); border: 1px solid var(--line); border-radius: var(--r);
+      padding: 18px; box-shadow: var(--shadow); cursor: pointer; transition: box-shadow 0.2s;
+    }
+    .bm-card:hover { box-shadow: 0 16px 40px rgba(15,23,42,0.13); }
+    .bm-card-title { font-size: 15px; font-weight: 800; margin: 0 0 6px; color: var(--text); }
+    .bm-card-meta { font-size: 12px; color: var(--sub); margin-bottom: 8px; }
+    .bm-card-memo { font-size: 12px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bm-card-actions { display: flex; gap: 6px; margin-top: 12px; }
+    .bm-card-actions button { flex: 1; padding: 6px; border: 1.5px solid var(--line); border-radius: 8px; font-size: 12px; cursor: pointer; background: transparent; }
+    .bm-card-actions .edit-btn { color: #3b82f6; border-color: #bfdbfe; }
+    .bm-card-actions .del-btn { color: #ef4444; border-color: #fecaca; }
+
+    /* 모달 */
+    .bm-modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 1000; align-items: center; justify-content: center; }
+    .bm-modal-bg.open { display: flex; }
+    .bm-modal { background: #fff; border-radius: 20px; padding: 28px; width: 480px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 24px 60px rgba(0,0,0,0.2); }
+    .bm-modal-title { font-size: 18px; font-weight: 900; margin: 0 0 20px; }
+    .bm-field { margin-bottom: 14px; }
+    .bm-field label { display: block; font-size: 12px; font-weight: 700; color: var(--sub); margin-bottom: 5px; }
+    .bm-field input, .bm-field textarea {
+      width: 100%; padding: 9px 12px; border: 1.5px solid var(--line); border-radius: 10px;
+      font-size: 14px; box-sizing: border-box; font-family: inherit;
+    }
+    .bm-field textarea { resize: vertical; min-height: 72px; }
+    .bm-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .bm-modal-footer { display: flex; gap: 8px; margin-top: 20px; }
+    .bm-modal-footer button { flex: 1; padding: 11px; border: none; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; }
+    .save-btn { background: var(--accent); color: #fff; }
+    .cancel-btn { background: #e2e8f0; color: var(--text); }
+    .empty-msg { padding: 40px; text-align: center; color: #94a3b8; font-size: 14px; }
+  </style>
+</head>
+<body>
+<div class="admin-shell">
+  <div id="admin-header-slot"></div>
+  <div class="admin-main">
+    <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+    <main class="admin-content">
+      <div class="bm-wrap">
+        <h2 class="bm-title">책 관리</h2>
+        <div class="bm-top">
+          <input class="bm-search" id="bm-search" placeholder="책 제목 또는 저자 검색..." oninput="renderList()">
+          <button class="bm-btn" onclick="openModal()">+ 책 추가</button>
+        </div>
+        <div class="bm-grid" id="bm-grid">
+          <div class="empty-msg">불러오는 중...</div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- 모달 -->
+<div class="bm-modal-bg" id="bm-modal-bg">
+  <div class="bm-modal">
+    <h3 class="bm-modal-title" id="bm-modal-title">책 추가</h3>
+    <input type="hidden" id="bm-id">
+    <div class="bm-field">
+      <label>책 제목 *</label>
+      <input type="text" id="bm-title" placeholder="예: 조선왕조실록">
+    </div>
+    <div class="bm-field">
+      <label>저자</label>
+      <input type="text" id="bm-author" placeholder="예: 홍길동">
+    </div>
+    <div class="bm-field-row">
+      <div class="bm-field">
+        <label>출판사</label>
+        <input type="text" id="bm-publisher">
+      </div>
+      <div class="bm-field">
+        <label>출판연도</label>
+        <input type="number" id="bm-year" placeholder="예: 2024">
+      </div>
+    </div>
+    <div class="bm-field">
+      <label>총 장/권 수</label>
+      <input type="number" id="bm-chapters" placeholder="예: 12">
+    </div>
+    <div class="bm-field">
+      <label>메모</label>
+      <textarea id="bm-memo" placeholder="이 책에 대한 메모..."></textarea>
+    </div>
+    <div class="bm-modal-footer">
+      <button class="cancel-btn" onclick="closeModal()">취소</button>
+      <button class="save-btn" onclick="saveBook()">저장</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  async function safeFetchDB(payload) {
+    if (!window.CHEESE_ADMIN_DB_API) throw new Error("API 엔드포인트가 정의되지 않았습니다.");
+    const res = await fetch(window.CHEESE_ADMIN_DB_API, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "Firebase 오류");
+    return data;
+  }
+
+  let ALL_BOOKS = [];
+
+  async function loadBooks() {
+    try {
+      const res = await safeFetchDB({ action: "get", collection: "reading_books", orderByField: "created_at" });
+      ALL_BOOKS = res.data || [];
+      renderList();
+    } catch (e) {
+      document.getElementById("bm-grid").innerHTML = `<div class="empty-msg" style="color:#ef4444;">불러오기 실패: ${e.message}</div>`;
+    }
+  }
+
+  function renderList() {
+    const q = (document.getElementById("bm-search")?.value || "").toLowerCase();
+    const filtered = ALL_BOOKS.filter(b =>
+      (b.title || "").toLowerCase().includes(q) ||
+      (b.author || "").toLowerCase().includes(q)
+    );
+    const grid = document.getElementById("bm-grid");
+    if (!grid) return;
+    if (!filtered.length) {
+      grid.innerHTML = `<div class="empty-msg">등록된 책이 없습니다.</div>`;
+      return;
+    }
+    grid.innerHTML = filtered.map(b => `
+      <div class="bm-card">
+        <div class="bm-card-title">${esc(b.title || "(제목 없음)")}</div>
+        <div class="bm-card-meta">
+          ${b.author ? `저자: ${esc(b.author)}` : ""}
+          ${b.year ? ` · ${b.year}년` : ""}
+          ${b.total_chapters ? ` · ${b.total_chapters}장` : ""}
+        </div>
+        ${b.memo ? `<div class="bm-card-memo">${esc(b.memo)}</div>` : ""}
+        <div class="bm-card-actions">
+          <button class="edit-btn" onclick="event.stopPropagation(); openModal('${b.id}')">수정</button>
+          <button class="del-btn" onclick="event.stopPropagation(); deleteBook('${b.id}', '${esc(b.title || "")}')">삭제</button>
+        </div>
+      </div>
+    `).join("");
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+
+  function openModal(id) {
+    const modal = document.getElementById("bm-modal-bg");
+    if (!modal) return;
+    if (id) {
+      const b = ALL_BOOKS.find(x => x.id === id);
+      if (!b) return;
+      document.getElementById("bm-modal-title").textContent = "책 수정";
+      document.getElementById("bm-id").value = b.id;
+      document.getElementById("bm-title").value = b.title || "";
+      document.getElementById("bm-author").value = b.author || "";
+      document.getElementById("bm-publisher").value = b.publisher || "";
+      document.getElementById("bm-year").value = b.year || "";
+      document.getElementById("bm-chapters").value = b.total_chapters || "";
+      document.getElementById("bm-memo").value = b.memo || "";
+    } else {
+      document.getElementById("bm-modal-title").textContent = "책 추가";
+      document.getElementById("bm-id").value = "";
+      ["bm-title","bm-author","bm-publisher","bm-year","bm-chapters","bm-memo"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = "";
+      });
+    }
+    modal.classList.add("open");
+  }
+
+  function closeModal() {
+    const modal = document.getElementById("bm-modal-bg");
+    if (modal) modal.classList.remove("open");
+  }
+
+  async function saveBook() {
+    const title = (document.getElementById("bm-title")?.value || "").trim();
+    if (!title) { alert("책 제목을 입력하세요."); return; }
+
+    const id = document.getElementById("bm-id")?.value || ("book_" + Date.now());
+    const data = {
+      title,
+      author: (document.getElementById("bm-author")?.value || "").trim(),
+      publisher: (document.getElementById("bm-publisher")?.value || "").trim(),
+      year: parseInt(document.getElementById("bm-year")?.value) || null,
+      total_chapters: parseInt(document.getElementById("bm-chapters")?.value) || null,
+      memo: (document.getElementById("bm-memo")?.value || "").trim(),
+      updated_at: new Date().toISOString()
+    };
+
+    const isNew = !document.getElementById("bm-id")?.value;
+    if (isNew) data.created_at = new Date().toISOString();
+
+    try {
+      await safeFetchDB({ action: "set", collection: "reading_books", id, data });
+      closeModal();
+      if (isNew) {
+        ALL_BOOKS.unshift({ ...data, id });
+      } else {
+        const idx = ALL_BOOKS.findIndex(b => b.id === id);
+        if (idx >= 0) ALL_BOOKS[idx] = { ...data, id };
+      }
+      renderList();
+    } catch (e) {
+      alert("저장 실패: " + e.message);
+    }
+  }
+
+  async function deleteBook(id, title) {
+    if (!confirm(`"${title}" 책을 삭제하시겠습니까?`)) return;
+    try {
+      await safeFetchDB({ action: "delete", collection: "reading_books", id });
+      ALL_BOOKS = ALL_BOOKS.filter(b => b.id !== id);
+      renderList();
+    } catch (e) {
+      alert("삭제 실패: " + e.message);
+    }
+  }
+
+  // 모달 외부 클릭 닫기
+  document.getElementById("bm-modal-bg").addEventListener("click", function(e) {
+    if (e.target === this) closeModal();
+  });
+
+  document.addEventListener("DOMContentLoaded", loadBooks);
+</script>
+</body>
+</html>

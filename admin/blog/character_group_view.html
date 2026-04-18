@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>인물 그룹 보기 · Cheese Admin</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <link rel="stylesheet" href="../admin.css" />
+  <script src="../admin-common.js"></script>
+  <script>
+    window.CHEESE_ADMIN_ACTIVE_PAGE = "character_group_view";
+    window.CHEESE_ADMIN_PAGE_SUBTITLE = "인물 그룹 보기";
+  </script>
+  <style>
+    :root {
+      --bg: #f3f4f6; --card: #fff; --text: #0f172a; --sub: #475569;
+      --line: rgba(15,23,42,0.10); --shadow: 0 10px 28px rgba(15,23,42,0.08);
+      --r: 16px; --accent: #1e293b; --accent2: #059669;
+    }
+    .gv-wrap { padding: 20px; max-width: 1400px; margin: 0 auto; }
+    .gv-title { font-size: 20px; font-weight: 900; margin: 8px 0 18px; }
+    .gv-layout { display: grid; grid-template-columns: 220px 1fr; gap: 18px; align-items: start; }
+
+    /* 사이드 패널 */
+    .gv-sidebar { background: var(--card); border-radius: var(--r); box-shadow: var(--shadow); border: 1px solid var(--line); padding: 16px; position: sticky; top: 20px; }
+    .gv-sidebar-title { font-size: 13px; font-weight: 800; color: var(--sub); margin: 0 0 10px; }
+    .gv-search-input { width: 100%; padding: 8px 10px; border: 1.5px solid var(--line); border-radius: 8px; font-size: 13px; box-sizing: border-box; margin-bottom: 10px; }
+    .group-btn { display: block; width: 100%; text-align: left; padding: 8px 12px; border: none; border-radius: 8px; background: transparent; font-size: 13px; cursor: pointer; color: var(--text); margin-bottom: 3px; }
+    .group-btn:hover { background: #f1f5f9; }
+    .group-btn.active { background: #d1fae5; color: var(--accent2); font-weight: 800; }
+    .group-btn .count { float: right; font-size: 11px; color: #94a3b8; font-weight: 400; }
+
+    /* 카드 그리드 */
+    .gv-main { }
+    .gv-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .gv-group-label { font-size: 18px; font-weight: 900; color: var(--text); }
+    .gv-count { font-size: 13px; color: var(--sub); }
+    .gv-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+    .gv-card {
+      background: var(--card); border: 1px solid var(--line); border-radius: var(--r);
+      padding: 18px; box-shadow: var(--shadow); cursor: pointer; transition: box-shadow 0.2s, border-color 0.2s;
+    }
+    .gv-card:hover { box-shadow: 0 16px 40px rgba(15,23,42,0.13); border-color: #a7f3d0; }
+    .gv-card-name { font-size: 15px; font-weight: 800; margin-bottom: 4px; }
+    .gv-card-alt { font-size: 11px; color: #94a3b8; margin-bottom: 6px; }
+    .gv-card-meta { font-size: 12px; color: var(--sub); margin-bottom: 10px; }
+    .gv-card-groups { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+    .gv-badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; background: #d1fae5; color: #059669; }
+    .gv-card-edit-link { display: block; text-align: center; margin-top: 10px; font-size: 12px; color: #64748b; border-top: 1px solid var(--line); padding-top: 8px; text-decoration: none; }
+    .gv-card-edit-link:hover { color: var(--accent); }
+    .empty-msg { padding: 40px; text-align: center; color: #94a3b8; font-size: 14px; }
+
+    /* 상세 패널 */
+    .detail-panel-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 1000; align-items: flex-start; justify-content: flex-end; }
+    .detail-panel-bg.open { display: flex; }
+    .detail-panel {
+      width: 420px; max-width: 95vw; height: 100vh; background: #fff;
+      box-shadow: -8px 0 40px rgba(0,0,0,0.15); overflow-y: auto; padding: 28px;
+    }
+    .dp-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; }
+    .dp-name { font-size: 22px; font-weight: 900; }
+    .dp-close { border: none; background: #e2e8f0; border-radius: 8px; padding: 8px 12px; cursor: pointer; font-size: 16px; color: var(--text); }
+    .dp-section { margin-bottom: 20px; }
+    .dp-section-title { font-size: 12px; font-weight: 800; color: var(--sub); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .dp-alt-name { font-size: 13px; color: #475569; background: #f1f5f9; padding: 4px 10px; border-radius: 6px; display: inline-block; margin-right: 4px; margin-bottom: 4px; }
+    .dp-appearance { background: #f8fafc; border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; font-size: 13px; }
+    .dp-appearance .book { font-weight: 700; color: var(--text); }
+    .dp-appearance .chapter { color: #64748b; font-size: 12px; }
+    .dp-appearance .note { color: #94a3b8; font-size: 12px; margin-top: 2px; }
+    .dp-rel-item { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; margin: 3px; cursor: pointer; }
+    .dp-rel-item.char { background: #dbeafe; color: #1d4ed8; }
+    .dp-rel-item.char:hover { background: #bfdbfe; }
+    .dp-rel-item.event { background: #ede9fe; color: #7c3aed; }
+    .dp-rel-item.event:hover { background: #ddd6fe; }
+    .dp-edit-btn { display: block; width: 100%; padding: 12px; background: var(--accent); color: #fff; border: none; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; text-align: center; text-decoration: none; margin-top: 16px; }
+
+    @media (max-width: 700px) {
+      .gv-layout { grid-template-columns: 1fr; }
+      .gv-sidebar { position: static; }
+    }
+  </style>
+</head>
+<body>
+<div class="admin-shell">
+  <div id="admin-header-slot"></div>
+  <div class="admin-main">
+    <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+    <main class="admin-content">
+      <div class="gv-wrap">
+        <h2 class="gv-title">인물 그룹 보기</h2>
+        <div class="gv-layout">
+          <!-- 좌측: 그룹 목록 -->
+          <div class="gv-sidebar">
+            <div class="gv-sidebar-title">그룹</div>
+            <input class="gv-search-input" id="gv-char-search" placeholder="인물 이름 검색..." oninput="applyFilter()">
+            <div id="gv-group-list">
+              <div class="empty-msg" style="padding:20px 0;">불러오는 중...</div>
+            </div>
+          </div>
+
+          <!-- 우측: 인물 카드 -->
+          <div class="gv-main">
+            <div class="gv-header">
+              <div class="gv-group-label" id="gv-group-label">전체 인물</div>
+              <div class="gv-count" id="gv-count"></div>
+            </div>
+            <div class="gv-cards" id="gv-cards">
+              <div class="empty-msg">불러오는 중...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- 상세 패널 -->
+<div class="detail-panel-bg" id="detail-panel-bg">
+  <div class="detail-panel" id="detail-panel">
+    <div class="dp-header">
+      <div class="dp-name" id="dp-name"></div>
+      <button class="dp-close" onclick="closeDetail()">✕</button>
+    </div>
+    <div id="dp-body"></div>
+  </div>
+</div>
+
+<script>
+  async function safeFetchDB(payload) {
+    if (!window.CHEESE_ADMIN_DB_API) throw new Error("API 엔드포인트가 정의되지 않았습니다.");
+    const res = await fetch(window.CHEESE_ADMIN_DB_API, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "Firebase 오류");
+    return data;
+  }
+
+  let ALL_CHARS = [];
+  let ALL_EVENTS = [];
+  let currentGroup = "";
+
+  function esc(s) {
+    return String(s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+
+  async function loadAll() {
+    try {
+      const [cRes, eRes] = await Promise.all([
+        safeFetchDB({ action: "get", collection: "reading_characters" }),
+        safeFetchDB({ action: "get", collection: "reading_book_events" })
+      ]);
+      ALL_CHARS = cRes.data || [];
+      ALL_EVENTS = eRes.data || [];
+      buildGroupList();
+      applyFilter();
+    } catch (e) {
+      document.getElementById("gv-cards").innerHTML = `<div class="empty-msg" style="color:#ef4444;">불러오기 실패: ${e.message}</div>`;
+    }
+  }
+
+  function buildGroupList() {
+    const groupCounts = {};
+    ALL_CHARS.forEach(c => {
+      (c.groups || []).forEach(g => {
+        groupCounts[g] = (groupCounts[g] || 0) + 1;
+      });
+    });
+    const groups = Object.entries(groupCounts).sort((a, b) => a[0].localeCompare(b[0], "ko"));
+    const list = document.getElementById("gv-group-list");
+    if (!list) return;
+    list.innerHTML = `
+      <button class="group-btn ${currentGroup === "" ? "active" : ""}" onclick="selectGroup('')">
+        전체 인물 <span class="count">${ALL_CHARS.length}</span>
+      </button>
+      ${groups.map(([g, cnt]) =>
+        `<button class="group-btn ${currentGroup === g ? "active" : ""}" onclick="selectGroup('${esc(g)}')">
+          ${esc(g)} <span class="count">${cnt}</span>
+        </button>`
+      ).join("")}
+    `;
+  }
+
+  function selectGroup(g) {
+    currentGroup = g;
+    buildGroupList();
+    applyFilter();
+  }
+
+  function applyFilter() {
+    const q = (document.getElementById("gv-char-search")?.value || "").toLowerCase();
+    const filtered = ALL_CHARS.filter(c => {
+      const matchG = !currentGroup || (c.groups || []).includes(currentGroup);
+      const matchQ = !q ||
+        (c.name||"").toLowerCase().includes(q) ||
+        (c.alt_names||[]).some(n => n.toLowerCase().includes(q));
+      return matchG && matchQ;
+    });
+
+    const label = document.getElementById("gv-group-label");
+    const count = document.getElementById("gv-count");
+    if (label) label.textContent = currentGroup || "전체 인물";
+    if (count) count.textContent = `${filtered.length}명`;
+
+    const cards = document.getElementById("gv-cards");
+    if (!cards) return;
+    if (!filtered.length) {
+      cards.innerHTML = `<div class="empty-msg">해당 그룹에 인물이 없습니다.</div>`;
+      return;
+    }
+    cards.innerHTML = filtered.map(c => {
+      const altNames = (c.alt_names||[]).filter(Boolean).join(" · ");
+      const groups = (c.groups||[]).map(g => `<span class="gv-badge">${esc(g)}</span>`).join("");
+      return `<div class="gv-card" onclick="openDetail('${c.id}')">
+        <div class="gv-card-name">${esc(c.name||"(이름 없음)")}</div>
+        ${altNames ? `<div class="gv-card-alt">${esc(altNames)}</div>` : ""}
+        ${(c.era||c.role) ? `<div class="gv-card-meta">${[c.era,c.role].filter(Boolean).map(esc).join(" · ")}</div>` : ""}
+        <div class="gv-card-groups">${groups}</div>
+        <div style="font-size:12px; color:#94a3b8;">
+          등장 ${(c.appearances||[]).length}건 · 연관인물 ${(c.related_character_ids||[]).length}명 · 연관사건 ${(c.related_event_ids||[]).length}건
+        </div>
+        <a class="gv-card-edit-link" href="/admin/blog/character_manage.html" onclick="event.stopPropagation()">수정 →</a>
+      </div>`;
+    }).join("");
+  }
+
+  function openDetail(id) {
+    const c = ALL_CHARS.find(x => x.id === id);
+    if (!c) return;
+
+    const nameEl = document.getElementById("dp-name");
+    if (nameEl) nameEl.textContent = c.name || "(이름 없음)";
+
+    const body = document.getElementById("dp-body");
+    if (!body) return;
+
+    const altNames = (c.alt_names||[]).filter(Boolean);
+    const appearances = c.appearances || [];
+    const relChars = (c.related_character_ids||[]).map(cid => ALL_CHARS.find(x => x.id === cid)).filter(Boolean);
+    const relEvents = (c.related_event_ids||[]).map(eid => ALL_EVENTS.find(x => x.id === eid)).filter(Boolean);
+
+    body.innerHTML = `
+      ${c.era || c.role ? `
+        <div class="dp-section">
+          <div class="dp-section-title">시대 / 역할</div>
+          <div style="font-size:14px; color:#475569;">${[c.era,c.role].filter(Boolean).map(esc).join(" · ")}</div>
+        </div>` : ""}
+
+      ${(c.groups||[]).length ? `
+        <div class="dp-section">
+          <div class="dp-section-title">그룹</div>
+          <div>${(c.groups||[]).map(g => `<span class="gv-badge">${esc(g)}</span>`).join(" ")}</div>
+        </div>` : ""}
+
+      ${altNames.length ? `
+        <div class="dp-section">
+          <div class="dp-section-title">별명 / 이명</div>
+          <div>${altNames.map(n => `<span class="dp-alt-name">${esc(n)}</span>`).join("")}</div>
+        </div>` : ""}
+
+      ${appearances.length ? `
+        <div class="dp-section">
+          <div class="dp-section-title">등장 위치</div>
+          ${appearances.map(a => `
+            <div class="dp-appearance">
+              <div class="book">${esc(a.book_title || "알 수 없는 책")}</div>
+              ${a.chapter ? `<div class="chapter">${esc(a.chapter)}</div>` : ""}
+              ${a.note ? `<div class="note">${esc(a.note)}</div>` : ""}
+            </div>
+          `).join("")}
+        </div>` : ""}
+
+      ${relChars.length ? `
+        <div class="dp-section">
+          <div class="dp-section-title">연관 인물</div>
+          <div>${relChars.map(rc =>
+            `<span class="dp-rel-item char" onclick="openDetail('${rc.id}')">${esc(rc.name||"")}</span>`
+          ).join("")}</div>
+        </div>` : ""}
+
+      ${relEvents.length ? `
+        <div class="dp-section">
+          <div class="dp-section-title">연관 사건</div>
+          <div>${relEvents.map(ev =>
+            `<span class="dp-rel-item event">${esc(ev.title||"")}</span>`
+          ).join("")}</div>
+        </div>` : ""}
+
+      ${c.memo ? `
+        <div class="dp-section">
+          <div class="dp-section-title">메모</div>
+          <div style="font-size:13px; color:#475569; line-height:1.6;">${esc(c.memo)}</div>
+        </div>` : ""}
+
+      <a class="dp-edit-btn" href="/admin/blog/character_manage.html">인물 기록 페이지에서 수정</a>
+    `;
+
+    const panel = document.getElementById("detail-panel-bg");
+    if (panel) panel.classList.add("open");
+  }
+
+  function closeDetail() {
+    const panel = document.getElementById("detail-panel-bg");
+    if (panel) panel.classList.remove("open");
+  }
+
+  document.getElementById("detail-panel-bg").addEventListener("click", function(e) {
+    if (e.target === this) closeDetail();
+  });
+
+  document.addEventListener("DOMContentLoaded", loadAll);
+</script>
+</body>
+</html>

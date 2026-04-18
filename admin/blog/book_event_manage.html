@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>사건 기록 · Cheese Admin</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <link rel="stylesheet" href="../admin.css" />
+  <script src="../admin-common.js"></script>
+  <script>
+    window.CHEESE_ADMIN_ACTIVE_PAGE = "book_event_manage";
+    window.CHEESE_ADMIN_PAGE_SUBTITLE = "사건 기록";
+  </script>
+  <style>
+    :root {
+      --bg: #f3f4f6; --card: #fff; --text: #0f172a; --sub: #475569;
+      --line: rgba(15,23,42,0.10); --shadow: 0 10px 28px rgba(15,23,42,0.08);
+      --r: 16px; --accent: #1e293b; --accent2: #7c3aed;
+    }
+    .ev-wrap { padding: 20px; max-width: 1100px; margin: 0 auto; }
+    .ev-title { font-size: 20px; font-weight: 900; margin: 8px 0 18px; }
+    .ev-top { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; }
+    .ev-search { flex: 1; padding: 9px 14px; border: 1.5px solid var(--line); border-radius: 10px; font-size: 14px; }
+    .ev-btn { padding: 9px 18px; border: none; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; background: var(--accent); color: #fff; }
+    .ev-btn:hover { opacity: 0.85; }
+
+    /* 테이블 */
+    .ev-table-wrap { background: var(--card); border-radius: var(--r); box-shadow: var(--shadow); overflow: hidden; border: 1px solid var(--line); }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { background: #f8fafc; padding: 12px 14px; text-align: left; font-weight: 700; color: var(--sub); border-bottom: 1px solid var(--line); }
+    td { padding: 12px 14px; border-bottom: 1px solid var(--line); color: var(--text); vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #f8fafc; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; background: #ede9fe; color: #7c3aed; margin-right: 4px; }
+    .action-btn { padding: 4px 10px; border-radius: 7px; font-size: 12px; cursor: pointer; border: 1.5px solid; background: transparent; margin-right: 4px; }
+    .edit-btn { color: #3b82f6; border-color: #bfdbfe; }
+    .del-btn { color: #ef4444; border-color: #fecaca; }
+    .empty-msg { padding: 40px; text-align: center; color: #94a3b8; font-size: 14px; }
+
+    /* 모달 */
+    .ev-modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 1000; align-items: flex-start; justify-content: center; padding: 20px; overflow-y: auto; }
+    .ev-modal-bg.open { display: flex; }
+    .ev-modal { background: #fff; border-radius: 20px; padding: 28px; width: 620px; max-width: 95vw; box-shadow: 0 24px 60px rgba(0,0,0,0.2); margin: auto; }
+    .ev-modal-title { font-size: 18px; font-weight: 900; margin: 0 0 20px; }
+    .ev-field { margin-bottom: 14px; }
+    .ev-field label { display: block; font-size: 12px; font-weight: 700; color: var(--sub); margin-bottom: 5px; }
+    .ev-field input, .ev-field textarea, .ev-field select {
+      width: 100%; padding: 9px 12px; border: 1.5px solid var(--line); border-radius: 10px;
+      font-size: 14px; box-sizing: border-box; font-family: inherit;
+    }
+    .ev-field textarea { resize: vertical; min-height: 72px; }
+    .ev-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+    /* 등장 위치 섹션 */
+    .section-label { font-size: 13px; font-weight: 800; color: var(--text); margin: 18px 0 10px; padding-bottom: 6px; border-bottom: 2px solid var(--line); }
+    .appearance-row { display: grid; grid-template-columns: 1fr 120px auto; gap: 8px; align-items: start; margin-bottom: 8px; }
+    .appearance-row input, .appearance-row select { padding: 8px 10px; border: 1.5px solid var(--line); border-radius: 8px; font-size: 13px; box-sizing: border-box; }
+    .appearance-note { grid-column: 1 / -1; }
+    .appearance-note input { width: 100%; }
+    .remove-row-btn { padding: 8px 10px; border: 1.5px solid #fecaca; border-radius: 8px; color: #ef4444; background: transparent; cursor: pointer; font-size: 12px; align-self: start; }
+    .add-row-btn { padding: 8px 14px; border: 1.5px dashed #cbd5e1; border-radius: 8px; background: transparent; color: #64748b; font-size: 12px; cursor: pointer; margin-top: 4px; }
+    .add-row-btn:hover { border-color: var(--accent2); color: var(--accent2); }
+
+    /* 연관 인물 */
+    .char-search-row { display: flex; gap: 8px; margin-bottom: 8px; }
+    .char-search-row input { flex: 1; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 8px; font-size: 13px; }
+    .char-search-row button { padding: 8px 14px; border: none; border-radius: 8px; background: var(--accent); color: #fff; font-size: 12px; font-weight: 700; cursor: pointer; }
+    .char-search-results { max-height: 150px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 8px; display: none; }
+    .char-search-results.visible { display: block; }
+    .char-result-item { padding: 8px 12px; font-size: 13px; cursor: pointer; border-bottom: 1px solid var(--line); }
+    .char-result-item:last-child { border-bottom: none; }
+    .char-result-item:hover { background: #f1f5f9; }
+    .selected-chars { display: flex; flex-wrap: wrap; gap: 6px; }
+    .selected-char-tag { display: flex; align-items: center; gap: 4px; padding: 4px 10px; background: #ede9fe; border-radius: 20px; font-size: 12px; color: var(--accent2); font-weight: 700; }
+    .selected-char-tag button { border: none; background: none; cursor: pointer; color: #9333ea; font-size: 14px; line-height: 1; padding: 0; }
+
+    .ev-modal-footer { display: flex; gap: 8px; margin-top: 20px; }
+    .ev-modal-footer button { flex: 1; padding: 11px; border: none; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; }
+    .save-btn { background: var(--accent); color: #fff; }
+    .cancel-btn { background: #e2e8f0; color: var(--text); }
+  </style>
+</head>
+<body>
+<div class="admin-shell">
+  <div id="admin-header-slot"></div>
+  <div class="admin-main">
+    <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+    <main class="admin-content">
+      <div class="ev-wrap">
+        <h2 class="ev-title">사건 기록</h2>
+        <div class="ev-top">
+          <input class="ev-search" id="ev-search" placeholder="사건명 또는 시대 검색..." oninput="renderList()">
+          <button class="ev-btn" onclick="openModal()">+ 사건 추가</button>
+        </div>
+        <div class="ev-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>사건명</th>
+                <th>시대</th>
+                <th>등장 책</th>
+                <th>연관 인물</th>
+                <th>태그</th>
+                <th>관리</th>
+              </tr>
+            </thead>
+            <tbody id="ev-tbody">
+              <tr><td colspan="6" class="empty-msg">불러오는 중...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- 모달 -->
+<div class="ev-modal-bg" id="ev-modal-bg">
+  <div class="ev-modal">
+    <h3 class="ev-modal-title" id="ev-modal-title">사건 추가</h3>
+    <input type="hidden" id="ev-id">
+
+    <div class="ev-field">
+      <label>사건명 *</label>
+      <input type="text" id="ev-title" placeholder="예: 임진왜란">
+    </div>
+    <div class="ev-field">
+      <label>사건 요약</label>
+      <textarea id="ev-summary" placeholder="이 사건에 대한 요약..."></textarea>
+    </div>
+    <div class="ev-field-row">
+      <div class="ev-field">
+        <label>시대</label>
+        <input type="text" id="ev-era" placeholder="예: 조선 선조">
+      </div>
+      <div class="ev-field">
+        <label>태그 (쉼표로 구분)</label>
+        <input type="text" id="ev-tags" placeholder="예: 전쟁, 외교">
+      </div>
+    </div>
+    <div class="ev-field">
+      <label>메모</label>
+      <textarea id="ev-memo" placeholder="추가 메모..."></textarea>
+    </div>
+
+    <div class="section-label">📚 등장 위치</div>
+    <div id="ev-appearances-list"></div>
+    <button class="add-row-btn" onclick="addAppearanceRow()">+ 등장 위치 추가</button>
+
+    <div class="section-label">👤 연관 인물</div>
+    <div class="char-search-row">
+      <input type="text" id="char-search-input" placeholder="인물 이름 검색..." oninput="searchChars()">
+    </div>
+    <div class="char-search-results" id="char-search-results"></div>
+    <div class="selected-chars" id="selected-chars"></div>
+
+    <div class="ev-modal-footer">
+      <button class="cancel-btn" onclick="closeModal()">취소</button>
+      <button class="save-btn" onclick="saveEvent()">저장</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  async function safeFetchDB(payload) {
+    if (!window.CHEESE_ADMIN_DB_API) throw new Error("API 엔드포인트가 정의되지 않았습니다.");
+    const res = await fetch(window.CHEESE_ADMIN_DB_API, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "Firebase 오류");
+    return data;
+  }
+
+  let ALL_EVENTS = [];
+  let ALL_BOOKS = [];
+  let ALL_CHARS = [];
+  let selectedCharIds = [];
+
+  function esc(s) {
+    return String(s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+
+  async function loadAll() {
+    try {
+      const [evRes, bookRes, charRes] = await Promise.all([
+        safeFetchDB({ action: "get", collection: "reading_book_events", orderByField: "created_at" }),
+        safeFetchDB({ action: "get", collection: "reading_books" }),
+        safeFetchDB({ action: "get", collection: "reading_characters" })
+      ]);
+      ALL_EVENTS = evRes.data || [];
+      ALL_BOOKS = bookRes.data || [];
+      ALL_CHARS = charRes.data || [];
+      renderList();
+    } catch (e) {
+      const tbody = document.getElementById("ev-tbody");
+      if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="empty-msg" style="color:#ef4444;">불러오기 실패: ${e.message}</td></tr>`;
+    }
+  }
+
+  function renderList() {
+    const q = (document.getElementById("ev-search")?.value || "").toLowerCase();
+    const filtered = ALL_EVENTS.filter(e =>
+      (e.title || "").toLowerCase().includes(q) ||
+      (e.era || "").toLowerCase().includes(q)
+    );
+    const tbody = document.getElementById("ev-tbody");
+    if (!tbody) return;
+    if (!filtered.length) {
+      tbody.innerHTML = `<tr><td colspan="6" class="empty-msg">등록된 사건이 없습니다.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = filtered.map(ev => {
+      const bookTitles = (ev.appearances || []).map(a => a.book_title || "").filter(Boolean);
+      const uniqueBooks = [...new Set(bookTitles)];
+      const charCount = (ev.related_character_ids || []).length;
+      const tags = (ev.tags || []).map(t => `<span class="badge">${esc(t)}</span>`).join("");
+      return `<tr>
+        <td><strong>${esc(ev.title)}</strong></td>
+        <td>${esc(ev.era || "-")}</td>
+        <td style="font-size:12px; color:#64748b;">${uniqueBooks.map(esc).join(", ") || "-"}</td>
+        <td style="text-align:center;">${charCount}명</td>
+        <td>${tags || "-"}</td>
+        <td>
+          <button class="action-btn edit-btn" onclick="openModal('${ev.id}')">수정</button>
+          <button class="action-btn del-btn" onclick="deleteEvent('${ev.id}', '${esc(ev.title || "")}')">삭제</button>
+        </td>
+      </tr>`;
+    }).join("");
+  }
+
+  function addAppearanceRow(data) {
+    const list = document.getElementById("ev-appearances-list");
+    if (!list) return;
+    const d = data || {};
+    const bookOptions = ALL_BOOKS.map(b => `<option value="${b.id}" ${b.id === d.book_id ? "selected" : ""}>${esc(b.title)}</option>`).join("");
+    const row = document.createElement("div");
+    row.className = "appearance-entry";
+    row.style.marginBottom = "10px";
+    row.innerHTML = `
+      <div class="appearance-row">
+        <select class="app-book-id" style="width:100%">
+          <option value="">책 선택</option>
+          ${bookOptions}
+        </select>
+        <input class="app-chapter" type="text" placeholder="장/절" value="${esc(d.chapter || "")}">
+        <button class="remove-row-btn" onclick="this.closest('.appearance-entry').remove()">✕</button>
+      </div>
+      <div class="appearance-note">
+        <input type="text" class="app-note" placeholder="등장 맥락 메모" value="${esc(d.note || "")}" style="width:100%; padding:8px 10px; border:1.5px solid var(--line); border-radius:8px; font-size:13px; box-sizing:border-box;">
+      </div>
+    `;
+    list.appendChild(row);
+  }
+
+  function getAppearances() {
+    const list = document.getElementById("ev-appearances-list");
+    if (!list) return [];
+    return Array.from(list.querySelectorAll(".appearance-entry")).map(row => {
+      const bookId = row.querySelector(".app-book-id")?.value || "";
+      const book = ALL_BOOKS.find(b => b.id === bookId);
+      return {
+        book_id: bookId,
+        book_title: book ? book.title : "",
+        chapter: row.querySelector(".app-chapter")?.value.trim() || "",
+        note: row.querySelector(".app-note")?.value.trim() || ""
+      };
+    }).filter(a => a.book_id);
+  }
+
+  function searchChars() {
+    const q = (document.getElementById("char-search-input")?.value || "").toLowerCase();
+    const resultsEl = document.getElementById("char-search-results");
+    if (!resultsEl) return;
+    if (!q) { resultsEl.classList.remove("visible"); return; }
+    const matches = ALL_CHARS.filter(c =>
+      !selectedCharIds.includes(c.id) &&
+      ((c.name || "").toLowerCase().includes(q) ||
+       (c.alt_names || []).some(n => n.toLowerCase().includes(q)))
+    ).slice(0, 8);
+    if (!matches.length) { resultsEl.classList.remove("visible"); return; }
+    resultsEl.innerHTML = matches.map(c =>
+      `<div class="char-result-item" onclick="selectChar('${c.id}', '${esc(c.name || "")}')">
+        ${esc(c.name || "")}${(c.alt_names||[]).length ? ` <span style="color:#94a3b8;font-size:11px;">(${(c.alt_names||[]).join(", ")})</span>` : ""}
+      </div>`
+    ).join("");
+    resultsEl.classList.add("visible");
+  }
+
+  function selectChar(id, name) {
+    if (selectedCharIds.includes(id)) return;
+    selectedCharIds.push(id);
+    renderSelectedChars();
+    const inp = document.getElementById("char-search-input");
+    if (inp) inp.value = "";
+    const res = document.getElementById("char-search-results");
+    if (res) res.classList.remove("visible");
+  }
+
+  function removeChar(id) {
+    selectedCharIds = selectedCharIds.filter(x => x !== id);
+    renderSelectedChars();
+  }
+
+  function renderSelectedChars() {
+    const el = document.getElementById("selected-chars");
+    if (!el) return;
+    el.innerHTML = selectedCharIds.map(id => {
+      const c = ALL_CHARS.find(x => x.id === id);
+      const name = c ? c.name : id;
+      return `<span class="selected-char-tag">${esc(name)} <button onclick="removeChar('${id}')">×</button></span>`;
+    }).join("");
+  }
+
+  function openModal(id) {
+    const modal = document.getElementById("ev-modal-bg");
+    if (!modal) return;
+    selectedCharIds = [];
+
+    const list = document.getElementById("ev-appearances-list");
+    if (list) list.innerHTML = "";
+
+    if (id) {
+      const ev = ALL_EVENTS.find(x => x.id === id);
+      if (!ev) return;
+      document.getElementById("ev-modal-title").textContent = "사건 수정";
+      document.getElementById("ev-id").value = ev.id;
+      document.getElementById("ev-title").value = ev.title || "";
+      document.getElementById("ev-summary").value = ev.summary || "";
+      document.getElementById("ev-era").value = ev.era || "";
+      document.getElementById("ev-tags").value = (ev.tags || []).join(", ");
+      document.getElementById("ev-memo").value = ev.memo || "";
+      (ev.appearances || []).forEach(a => addAppearanceRow(a));
+      selectedCharIds = [...(ev.related_character_ids || [])];
+    } else {
+      document.getElementById("ev-modal-title").textContent = "사건 추가";
+      document.getElementById("ev-id").value = "";
+      ["ev-title","ev-summary","ev-era","ev-tags","ev-memo"].forEach(eid => {
+        const el = document.getElementById(eid);
+        if (el) el.value = "";
+      });
+    }
+    renderSelectedChars();
+    modal.classList.add("open");
+  }
+
+  function closeModal() {
+    const modal = document.getElementById("ev-modal-bg");
+    if (modal) modal.classList.remove("open");
+  }
+
+  async function saveEvent() {
+    const title = (document.getElementById("ev-title")?.value || "").trim();
+    if (!title) { alert("사건명을 입력하세요."); return; }
+
+    const id = document.getElementById("ev-id")?.value || ("bevt_" + Date.now());
+    const isNew = !document.getElementById("ev-id")?.value;
+    const tagsRaw = (document.getElementById("ev-tags")?.value || "").split(",").map(t => t.trim()).filter(Boolean);
+
+    const data = {
+      title,
+      summary: (document.getElementById("ev-summary")?.value || "").trim(),
+      era: (document.getElementById("ev-era")?.value || "").trim(),
+      tags: tagsRaw,
+      memo: (document.getElementById("ev-memo")?.value || "").trim(),
+      appearances: getAppearances(),
+      related_character_ids: [...selectedCharIds],
+      updated_at: new Date().toISOString()
+    };
+    if (isNew) data.created_at = new Date().toISOString();
+
+    try {
+      await safeFetchDB({ action: "set", collection: "reading_book_events", id, data });
+
+      // 연관 인물의 related_event_ids도 업데이트
+      const prevEvent = ALL_EVENTS.find(e => e.id === id);
+      const prevCharIds = prevEvent ? (prevEvent.related_character_ids || []) : [];
+      const added = selectedCharIds.filter(cid => !prevCharIds.includes(cid));
+      const removed = prevCharIds.filter(cid => !selectedCharIds.includes(cid));
+
+      await Promise.all([
+        ...added.map(async cid => {
+          const c = ALL_CHARS.find(x => x.id === cid);
+          if (!c) return;
+          const evIds = [...new Set([...(c.related_event_ids || []), id])];
+          await safeFetchDB({ action: "set", collection: "reading_characters", id: cid, data: { related_event_ids: evIds } });
+          c.related_event_ids = evIds;
+        }),
+        ...removed.map(async cid => {
+          const c = ALL_CHARS.find(x => x.id === cid);
+          if (!c) return;
+          const evIds = (c.related_event_ids || []).filter(eid => eid !== id);
+          await safeFetchDB({ action: "set", collection: "reading_characters", id: cid, data: { related_event_ids: evIds } });
+          c.related_event_ids = evIds;
+        })
+      ]);
+
+      closeModal();
+      if (isNew) ALL_EVENTS.unshift({ ...data, id });
+      else {
+        const idx = ALL_EVENTS.findIndex(e => e.id === id);
+        if (idx >= 0) ALL_EVENTS[idx] = { ...data, id };
+      }
+      renderList();
+    } catch (e) {
+      alert("저장 실패: " + e.message);
+    }
+  }
+
+  async function deleteEvent(id, title) {
+    if (!confirm(`"${title}" 사건을 삭제하시겠습니까?`)) return;
+    try {
+      await safeFetchDB({ action: "delete", collection: "reading_book_events", id });
+      ALL_EVENTS = ALL_EVENTS.filter(e => e.id !== id);
+      renderList();
+    } catch (e) {
+      alert("삭제 실패: " + e.message);
+    }
+  }
+
+  document.getElementById("ev-modal-bg").addEventListener("click", function(e) {
+    if (e.target === this) closeModal();
+  });
+
+  document.addEventListener("DOMContentLoaded", loadAll);
+</script>
+</body>
+</html>
