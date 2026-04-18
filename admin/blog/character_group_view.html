@@ -73,6 +73,15 @@
     .dp-rel-item.event:hover { background: #ddd6fe; }
     .dp-edit-btn { display: block; width: 100%; padding: 12px; background: var(--accent); color: #fff; border: none; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; text-align: center; text-decoration: none; margin-top: 16px; }
 
+    /* 책별 필터 바 */
+    .book-filter-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; background: #f8fafc; border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
+    .book-filter-bar .filter-label { font-size: 12px; font-weight: 700; color: var(--sub); white-space: nowrap; }
+    .book-filter-bar select { padding: 6px 10px; border: 1.5px solid var(--line); border-radius: 8px; font-size: 13px; background: #fff; color: var(--text); }
+    .book-filter-bar select:disabled { background: #f1f5f9; color: #94a3b8; cursor: not-allowed; }
+    .book-filter-bar select.filter-active { border-color: #3b82f6 !important; background: #eff6ff; color: #1d4ed8; font-weight: 700; }
+    .filter-clear-btn { padding: 6px 12px; border: 1.5px solid var(--line); border-radius: 8px; font-size: 12px; cursor: pointer; background: transparent; color: var(--sub); }
+    .filter-clear-btn:hover { background: #e2e8f0; }
+
     @media (max-width: 700px) {
       .gv-layout { grid-template-columns: 1fr; }
       .gv-sidebar { position: static; }
@@ -99,6 +108,13 @@
 
           <!-- 우측: 인물 카드 -->
           <div class="gv-main">
+            <div class="book-filter-bar">
+              <span class="filter-label">📚 책별 필터</span>
+              <select id="filter-book" onchange="onFilterBookChange()"><option value="">전체 책</option></select>
+              <select id="filter-volume" onchange="onFilterVolumeChange()" disabled><option value="">전체 권</option></select>
+              <select id="filter-chapter" onchange="applyFilter()" disabled><option value="">전체 장</option></select>
+              <button class="filter-clear-btn" onclick="clearFilters()">초기화</button>
+            </div>
             <div class="gv-header">
               <div class="gv-group-label" id="gv-group-label">전체 인물</div>
               <div class="gv-count" id="gv-count"></div>
@@ -138,6 +154,7 @@
 
   let ALL_CHARS = [];
   let ALL_EVENTS = [];
+  let ALL_BOOKS = [];
   let currentGroup = "";
 
   function esc(s) {
@@ -146,13 +163,16 @@
 
   async function loadAll() {
     try {
-      const [cRes, eRes] = await Promise.all([
+      const [cRes, eRes, bRes] = await Promise.all([
         safeFetchDB({ action: "get", collection: "reading_characters" }),
-        safeFetchDB({ action: "get", collection: "reading_book_events" })
+        safeFetchDB({ action: "get", collection: "reading_book_events" }),
+        safeFetchDB({ action: "get", collection: "reading_books" })
       ]);
       ALL_CHARS = cRes.data || [];
       ALL_EVENTS = eRes.data || [];
+      ALL_BOOKS = bRes.data || [];
       buildGroupList();
+      buildBookFilter();
       applyFilter();
     } catch (e) {
       document.getElementById("gv-cards").innerHTML = `<div class="empty-msg" style="color:#ef4444;">불러오기 실패: ${e.message}</div>`;
@@ -187,14 +207,78 @@
     applyFilter();
   }
 
+  /* ── 책별 필터 ── */
+  function buildBookFilter() {
+    const sel = document.getElementById("filter-book");
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">전체 책</option>' +
+      ALL_BOOKS.map(b => `<option value="${b.id}" ${b.id === cur ? "selected" : ""}>${esc(b.title)}</option>`).join("");
+  }
+
+  function onFilterBookChange() {
+    const bookId = document.getElementById("filter-book")?.value || "";
+    const volSel = document.getElementById("filter-volume");
+    const chSel = document.getElementById("filter-chapter");
+    if (volSel) { volSel.innerHTML = '<option value="">전체 권</option>'; volSel.disabled = true; }
+    if (chSel) { chSel.innerHTML = '<option value="">전체 장</option>'; chSel.disabled = true; }
+    if (bookId) {
+      const book = ALL_BOOKS.find(b => b.id === bookId);
+      const vols = (book?.volumes || []).filter(v => v.label);
+      if (vols.length && volSel) {
+        vols.forEach(v => { const o = document.createElement("option"); o.value = v.label; o.textContent = v.label; volSel.appendChild(o); });
+        volSel.disabled = false;
+      }
+    }
+    document.getElementById("filter-book")?.classList.toggle("filter-active", !!bookId);
+    applyFilter();
+  }
+
+  function onFilterVolumeChange() {
+    const bookId = document.getElementById("filter-book")?.value || "";
+    const volLabel = document.getElementById("filter-volume")?.value || "";
+    const chSel = document.getElementById("filter-chapter");
+    if (chSel) { chSel.innerHTML = '<option value="">전체 장</option>'; chSel.disabled = true; }
+    if (bookId && volLabel) {
+      const book = ALL_BOOKS.find(b => b.id === bookId);
+      const vol = (book?.volumes || []).find(v => v.label === volLabel);
+      const chs = vol?.chapters || [];
+      if (chs.length && chSel) {
+        chs.forEach(ch => { const o = document.createElement("option"); o.value = ch; o.textContent = ch; chSel.appendChild(o); });
+        chSel.disabled = false;
+      }
+    }
+    document.getElementById("filter-volume")?.classList.toggle("filter-active", !!volLabel);
+    applyFilter();
+  }
+
+  function clearFilters() {
+    const bookSel = document.getElementById("filter-book");
+    const volSel = document.getElementById("filter-volume");
+    const chSel = document.getElementById("filter-chapter");
+    if (bookSel) { bookSel.value = ""; bookSel.classList.remove("filter-active"); }
+    if (volSel) { volSel.innerHTML = '<option value="">전체 권</option>'; volSel.disabled = true; volSel.classList.remove("filter-active"); }
+    if (chSel) { chSel.innerHTML = '<option value="">전체 장</option>'; chSel.disabled = true; chSel.classList.remove("filter-active"); }
+    applyFilter();
+  }
+
   function applyFilter() {
     const q = (document.getElementById("gv-char-search")?.value || "").toLowerCase();
+    const bookId = document.getElementById("filter-book")?.value || "";
+    const volLabel = document.getElementById("filter-volume")?.value || "";
+    const chLabel = document.getElementById("filter-chapter")?.value || "";
     const filtered = ALL_CHARS.filter(c => {
       const matchG = !currentGroup || (c.groups || []).includes(currentGroup);
       const matchQ = !q ||
         (c.name||"").toLowerCase().includes(q) ||
         (c.alt_names||[]).some(n => n.toLowerCase().includes(q));
-      return matchG && matchQ;
+      const matchBook = !bookId || (c.appearances || []).some(a => {
+        if (a.book_id !== bookId) return false;
+        if (volLabel && (a.volume_label || "") !== volLabel) return false;
+        if (chLabel && (a.chapter_label || a.chapter || "") !== chLabel) return false;
+        return true;
+      });
+      return matchG && matchQ && matchBook;
     });
 
     const label = document.getElementById("gv-group-label");
@@ -266,7 +350,7 @@
             const meta = [a.story_year ? `${esc(a.story_year)}${age ? ` (만 ${age}세)` : ""}` : "", a.role ? esc(a.role) : ""].filter(Boolean).join(" · ");
             const loc = [a.region, a.organization].filter(Boolean).map(esc).join(" / ");
             return `<div class="dp-appearance">
-              <div class="book">${esc(a.book_title || "알 수 없는 책")}${a.chapter ? ` <span class="chapter">${esc(a.chapter)}</span>` : ""}</div>
+              <div class="book">${esc(a.book_title || "알 수 없는 책")}${a.volume_label ? ` <span class="chapter">${esc(a.volume_label)}</span>` : ""}${(a.chapter_label||a.chapter) ? ` <span class="chapter">${esc(a.chapter_label||a.chapter)}</span>` : ""}</div>
               ${meta ? `<div class="chapter" style="margin-top:3px;">${meta}</div>` : ""}
               ${loc ? `<div class="note">📍 ${loc}</div>` : ""}
               ${a.note ? `<div class="note">${esc(a.note)}</div>` : ""}
@@ -308,9 +392,6 @@
     if (panel) panel.classList.remove("open");
   }
 
-  document.getElementById("detail-panel-bg").addEventListener("click", function(e) {
-    if (e.target === this) closeDetail();
-  });
 
   document.addEventListener("DOMContentLoaded", loadAll);
 </script>

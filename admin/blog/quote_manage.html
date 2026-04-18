@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>명문장 기록 · Cheese Admin</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <link rel="stylesheet" href="../admin.css" />
+  <script src="../admin-common.js"></script>
+  <script>
+    window.CHEESE_ADMIN_ACTIVE_PAGE = "quote_manage";
+    window.CHEESE_ADMIN_PAGE_SUBTITLE = "명문장 기록";
+  </script>
+  <style>
+    :root {
+      --bg: #f3f4f6; --card: #fff; --text: #0f172a; --sub: #475569;
+      --line: rgba(15,23,42,0.10); --shadow: 0 10px 28px rgba(15,23,42,0.08);
+      --r: 16px; --accent: #1e293b; --accent2: #7c3aed;
+    }
+    .qm-wrap { padding: 20px; max-width: 1100px; margin: 0 auto; }
+    .qm-title { font-size: 20px; font-weight: 900; margin: 8px 0 18px; }
+    .qm-top { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; }
+    .qm-search { flex: 1; padding: 9px 14px; border: 1.5px solid var(--line); border-radius: 10px; font-size: 14px; }
+    .qm-btn { padding: 9px 18px; border: none; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; background: var(--accent); color: #fff; white-space: nowrap; }
+    .qm-btn:hover { opacity: 0.85; }
+
+    /* 필터 바 */
+    .book-filter-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; background: #f8fafc; border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
+    .book-filter-bar .filter-label { font-size: 12px; font-weight: 700; color: var(--sub); white-space: nowrap; }
+    .book-filter-bar select { padding: 6px 10px; border: 1.5px solid var(--line); border-radius: 8px; font-size: 13px; background: #fff; color: var(--text); }
+    .book-filter-bar select:disabled { background: #f1f5f9; color: #94a3b8; cursor: not-allowed; }
+    .book-filter-bar select.filter-active { border-color: #3b82f6 !important; background: #eff6ff; color: #1d4ed8; font-weight: 700; }
+    .filter-clear-btn { padding: 6px 12px; border: 1.5px solid var(--line); border-radius: 8px; font-size: 12px; cursor: pointer; background: transparent; color: var(--sub); }
+    .filter-clear-btn:hover { background: #e2e8f0; }
+
+    /* 카드 그리드 */
+    .qm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+    .qm-card {
+      background: var(--card); border-radius: var(--r); box-shadow: var(--shadow);
+      border: 1px solid var(--line); padding: 20px; display: flex; flex-direction: column; gap: 12px;
+    }
+    .qm-card-quote {
+      font-size: 15px; line-height: 1.7; color: var(--text); font-style: italic;
+      border-left: 3px solid var(--accent2); padding-left: 14px;
+      word-break: break-all;
+    }
+    .qm-card-note {
+      font-size: 13px; color: #475569; line-height: 1.6;
+      background: #f8fafc; border-radius: 8px; padding: 10px 12px;
+    }
+    .qm-card-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .meta-badge {
+      display: inline-flex; align-items: center; gap: 3px;
+      padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 700;
+      background: #f1f5f9; color: #475569;
+    }
+    .meta-badge.book { background: #e0f2fe; color: #0369a1; }
+    .meta-badge.page { background: #fef9c3; color: #854d0e; }
+    .meta-badge.tag { background: #ede9fe; color: #7c3aed; }
+    .qm-card-relations { display: flex; flex-wrap: wrap; gap: 5px; }
+    .rel-chip { font-size: 11px; padding: 2px 8px; border-radius: 12px; font-weight: 600; }
+    .rel-chip.char { background: #dcfce7; color: #166534; }
+    .rel-chip.event { background: #fee2e2; color: #991b1b; }
+    .qm-card-actions { display: flex; gap: 6px; margin-top: auto; padding-top: 8px; border-top: 1px solid var(--line); }
+    .action-btn { padding: 5px 12px; border-radius: 7px; font-size: 12px; cursor: pointer; border: 1.5px solid; background: transparent; }
+    .edit-btn { color: #3b82f6; border-color: #bfdbfe; }
+    .del-btn { color: #ef4444; border-color: #fecaca; }
+    .empty-msg { padding: 60px; text-align: center; color: #94a3b8; font-size: 14px; grid-column: 1/-1; }
+
+    /* 모달 */
+    .qm-modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 1000; align-items: flex-start; justify-content: center; padding: 20px; overflow-y: auto; }
+    .qm-modal-bg.open { display: flex; }
+    .qm-modal { background: #fff; border-radius: 20px; padding: 28px; width: 660px; max-width: 95vw; box-shadow: 0 24px 60px rgba(0,0,0,0.2); margin: auto; }
+    .qm-modal-title { font-size: 18px; font-weight: 900; margin: 0 0 22px; }
+
+    .section-label { font-size: 13px; font-weight: 800; color: var(--text); margin: 20px 0 12px; padding-bottom: 6px; border-bottom: 2px solid var(--line); }
+    .qm-field { margin-bottom: 14px; }
+    .qm-field label { display: block; font-size: 12px; font-weight: 700; color: var(--sub); margin-bottom: 5px; }
+    .qm-field input, .qm-field textarea, .qm-field select {
+      width: 100%; padding: 9px 12px; border: 1.5px solid var(--line); border-radius: 10px;
+      font-size: 14px; box-sizing: border-box; font-family: inherit;
+    }
+    .qm-field textarea { resize: vertical; }
+    .qm-field textarea.large { min-height: 110px; }
+    .qm-field textarea.small { min-height: 72px; }
+    .qm-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .qm-field-row3 { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 10px; }
+
+    /* 책 선택 + 권/장 계단식 */
+    .loc-vol-chapter { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+    .loc-vol-chapter.single { grid-template-columns: 1fr; }
+    .loc-sub-label { font-size: 11px; font-weight: 700; color: var(--sub); display: block; margin-bottom: 4px; }
+
+    /* 연관 검색 */
+    .rel-search-row { display: flex; gap: 8px; margin-bottom: 8px; }
+    .rel-search-row input { flex: 1; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 8px; font-size: 13px; }
+    .rel-search-results { max-height: 140px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 8px; display: none; }
+    .rel-search-results.visible { display: block; }
+    .rel-result-item { padding: 8px 12px; font-size: 13px; cursor: pointer; border-bottom: 1px solid var(--line); }
+    .rel-result-item:last-child { border-bottom: none; }
+    .rel-result-item:hover { background: #f1f5f9; }
+    .selected-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+    .selected-tag { display: flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; }
+    .selected-tag.char { background: #dcfce7; color: #166534; }
+    .selected-tag.event { background: #fee2e2; color: #991b1b; }
+    .selected-tag button { border: none; background: none; cursor: pointer; font-size: 14px; line-height: 1; padding: 0; color: inherit; opacity: 0.7; }
+    .selected-tag button:hover { opacity: 1; }
+
+    .qm-modal-footer { display: flex; gap: 8px; margin-top: 24px; }
+    .qm-modal-footer button { flex: 1; padding: 11px; border: none; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; }
+    .save-btn { background: var(--accent); color: #fff; }
+    .cancel-btn { background: #e2e8f0; color: var(--text); }
+
+    /* 모바일 */
+    @media (max-width: 640px) {
+      .qm-wrap { padding: 12px; }
+      .qm-top { flex-direction: column; align-items: stretch; }
+      .qm-search { width: 100%; box-sizing: border-box; }
+      .qm-btn { width: 100%; text-align: center; }
+      .book-filter-bar { flex-direction: column; align-items: stretch; gap: 6px; }
+      .book-filter-bar select, .filter-clear-btn { width: 100%; box-sizing: border-box; }
+      .qm-grid { grid-template-columns: 1fr; }
+      .qm-field-row, .qm-field-row3, .loc-vol-chapter { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<div class="admin-shell">
+  <div id="admin-header-slot"></div>
+  <div class="admin-main">
+    <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+    <main class="admin-content">
+      <div class="qm-wrap">
+        <h2 class="qm-title">명문장 기록</h2>
+        <div class="qm-top">
+          <input class="qm-search" id="qm-search" placeholder="문장 또는 느낀점 검색..." oninput="renderList()">
+          <button class="qm-btn" onclick="openModal()">+ 명문장 추가</button>
+        </div>
+        <div class="book-filter-bar">
+          <span class="filter-label">📚 책별 필터</span>
+          <select id="filter-book" onchange="onFilterBookChange()"><option value="">전체 책</option></select>
+          <select id="filter-volume" onchange="onFilterVolumeChange()" disabled><option value="">전체 권</option></select>
+          <select id="filter-chapter" onchange="renderList()" disabled><option value="">전체 장</option></select>
+          <button class="filter-clear-btn" onclick="clearFilters()">초기화</button>
+        </div>
+        <div class="qm-grid" id="qm-grid">
+          <div class="empty-msg">불러오는 중...</div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- 모달 -->
+<div class="qm-modal-bg" id="qm-modal-bg">
+  <div class="qm-modal">
+    <h3 class="qm-modal-title" id="qm-modal-title">명문장 추가</h3>
+    <input type="hidden" id="qm-id">
+
+    <!-- ① 문장 & 느낀점 -->
+    <div class="section-label">✍️ 문장 & 느낀점</div>
+    <div class="qm-field">
+      <label>원문 문장 *</label>
+      <textarea class="large" id="qm-text" placeholder="마음에 드는 문장을 그대로 입력하세요..."></textarea>
+    </div>
+    <div class="qm-field">
+      <label>느낀점 / 메모</label>
+      <textarea class="small" id="qm-note" placeholder="이 문장을 선택한 이유나 떠오른 생각을 자유롭게..."></textarea>
+    </div>
+    <div class="qm-field">
+      <label>태그 (쉼표로 구분)</label>
+      <input type="text" id="qm-tags" placeholder="예: 삶, 용기, 역사">
+    </div>
+
+    <!-- ② 출처 -->
+    <div class="section-label">📖 출처</div>
+    <div class="qm-field">
+      <label>책/작품 *</label>
+      <select id="qm-book" onchange="onModalBookChange()">
+        <option value="">책 선택</option>
+      </select>
+    </div>
+    <div id="qm-vol-chapter-area" class="loc-vol-chapter single" style="display:none;">
+      <!-- 권/장 동적 생성 -->
+    </div>
+    <div class="qm-field" style="margin-top:10px;">
+      <label>페이지</label>
+      <input type="number" id="qm-page" placeholder="예: 128" min="1">
+    </div>
+
+    <!-- ③ 연관 인물 -->
+    <div class="section-label">👤 연관 인물</div>
+    <div class="rel-search-row">
+      <input type="text" id="char-search-input" placeholder="인물 이름 검색..." oninput="searchChars()">
+    </div>
+    <div class="rel-search-results" id="char-search-results"></div>
+    <div class="selected-tags" id="selected-chars"></div>
+
+    <!-- ④ 연관 사건 -->
+    <div class="section-label">⚡ 연관 사건</div>
+    <div class="rel-search-row">
+      <input type="text" id="event-search-input" placeholder="사건명 검색..." oninput="searchEvents()">
+    </div>
+    <div class="rel-search-results" id="event-search-results"></div>
+    <div class="selected-tags" id="selected-events"></div>
+
+    <div class="qm-modal-footer">
+      <button class="cancel-btn" onclick="closeModal()">취소</button>
+      <button class="save-btn" onclick="saveQuote()">저장</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  async function safeFetchDB(payload) {
+    if (!window.CHEESE_ADMIN_DB_API) throw new Error("API 엔드포인트가 정의되지 않았습니다.");
+    const res = await fetch(window.CHEESE_ADMIN_DB_API, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "Firebase 오류");
+    return data;
+  }
+
+  let ALL_QUOTES = [];
+  let ALL_BOOKS = [];
+  let ALL_CHARS = [];
+  let ALL_EVENTS = [];
+  let selectedCharIds = [];
+  let selectedEventIds = [];
+
+  function esc(s) {
+    return String(s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+
+  /* ─── 필터 바 ─── */
+  function buildBookFilter() {
+    const sel = document.getElementById("filter-book");
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">전체 책</option>' +
+      ALL_BOOKS.map(b => `<option value="${b.id}" ${b.id === cur ? "selected" : ""}>${esc(b.title)}</option>`).join("");
+  }
+
+  function onFilterBookChange() {
+    const bookId = document.getElementById("filter-book")?.value || "";
+    const volSel = document.getElementById("filter-volume");
+    const chSel = document.getElementById("filter-chapter");
+    if (volSel) { volSel.innerHTML = '<option value="">전체 권</option>'; volSel.disabled = true; }
+    if (chSel) { chSel.innerHTML = '<option value="">전체 장</option>'; chSel.disabled = true; }
+    if (bookId) {
+      const book = ALL_BOOKS.find(b => b.id === bookId);
+      const vols = (book?.volumes || []).filter(v => v.label);
+      if (vols.length && volSel) {
+        vols.forEach(v => { const o = document.createElement("option"); o.value = v.label; o.textContent = v.label; volSel.appendChild(o); });
+        volSel.disabled = false;
+      }
+    }
+    document.getElementById("filter-book")?.classList.toggle("filter-active", !!bookId);
+    renderList();
+  }
+
+  function onFilterVolumeChange() {
+    const bookId = document.getElementById("filter-book")?.value || "";
+    const volLabel = document.getElementById("filter-volume")?.value || "";
+    const chSel = document.getElementById("filter-chapter");
+    if (chSel) { chSel.innerHTML = '<option value="">전체 장</option>'; chSel.disabled = true; }
+    if (bookId && volLabel) {
+      const book = ALL_BOOKS.find(b => b.id === bookId);
+      const vol = (book?.volumes || []).find(v => v.label === volLabel);
+      const chs = vol?.chapters || [];
+      if (chs.length && chSel) {
+        chs.forEach(ch => { const o = document.createElement("option"); o.value = ch; o.textContent = ch; chSel.appendChild(o); });
+        chSel.disabled = false;
+      }
+    }
+    document.getElementById("filter-volume")?.classList.toggle("filter-active", !!volLabel);
+    renderList();
+  }
+
+  function clearFilters() {
+    ["filter-book","filter-volume","filter-chapter"].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.value = "";
+      el.classList.remove("filter-active");
+    });
+    const volSel = document.getElementById("filter-volume");
+    const chSel = document.getElementById("filter-chapter");
+    if (volSel) { volSel.innerHTML = '<option value="">전체 권</option>'; volSel.disabled = true; }
+    if (chSel) { chSel.innerHTML = '<option value="">전체 장</option>'; chSel.disabled = true; }
+    renderList();
+  }
+
+  /* ─── 목록 렌더링 ─── */
+  function renderList() {
+    const q = (document.getElementById("qm-search")?.value || "").toLowerCase();
+    const bookId = document.getElementById("filter-book")?.value || "";
+    const volLabel = document.getElementById("filter-volume")?.value || "";
+    const chLabel = document.getElementById("filter-chapter")?.value || "";
+
+    const filtered = ALL_QUOTES.filter(qt => {
+      const matchQ = (qt.text || "").toLowerCase().includes(q) ||
+        (qt.note || "").toLowerCase().includes(q) ||
+        (qt.book_title || "").toLowerCase().includes(q);
+      const matchBook = !bookId || qt.book_id === bookId;
+      const matchVol = !volLabel || (qt.volume_label || "") === volLabel;
+      const matchCh = !chLabel || (qt.chapter || "") === chLabel;
+      return matchQ && matchBook && matchVol && matchCh;
+    });
+
+    const grid = document.getElementById("qm-grid");
+    if (!grid) return;
+
+    if (!filtered.length) {
+      grid.innerHTML = `<div class="empty-msg">등록된 명문장이 없습니다.</div>`;
+      return;
+    }
+
+    grid.innerHTML = filtered.map(qt => {
+      const locParts = [];
+      if (qt.book_title) locParts.push(esc(qt.book_title));
+      if (qt.volume_label) locParts.push(esc(qt.volume_label));
+      if (qt.chapter) locParts.push(esc(qt.chapter));
+      const locStr = locParts.join(" · ");
+
+      const pageBadge = qt.page ? `<span class="meta-badge page">p.${esc(String(qt.page))}</span>` : "";
+      const tagBadges = (qt.tags || []).map(t => `<span class="meta-badge tag">${esc(t)}</span>`).join("");
+
+      const charChips = (qt.related_character_ids || []).map(cid => {
+        const c = ALL_CHARS.find(x => x.id === cid);
+        return c ? `<span class="rel-chip char">${esc(c.name)}</span>` : "";
+      }).join("");
+
+      const eventChips = (qt.related_event_ids || []).map(eid => {
+        const ev = ALL_EVENTS.find(x => x.id === eid);
+        return ev ? `<span class="rel-chip event">${esc(ev.title)}</span>` : "";
+      }).join("");
+
+      const hasRelations = charChips || eventChips;
+
+      return `<div class="qm-card">
+        <div class="qm-card-quote">${esc(qt.text)}</div>
+        ${qt.note ? `<div class="qm-card-note">${esc(qt.note)}</div>` : ""}
+        <div class="qm-card-meta">
+          ${locStr ? `<span class="meta-badge book">📖 ${locStr}</span>` : ""}
+          ${pageBadge}
+          ${tagBadges}
+        </div>
+        ${hasRelations ? `<div class="qm-card-relations">${charChips}${eventChips}</div>` : ""}
+        <div class="qm-card-actions">
+          <button class="action-btn edit-btn" onclick="openModal('${qt.id}')">수정</button>
+          <button class="action-btn del-btn" onclick="deleteQuote('${qt.id}', '${esc((qt.text||"").slice(0,20))}')">삭제</button>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  /* ─── 모달: 책 선택 → 권/장 계단식 ─── */
+  function buildModalBookSelect(selectedId) {
+    const sel = document.getElementById("qm-book");
+    if (!sel) return;
+    sel.innerHTML = '<option value="">책 선택</option>' +
+      ALL_BOOKS.map(b => `<option value="${b.id}" ${b.id === selectedId ? "selected" : ""}>${esc(b.title)}</option>`).join("");
+  }
+
+  function onModalBookChange() {
+    const bookId = document.getElementById("qm-book")?.value || "";
+    buildVolChapterUI(bookId, "", "");
+  }
+
+  function buildVolChapterUI(bookId, volumeLabel, chapterLabel) {
+    const area = document.getElementById("qm-vol-chapter-area");
+    if (!area) return;
+
+    if (!bookId) { area.style.display = "none"; area.innerHTML = ""; return; }
+
+    const book = ALL_BOOKS.find(b => b.id === bookId);
+    const volumes = (book?.volumes || []).filter(v => v.label);
+    area.style.display = "";
+    area.innerHTML = "";
+
+    if (volumes.length === 0) {
+      area.className = "loc-vol-chapter single";
+      area.innerHTML = `<div>
+        <span class="loc-sub-label">장/절 (직접 입력)</span>
+        <input class="qm-chapter-input" type="text" id="qm-chapter" placeholder="예: 1장" value="${esc(chapterLabel)}"
+          style="width:100%; padding:9px 12px; border:1.5px solid var(--line); border-radius:10px; font-size:14px; box-sizing:border-box;">
+      </div>`;
+      return;
+    }
+
+    area.className = "loc-vol-chapter";
+    const selVol = volumeLabel || (volumes.length === 1 ? (volumes[0].label || "") : "");
+    area.innerHTML = `
+      <div>
+        <span class="loc-sub-label">권</span>
+        <select id="qm-volume" onchange="onModalVolumeChange()" style="width:100%; padding:9px 12px; border:1.5px solid var(--line); border-radius:10px; font-size:14px; box-sizing:border-box;">
+          <option value="">권 선택</option>
+          ${volumes.map(v => `<option value="${esc(v.label)}" ${v.label === selVol ? "selected" : ""}>${esc(v.label)}</option>`).join("")}
+        </select>
+      </div>
+      <div id="qm-chapter-wrap">
+        <!-- 장 동적 생성 -->
+      </div>
+    `;
+    buildChapterUI(selVol ? (volumes.find(v => v.label === selVol) || null) : null, chapterLabel);
+  }
+
+  function onModalVolumeChange() {
+    const volLabel = document.getElementById("qm-volume")?.value || "";
+    const bookId = document.getElementById("qm-book")?.value || "";
+    const book = ALL_BOOKS.find(b => b.id === bookId);
+    const vol = (book?.volumes || []).find(v => v.label === volLabel);
+    buildChapterUI(vol || null, "");
+  }
+
+  function buildChapterUI(volume, selectedChapter) {
+    const wrap = document.getElementById("qm-chapter-wrap");
+    if (!wrap) return;
+    const chapters = volume?.chapters || [];
+    const style = `style="width:100%; padding:9px 12px; border:1.5px solid var(--line); border-radius:10px; font-size:14px; box-sizing:border-box;"`;
+    if (chapters.length === 0) {
+      wrap.innerHTML = `<span class="loc-sub-label">장/절 (직접 입력)</span>
+        <input class="qm-chapter-input" type="text" id="qm-chapter" placeholder="예: 1장" value="${esc(selectedChapter)}" ${style}>`;
+    } else {
+      const hasCustom = selectedChapter && !chapters.includes(selectedChapter);
+      wrap.innerHTML = `<span class="loc-sub-label">장/절</span>
+        <select class="qm-chapter-input" id="qm-chapter" ${style}
+          onchange="if(this.value==='__custom__'){const inp=document.createElement('input');inp.className='qm-chapter-input';inp.id='qm-chapter';inp.type='text';inp.placeholder='직접 입력';inp.setAttribute('style','${style.replace("style=\"","").replace("\"","")}');this.parentNode.replaceChild(inp,this);inp.focus();}">
+          <option value="">선택</option>
+          ${chapters.map(ch => `<option value="${esc(ch)}" ${ch === selectedChapter ? "selected" : ""}>${esc(ch)}</option>`).join("")}
+          <option value="__custom__">직접 입력...</option>
+        </select>`;
+      if (hasCustom) {
+        setTimeout(() => {
+          const s = document.getElementById("qm-chapter");
+          if (s && s.tagName === "SELECT") {
+            const inp = document.createElement("input");
+            inp.className = "qm-chapter-input"; inp.id = "qm-chapter"; inp.type = "text"; inp.value = selectedChapter || "";
+            inp.style.cssText = "width:100%; padding:9px 12px; border:1.5px solid var(--line); border-radius:10px; font-size:14px; box-sizing:border-box;";
+            s.parentNode.replaceChild(inp, s);
+          }
+        }, 0);
+      }
+    }
+  }
+
+  /* ─── 연관 인물 검색 ─── */
+  function searchChars() {
+    const q = (document.getElementById("char-search-input")?.value || "").toLowerCase();
+    const resultsEl = document.getElementById("char-search-results");
+    if (!resultsEl) return;
+    if (!q) { resultsEl.classList.remove("visible"); return; }
+    const matches = ALL_CHARS.filter(c =>
+      !selectedCharIds.includes(c.id) &&
+      ((c.name || "").toLowerCase().includes(q) || (c.alt_names || []).some(n => n.toLowerCase().includes(q)))
+    ).slice(0, 8);
+    if (!matches.length) { resultsEl.classList.remove("visible"); return; }
+    resultsEl.innerHTML = matches.map(c =>
+      `<div class="rel-result-item" onclick="selectChar('${c.id}')">
+        ${esc(c.name || "")}${(c.alt_names||[]).length ? ` <span style="color:#94a3b8;font-size:11px;">(${(c.alt_names||[]).join(", ")})</span>` : ""}
+      </div>`
+    ).join("");
+    resultsEl.classList.add("visible");
+  }
+
+  function selectChar(id) {
+    if (selectedCharIds.includes(id)) return;
+    selectedCharIds.push(id);
+    renderSelectedChars();
+    const inp = document.getElementById("char-search-input");
+    if (inp) inp.value = "";
+    document.getElementById("char-search-results")?.classList.remove("visible");
+  }
+
+  function removeChar(id) {
+    selectedCharIds = selectedCharIds.filter(x => x !== id);
+    renderSelectedChars();
+  }
+
+  function renderSelectedChars() {
+    const el = document.getElementById("selected-chars");
+    if (!el) return;
+    el.innerHTML = selectedCharIds.map(id => {
+      const c = ALL_CHARS.find(x => x.id === id);
+      return `<span class="selected-tag char">${esc(c ? c.name : id)} <button onclick="removeChar('${id}')">×</button></span>`;
+    }).join("");
+  }
+
+  /* ─── 연관 사건 검색 ─── */
+  function searchEvents() {
+    const q = (document.getElementById("event-search-input")?.value || "").toLowerCase();
+    const resultsEl = document.getElementById("event-search-results");
+    if (!resultsEl) return;
+    if (!q) { resultsEl.classList.remove("visible"); return; }
+    const matches = ALL_EVENTS.filter(e =>
+      !selectedEventIds.includes(e.id) &&
+      ((e.title || "").toLowerCase().includes(q) || (e.era || "").toLowerCase().includes(q))
+    ).slice(0, 8);
+    if (!matches.length) { resultsEl.classList.remove("visible"); return; }
+    resultsEl.innerHTML = matches.map(e =>
+      `<div class="rel-result-item" onclick="selectEvent('${e.id}')">
+        ${esc(e.title || "")}${e.date_year ? ` <span style="color:#94a3b8;font-size:11px;">(${e.date_year}년)</span>` : e.era ? ` <span style="color:#94a3b8;font-size:11px;">(${e.era})</span>` : ""}
+      </div>`
+    ).join("");
+    resultsEl.classList.add("visible");
+  }
+
+  function selectEvent(id) {
+    if (selectedEventIds.includes(id)) return;
+    selectedEventIds.push(id);
+    renderSelectedEvents();
+    const inp = document.getElementById("event-search-input");
+    if (inp) inp.value = "";
+    document.getElementById("event-search-results")?.classList.remove("visible");
+  }
+
+  function removeEvent(id) {
+    selectedEventIds = selectedEventIds.filter(x => x !== id);
+    renderSelectedEvents();
+  }
+
+  function renderSelectedEvents() {
+    const el = document.getElementById("selected-events");
+    if (!el) return;
+    el.innerHTML = selectedEventIds.map(id => {
+      const ev = ALL_EVENTS.find(x => x.id === id);
+      return `<span class="selected-tag event">${esc(ev ? ev.title : id)} <button onclick="removeEvent('${id}')">×</button></span>`;
+    }).join("");
+  }
+
+  /* ─── 모달 열기/닫기 ─── */
+  function openModal(id) {
+    const modal = document.getElementById("qm-modal-bg");
+    if (!modal) return;
+    selectedCharIds = [];
+    selectedEventIds = [];
+
+    buildModalBookSelect("");
+
+    if (id) {
+      const qt = ALL_QUOTES.find(x => x.id === id);
+      if (!qt) return;
+      document.getElementById("qm-modal-title").textContent = "명문장 수정";
+      document.getElementById("qm-id").value = qt.id;
+      document.getElementById("qm-text").value = qt.text || "";
+      document.getElementById("qm-note").value = qt.note || "";
+      document.getElementById("qm-tags").value = (qt.tags || []).join(", ");
+      document.getElementById("qm-page").value = qt.page || "";
+      buildModalBookSelect(qt.book_id || "");
+      buildVolChapterUI(qt.book_id || "", qt.volume_label || "", qt.chapter || "");
+      selectedCharIds = [...(qt.related_character_ids || [])];
+      selectedEventIds = [...(qt.related_event_ids || [])];
+    } else {
+      document.getElementById("qm-modal-title").textContent = "명문장 추가";
+      document.getElementById("qm-id").value = "";
+      ["qm-text","qm-note","qm-tags","qm-page"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = "";
+      });
+      buildVolChapterUI("", "", "");
+    }
+
+    renderSelectedChars();
+    renderSelectedEvents();
+    modal.classList.add("open");
+  }
+
+  function closeModal() {
+    document.getElementById("qm-modal-bg")?.classList.remove("open");
+  }
+
+  /* ─── 저장 ─── */
+  async function saveQuote() {
+    const text = (document.getElementById("qm-text")?.value || "").trim();
+    if (!text) { alert("원문 문장을 입력하세요."); return; }
+    const bookId = document.getElementById("qm-book")?.value || "";
+    if (!bookId) { alert("책을 선택하세요."); return; }
+
+    const existingId = document.getElementById("qm-id")?.value || "";
+    const id = existingId || ("quote_" + Date.now());
+    const isNew = !existingId;
+
+    const book = ALL_BOOKS.find(b => b.id === bookId);
+    const volumeEl = document.getElementById("qm-volume");
+    const chapterEl = document.getElementById("qm-chapter");
+    const pageVal = parseInt(document.getElementById("qm-page")?.value || "") || null;
+    const tagsRaw = (document.getElementById("qm-tags")?.value || "").split(",").map(t => t.trim()).filter(Boolean);
+
+    const data = {
+      text,
+      note: (document.getElementById("qm-note")?.value || "").trim(),
+      tags: tagsRaw,
+      book_id: bookId,
+      book_title: book ? book.title : "",
+      volume_label: volumeEl ? volumeEl.value : "",
+      chapter: chapterEl ? (chapterEl.value === "__custom__" ? "" : chapterEl.value) : "",
+      page: pageVal,
+      related_character_ids: [...selectedCharIds],
+      related_event_ids: [...selectedEventIds],
+      updated_at: new Date().toISOString()
+    };
+    if (isNew) data.created_at = new Date().toISOString();
+
+    try {
+      await safeFetchDB({ action: "set", collection: "reading_quotes", id, data });
+      closeModal();
+      if (isNew) ALL_QUOTES.unshift({ ...data, id });
+      else {
+        const idx = ALL_QUOTES.findIndex(q => q.id === id);
+        if (idx >= 0) ALL_QUOTES[idx] = { ...data, id };
+      }
+      renderList();
+    } catch (e) {
+      alert("저장 실패: " + e.message);
+    }
+  }
+
+  /* ─── 삭제 ─── */
+  async function deleteQuote(id, preview) {
+    if (!confirm(`"${preview}..." 명문장을 삭제하시겠습니까?`)) return;
+    try {
+      await safeFetchDB({ action: "delete", collection: "reading_quotes", id });
+      ALL_QUOTES = ALL_QUOTES.filter(q => q.id !== id);
+      renderList();
+    } catch (e) {
+      alert("삭제 실패: " + e.message);
+    }
+  }
+
+  /* ─── 초기 로드 ─── */
+  async function loadAll() {
+    try {
+      const [qtRes, bookRes, charRes, evRes] = await Promise.all([
+        safeFetchDB({ action: "get", collection: "reading_quotes", orderByField: "created_at" }),
+        safeFetchDB({ action: "get", collection: "reading_books" }),
+        safeFetchDB({ action: "get", collection: "reading_characters" }),
+        safeFetchDB({ action: "get", collection: "reading_book_events" })
+      ]);
+      ALL_QUOTES = qtRes.data || [];
+      ALL_BOOKS = bookRes.data || [];
+      ALL_CHARS = charRes.data || [];
+      ALL_EVENTS = evRes.data || [];
+      buildBookFilter();
+      renderList();
+    } catch (e) {
+      const grid = document.getElementById("qm-grid");
+      if (grid) grid.innerHTML = `<div class="empty-msg" style="color:#ef4444;">불러오기 실패: ${e.message}</div>`;
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", loadAll);
+</script>
+</body>
+</html>
