@@ -77,6 +77,14 @@
     .tag-chip { display: flex; align-items: center; gap: 3px; padding: 3px 10px; background: #d1fae5; border-radius: 20px; font-size: 12px; color: var(--accent2); font-weight: 700; }
     .tag-chip button { border: none; background: none; cursor: pointer; color: #059669; font-size: 14px; line-height: 1; padding: 0; }
     .tags-input { border: none; outline: none; font-size: 13px; min-width: 80px; flex: 1; }
+    /* 그룹 태그 자동완성 */
+    .group-suggestions { max-height: 140px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; margin-top: 4px; display: none; background: #fff; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+    .group-suggestions.visible { display: block; }
+    .group-suggestion-item { padding: 8px 12px; font-size: 13px; cursor: pointer; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 6px; }
+    .group-suggestion-item:last-child { border-bottom: none; }
+    .group-suggestion-item:hover { background: #f1f5f9; }
+    .group-new-badge { font-size: 10px; font-weight: 700; background: #fef3c7; color: #92400e; padding: 1px 6px; border-radius: 10px; flex-shrink: 0; }
+    .group-count { font-size: 11px; color: #94a3b8; margin-left: auto; }
 
     /* 등장 위치 카드 */
     .section-label { font-size: 13px; font-weight: 800; color: var(--text); margin: 0 0 10px; padding-bottom: 6px; border-bottom: 2px solid var(--line); }
@@ -293,10 +301,11 @@
         </div>
       </div>
       <div class="cm-field">
-        <label>그룹 태그 (Enter 또는 쉼표로 추가)</label>
+        <label>그룹 태그 (Enter 또는 쉼표로 추가 · 입력하면 기존 태그 검색)</label>
         <div class="tags-input-wrap" id="groups-tags-wrap" onclick="document.getElementById('groups-input').focus()">
-          <input class="tags-input" id="groups-input" placeholder="예: 빨치산, 지주 가문..." onkeydown="handleGroupKey(event)" oninput="handleGroupInput(event)">
+          <input class="tags-input" id="groups-input" placeholder="예: 빨치산, 지주 가문..." onkeydown="handleGroupKey(event)" oninput="handleGroupInput(event); searchGroupTags()">
         </div>
+        <div class="group-suggestions" id="group-suggestions"></div>
       </div>
       <div class="cm-field">
         <label>메모</label>
@@ -549,8 +558,11 @@
       const val = inp.value.replace(",", "").trim();
       if (val && !currentGroups.includes(val)) { currentGroups.push(val); renderGroupTags(); }
       inp.value = "";
+      hideGroupSuggestions();
     } else if (e.key === "Backspace" && !inp.value && currentGroups.length) {
       currentGroups.pop(); renderGroupTags();
+    } else if (e.key === "Escape") {
+      hideGroupSuggestions();
     }
   }
 
@@ -565,7 +577,55 @@
       });
       inp.value = parts[parts.length - 1];
       renderGroupTags();
+      hideGroupSuggestions();
     }
+  }
+
+  function searchGroupTags() {
+    const inp = document.getElementById("groups-input");
+    const sugEl = document.getElementById("group-suggestions");
+    if (!inp || !sugEl) return;
+    const q = inp.value.trim().toLowerCase();
+    if (!q) { hideGroupSuggestions(); return; }
+
+    // 전체 인물에서 그룹 목록 수집 + 사용 횟수 집계
+    const countMap = {};
+    ALL_CHARS.forEach(c => (c.groups || []).forEach(g => { countMap[g] = (countMap[g] || 0) + 1; }));
+
+    const existing = Object.keys(countMap).filter(g =>
+      g.toLowerCase().includes(q) && !currentGroups.includes(g)
+    ).sort((a, b) => countMap[b] - countMap[a]).slice(0, 8);
+
+    const isNew = !Object.keys(countMap).some(g => g.toLowerCase() === q);
+
+    let html = existing.map(g =>
+      `<div class="group-suggestion-item" onclick="selectGroupSuggestion('${esc(g)}')">
+        ${esc(g)}
+        <span class="group-count">${countMap[g]}명</span>
+      </div>`
+    ).join("");
+
+    if (isNew && inp.value.trim()) {
+      html += `<div class="group-suggestion-item" onclick="selectGroupSuggestion('${esc(inp.value.trim())}')">
+        <span class="group-new-badge">새 태그</span>${esc(inp.value.trim())}
+      </div>`;
+    }
+
+    if (!html) { hideGroupSuggestions(); return; }
+    sugEl.innerHTML = html;
+    sugEl.classList.add("visible");
+  }
+
+  function selectGroupSuggestion(val) {
+    if (val && !currentGroups.includes(val)) { currentGroups.push(val); renderGroupTags(); }
+    const inp = document.getElementById("groups-input");
+    if (inp) inp.value = "";
+    hideGroupSuggestions();
+    inp?.focus();
+  }
+
+  function hideGroupSuggestions() {
+    document.getElementById("group-suggestions")?.classList.remove("visible");
   }
 
   function removeGroup(g) { currentGroups = currentGroups.filter(x => x !== g); renderGroupTags(); }
@@ -1049,6 +1109,12 @@
     }
   }
 
+
+  document.addEventListener("click", e => {
+    if (!e.target.closest("#groups-tags-wrap") && !e.target.closest("#group-suggestions")) {
+      hideGroupSuggestions();
+    }
+  });
 
   document.addEventListener("DOMContentLoaded", loadAll);
 </script>
