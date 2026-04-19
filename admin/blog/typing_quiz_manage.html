@@ -517,24 +517,32 @@
                                     <div class="form-grid">
 
                                         <div class="form-group form-full">
+                                            <label class="form-label">구분 방식</label>
+                                            <div class="subject-chip-group" id="chunk-mode-chips">
+                                                <button type="button" class="subject-chip active" data-val="fixed" onclick="setChunkMode('fixed')">📏 고정 글자수</button>
+                                                <button type="button" class="subject-chip"        data-val="lines" onclick="setChunkMode('lines')">↵ 줄바꿈 기준</button>
+                                            </div>
+                                            <span id="chunk-mode-desc" style="font-size:0.72rem; color:var(--text-sub);">
+                                                아래에서 스텝당 글자 수를 지정합니다.
+                                            </span>
+                                        </div>
+
+                                        <div class="form-group form-full">
                                             <label class="form-label">암기 텍스트</label>
                                             <textarea
                                                 class="form-control"
                                                 id="q-content"
-                                                style="min-height:100px; font-size:1.1rem; font-family:'Noto Serif KR',serif; letter-spacing:0.05em;"
+                                                style="min-height:120px; font-size:1rem; font-family:'Noto Serif KR',serif; letter-spacing:0.05em;"
                                                 placeholder="예: 태정태세문단세예성연중인명성선광인효현숙경영정순헌철고순"
                                                 oninput="schedulePreview()"></textarea>
-                                            <span style="font-size:0.72rem; color:var(--text-sub);">공백 포함 그대로 저장됩니다.</span>
+                                            <span id="content-hint" style="font-size:0.72rem; color:var(--text-sub);">공백 포함 그대로 저장됩니다.</span>
                                         </div>
 
-                                        <div class="form-group">
+                                        <div class="form-group" id="step-size-row">
                                             <label class="form-label">스텝당 글자 수</label>
                                             <input type="number" class="form-control" id="q-step-size"
                                                 min="1" max="100" value="7"
                                                 oninput="schedulePreview()">
-                                            <span style="font-size:0.72rem; color:var(--text-sub);">
-                                                누적 방식: 1스텝 → 1~N글자, 2스텝 → 1~2N글자
-                                            </span>
                                         </div>
 
                                         <div class="form-group">
@@ -611,11 +619,12 @@ function toast(msg, isErr = false) {
 }
 
 // ── 상태 ──────────────────────────────────
-let allQuizzes      = [];
-let currentId       = null;
-let isNew           = false;
-let currentCategory = 'korean';
-let previewTimer    = null;
+let allQuizzes        = [];
+let currentId         = null;
+let isNew             = false;
+let currentCategory   = 'korean';
+let currentChunkMode  = 'fixed';
+let previewTimer      = null;
 
 // ── 목록 로드 ──────────────────────────────
 async function loadQuizList() {
@@ -656,14 +665,16 @@ function renderQuizList() {
             <div class="set-item-meta">
                 <span class="pub-dot ${d.status === 'published' ? 'pub' : 'draft'}"></span>
                 <span>${d.status === 'published' ? '공개' : '초안'}</span>
-                <span>${(d.content ?? '').length}글자 · ${stepCount}스텝</span>
+                <span>${(d.content ?? '').length}글자 · ${computeStepCount(d.content, d.step_size, d.chunk_mode)}스텝</span>
             </div>
         </div>`;
     }).join('');
 }
 
-function computeStepCount(content, stepSize) {
-    if (!content || !stepSize) return 0;
+function computeStepCount(content, stepSize, chunkMode) {
+    if (!content) return 0;
+    if (chunkMode === 'lines') return content.split('\n').filter(l => l.trim()).length;
+    if (!stepSize) return 0;
     return Math.ceil(content.length / (stepSize || 1));
 }
 
@@ -712,6 +723,7 @@ function clearForm() {
     document.getElementById('q-status').value      = 'draft';
     document.getElementById('q-total-steps').value = '-';
     setCategory('korean');
+    setChunkMode('fixed');
 }
 
 function populateForm(d) {
@@ -724,6 +736,7 @@ function populateForm(d) {
     document.getElementById('q-step-size').value   = d.step_size ?? 7;
     document.getElementById('q-status').value      = d.status ?? 'draft';
     setCategory(d.category ?? 'korean');
+    setChunkMode(d.chunk_mode ?? 'fixed');
     updateTotalSteps();
 }
 
@@ -734,6 +747,22 @@ function setCategory(val) {
     });
 }
 
+function setChunkMode(val) {
+    currentChunkMode = val;
+    document.querySelectorAll('#chunk-mode-chips .subject-chip').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.val === val);
+    });
+    const isLines = val === 'lines';
+    document.getElementById('step-size-row').style.display = isLines ? 'none' : '';
+    document.getElementById('chunk-mode-desc').textContent = isLines
+        ? '줄바꿈(Enter)으로 나뉜 각 줄이 하나의 구간이 됩니다.'
+        : '아래에서 스텝당 글자 수를 지정합니다.';
+    document.getElementById('q-content').placeholder = isLines
+        ? '각 줄이 하나의 암기 단위가 됩니다.\n예:\n관자재보살 행심반야바라밀다시 조견오온개공 도일체고액\n사리자 색불이공 공불이색 색즉시공 공즉시색'
+        : '예: 태정태세문단세예성연중인명성선광인효현숙경영정순헌철고순';
+    schedulePreview();
+}
+
 function generateId() {
     const catMap = { korean: 'kr', japanese: 'jp', chinese: 'cn', world: 'wl' };
     const cat = catMap[currentCategory] ?? 'kr';
@@ -741,11 +770,16 @@ function generateId() {
 }
 
 function updateTotalSteps() {
-    const content  = document.getElementById('q-content').value;
-    const stepSize = parseInt(document.getElementById('q-step-size').value) || 1;
-    const total    = content ? Math.ceil(content.length / stepSize) : 0;
+    const content = document.getElementById('q-content').value;
+    let total;
+    if (currentChunkMode === 'lines') {
+        total = content ? content.split('\n').filter(l => l.trim()).length : 0;
+    } else {
+        const stepSize = parseInt(document.getElementById('q-step-size').value) || 1;
+        total = content ? Math.ceil(content.length / stepSize) : 0;
+    }
     document.getElementById('q-total-steps').value = total
-        ? `${total}스텝 (총 ${content.length}글자)`
+        ? `${total}구간 (총 ${content.replace(/\n/g, '').length}글자)`
         : '-';
 }
 
@@ -757,39 +791,61 @@ function schedulePreview() {
 }
 
 function renderPreview() {
-    const content  = document.getElementById('q-content').value.trim();
-    const stepSize = parseInt(document.getElementById('q-step-size').value) || 1;
-    const listEl   = document.getElementById('step-preview-list');
+    const rawContent = document.getElementById('q-content').value;
+    const listEl     = document.getElementById('step-preview-list');
 
-    if (!content) {
-        listEl.innerHTML = '<div class="empty-state" style="padding:16px 0;">암기 텍스트와 스텝당 글자 수를 입력하면 자동으로 표시됩니다.</div>';
+    if (!rawContent.trim()) {
+        listEl.innerHTML = '<div class="empty-state" style="padding:16px 0;">암기 텍스트와 구분 방식을 입력하면 자동으로 표시됩니다.</div>';
         return;
     }
 
-    const totalSteps = Math.ceil(content.length / stepSize);
     const items = [];
 
-    for (let i = 0; i < totalSteps; i++) {
-        const prevEnd = i * stepSize;
-        const currEnd = Math.min((i + 1) * stepSize, content.length);
-        const prevPart = content.substring(0, prevEnd);
-        const newPart  = content.substring(prevEnd, currEnd);
-
-        const charsHtml =
-            [...prevPart].map(ch => `<span>${ch === ' ' ? '&nbsp;' : ch}</span>`).join('') +
-            [...newPart].map(ch  => `<span class="step-new">${ch === ' ' ? '&nbsp;' : ch}</span>`).join('');
-
-        items.push(`
-            <div class="step-preview-item">
-                <div class="step-preview-header">
-                    <span class="step-badge">${i + 1}</span>
-                    <span style="font-size:0.78rem; font-weight:600; color:var(--text-sub);">
-                        1~${currEnd}번째 글자 (${currEnd}글자)
-                    </span>
+    if (currentChunkMode === 'lines') {
+        const lines = rawContent.split('\n').filter(l => l.trim());
+        lines.forEach((line, i) => {
+            const charsHtml = [...line].map(ch =>
+                `<span class="step-new">${ch === ' ' ? '&nbsp;' : ch}</span>`
+            ).join('');
+            items.push(`
+                <div class="step-preview-item">
+                    <div class="step-preview-header">
+                        <span class="step-badge">${i + 1}</span>
+                        <span style="font-size:0.78rem; font-weight:600; color:var(--text-sub);">
+                            ${line.length}글자
+                        </span>
+                    </div>
+                    <div class="step-preview-chars">${charsHtml}</div>
                 </div>
-                <div class="step-preview-chars">${charsHtml}</div>
-            </div>
-        `);
+            `);
+        });
+    } else {
+        const content  = rawContent.trim();
+        const stepSize = parseInt(document.getElementById('q-step-size').value) || 1;
+        const totalSteps = Math.ceil(content.length / stepSize);
+
+        for (let i = 0; i < totalSteps; i++) {
+            const prevEnd  = i * stepSize;
+            const currEnd  = Math.min((i + 1) * stepSize, content.length);
+            const prevPart = content.substring(0, prevEnd);
+            const newPart  = content.substring(prevEnd, currEnd);
+
+            const charsHtml =
+                [...prevPart].map(ch => `<span>${ch === ' ' ? '&nbsp;' : ch}</span>`).join('') +
+                [...newPart].map(ch  => `<span class="step-new">${ch === ' ' ? '&nbsp;' : ch}</span>`).join('');
+
+            items.push(`
+                <div class="step-preview-item">
+                    <div class="step-preview-header">
+                        <span class="step-badge">${i + 1}</span>
+                        <span style="font-size:0.78rem; font-weight:600; color:var(--text-sub);">
+                            1~${currEnd}번째 글자 (${currEnd}글자)
+                        </span>
+                    </div>
+                    <div class="step-preview-chars">${charsHtml}</div>
+                </div>
+            `);
+        }
     }
 
     listEl.innerHTML = items.join('');
@@ -816,6 +872,7 @@ async function saveQuiz() {
         description: document.getElementById('q-description').value.trim(),
         category:    currentCategory,
         content,
+        chunk_mode:  currentChunkMode,
         step_size:   stepSize,
         status:      document.getElementById('q-status').value,
         updated_at:  new Date().toISOString(),
