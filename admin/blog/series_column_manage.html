@@ -46,6 +46,11 @@
         .ri-check-title { font-size: 0.88rem; font-weight: 600; color: #1e293b; line-height: 1.45; }
         .ri-empty { font-size: 0.85rem; color: #aaa; text-align: center; padding: 30px 0; }
 
+        .impact-tag-row { display: flex; gap: 10px; align-items: center; }
+        .impact-tag-row .form-control { margin: 0; }
+        .btn-remove-tag { width: 38px; height: 38px; border: none; border-radius: 10px; background: #fee2e2; color: #b91c1c; cursor: pointer; font-size: 1.2rem; flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: 0.2s; line-height: 1; }
+        .btn-remove-tag:hover { background: #fecaca; }
+
         /* Quill 에디터 래퍼 */
         .quill-wrap { border: 1.5px solid #e2e8f0; border-radius: 14px; overflow: hidden; background: #fff; }
         .quill-wrap .ql-toolbar { border: none; border-bottom: 1px solid #e2e8f0; background: #f8fafc; }
@@ -139,6 +144,21 @@
                         <input type="text" id="col-date" class="form-control" placeholder="2025-05-12 (기재가 권장됨)" />
                     </div>
 
+                    <div class="form-group">
+                        <label class="form-label">사건 개요 (Overview)</label>
+                        <textarea id="col-overview" class="form-control form-textarea" style="height: 120px;" placeholder="사건의 핵심 배경과 개요를 간략히 작성하세요..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">진행상황 (Status)</label>
+                        <input type="text" id="col-status" class="form-control" placeholder="예: 2심 진행 중 / 판결 확정 / 수사 종결" />
+                    </div>
+                    <div class="form-group">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                            <label class="form-label" style="margin: 0;">영향 관련 태그 (Impact Tags)</label>
+                            <button type="button" onclick="addImpactTag()" style="background: #10b981; color: #fff; border: none; padding: 8px 16px; border-radius: 10px; font-weight: 800; font-size: 0.82rem; cursor: pointer;">+ 태그 추가</button>
+                        </div>
+                        <div id="impact-tags-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
+                    </div>
                     <div class="form-group">
                         <label class="form-label">본문 내용 (Content)</label>
                         <div class="quill-wrap">
@@ -353,6 +373,9 @@
                     document.getElementById('col-date').value = d.date || "";
                     if (quill) quill.root.innerHTML = d.content || "";
                     savedRelatedIssues = Array.isArray(d.related_issues) ? d.related_issues : [];
+                    document.getElementById('col-overview').value = d.overview || "";
+                    document.getElementById('col-status').value = d.status || "";
+                    renderImpactTags(Array.isArray(d.impact_tags) ? d.impact_tags : []);
 
                     // 체크리스트 초기화 (스캔 안내 상태로)
                     document.getElementById('ri-checklist').innerHTML = `<div class="ri-empty">자동 스캔을 눌러 이슈를 불러오세요. (기존 선택 ${savedRelatedIssues.length}건 저장됨)</div>`;
@@ -446,6 +469,9 @@
                         author: author,
                         date: dateStr,
                         content: content,
+                        overview: document.getElementById('col-overview').value.trim(),
+                        status: document.getElementById('col-status').value.trim(),
+                        impact_tags: getImpactTags(),
                         related_issues: checkedIssues,
                         updatedAt: new Date().toISOString()
                     }
@@ -481,6 +507,9 @@
             document.getElementById('col-date').value = "";
             if (quill) quill.root.innerHTML = "";
             savedRelatedIssues = [];
+            document.getElementById('col-overview').value = "";
+            document.getElementById('col-status').value = "";
+            renderImpactTags([]);
             document.getElementById('ri-checklist').innerHTML = `<div class="ri-empty">시리즈를 로드한 뒤 "자동 스캔"을 눌러주세요.</div>`;
         }
 
@@ -567,6 +596,30 @@
                 date_display: cb.dataset.dateDisplay,
                 date_start: cb.dataset.dateStart
             }));
+        }
+
+        function addImpactTag(tag = '', note = '') {
+            const list = document.getElementById('impact-tags-list');
+            const row = document.createElement('div');
+            row.className = 'impact-tag-row';
+            row.innerHTML = `
+                <input type="text" class="form-control impact-tag-name" placeholder="태그명 (예: 검찰개혁)" value="${tag.replace(/"/g, '&quot;')}" style="flex: 0 0 200px; margin: 0;" />
+                <input type="text" class="form-control impact-tag-note" placeholder="영향 설명을 입력하세요" value="${note.replace(/"/g, '&quot;')}" style="margin: 0;" />
+                <button type="button" class="btn-remove-tag" onclick="this.closest('.impact-tag-row').remove()">×</button>
+            `;
+            list.appendChild(row);
+        }
+
+        function getImpactTags() {
+            return Array.from(document.querySelectorAll('#impact-tags-list .impact-tag-row')).map(row => ({
+                tag: row.querySelector('.impact-tag-name').value.trim(),
+                note: row.querySelector('.impact-tag-note').value.trim()
+            })).filter(t => t.tag);
+        }
+
+        function renderImpactTags(tags) {
+            document.getElementById('impact-tags-list').innerHTML = '';
+            (tags || []).forEach(t => addImpactTag(t.tag || '', t.note || ''));
         }
 
         // 초기 로드
