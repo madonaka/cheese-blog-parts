@@ -522,7 +522,7 @@
                                 <option value="30">30일</option>
                                 <option value="31">31일</option>
                             </select>
-                            <input type="text" id="search-keyword" class="form-control" style="width: 220px; margin-bottom:0;" placeholder="제목/내용 검색..." onkeyup="if(event.keyCode==13){ currentPage=1; loadIssues(); }">
+                            <input type="text" id="search-keyword" class="form-control" style="width: 220px; margin-bottom:0;" placeholder="제목/내용/태그 검색..." onkeyup="if(event.keyCode==13){ currentPage=1; loadIssues(); }">
                             <button class="btn-save" style="padding: 8px 20px;" onclick="currentPage=1; loadIssues()">검색</button>
 
                             <!-- 행 2: 태그 필터 + 정렬 -->
@@ -633,11 +633,16 @@
                                         🌟 Important (중요도 높음)
                                     </label>
                                     <div id="important-input-wrap" style="display: none; position: relative;">
-                                        <input type="text" id="input-important-val" class="form-control" placeholder="중요 이유 (예: 헌법개정안)"
-                                            style="padding: 5px 10px; font-size: 0.8rem; margin: 0; width: 180px; height: 32px; border: 1.5px solid #f59e0b; border-radius: 6px;"
-                                            oninput="window.renderImportantSuggestions(this.value)"
-                                            onfocus="window.renderImportantSuggestions(this.value)">
-                                        <div id="important-suggestions" style="display:none; position:absolute; top:36px; left:0; z-index:9999; min-width:220px; max-height:220px; overflow-y:auto; border:1px solid #fde68a; border-radius:10px; background:#fff; box-shadow:0 8px 20px -4px rgba(0,0,0,0.1);"></div>
+                                        <div id="important-chips" style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:5px;"></div>
+                                        <div style="display:flex; gap:5px; align-items:center;">
+                                            <input type="text" id="input-important-val" class="form-control" placeholder="중요 이유 추가 후 Enter"
+                                                style="padding: 5px 10px; font-size: 0.8rem; margin: 0; width: 180px; height: 32px; border: 1.5px solid #f59e0b; border-radius: 6px;"
+                                                oninput="window.renderImportantSuggestions(this.value)"
+                                                onfocus="window.renderImportantSuggestions(this.value)"
+                                                onkeydown="if(event.key==='Enter'){event.preventDefault();window.addImportantChip(this.value);}">
+                                            <button type="button" onclick="window.addImportantChip(document.getElementById('input-important-val').value)" style="height:32px;padding:0 10px;border-radius:6px;border:1.5px solid #f59e0b;background:#fef3c7;color:#92400e;font-size:0.8rem;font-weight:800;cursor:pointer;white-space:nowrap;">+ 추가</button>
+                                        </div>
+                                        <div id="important-suggestions" style="display:none; position:absolute; top:76px; left:0; z-index:9999; min-width:220px; max-height:220px; overflow-y:auto; border:1px solid #fde68a; border-radius:10px; background:#fff; box-shadow:0 8px 20px -4px rgba(0,0,0,0.1);"></div>
                                     </div>
                                 </div>
 
@@ -1268,7 +1273,8 @@
                 if (keyword) {
                     mergedEvents = mergedEvents.filter(ev =>
                         (ev.title && ev.title.toLowerCase().includes(keyword)) ||
-                        (ev.content_raw && ev.content_raw.toLowerCase().includes(keyword))
+                        (ev.content_raw && ev.content_raw.toLowerCase().includes(keyword)) ||
+                        (ev.tags && ev.tags.toLowerCase().includes(keyword))
                     );
                 }
 
@@ -1442,6 +1448,8 @@
             // UI 및 입력창 초기화
             document.getElementById('important-input-wrap').style.display = 'none';
             document.getElementById('important-suggestions').style.display = 'none';
+            document.getElementById('important-chips').innerHTML = '';
+            document.getElementById('input-important-val').value = '';
             document.getElementById('core-cat-container').style.display = 'none';
             document.getElementById('eforce-input-group').style.display = 'none';
             const checks = ['chk-tag-important', 'chk-tag-core', 'chk-tag-economy', 'chk-tag-mourning', 'chk-tag-link'];
@@ -1483,9 +1491,10 @@
                     if (t.startsWith('important-')) {
                         document.getElementById('chk-tag-important').checked = true;
                         document.getElementById('important-input-wrap').style.display = 'block';
-                        document.getElementById('input-important-val').value = t.replace('important-', '');
+                        window.renderImportantChip(t.replace('important-', ''));
                     } else if (t === 'important') {
                         document.getElementById('chk-tag-important').checked = true;
+                        document.getElementById('important-input-wrap').style.display = 'block';
                     } else if (t.startsWith('mnforce-')) {
                         document.getElementById('chk-tag-core').checked = true;
                         document.getElementById('core-cat-container').style.display = 'flex';
@@ -1520,6 +1529,8 @@
                             document.getElementById('input-link-val').value = efVal;
                         }
                         window.updateEForcePreview(efVal);
+                    } else if (t.startsWith('cat-')) {
+                        // mnforce 라디오 버튼으로 이미 표시됨 — 별도 입력창에 노출 안 함
                     } else {
                         otherTags.push(t);
                     }
@@ -1557,9 +1568,15 @@
             
             // 1. Important 태그
             if (document.getElementById('chk-tag-important').checked) {
-                const impVal = document.getElementById('input-important-val').value.trim();
-                let impTag = impVal ? 'important-' + impVal : 'important';
-                if (!finalTagsArr.includes(impTag)) finalTagsArr.push(impTag);
+                const chipVals = window.getImportantChipValues();
+                if (chipVals.length > 0) {
+                    chipVals.forEach(v => {
+                        const impTag = 'important-' + v;
+                        if (!finalTagsArr.includes(impTag)) finalTagsArr.push(impTag);
+                    });
+                } else {
+                    if (!finalTagsArr.includes('important')) finalTagsArr.push('important');
+                }
             }
             
             // 2. 월 핵심 이슈 (mnforce)
@@ -1942,7 +1959,30 @@
         };
 
         window.selectImportantSuggestion = (val) => {
-            document.getElementById('input-important-val').value = val;
+            window.addImportantChip(val);
+        };
+
+        window.getImportantChipValues = () => {
+            return [...document.querySelectorAll('.important-chip-item')].map(el => el.dataset.val);
+        };
+
+        window.renderImportantChip = (val) => {
+            if (!val) return;
+            const chips = document.getElementById('important-chips');
+            if ([...chips.querySelectorAll('.important-chip-item')].some(el => el.dataset.val === val)) return;
+            const chip = document.createElement('span');
+            chip.className = 'important-chip-item';
+            chip.dataset.val = val;
+            chip.style.cssText = 'display:inline-flex;align-items:center;gap:4px;background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:100px;padding:2px 10px;font-size:0.8rem;font-weight:700;';
+            chip.innerHTML = `${val} <button type="button" onclick="this.parentElement.remove()" style="background:none;border:none;cursor:pointer;color:#b45309;font-size:1rem;padding:0;line-height:1;margin-left:2px;">×</button>`;
+            chips.appendChild(chip);
+        };
+
+        window.addImportantChip = (val) => {
+            val = (val || '').trim();
+            if (!val) return;
+            window.renderImportantChip(val);
+            document.getElementById('input-important-val').value = '';
             document.getElementById('important-suggestions').style.display = 'none';
         };
 
@@ -2236,6 +2276,171 @@
             }
         };
 
+        // ===== 일괄 태그 추가 =====
+        window.openBulkTagModal = () => {
+            const ids = getCheckedIds();
+            if (ids.length === 0) return;
+            document.getElementById('bulk-chk-important').checked = false;
+            document.getElementById('bulk-important-wrap').style.display = 'none';
+            document.getElementById('bulk-important-chips').innerHTML = '';
+            document.getElementById('bulk-input-important-val').value = '';
+            document.getElementById('bulk-important-suggestions').style.display = 'none';
+            document.getElementById('bulk-chk-mnforce').checked = false;
+            document.getElementById('bulk-mnforce-wrap').style.display = 'none';
+            document.querySelectorAll('input[name="bulk_core_cat"]').forEach(r => r.checked = false);
+            document.getElementById('bulk-input-mnforce-val').value = '';
+            document.getElementById('bulk-tag-count').textContent = ids.length;
+            document.getElementById('bulkTagModal').classList.add('show');
+        };
+
+        window.getBulkImportantChipValues = () =>
+            [...document.querySelectorAll('.bulk-important-chip-item')].map(el => el.dataset.val);
+
+        window.renderBulkImportantChip = (val) => {
+            if (!val) return;
+            const chips = document.getElementById('bulk-important-chips');
+            if ([...chips.querySelectorAll('.bulk-important-chip-item')].some(el => el.dataset.val === val)) return;
+            const chip = document.createElement('span');
+            chip.className = 'bulk-important-chip-item';
+            chip.dataset.val = val;
+            chip.style.cssText = 'display:inline-flex;align-items:center;gap:4px;background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:100px;padding:2px 10px;font-size:0.8rem;font-weight:700;';
+            chip.innerHTML = `${val} <button type="button" onclick="this.parentElement.remove()" style="background:none;border:none;cursor:pointer;color:#b45309;font-size:1rem;padding:0;line-height:1;margin-left:2px;">×</button>`;
+            chips.appendChild(chip);
+        };
+
+        window.addBulkImportantChip = (val) => {
+            val = (val || '').trim();
+            if (!val) return;
+            window.renderBulkImportantChip(val);
+            document.getElementById('bulk-input-important-val').value = '';
+            document.getElementById('bulk-important-suggestions').style.display = 'none';
+        };
+
+        window.renderBulkImportantSuggestions = (query) => {
+            const container = document.getElementById('bulk-important-suggestions');
+            if (!container) return;
+            const q = (query || '').toLowerCase().trim();
+            const seen = new Set();
+            const candidates = [];
+            allIssuesUnfiltered.forEach(ev => {
+                (ev.tags || '').split(',').forEach(t => {
+                    const tag = t.trim();
+                    if (tag.startsWith('important-')) {
+                        const val = tag.replace('important-', '').trim();
+                        if (val && !seen.has(val) && (!q || val.toLowerCase().includes(q))) {
+                            seen.add(val);
+                            candidates.push({ val, title: ev.title, date: ev.date_start });
+                        }
+                    }
+                });
+            });
+            if (candidates.length === 0) { container.style.display = 'none'; return; }
+            container.style.display = 'block';
+            container.innerHTML = candidates.slice(0, 30).map(c => `
+                <div style="padding:9px 14px; border-bottom:1px solid #fef9c3; cursor:pointer; transition:background 0.15s;"
+                     onmouseover="this.style.background='#fef9c3'" onmouseout="this.style.background='transparent'"
+                     onclick="window.addBulkImportantChip('${c.val.replace(/'/g, "\\'")}')">
+                    <div style="font-size:0.82rem; font-weight:800; color:#92400e;">${c.val}</div>
+                    <div style="font-size:0.72rem; color:#94a3b8; margin-top:1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${c.title} · ${c.date}</div>
+                </div>
+            `).join('');
+        };
+
+        document.addEventListener('click', (e) => {
+            const wrap = document.getElementById('bulk-important-wrap');
+            if (wrap && !wrap.contains(e.target)) {
+                const s = document.getElementById('bulk-important-suggestions');
+                if (s) s.style.display = 'none';
+            }
+        });
+
+        window.bulkAddTags = async () => {
+            const ids = getCheckedIds();
+            if (ids.length === 0) return;
+
+            const useImportant = document.getElementById('bulk-chk-important').checked;
+            const useMnforce = document.getElementById('bulk-chk-mnforce').checked;
+            if (!useImportant && !useMnforce) {
+                alert('추가할 태그를 하나 이상 선택해주세요.');
+                return;
+            }
+
+            let importantTags = [];
+            if (useImportant) {
+                const chipVals = window.getBulkImportantChipValues();
+                importantTags = chipVals.length > 0 ? chipVals.map(v => 'important-' + v) : ['important'];
+            }
+
+            let mnforceTags = [];
+            if (useMnforce) {
+                const selCat = document.querySelector('input[name="bulk_core_cat"]:checked');
+                if (!selCat) {
+                    alert('카테고리(정치/경제/사회/국제)를 선택해주세요.');
+                    return;
+                }
+                const catVal = selCat.value;
+                const labelVal = document.getElementById('bulk-input-mnforce-val').value.trim();
+                mnforceTags.push(labelVal ? `mnforce-${catVal}-${labelVal}` : `mnforce-${catVal}`);
+                mnforceTags.push('cat-' + catVal);
+            }
+
+            if (!confirm(`선택한 ${ids.length}건에 태그를 추가하시겠습니까?`)) return;
+
+            document.getElementById('bulkTagModal').classList.remove('show');
+            const bar = document.getElementById('bulkActionBar');
+            bar.style.pointerEvents = 'none';
+            bar.style.opacity = '0.5';
+
+            try {
+                const byYear = {};
+                ids.forEach(id => {
+                    const ev = allIssues.find(i => i.id === id);
+                    if (!ev) return;
+                    if (!byYear[ev._year]) byYear[ev._year] = [];
+                    byYear[ev._year].push(ev);
+                });
+
+                for (const yr of Object.keys(byYear)) {
+                    const res = await safeFetchDB({ action: "getDoc", collection: "historical_issues", id: "year_" + yr });
+                    if (!res.ok || !res.data) continue;
+                    const yearData = res.data;
+                    const targetIds = new Set(byYear[yr].map(e => e.id));
+
+                    Object.keys(yearData.months).forEach(mn => {
+                        (yearData.months[mn].events || []).forEach(ev => {
+                            if (!targetIds.has(ev.id)) return;
+                            let tagsArr = (ev.tags || '').split(',').map(t => t.trim()).filter(t => t);
+
+                            importantTags.forEach(tag => {
+                                if (!tagsArr.includes(tag)) tagsArr.push(tag);
+                            });
+
+                            if (useMnforce) {
+                                tagsArr = tagsArr.filter(t => !t.startsWith('mnforce-') && !t.startsWith('cat-'));
+                                mnforceTags.forEach(tag => { if (!tagsArr.includes(tag)) tagsArr.push(tag); });
+                            }
+
+                            ev.tags = tagsArr.join(',');
+                            const localEv = allIssues.find(i => i.id === ev.id);
+                            if (localEv) localEv.tags = ev.tags;
+                        });
+                    });
+
+                    await safeFetchDB({ action: "set", collection: "historical_issues", id: "year_" + yr, data: yearData });
+                }
+
+                window.showNotification("완료", `${ids.length}건에 태그를 추가했습니다.`, "success");
+                clearSelection();
+                renderTable();
+            } catch (err) {
+                console.error(err);
+                window.showNotification("오류", "일괄 태그 추가 중 오류가 발생했습니다.", "error");
+            } finally {
+                bar.style.pointerEvents = '';
+                bar.style.opacity = '';
+            }
+        };
+
         init();
     </script>
 
@@ -2248,7 +2453,64 @@
         <button class="bulk-btn bulk-btn-reject" onclick="bulkUpdateReviewStatus(2)">❌ 미반영</button>
         <button class="bulk-btn bulk-btn-reset"  onclick="bulkUpdateReviewStatus(0)">❓ 미확인</button>
         <div class="bulk-divider"></div>
+        <button class="bulk-btn" style="background:#f59e0b;color:#fff;" onclick="openBulkTagModal()">🏷️ 태그 추가</button>
+        <div class="bulk-divider"></div>
         <button class="bulk-btn bulk-btn-cancel" onclick="clearSelection()">취소</button>
+    </div>
+    <!-- 일괄 태그 추가 모달 -->
+    <div class="modal-overlay" id="bulkTagModal" onclick="if(event.target===this)this.classList.remove('show')">
+        <div class="modal-card" style="max-width:480px;overflow:visible;">
+            <h3 style="font-size:1.1rem;font-weight:900;margin-bottom:6px;">🏷️ 일괄 태그 추가</h3>
+            <p style="color:#64748b;font-size:0.85rem;margin-bottom:20px;">선택된 <strong id="bulk-tag-count">0</strong>개 항목에 아래 태그를 추가합니다.</p>
+
+            <!-- Important -->
+            <div style="margin-bottom:14px;padding:14px;border:1.5px solid #fde68a;border-radius:12px;background:#fffbeb;">
+                <label style="display:flex;align-items:center;gap:8px;font-weight:800;font-size:0.95rem;cursor:pointer;margin-bottom:0;">
+                    <input type="checkbox" id="bulk-chk-important" style="width:17px;height:17px;"
+                        onchange="document.getElementById('bulk-important-wrap').style.display=this.checked?'block':'none';if(this.checked){document.getElementById('bulk-input-important-val').focus();window.renderBulkImportantSuggestions('');}">
+                    🌟 Important (중요도 높음)
+                </label>
+                <div id="bulk-important-wrap" style="display:none;margin-top:10px;position:relative;">
+                    <div id="bulk-important-chips" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:5px;"></div>
+                    <div style="display:flex;gap:5px;align-items:center;">
+                        <input type="text" id="bulk-input-important-val" class="form-control"
+                            placeholder="중요 이유 추가 후 Enter"
+                            style="padding:5px 10px;font-size:0.8rem;margin:0;width:180px;height:32px;border:1.5px solid #f59e0b;border-radius:6px;"
+                            oninput="window.renderBulkImportantSuggestions(this.value)"
+                            onfocus="window.renderBulkImportantSuggestions(this.value)"
+                            onkeydown="if(event.key==='Enter'){event.preventDefault();window.addBulkImportantChip(this.value);}">
+                        <button type="button" onclick="window.addBulkImportantChip(document.getElementById('bulk-input-important-val').value)"
+                            style="height:32px;padding:0 10px;border-radius:6px;border:1.5px solid #f59e0b;background:#fef3c7;color:#92400e;font-size:0.8rem;font-weight:800;cursor:pointer;white-space:nowrap;">+ 추가</button>
+                    </div>
+                    <div id="bulk-important-suggestions" style="display:none;position:absolute;top:76px;left:0;z-index:9999;min-width:220px;max-height:180px;overflow-y:auto;border:1px solid #fde68a;border-radius:10px;background:#fff;box-shadow:0 8px 20px -4px rgba(0,0,0,0.1);"></div>
+                </div>
+            </div>
+
+            <!-- mnforce -->
+            <div style="margin-bottom:20px;padding:14px;border:1.5px solid #fecaca;border-radius:12px;background:#fff5f5;">
+                <label style="display:flex;align-items:center;gap:8px;font-weight:800;font-size:0.95rem;cursor:pointer;margin-bottom:0;">
+                    <input type="checkbox" id="bulk-chk-mnforce" style="width:17px;height:17px;"
+                        onchange="document.getElementById('bulk-mnforce-wrap').style.display=this.checked?'block':'none';">
+                    🎯 월 핵심 이슈 (mnforce)
+                </label>
+                <div id="bulk-mnforce-wrap" style="display:none;margin-top:10px;">
+                    <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:10px;font-size:0.88rem;font-weight:700;color:#475569;">
+                        <label style="cursor:pointer;display:flex;align-items:center;gap:4px;"><input type="radio" name="bulk_core_cat" value="정치"> 정치</label>
+                        <label style="cursor:pointer;display:flex;align-items:center;gap:4px;"><input type="radio" name="bulk_core_cat" value="경제"> 경제</label>
+                        <label style="cursor:pointer;display:flex;align-items:center;gap:4px;"><input type="radio" name="bulk_core_cat" value="사회"> 사회</label>
+                        <label style="cursor:pointer;display:flex;align-items:center;gap:4px;"><input type="radio" name="bulk_core_cat" value="국제"> 국제</label>
+                    </div>
+                    <input type="text" id="bulk-input-mnforce-val" class="form-control"
+                        placeholder="핵심 키워드 (선택사항, 예: 탄핵심판)"
+                        style="padding:5px 10px;font-size:0.8rem;margin:0;height:32px;border:1.5px solid #ef4444;border-radius:6px;">
+                </div>
+            </div>
+
+            <div class="btn-group">
+                <button class="btn-cancel" onclick="document.getElementById('bulkTagModal').classList.remove('show')">취소</button>
+                <button class="btn-save" onclick="window.bulkAddTags()">태그 적용</button>
+            </div>
+        </div>
     </div>
 </body>
 </html>
