@@ -56,6 +56,7 @@
         }
         .tag-list-item:hover { background: #f8fafc; }
         .tag-list-item.active { background: #eff6ff; border-left: 3px solid #3b82f6; padding-left: 9px; }
+        .tag-list-item.in-series { background: #f0fdf4; border-left: 3px solid #22c55e; padding-left: 9px; }
         .tag-label { font-size: 13px; font-weight: 800; color: var(--text); margin-bottom: 3px; }
         .tag-full { font-size: 10px; color: #94a3b8; font-family: monospace; margin-bottom: 4px; }
         .tag-meta { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
@@ -360,8 +361,17 @@
                 if (_activeExtraInput) {
                     _activeExtraInput.value = li.dataset.label;
                     _activeExtraInput.focus();
+                    renderTagList();
                 } else {
-                    selectTag(li.dataset.label);
+                    const emptyExtra = Array.from(document.querySelectorAll('.series-id-extra'))
+                        .find(el => !el.value.trim());
+                    if (emptyExtra) {
+                        emptyExtra.value = li.dataset.label;
+                        emptyExtra.focus();
+                        renderTagList();
+                    } else {
+                        selectTag(li.dataset.label);
+                    }
                 }
             });
 
@@ -477,9 +487,13 @@
                 return;
             }
 
-            ul.innerHTML = filtered.map(item => `
-                <li class="tag-list-item${item.label === currentLabel ? ' active' : ''}"
-                    data-label="${escAttr(item.label)}">
+            const extraIdSet = new Set(getSeriesIds().slice(1));
+            ul.innerHTML = filtered.map(item => {
+                let cls = 'tag-list-item';
+                if (item.label === currentLabel) cls += ' active';
+                else if (extraIdSet.has(item.label)) cls += ' in-series';
+                return `
+                <li class="${cls}" data-label="${escAttr(item.label)}">
                     <div class="tag-label">${escHtml(item.label)}</div>
                     <div class="tag-full">${escHtml(item.tag)}</div>
                     <div class="tag-meta">
@@ -487,8 +501,8 @@
                         <span class="tag-badge ${item.hasContent ? 'has-content' : 'no-content'}">${item.hasContent ? '✅ 등록됨' : '미등록'}</span>
                         <span class="tag-count">${item.count}건</span>
                     </div>
-                </li>
-            `).join('');
+                </li>`;
+            }).join('');
         }
 
         function onDateFilterInput(el) {
@@ -564,7 +578,7 @@
                        <input type="text" class="am-input series-id-extra" value="${escAttr(id)}"
                            placeholder="클릭 후 좌측 태그 선택" style="font-size:12px;"
                            title="이 필드를 클릭한 뒤 좌측 태그 목록에서 태그를 선택하면 자동 입력됩니다" />
-                       <button type="button" class="btn-remove-tag" onclick="this.closest('.impact-tag-row').remove()">×</button>
+                       <button type="button" class="btn-remove-tag" onclick="removeExtraIdRow(this)">×</button>
                    </div>`
             ).join('');
             list.querySelectorAll('.series-id-extra').forEach(bindExtraIdInput);
@@ -579,10 +593,17 @@
                 <input type="text" class="am-input series-id-extra" value="${escAttr(label)}"
                     placeholder="클릭 후 좌측 태그 선택" style="font-size:12px;"
                     title="이 필드를 클릭한 뒤 좌측 태그 목록에서 태그를 선택하면 자동 입력됩니다" />
-                <button type="button" class="btn-remove-tag" onclick="this.closest('.impact-tag-row').remove()">×</button>
+                <button type="button" class="btn-remove-tag" onclick="removeExtraIdRow(this)">×</button>
             `;
-            bindExtraIdInput(row.querySelector('.series-id-extra'));
+            const newInput = row.querySelector('.series-id-extra');
+            bindExtraIdInput(newInput);
             list.appendChild(row);
+            newInput.focus();
+        }
+
+        function removeExtraIdRow(btn) {
+            btn.closest('.impact-tag-row').remove();
+            renderTagList();
         }
 
         function getSeriesIds() {
@@ -599,6 +620,7 @@
             renderSeriesIds([label]);
             document.getElementById('am-doc-id').textContent = label;
             document.getElementById('am-form-title').textContent = '새 시리즈 작성';
+            renderTagList();
         }
 
         function populateForm(label, d) {
@@ -614,6 +636,7 @@
             if (quill) quill.root.innerHTML = d.content || '';
             renderImpactTags(Array.isArray(d.impact_tags) ? d.impact_tags : []);
             clearStatus();
+            renderTagList();
         }
 
         // ── 저장 ──
