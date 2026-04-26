@@ -401,7 +401,59 @@
             /* Filter/Search Bar mobile */
             .filter-bar { padding: 0 !important; }
             .modal-card { padding: 25px 15px !important; }
+
+            table#issueTable .btn-eforce-link {
+                width: 38px !important;
+                height: 38px !important;
+                border-radius: 10px !important;
+                font-size: 1rem !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                padding: 0 !important;
+                margin: 0 !important;
+            }
         }
+
+        /* ===== Inline E-Force Popover ===== */
+        .eforce-popover {
+            position: fixed;
+            z-index: 3000;
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.08);
+            padding: 16px;
+            width: 320px;
+            display: none;
+            border: 1.5px solid #e2e8f0;
+        }
+        .eforce-popover.show { display: block; }
+        .eforce-pop-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .eforce-pop-title { font-size: 0.9rem; font-weight: 800; color: #1e293b; }
+        .eforce-pop-close { background: none; border: none; cursor: pointer; color: #64748b; font-size: 1.2rem; padding: 0; line-height: 1; }
+        .eforce-pop-mode-btns { display: flex; gap: 6px; margin-bottom: 12px; }
+        .eforce-pop-mode-btn {
+            flex: 1; padding: 6px 8px; font-size: 0.75rem; font-weight: 800;
+            border-radius: 6px; border: 1.5px solid #7c3aed; cursor: pointer; transition: all 0.15s;
+        }
+        .eforce-pop-mode-btn.active { background: #7c3aed; color: #fff; }
+        .eforce-pop-mode-btn:not(.active) { background: #fff; color: #7c3aed; }
+        .eforce-pop-actions { display: flex; gap: 8px; margin-top: 12px; }
+        .eforce-pop-save {
+            flex: 1; padding: 8px; background: #7c3aed; color: #fff;
+            border: none; border-radius: 8px; font-weight: 800; font-size: 0.85rem; cursor: pointer;
+        }
+        .eforce-pop-save:hover { background: #6d28d9; }
+        .eforce-pop-clear {
+            padding: 8px 12px; background: #f1f5f9; color: #64748b;
+            border: none; border-radius: 8px; font-weight: 700; font-size: 0.82rem; cursor: pointer;
+        }
+        .eforce-pop-clear:hover { background: #fee2e2; color: #ef4444; }
     </style>
 </head>
 <body>
@@ -1360,6 +1412,7 @@
 
             tbody.innerHTML = pagedIssues.map(ev => {
                 const tagsArr = (ev.tags || '').split(',').map(t => t.trim()).filter(t => t);
+                const hasEforce = tagsArr.some(t => t.startsWith('E-') && t.length > 2);
                 const tagHtml = tagsArr.map(t => {
                     let cls = 'tag-normal';
                     if (t.startsWith('mnforce-')) cls = 'tag-mnforce';
@@ -1394,6 +1447,7 @@
                             </select>
                         </td>
                         <td class="col-actions">
+                            <button class="btn btn-eforce-link" style="background:${hasEforce ? '#f3e8ff' : '#f1f5f9'}; border:none; color:${hasEforce ? '#7c3aed' : '#94a3b8'};" onclick="openEForcePopover('${ev.id}', this)" title="연관 사건 연결"><i class="fas fa-link"></i></button>
                             <button class="btn btn-edit" style="background:#f1f5f9; border:none;" onclick="openModal('${ev.id}')" title="수정"><i class="fas fa-edit"></i></button>
                             <button class="btn btn-delete" style="background:#fee2e2; border:none; color: #ef4444;" onclick="deleteIssue('${ev.id}')" title="삭제"><i class="fas fa-trash"></i></button>
                         </td>
@@ -1669,9 +1723,36 @@
                     populateYearFilter();
                 }
 
+                // 로컬 메모리 즉시 패치 (DB 재패치 없이 화면 갱신)
+                const patchedEv = { ...updatedEvent, _year: yr, _month: mn };
+
+                const ufIdx = allIssuesUnfiltered.findIndex(i => i.id === id);
+                if (ufIdx > -1) {
+                    allIssuesUnfiltered[ufIdx] = patchedEv;
+                } else {
+                    allIssuesUnfiltered.push(patchedEv);
+                    allIssuesUnfiltered.sort((a,b) => (b.date_start||'').localeCompare(a.date_start||''));
+                }
+
+                const fYear = document.getElementById('filter-year').value;
+                const fMonth = document.getElementById('filter-month').value;
+                const fDay = document.getElementById('filter-day').value;
+                const fKw = document.getElementById('search-keyword').value.toLowerCase();
+                const evDay = (patchedEv.date_start || '').split('-')[2] || '';
+                const matchesFilter = (!fYear || yr === fYear) && (!fMonth || mn === fMonth) && (!fDay || evDay === fDay);
+                const matchesKw = !fKw || [patchedEv.title, patchedEv.content_raw, patchedEv.tags].some(f => f && f.toLowerCase().includes(fKw));
+
+                const rawIdx = allIssuesRaw.findIndex(i => i.id === id);
+                if (matchesFilter && matchesKw) {
+                    if (rawIdx > -1) allIssuesRaw[rawIdx] = patchedEv;
+                    else allIssuesRaw.push(patchedEv);
+                } else if (rawIdx > -1) {
+                    allIssuesRaw.splice(rawIdx, 1);
+                }
+
                 window.showNotification("저장 성공", "연대기 데이터가 업데이트되었습니다.", "success");
                 closeModal();
-                loadIssues();
+                applyTagFilterAndSort();
             } catch (err) {
                 console.error(err);
                 alert("저장 중 오류가 발생했습니다.");
@@ -1694,7 +1775,9 @@
                     });
                     await safeFetchDB({ action: "set", collection: "historical_issues", id: "year_" + ev._year, data: yearData });
                     window.showNotification("삭제 성공", "이벤트가 제거되었습니다.", "info");
-                    loadIssues();
+                    allIssuesUnfiltered = allIssuesUnfiltered.filter(i => i.id !== id);
+                    allIssuesRaw = allIssuesRaw.filter(i => i.id !== id);
+                    applyTagFilterAndSort();
                 }
             } catch (err) { console.error(err); }
         };
@@ -1818,6 +1901,166 @@
                 bar.style.opacity = '';
             }
         };
+
+        // ===== Inline E-Force Popover =====
+        let eforcePop_evId = null;
+        let eforcePop_mode = 'parent';
+
+        window.openEForcePopover = (evId, btnEl) => {
+            const ev = allIssues.find(i => i.id === evId);
+            if (!ev) return;
+            eforcePop_evId = evId;
+
+            const tags = (ev.tags || '').split(',').map(t => t.trim());
+            const eforceTag = tags.find(t => t.startsWith('E-') && t.length > 2);
+            const currentId = eforceTag ? eforceTag.replace('E-', '') : '';
+            const currentRole = ev.eforce_role || (eforceTag ? 'parent' : 'parent');
+
+            eforcePop_mode = currentRole === 'child' ? 'child' : 'parent';
+            setEForcePopMode(eforcePop_mode);
+
+            if (eforcePop_mode === 'parent') {
+                document.getElementById('eforcePop-input-parent').value = currentId;
+            } else {
+                document.getElementById('eforcePop-input-child').value = currentId;
+                renderEForcePopSearchResults('');
+            }
+
+            const currentDiv = document.getElementById('eforce-pop-current');
+            if (currentId) {
+                currentDiv.style.display = 'block';
+                currentDiv.textContent = `현재: E-${currentId} (${currentRole === 'child' ? '하위 사건' : '상위 사건'})`;
+            } else {
+                currentDiv.style.display = 'none';
+            }
+
+            const popover = document.getElementById('eforcePopover');
+            popover.classList.add('show');
+
+            const btnRect = btnEl.getBoundingClientRect();
+            const popW = 320;
+            let left = btnRect.left;
+            let top = btnRect.bottom + 4;
+            if (left + popW > window.innerWidth) left = window.innerWidth - popW - 8;
+            if (left < 4) left = 4;
+            popover.style.left = left + 'px';
+            popover.style.top = top + 'px';
+        };
+
+        window.closeEForcePopover = () => {
+            document.getElementById('eforcePopover').classList.remove('show');
+            const r = document.getElementById('eforcePop-child-results');
+            if (r) r.style.display = 'none';
+            eforcePop_evId = null;
+        };
+
+        window.setEForcePopMode = (mode) => {
+            eforcePop_mode = mode;
+            document.getElementById('eforcePop-btn-parent').classList.toggle('active', mode === 'parent');
+            document.getElementById('eforcePop-btn-child').classList.toggle('active', mode === 'child');
+            document.getElementById('eforcePop-panel-parent').style.display = mode === 'parent' ? 'block' : 'none';
+            document.getElementById('eforcePop-panel-child').style.display = mode === 'child' ? 'block' : 'none';
+            if (mode === 'child') renderEForcePopSearchResults(document.getElementById('eforcePop-input-child').value);
+        };
+
+        window.autoGenEForcePopId = () => {
+            const ev = eforcePop_evId ? allIssues.find(i => i.id === eforcePop_evId) : null;
+            const dateVal = (ev && ev.date_start) ? ev.date_start : new Date().toISOString().split('T')[0];
+            const parts = dateVal.split('-');
+            const yymmdd = parts[0].slice(2) + (parts[1] || '') + (parts[2] || '');
+            const prefix = yymmdd + '-';
+            let maxNum = 0;
+            allIssues.forEach(e => {
+                (e.tags || '').split(',').map(t => t.trim()).forEach(t => {
+                    if (t.startsWith(`E-${prefix}`)) {
+                        const n = parseInt(t.replace(`E-${prefix}`, ''), 10);
+                        if (!isNaN(n) && n > maxNum) maxNum = n;
+                    }
+                });
+            });
+            document.getElementById('eforcePop-input-parent').value = `${yymmdd}-${String(maxNum + 1).padStart(2, '0')}`;
+        };
+
+        window.renderEForcePopSearchResults = (query) => {
+            const container = document.getElementById('eforcePop-child-results');
+            const q = (query || '').toLowerCase().trim();
+            const seen = new Set();
+            const candidates = [];
+            allIssuesUnfiltered.forEach(ev => {
+                if (ev.eforce_role === 'child') return;
+                (ev.tags || '').split(',').map(t => t.trim()).forEach(t => {
+                    if (t.startsWith('E-') && t.length > 2) {
+                        const efId = t.replace('E-', '');
+                        if (!seen.has(efId) && (!q || efId.includes(q) || ev.title.toLowerCase().includes(q))) {
+                            seen.add(efId);
+                            candidates.push({ efId, title: ev.title, date: ev.date_start });
+                        }
+                    }
+                });
+            });
+            container.style.display = candidates.length > 0 ? 'block' : 'none';
+            container.innerHTML = candidates.slice(0, 15).map(c => `
+                <div style="padding:8px 12px; border-bottom:1px solid #f8fafc; cursor:pointer;"
+                     onmouseover="this.style.background='#f3e8ff'" onmouseout="this.style.background=''"
+                     onclick="document.getElementById('eforcePop-input-child').value='${c.efId.replace(/'/g, "\\'")}'; document.getElementById('eforcePop-child-results').style.display='none';">
+                    <div style="font-size:0.78rem; font-weight:800; color:#7c3aed; font-family:monospace;">E-${c.efId}</div>
+                    <div style="font-size:0.72rem; color:#1e293b; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${c.title}</div>
+                    <div style="font-size:0.65rem; color:#94a3b8;">${c.date}</div>
+                </div>
+            `).join('');
+        };
+
+        window.saveEForceInline = async (clear) => {
+            if (!eforcePop_evId) return;
+            const ev = allIssues.find(i => i.id === eforcePop_evId);
+            if (!ev) return;
+
+            let tagsArr = (ev.tags || '').split(',').map(t => t.trim()).filter(t => t && !(t.startsWith('E-') && t.length > 2));
+            let newRole = null;
+
+            if (!clear) {
+                const linkVal = eforcePop_mode === 'child'
+                    ? document.getElementById('eforcePop-input-child').value.trim()
+                    : document.getElementById('eforcePop-input-parent').value.trim();
+                if (!linkVal) { alert('E-Force ID를 입력하세요.'); return; }
+                tagsArr.push('E-' + linkVal);
+                newRole = eforcePop_mode;
+            }
+
+            const updatedEvent = { ...ev, tags: tagsArr.join(', ') };
+            if (newRole) updatedEvent.eforce_role = newRole;
+            else delete updatedEvent.eforce_role;
+
+            try {
+                const res = await safeFetchDB({ action: "getDoc", collection: "historical_issues", id: "year_" + ev._year });
+                if (!res.ok || !res.data) { alert('데이터를 불러오지 못했습니다.'); return; }
+                const yearData = res.data;
+                let found = false;
+                Object.keys(yearData.months).forEach(mn => {
+                    const idx = (yearData.months[mn].events || []).findIndex(e => e.id === ev.id);
+                    if (idx > -1) { yearData.months[mn].events[idx] = updatedEvent; found = true; }
+                });
+                if (!found) { alert('이벤트를 찾지 못했습니다.'); return; }
+                await safeFetchDB({ action: "set", collection: "historical_issues", id: "year_" + ev._year, data: yearData });
+                [allIssuesUnfiltered, allIssuesRaw].forEach(arr => {
+                    const idx = arr.findIndex(i => i.id === ev.id);
+                    if (idx > -1) arr[idx] = { ...arr[idx], ...updatedEvent };
+                });
+                window.showNotification("저장 성공", clear ? "연관 사건 연결이 해제되었습니다." : "연관 사건이 연결되었습니다.", "success");
+                closeEForcePopover();
+                applyTagFilterAndSort();
+            } catch (err) {
+                console.error(err);
+                alert('저장 중 오류가 발생했습니다.');
+            }
+        };
+
+        document.addEventListener('click', (e) => {
+            const pop = document.getElementById('eforcePopover');
+            if (pop && pop.classList.contains('show') && !pop.contains(e.target) && !e.target.closest('.btn-eforce-link')) {
+                closeEForcePopover();
+            }
+        });
 
         // ===== ID 복사 및 연관 ID 추천 로직 =====
         window.copyToClipboard = (text) => {
@@ -2443,6 +2686,44 @@
 
         init();
     </script>
+
+    <!-- Inline E-Force Popover -->
+    <div class="eforce-popover" id="eforcePopover">
+        <div class="eforce-pop-header">
+            <span class="eforce-pop-title">🔗 연관 사건 연결</span>
+            <button class="eforce-pop-close" onclick="closeEForcePopover()">×</button>
+        </div>
+        <div id="eforce-pop-current" style="display:none; margin-bottom:10px; padding:6px 10px; background:#f3e8ff; border-radius:6px; font-size:0.78rem; color:#7c3aed; font-weight:800; font-family:monospace;"></div>
+        <div class="eforce-pop-mode-btns">
+            <button class="eforce-pop-mode-btn active" id="eforcePop-btn-parent" onclick="setEForcePopMode('parent')">🏠 상위 사건</button>
+            <button class="eforce-pop-mode-btn" id="eforcePop-btn-child" onclick="setEForcePopMode('child')">🔗 하위 사건</button>
+        </div>
+        <div id="eforcePop-panel-parent">
+            <div style="display:flex; align-items:center; gap:6px;">
+                <span style="font-size:0.75rem; color:#64748b; font-weight:600; white-space:nowrap;">E-Force ID:</span>
+                <input type="text" id="eforcePop-input-parent" class="form-control"
+                    placeholder="예: 191014-01"
+                    style="flex:1; padding:5px 10px; font-size:0.85rem; height:32px; border-color:#c084fc; font-family:monospace; font-weight:700; margin:0;">
+                <button type="button" onclick="autoGenEForcePopId()"
+                    style="padding:5px 8px; height:32px; background:#f3e8ff; color:#7c3aed; border:1px solid #c084fc; border-radius:6px; font-size:0.72rem; font-weight:800; cursor:pointer; white-space:nowrap;">⚡자동</button>
+            </div>
+        </div>
+        <div id="eforcePop-panel-child" style="display:none;">
+            <div style="display:flex; align-items:center; gap:6px;">
+                <span style="font-size:0.75rem; color:#64748b; font-weight:600; white-space:nowrap;">연결할 ID:</span>
+                <input type="text" id="eforcePop-input-child" class="form-control"
+                    placeholder="ID 또는 제목으로 검색..."
+                    style="flex:1; padding:5px 10px; font-size:0.85rem; height:32px; border-color:#c084fc; font-family:monospace; font-weight:700; margin:0;"
+                    oninput="renderEForcePopSearchResults(this.value)"
+                    onfocus="renderEForcePopSearchResults(this.value)">
+            </div>
+            <div id="eforcePop-child-results" style="display:none; max-height:180px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:8px; background:#fff; box-shadow:0 4px 12px rgba(0,0,0,0.08); margin-top:6px;"></div>
+        </div>
+        <div class="eforce-pop-actions">
+            <button class="eforce-pop-clear" onclick="saveEForceInline(true)">연결 해제</button>
+            <button class="eforce-pop-save" onclick="saveEForceInline(false)">저장하기</button>
+        </div>
+    </div>
 
     <!-- 일괄 처리 플로팅 액션 바 -->
     <div class="bulk-action-bar" id="bulkActionBar">
