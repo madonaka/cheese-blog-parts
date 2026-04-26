@@ -403,6 +403,20 @@
             });
         }
 
+        function hasUnsavedContent() {
+            if (document.getElementById('am-status-val')?.value.trim()) return true;
+            if (document.getElementById('am-overview')?.value.trim()) return true;
+            if (document.getElementById('am-title')?.value.trim()) return true;
+            if (document.getElementById('am-author')?.value.trim()) return true;
+            if (document.getElementById('am-date')?.value.trim()) return true;
+            if (quill) {
+                const html = quill.root.innerHTML;
+                if (html && html !== '<p><br></p>' && html.trim()) return true;
+            }
+            if (getImpactTags().length > 0) return true;
+            return false;
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('tag-list').addEventListener('click', e => {
                 const li = e.target.closest('.tag-list-item');
@@ -419,7 +433,11 @@
                         emptyExtra.focus();
                         renderTagList();
                     } else {
-                        selectTag(li.dataset.label);
+                        if (hasUnsavedContent() && li.dataset.label !== currentLabel) {
+                            showUnsavedModal(li.dataset.label, () => selectTag(li.dataset.label));
+                        } else {
+                            selectTag(li.dataset.label);
+                        }
                     }
                 }
             });
@@ -967,6 +985,26 @@
             if (el) el.classList.add('am-hidden');
         }
 
+        // ── 미저장 경고 모달 ──
+        let _unsavedCallback = null;
+
+        function showUnsavedModal(label, onProceed) {
+            _unsavedCallback = onProceed;
+            document.getElementById('am-unsaved-label').textContent = `"${label}"`;
+            document.getElementById('am-unsaved-modal').classList.add('open');
+        }
+
+        function closeUnsavedModal() {
+            document.getElementById('am-unsaved-modal').classList.remove('open');
+            _unsavedCallback = null;
+        }
+
+        function proceedUnsaved() {
+            const cb = _unsavedCallback;
+            closeUnsavedModal();
+            if (cb) cb();
+        }
+
         function escHtml(str) {
             return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
         }
@@ -1049,6 +1087,25 @@
             closeTableModal();
         }
     </script>
+
+    <!-- 미저장 내용 경고 모달 -->
+    <div id="am-unsaved-modal" class="am-overlay" onclick="if(event.target===this)closeUnsavedModal()">
+        <div class="am-modal" style="width:340px;">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+                <span style="font-size:24px;line-height:1;">⚠️</span>
+                <h4 style="margin:0;font-size:15px;font-weight:900;color:#b91c1c;">저장되지 않은 내용이 있습니다</h4>
+            </div>
+            <p style="font-size:13px;color:#475569;line-height:1.7;margin:0 0 6px;">
+                <span id="am-unsaved-label" style="font-weight:900;color:#0f172a;"></span>(으)로 이동하면<br>
+                현재 작성 중인 내용이 <strong>초기화</strong>됩니다.
+            </p>
+            <p style="font-size:12px;color:#94a3b8;margin:0 0 20px;">이동 전에 먼저 저장하는 것을 권장합니다.</p>
+            <div class="am-modal-btns">
+                <button class="btn-cancel" onclick="closeUnsavedModal()" style="font-weight:900;">취소 (계속 작성)</button>
+                <button class="btn-confirm" onclick="proceedUnsaved()" style="background:#b91c1c;font-weight:900;">초기화하고 이동</button>
+            </div>
+        </div>
+    </div>
 
     <!-- 이미지 삽입 모달 -->
     <div id="am-img-modal" class="am-overlay" onclick="if(event.target===this)closeImgModal()">
