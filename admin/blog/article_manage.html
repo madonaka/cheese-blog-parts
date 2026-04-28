@@ -141,6 +141,8 @@
         }
         .series-id-value { font-size: 13px; font-weight: 700; color: #0f172a; flex: 1; word-break: break-all; }
         .series-id-hint { font-size: 12px; color: #94a3b8; margin: 6px 0 0; }
+        .series-id-date { font-size: 10px; font-weight: 900; color: #64748b; background: #e2e8f0; padding: 2px 7px; border-radius: 99px; white-space: nowrap; flex-shrink: 0; }
+        .am-select { cursor: pointer; appearance: auto; }
 
         /* 영향 태그 */
         .impact-tag-row { display: flex; gap: 8px; align-items: center; }
@@ -249,12 +251,19 @@
             font-size: 13px; outline: none;
         }
         .tag-modal-search:focus { border-color: var(--primary); }
-        .tag-modal-filter { display: flex; gap: 5px; margin-bottom: 8px; }
+        .tag-modal-filter { display: flex; gap: 5px; margin-bottom: 6px; }
         .tag-modal-filter button {
             flex: 1; padding: 6px 0; border-radius: 7px; font-size: 11px; font-weight: 900;
             cursor: pointer; border: 1px solid #ddd; background: #fff; transition: 0.15s;
         }
         .tag-modal-filter button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+        .tag-modal-year-filter { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 8px; }
+        .tag-modal-year-filter button {
+            padding: 4px 10px; border-radius: 99px; font-size: 11px; font-weight: 900;
+            cursor: pointer; border: 1px solid #ddd; background: #fff; transition: 0.15s;
+        }
+        .tag-modal-year-filter button.active { background: #0369a1; color: #fff; border-color: #0369a1; }
+        .tag-modal-year-filter button:hover:not(.active) { background: #f0f9ff; border-color: #0369a1; color: #0369a1; }
         .tag-modal-list {
             flex: 1; overflow-y: auto; max-height: 380px; border: 1px solid #eee; border-radius: 8px;
         }
@@ -273,6 +282,7 @@
         .tag-modal-count { font-size: 10px; color: #94a3b8; }
         .tag-modal-empty { text-align: center; padding: 40px; color: #94a3b8; font-size: 13px; }
         .tag-modal-scan-hint { text-align: center; padding: 40px 20px; color: #94a3b8; font-size: 13px; line-height: 1.7; }
+        .tag-modal-item-added { opacity: 0.45; cursor: default; background: #f8fafc; }
 
         /* 이미지/표 모달 */
         .am-modal-img { width: 360px; }
@@ -382,12 +392,16 @@
                                 <div class="am-row2">
                                     <div class="am-field">
                                         <label class="am-label">시작일 기준 태그</label>
-                                        <input id="am-date-start-tag" class="am-input" type="text" placeholder="예: 조국_사태">
+                                        <select id="am-date-start-tag" class="am-input am-select">
+                                            <option value="">-- 선택하세요 --</option>
+                                        </select>
                                         <p style="font-size:10px;color:#94a3b8;margin:4px 0 0;">해당 태그의 가장 이른 이벤트 날짜를 시작일로 사용</p>
                                     </div>
                                     <div class="am-field">
                                         <label class="am-label">종료일 기준 태그</label>
-                                        <input id="am-date-end-tag" class="am-input" type="text" placeholder="예: 조국_사태">
+                                        <select id="am-date-end-tag" class="am-input am-select">
+                                            <option value="">없음 (진행 중)</option>
+                                        </select>
                                         <p style="font-size:10px;color:#94a3b8;margin:4px 0 0;">해당 태그의 가장 늦은 이벤트 날짜를 종료일로 사용</p>
                                     </div>
                                 </div>
@@ -470,7 +484,7 @@
     <!-- ── 태그 선택 모달 ── -->
     <div id="tag-select-modal" class="am-overlay" onclick="if(event.target===this)closeTagModal()">
         <div class="am-modal tag-modal-wrap">
-            <h4>태그 선택 · 새 글 작성</h4>
+            <h4 id="tag-modal-title">태그 선택 · 새 글 작성</h4>
             <div class="tag-modal-controls">
                 <input type="text" class="tag-modal-search" id="modal-tag-search"
                     placeholder="태그명으로 검색..." oninput="renderModalTagList()">
@@ -481,6 +495,7 @@
                 <button              data-mf="mnforce"   onclick="setModalFilter(this,'mnforce')">mnforce</button>
                 <button              data-mf="important" onclick="setModalFilter(this,'important')">important</button>
             </div>
+            <div class="tag-modal-year-filter" id="modal-year-filter" style="display:none;"></div>
             <div class="tag-modal-list" id="modal-tag-list">
                 <div class="tag-modal-scan-hint">🔄 스캔 버튼을 눌러<br>아카이브 태그를 불러오세요.</div>
             </div>
@@ -574,7 +589,9 @@
         let currentTab    = 'all';
         let boardQuery    = '';
         let currentLabel  = '';
-        let modalFilter   = 'all';
+        let modalFilter     = 'all';
+        let modalYearFilter = '';         // '' = 전체, '2019' = 해당 연도만
+        let tagModalMode    = 'new_series'; // 'new_series' | 'add_extra_id'
         let _unsavedCallback = null;
         let _activeExtraInput = null;
         let _activeExtraTimer = null;
@@ -630,6 +647,20 @@
             tbtn.textContent = '표'; tbtn.title = '표 삽입'; tbtn.className = 'ql-table-btn';
             tbtn.addEventListener('mousedown', e => { e.preventDefault(); showTableModal(); });
             tg.appendChild(tbtn); tb.appendChild(tg);
+
+            // 이벤트 위임: data-id — 따옴표 등 특수문자 포함 ID 안전 처리
+            document.getElementById('board-tbody').addEventListener('click', e => {
+                const row = e.target.closest('[data-id]');
+                if (row) openEditor(row.dataset.id);
+            });
+
+            // 태그 모달 아이템 이벤트 위임: data-label — 따옴표 포함 태그명 안전 처리
+            document.getElementById('modal-tag-list').addEventListener('click', e => {
+                const item = e.target.closest('[data-label]');
+                if (item && !item.classList.contains('tag-modal-item-added')) {
+                    selectTagFromModal(item.dataset.label);
+                }
+            });
 
             loadBoardData();
         });
@@ -696,7 +727,7 @@
                 const bodyBadge = hasBody(d)
                     ? '<span class="badge badge-has">있음</span>'
                     : '<span class="badge badge-no">없음</span>';
-                return `<tr class="board-row${isActive?' is-active':''}" onclick="openEditor('${escAttr(d.id)}')">
+                return `<tr class="board-row${isActive?' is-active':''}" data-id="${escAttr(d.id)}">
                     <td class="col-num">${num}</td>
                     <td class="col-main">
                         <span class="row-title">${d.title ? escHtml(d.title) : '<span style="color:#94a3b8;font-style:italic;">제목 없음</span>'}</span>
@@ -779,8 +810,10 @@
         // 태그 선택 모달 (새 글 작성)
         // ────────────────────────────────────────
         function openNewEditor() {
-            document.getElementById('tag-select-modal').classList.add('open');
+            tagModalMode = 'new_series';
+            document.getElementById('tag-modal-title').textContent = '태그 선택 · 새 글 작성';
             document.getElementById('modal-tag-search').value = '';
+            document.getElementById('tag-select-modal').classList.add('open');
             if (tagItems.length > 0) renderModalTagList();
         }
 
@@ -793,6 +826,33 @@
             document.querySelectorAll('.tag-modal-filter button').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             renderModalTagList();
+        }
+
+        function setModalYearFilter(year) {
+            modalYearFilter = year;
+            document.querySelectorAll('#modal-year-filter button').forEach(b =>
+                b.classList.toggle('active', b.dataset.year === year)
+            );
+            renderModalTagList();
+        }
+
+        function renderYearFilter() {
+            const wrap = document.getElementById('modal-year-filter');
+            const years = new Set();
+            tagItems.forEach(item => {
+                (item.dates || new Set()).forEach(d => {
+                    const y = String(d).slice(0, 4);
+                    if (/^\d{4}$/.test(y)) years.add(y);
+                });
+            });
+            const sorted = Array.from(years).sort((a, b) => b.localeCompare(a));
+            if (!sorted.length) { wrap.style.display = 'none'; return; }
+            wrap.style.display = 'flex';
+            wrap.innerHTML = [
+                `<button class="${modalYearFilter === '' ? 'active' : ''}" data-year="" onclick="setModalYearFilter('')">전체</button>`,
+                ...sorted.map(y =>
+                    `<button class="${modalYearFilter === y ? 'active' : ''}" data-year="${y}" onclick="setModalYearFilter('${y}')">${y}</button>`)
+            ].join('');
         }
 
         async function scanTagsForModal() {
@@ -827,7 +887,12 @@
                 tagItems = Object.entries(tagMap)
                     .map(([label, info]) => ({ label, ...info, hasBody: contentIds.has(label) }))
                     .sort((a, b) => b.count - a.count);
+                modalYearFilter = '';
+                renderYearFilter();
                 renderModalTagList();
+                // 스캔 완료 후 이미 열려있는 에디터의 ID 행 날짜 갱신
+                const currentIds = getSeriesIds();
+                if (currentIds.length) renderSeriesIds(currentIds);
             } catch (e) {
                 listEl.innerHTML = `<div class="tag-modal-empty">스캔 실패: ${escHtml(e.message)}</div>`;
             }
@@ -843,25 +908,50 @@
             const filtered = tagItems.filter(item => {
                 const matchFilter = modalFilter === 'all' || item.type === modalFilter;
                 const matchSearch = !q || item.label.toLowerCase().includes(q) || item.tag.toLowerCase().includes(q);
-                return matchFilter && matchSearch;
+                const matchYear   = !modalYearFilter || Array.from(item.dates || []).some(d => String(d).startsWith(modalYearFilter));
+                return matchFilter && matchSearch && matchYear;
             });
             if (!filtered.length) {
                 listEl.innerHTML = '<div class="tag-modal-empty">조건에 맞는 태그가 없습니다.</div>';
                 return;
             }
-            listEl.innerHTML = filtered.map(item => `
-                <div class="tag-modal-item" onclick="selectTagFromModal('${escAttr(item.label)}')">
-                    <div class="tag-modal-label">${escHtml(item.label)}</div>
+            const currentIds = tagModalMode === 'add_extra_id' ? getSeriesIds() : [];
+            listEl.innerHTML = filtered.map(item => {
+                const already = currentIds.includes(item.label);
+                return `
+                <div class="tag-modal-item${already ? ' tag-modal-item-added' : ''}" data-label="${escAttr(item.label)}">
+                    <div class="tag-modal-label">
+                        ${escHtml(item.label)}
+                        ${already ? '<span style="color:#94a3b8;font-size:10px;font-weight:700;margin-left:6px;">✓ 이미 추가됨</span>' : ''}
+                    </div>
                     <div class="tag-modal-full">${escHtml(item.tag)}</div>
                     <div class="tag-modal-meta">
                         <span class="tag-modal-type t-${item.type}">${item.type}</span>
                         ${item.hasBody ? '<span class="t-has-content">✅ 본문 있음</span>' : ''}
                         <span class="tag-modal-count">${item.count}건</span>
                     </div>
-                </div>`).join('');
+                </div>`;
+            }).join('');
         }
 
         function selectTagFromModal(label) {
+            if (tagModalMode === 'add_extra_id') {
+                closeTagModal();
+                tagModalMode = 'new_series';
+                const existing = getSeriesIds();
+                if (existing.includes(label)) return;
+                const dateStr = getDateForId(label);
+                const dateBadge = dateStr ? `<span class="series-id-date">${escHtml(dateStr)}</span>` : '';
+                const list = document.getElementById('series-ids-list');
+                const row = document.createElement('div');
+                row.className = 'impact-tag-row';
+                row.innerHTML = `<input type="text" class="am-input series-id-extra" value="${escAttr(label)}" style="font-size:12px;" readonly>
+                                 ${dateBadge}
+                                 <button type="button" class="btn-remove-tag" onclick="removeExtraIdRow(this)">×</button>`;
+                list.appendChild(row);
+                updateDateTagSelectors();
+                return;
+            }
             closeTagModal();
             if (hasUnsavedContent() && label !== currentLabel) {
                 showUnsavedModal(label, () => _openEditor(label));
@@ -873,6 +963,36 @@
         // ────────────────────────────────────────
         // 시리즈 ID 관리
         // ────────────────────────────────────────
+        // tagItems에서 해당 ID의 날짜 범위 반환 (스캔 전이면 '')
+        function getDateForId(id) {
+            const item = tagItems.find(t => t.label === id);
+            if (!item || !item.dates || !item.dates.size) return '';
+            const sorted = Array.from(item.dates).sort();
+            const min = sorted[0], max = sorted[sorted.length - 1];
+            const fmt = d => d.slice(0,4) + '.' + d.slice(5,7);
+            if (min.slice(0,7) === max.slice(0,7)) return fmt(min);
+            if (min.slice(0,4) === max.slice(0,4)) return fmt(min) + '~' + max.slice(5,7);
+            return min.slice(0,4) + '~' + max.slice(0,4);
+        }
+
+        // 시리즈 ID 목록으로 date_start/end_tag select 옵션 동기화
+        function updateDateTagSelectors() {
+            const ids = getSeriesIds();
+            const startSel = document.getElementById('am-date-start-tag');
+            const endSel   = document.getElementById('am-date-end-tag');
+            if (!startSel || !endSel) return;
+            const prevStart = startSel.value, prevEnd = endSel.value;
+            const opts = ids.map(id => {
+                const dateStr = getDateForId(id);
+                const label = dateStr ? `${id}  (${dateStr})` : id;
+                return `<option value="${escAttr(id)}">${escHtml(label)}</option>`;
+            }).join('');
+            startSel.innerHTML = `<option value="">-- 선택하세요 --</option>${opts}`;
+            endSel.innerHTML   = `<option value="">없음 (진행 중)</option>${opts}`;
+            startSel.value = prevStart;
+            endSel.value   = prevEnd;
+        }
+
         function renderSeriesIds(ids) {
             const list  = document.getElementById('series-ids-list');
             const hint  = document.getElementById('series-id-hint');
@@ -881,34 +1001,39 @@
                 list.innerHTML = '';
                 hint.style.display = '';
                 addBtn.classList.add('am-hidden');
+                updateDateTagSelectors();
                 return;
             }
             hint.style.display = 'none';
             addBtn.classList.remove('am-hidden');
-            list.innerHTML = ids.map((id, i) => i === 0
-                ? `<div class="series-id-primary">
-                       <span class="series-id-badge">PRIMARY</span>
-                       <span class="series-id-value">${escHtml(id)}</span>
-                   </div>`
-                : `<div class="impact-tag-row">
-                       <input type="text" class="am-input series-id-extra" value="${escAttr(id)}" placeholder="추가 시리즈 ID" style="font-size:12px;">
-                       <button type="button" class="btn-remove-tag" onclick="removeExtraIdRow(this)">×</button>
-                   </div>`
-            ).join('');
+            list.innerHTML = ids.map((id, i) => {
+                const dateStr = getDateForId(id);
+                const dateBadge = dateStr ? `<span class="series-id-date">${escHtml(dateStr)}</span>` : '';
+                return i === 0
+                    ? `<div class="series-id-primary">
+                           <span class="series-id-badge">PRIMARY</span>
+                           <span class="series-id-value">${escHtml(id)}</span>
+                           ${dateBadge}
+                       </div>`
+                    : `<div class="impact-tag-row">
+                           <input type="text" class="am-input series-id-extra" value="${escAttr(id)}" placeholder="추가 시리즈 ID" style="font-size:12px;" readonly>
+                           ${dateBadge}
+                           <button type="button" class="btn-remove-tag" onclick="removeExtraIdRow(this)">×</button>
+                       </div>`;
+            }).join('');
+            updateDateTagSelectors();
         }
 
         function addSeriesId() {
             if (!document.querySelector('.series-id-primary')) return;
-            const list = document.getElementById('series-ids-list');
-            const row = document.createElement('div');
-            row.className = 'impact-tag-row';
-            row.innerHTML = `<input type="text" class="am-input series-id-extra" placeholder="추가 시리즈 ID" style="font-size:12px;">
-                             <button type="button" class="btn-remove-tag" onclick="removeExtraIdRow(this)">×</button>`;
-            list.appendChild(row);
-            row.querySelector('.series-id-extra').focus();
+            tagModalMode = 'add_extra_id';
+            document.getElementById('tag-modal-title').textContent = '추가 시리즈 ID 선택';
+            document.getElementById('modal-tag-search').value = '';
+            document.getElementById('tag-select-modal').classList.add('open');
+            if (tagItems.length > 0) renderModalTagList();
         }
 
-        function removeExtraIdRow(btn) { btn.closest('.impact-tag-row').remove(); }
+        function removeExtraIdRow(btn) { btn.closest('.impact-tag-row').remove(); updateDateTagSelectors(); }
 
         function getSeriesIds() {
             const primaryEl = document.querySelector('.series-id-value');
