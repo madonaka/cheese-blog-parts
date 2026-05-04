@@ -870,19 +870,36 @@
         </div>
     </div>
 
-    <!-- [New] Delete Confirmation Modal -->
+    <!-- Delete Choice Modal (multi-version) -->
+    <div class="modal-overlay" id="deleteChoiceModal">
+        <div class="modal-card" style="max-width: 440px; text-align: center; padding: 44px 32px;">
+            <div style="width: 72px; height: 72px; background: #fef2f2; color: #ef4444; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2rem; margin: 0 auto 20px;">
+                <i class="fas fa-copy"></i>
+            </div>
+            <h3 style="font-size: 1.25rem; font-weight: 900; color: #1e293b; margin-bottom: 8px; letter-spacing: -0.5px;">삭제 방식을 선택하세요</h3>
+            <p style="font-size: 0.9rem; color: #64748b; margin-bottom: 6px; font-weight: 700;" id="deleteChoiceTitle"></p>
+            <p style="font-size: 0.82rem; color: #94a3b8; margin-bottom: 28px; font-weight: 500;" id="deleteChoiceCount"></p>
+            <input type="hidden" id="deleteTargetId" />
+            <input type="hidden" id="deleteTargetTitle" />
+            <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px;">
+                <button type="button" class="btn-pill" style="background: #f1f5f9; color: #475569; box-shadow: none;" onclick="window.showDeleteConfirm('single')">이 버전만 삭제</button>
+                <button type="button" class="btn-pill" id="deleteAllVersionsBtn" style="background: #ef4444; color: white; box-shadow: 0 8px 16px rgba(239,68,68,0.2);" onclick="window.showDeleteConfirm('all')">모든 버전 삭제</button>
+            </div>
+            <button type="button" class="btn-pill btn-secondary" style="width: 100%;" onclick="window.closeDeleteModal()">취소</button>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
     <div class="modal-overlay" id="deleteConfirmModal">
         <div class="modal-card" style="max-width: 420px; text-align: center; padding: 50px 30px;">
             <div style="width: 80px; height: 80px; background: #fef2f2; color: #ef4444; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2.5rem; margin: 0 auto 24px; animation: pulse-red 2s infinite;">
                 <i class="fas fa-exclamation-triangle"></i>
             </div>
-            <h3 style="font-size: 1.4rem; font-weight: 900; color: #1e293b; margin-bottom: 12px; letter-spacing: -0.5px;">상품을 완전히 삭제할까요?</h3>
-            <p style="font-size: 0.95rem; color: #64748b; line-height: 1.6; margin-bottom: 30px; font-weight: 500;">
-                삭제된 데이터는 <strong style="color: #ef4444;">절대로 복구할 수 없으며</strong>,<br>연결된 모든 버전 및 히스토리가<br>영구적으로 제거됩니다.
-            </p>
-            <input type="hidden" id="deleteTargetId" />
+            <h3 style="font-size: 1.4rem; font-weight: 900; color: #1e293b; margin-bottom: 12px; letter-spacing: -0.5px;">정말 삭제할까요?</h3>
+            <p id="deleteConfirmDesc" style="font-size: 0.95rem; color: #64748b; line-height: 1.6; margin-bottom: 10px; font-weight: 500;"></p>
+            <p style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 30px;">삭제된 데이터는 <strong style="color: #ef4444;">절대로 복구할 수 없습니다.</strong></p>
             <div style="display: flex; gap: 12px;">
-                <button type="button" class="btn-pill btn-secondary" style="flex: 1;" onclick="closeDeleteModal()">아니오, 취소</button>
+                <button type="button" class="btn-pill btn-secondary" style="flex: 1;" onclick="window.closeDeleteModal()">아니오, 취소</button>
                 <button type="button" class="btn-pill" style="flex: 1.5; background: #ef4444; color: white; box-shadow: 0 10px 20px rgba(239, 68, 68, 0.2);" onclick="window.confirmDelete()">네, 영구 삭제합니다</button>
             </div>
         </div>
@@ -928,6 +945,8 @@
         let globalLicenses = [];
         let repositoryFiles = [];
         let currentProducts = [];
+        let allProductDocs = [];
+        let deleteMode = 'single';
         let sortConfig = { key: null, direction: 'asc' };
 
         // --- Core Functions ---
@@ -975,6 +994,7 @@
                 // [Change] Admin API로 전환 (SDK 이슈 방어)
                 const res = await safeFetchDB({ action: "get", collection: "products" });
                 const allDocs = res.dataList || res.data || [];
+                allProductDocs = allDocs;
 
                 // 제품명(title) 기준으로 그룹화하여 최신 버전만 추출
                 const grouped = {};
@@ -1203,31 +1223,69 @@
         };
 
         window.deleteProduct = (id) => {
+            const product = currentProducts.find(p => p.id === id);
+            const title = product?.title || "";
+            const versionCount = allProductDocs.filter(p => p.title === title).length;
+
             document.getElementById('deleteTargetId').value = id;
+            document.getElementById('deleteTargetTitle').value = title;
+
+            if (versionCount <= 1) {
+                deleteMode = 'single';
+                document.getElementById('deleteConfirmDesc').innerHTML =
+                    `<strong style="color:#1e293b;">${title}</strong>을(를) 영구 삭제합니다.`;
+                document.getElementById('deleteConfirmModal').classList.add('show');
+            } else {
+                const allBtn = document.getElementById('deleteAllVersionsBtn');
+                allBtn.textContent = `모든 버전 삭제 (${versionCount}개 전체)`;
+                document.getElementById('deleteChoiceTitle').textContent = title;
+                document.getElementById('deleteChoiceCount').textContent = `현재 ${versionCount}개의 버전이 있습니다.`;
+                document.getElementById('deleteChoiceModal').classList.add('show');
+            }
+        };
+
+        window.showDeleteConfirm = (mode) => {
+            deleteMode = mode;
+            const title = document.getElementById('deleteTargetTitle').value;
+            const versionCount = allProductDocs.filter(p => p.title === title).length;
+            const desc = mode === 'all'
+                ? `<strong style="color:#1e293b;">${title}</strong>의 <strong style="color:#ef4444;">${versionCount}개 버전 전체</strong>를 영구 삭제합니다.`
+                : `<strong style="color:#1e293b;">${title}</strong>의 현재 버전만 영구 삭제합니다.`;
+            document.getElementById('deleteConfirmDesc').innerHTML = desc;
+            document.getElementById('deleteChoiceModal').classList.remove('show');
             document.getElementById('deleteConfirmModal').classList.add('show');
         };
 
-        window.closeDeleteModal = () => document.getElementById('deleteConfirmModal').classList.remove('show');
+        window.closeDeleteModal = () => {
+            document.getElementById('deleteChoiceModal').classList.remove('show');
+            document.getElementById('deleteConfirmModal').classList.remove('show');
+        };
 
         window.confirmDelete = async () => {
             const id = document.getElementById('deleteTargetId').value;
+            const title = document.getElementById('deleteTargetTitle').value;
             if (!id) return;
-            
+
             const btn = document.querySelector('#deleteConfirmModal .btn-pill:last-child');
             const originalText = btn.innerText;
             btn.disabled = true;
             btn.innerText = "⏳ 삭제 중...";
-            
+
             try {
-                // [Change] Admin API로 삭제 (권한 이슈 방어)
-                const res = await safeFetchDB({ action: "delete", collection: "products", id: id });
-                if (res.ok) {
-                    alert("성공적으로 삭제되었습니다.");
-                    closeDeleteModal();
-                    loadProducts();
+                if (deleteMode === 'all') {
+                    const targets = allProductDocs.filter(p => p.title === title);
+                    for (const p of targets) {
+                        const res = await safeFetchDB({ action: "delete", collection: "products", id: p.id });
+                        if (!res.ok) throw new Error(res.error || "삭제 실패");
+                    }
+                    alert(`"${title}" 전체 ${targets.length}개 버전이 삭제되었습니다.`);
                 } else {
-                    throw new Error(res.error || "삭제 실패");
+                    const res = await safeFetchDB({ action: "delete", collection: "products", id: id });
+                    if (!res.ok) throw new Error(res.error || "삭제 실패");
+                    alert("이 버전이 삭제되었습니다.");
                 }
+                window.closeDeleteModal();
+                loadProducts();
             } catch (err) {
                 alert("삭제 실패: " + err.message);
             } finally {
