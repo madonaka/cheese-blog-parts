@@ -587,6 +587,7 @@
                                 <select id="sort-by" class="filter-select" style="padding: 8px; border-radius: 6px; border: 1px solid #cbd5e1;" onchange="currentPage=1; applyTagFilterAndSort()">
                                     <option value="date-desc">날짜 최신순 ↓</option>
                                     <option value="date-asc">날짜 오래된 순 ↑</option>
+                                    <option value="registered-desc">등록 최신순 ↓</option>
                                     <option value="review-unreflected">미반영 우선</option>
                                     <option value="review-reflected">반영 우선</option>
                                     <option value="review-unconfirmed">미확인 우선</option>
@@ -875,9 +876,15 @@
 
             <!-- 미리보기 테이블 -->
             <div id="csv-preview-area" style="display:none;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
                     <div style="font-size:0.9rem; font-weight:800; color:#1e293b;">미리보기 <span id="csv-row-count" style="color:#3b82f6;"></span></div>
-                    <button type="button" onclick="document.getElementById('csv-file-input').click()" style="background:#f1f5f9; border:none; padding:6px 14px; border-radius:8px; font-size:0.8rem; font-weight:700; cursor:pointer;">다시 선택</button>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <label id="csv-errors-only-wrap" style="display:none; font-size:0.8rem; font-weight:700; color:#475569; cursor:pointer; user-select:none;">
+                            <input type="checkbox" id="csv-errors-only" onchange="toggleCsvErrorsOnly(this.checked)" style="vertical-align:middle; margin-right:4px;">
+                            오류 행만 보기
+                        </label>
+                        <button type="button" onclick="document.getElementById('csv-file-input').click()" style="background:#f1f5f9; border:none; padding:6px 14px; border-radius:8px; font-size:0.8rem; font-weight:700; cursor:pointer;">다시 선택</button>
+                    </div>
                 </div>
                 <div style="overflow-x:auto; max-height: 300px; border: 1px solid #e2e8f0; border-radius: 10px;">
                     <table style="width:100%; border-collapse:collapse; font-size:0.78rem;">
@@ -888,6 +895,7 @@
                                 <th style="padding:8px 10px; text-align:left; font-weight:800; border-bottom:1px solid #e2e8f0; position:sticky; top:0; background:#f8fafc;">태그 (조합 결과)</th>
                                 <th style="padding:8px 10px; text-align:left; font-weight:800; border-bottom:1px solid #e2e8f0; white-space:nowrap; position:sticky; top:0; background:#f8fafc;">내용 미리보기</th>
                                 <th style="padding:8px 10px; text-align:left; font-weight:800; border-bottom:1px solid #e2e8f0; white-space:nowrap; position:sticky; top:0; background:#f8fafc;">상태</th>
+                                <th style="padding:8px 10px; text-align:left; font-weight:800; border-bottom:1px solid #e2e8f0; white-space:nowrap; position:sticky; top:0; background:#f8fafc;">관리</th>
                             </tr>
                         </thead>
                         <tbody id="csv-preview-tbody"></tbody>
@@ -1376,6 +1384,16 @@
                 result.sort((a, b) => (a.date_start || '').localeCompare(b.date_start || ''));
             } else if (so === 'date-desc') {
                 result.sort((a, b) => (b.date_start || '').localeCompare(a.date_start || ''));
+            } else if (so === 'registered-desc') {
+                const tsOf = (ev) => {
+                    const m = (ev && ev.id ? String(ev.id) : '').match(/\d{13,}/);
+                    return m ? parseInt(m[0], 10) : 0;
+                };
+                result.sort((a, b) => {
+                    const diff = tsOf(b) - tsOf(a);
+                    if (diff !== 0) return diff;
+                    return (b.date_start || '').localeCompare(a.date_start || '');
+                });
             } else if (so === 'review-unreflected') {
                 const ord = { 2: 0, 0: 1, 1: 2 };
                 result.sort((a, b) => (ord[a.review_status ?? 0] ?? 1) - (ord[b.review_status ?? 0] ?? 1));
@@ -2259,9 +2277,25 @@
 
         // ===== CSV 대량 업로드 =====
         let csvParsedRows = [];
+        let csvEditingIndex = -1;
+        let csvShowErrorsOnly = false;
+
+        function escAttr(s) {
+            return String(s == null ? '' : s)
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        }
 
         window.openCsvModal = () => {
             csvParsedRows = [];
+            csvEditingIndex = -1;
+            csvShowErrorsOnly = false;
+            const errorsOnlyChk = document.getElementById('csv-errors-only');
+            if (errorsOnlyChk) errorsOnlyChk.checked = false;
+            const errorsOnlyWrap = document.getElementById('csv-errors-only-wrap');
+            if (errorsOnlyWrap) errorsOnlyWrap.style.display = 'none';
             document.getElementById('csv-preview-area').style.display = 'none';
             document.getElementById('csv-import-btn').style.display = 'none';
             document.getElementById('csv-file-input').value = '';
@@ -2328,21 +2362,19 @@
 
         const CSV_COLS = ['date', 'title', 'content', 'image_url', 'important', 'mnforce_category', 'mnforce_keyword', 'economy', 'mourning', 'eforce_id', 'eforce_role', 'extra_tags'];
 
-        function csvRowToEvent(colMap, rowArr, rowIndex) {
-            const get = (key) => colMap[key] !== undefined && colMap[key] !== -1 ? (rowArr[colMap[key]] || '').trim() : '';
-
-            const dateStr = get('date');
-            const title = get('title');
-            const content = get('content');
-            const imageUrl = get('image_url');
-            const important = get('important');
-            const mnforceCategory = get('mnforce_category');
-            const mnforceKeyword = get('mnforce_keyword');
-            const economy = get('economy').toUpperCase() === 'Y';
-            const mourning = get('mourning').toUpperCase() === 'Y';
-            const eforceId = get('eforce_id');
-            const eforceRole = get('eforce_role') || 'parent';
-            const extraTags = get('extra_tags');
+        function buildEventFromRaw(raw, rowIndex) {
+            const dateStr = (raw.date || '').trim();
+            const title = (raw.title || '').trim();
+            const content = (raw.content || '').trim();
+            const imageUrl = (raw.imageUrl || '').trim();
+            const important = (raw.important || '').trim();
+            const mnforceCategory = (raw.mnforceCategory || '').trim();
+            const mnforceKeyword = (raw.mnforceKeyword || '').trim();
+            const economy = (raw.economy || '').toUpperCase() === 'Y';
+            const mourning = (raw.mourning || '').toUpperCase() === 'Y';
+            const eforceId = (raw.eforceId || '').trim();
+            const eforceRole = ((raw.eforceRole || '').trim()) || 'parent';
+            const extraTags = (raw.extraTags || '').trim();
 
             const errors = [];
             if (!dateStr) errors.push('date 필수');
@@ -2355,11 +2387,10 @@
             let tagsArr = [];
             if (important) tagsArr.push('important-' + important);
             if (mnforceCategory) {
-                const cat = mnforceCategory.trim();
-                if (['정치', '경제', '사회', '국제'].includes(cat)) {
-                    const coreTag = mnforceKeyword ? `mnforce-${cat}-${mnforceKeyword}` : `mnforce-${cat}`;
+                if (['정치', '경제', '사회', '국제'].includes(mnforceCategory)) {
+                    const coreTag = mnforceKeyword ? `mnforce-${mnforceCategory}-${mnforceKeyword}` : `mnforce-${mnforceCategory}`;
                     tagsArr.push(coreTag);
-                    tagsArr.push('cat-' + cat);
+                    tagsArr.push('cat-' + mnforceCategory);
                 } else {
                     errors.push('mnforce_category 오류(정치/경제/사회/국제)');
                 }
@@ -2381,6 +2412,27 @@
             if (eforceId) ev.eforce_role = eforceRole;
 
             return { ev, yr, mn, errors };
+        }
+
+        function csvRowToEvent(colMap, rowArr, rowIndex) {
+            const get = (key) => colMap[key] !== undefined && colMap[key] !== -1 ? (rowArr[colMap[key]] || '').trim() : '';
+
+            const raw = {
+                date: get('date'),
+                title: get('title'),
+                content: get('content'),
+                imageUrl: get('image_url'),
+                important: get('important'),
+                mnforceCategory: get('mnforce_category'),
+                mnforceKeyword: get('mnforce_keyword'),
+                economy: get('economy'),
+                mourning: get('mourning'),
+                eforceId: get('eforce_id'),
+                eforceRole: get('eforce_role'),
+                extraTags: get('extra_tags')
+            };
+
+            return Object.assign({ raw }, buildEventFromRaw(raw, rowIndex));
         }
 
         // 첫 행이 헤더인지 판별: CSV_COLS 중 하나라도 포함되어 있으면 헤더로 간주
@@ -2421,39 +2473,167 @@
 
             const parsed = dataRows.map((row, i) => csvRowToEvent(colMap, row, i));
             csvParsedRows = parsed;
+            csvEditingIndex = -1;
+            csvShowErrorsOnly = false;
+            const errorsOnlyChk = document.getElementById('csv-errors-only');
+            if (errorsOnlyChk) errorsOnlyChk.checked = false;
 
-            const tbody = document.getElementById('csv-preview-tbody');
-            tbody.innerHTML = parsed.map(item => {
-                const isError = item.errors.length > 0;
-                const tagsHtml = (item.ev.tags || '').split(',').map(t => {
-                    const tt = t.trim();
-                    if (!tt) return '';
-                    let bg = '#f1f5f9', color = '#475569';
-                    if (tt.startsWith('mnforce-')) { bg = '#fee2e2'; color = '#991b1b'; }
-                    else if (tt.startsWith('important-') || tt.startsWith('E-')) { bg = '#dbeafe'; color = '#1e40af'; }
-                    else if (tt === 'economy') { bg = '#d1fae5'; color = '#065f46'; }
-                    else if (tt === 'mourning') { bg = '#f3f4f6'; color = '#374151'; }
-                    return `<span style="background:${bg};color:${color};padding:1px 5px;border-radius:3px;font-size:0.7rem;font-weight:700;display:inline-block;margin:1px;">${tt}</span>`;
-                }).join('');
+            document.getElementById('csv-preview-area').style.display = 'block';
+            renderCsvPreview();
+        }
 
-                return `<tr style="border-bottom:1px solid #f1f5f9;${isError ? 'background:#fff5f5;' : ''}">
-                    <td style="padding:7px 10px;white-space:nowrap;font-family:monospace;font-weight:700;color:${isError ? '#ef4444' : '#0f172a'};">${item.ev.date_start || '-'}</td>
-                    <td style="padding:7px 10px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.ev.title || '-'}</td>
-                    <td style="padding:7px 10px;">${tagsHtml || '-'}</td>
-                    <td style="padding:7px 10px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#64748b;">${(item.ev.content_raw || '').substring(0, 60)}</td>
-                    <td style="padding:7px 10px;white-space:nowrap;">${isError
-                        ? `<span style="color:#ef4444;font-weight:800;font-size:0.75rem;">⚠ ${item.errors.join(', ')}</span>`
-                        : `<span style="color:#059669;font-weight:800;font-size:0.75rem;">✓ 정상</span>`
-                    }</td>
-                </tr>`;
+        function renderCsvRowView(item, idx) {
+            const isError = item.errors.length > 0;
+            const tagsHtml = (item.ev.tags || '').split(',').map(t => {
+                const tt = t.trim();
+                if (!tt) return '';
+                let bg = '#f1f5f9', color = '#475569';
+                if (tt.startsWith('mnforce-')) { bg = '#fee2e2'; color = '#991b1b'; }
+                else if (tt.startsWith('important-') || tt.startsWith('E-')) { bg = '#dbeafe'; color = '#1e40af'; }
+                else if (tt === 'economy') { bg = '#d1fae5'; color = '#065f46'; }
+                else if (tt === 'mourning') { bg = '#f3f4f6'; color = '#374151'; }
+                return `<span style="background:${bg};color:${color};padding:1px 5px;border-radius:3px;font-size:0.7rem;font-weight:700;display:inline-block;margin:1px;">${tt}</span>`;
             }).join('');
 
-            const validCount = parsed.filter(p => p.errors.length === 0).length;
-            const errorCount = parsed.length - validCount;
-            document.getElementById('csv-row-count').textContent = `총 ${parsed.length}행 (정상 ${validCount}건${errorCount > 0 ? ', 오류 ' + errorCount + '건' : ''})`;
-            document.getElementById('csv-preview-area').style.display = 'block';
-            document.getElementById('csv-import-btn').style.display = validCount > 0 ? 'inline-block' : 'none';
+            const actionBtns = isError
+                ? `<button type="button" onclick="editCsvRow(${idx})" style="background:#3b82f6;color:#fff;border:none;padding:4px 10px;border-radius:6px;font-size:0.72rem;font-weight:700;cursor:pointer;margin-right:4px;">✏ 수정</button>
+                   <button type="button" onclick="deleteCsvRow(${idx})" style="background:#fee2e2;color:#991b1b;border:none;padding:4px 10px;border-radius:6px;font-size:0.72rem;font-weight:700;cursor:pointer;">🗑 삭제</button>`
+                : `<button type="button" onclick="editCsvRow(${idx})" style="background:#f1f5f9;color:#475569;border:none;padding:4px 10px;border-radius:6px;font-size:0.72rem;font-weight:700;cursor:pointer;">수정</button>`;
+
+            return `<tr style="border-bottom:1px solid #f1f5f9;${isError ? 'background:#fff5f5;' : ''}">
+                <td style="padding:7px 10px;white-space:nowrap;font-family:monospace;font-weight:700;color:${isError ? '#ef4444' : '#0f172a'};">${item.ev.date_start || '-'}</td>
+                <td style="padding:7px 10px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.ev.title || '-'}</td>
+                <td style="padding:7px 10px;">${tagsHtml || '-'}</td>
+                <td style="padding:7px 10px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#64748b;">${(item.ev.content_raw || '').substring(0, 60)}</td>
+                <td style="padding:7px 10px;white-space:nowrap;">${isError
+                    ? `<span style="color:#ef4444;font-weight:800;font-size:0.75rem;">⚠ ${item.errors.join(', ')}</span>`
+                    : `<span style="color:#059669;font-weight:800;font-size:0.75rem;">✓ 정상</span>`
+                }</td>
+                <td style="padding:7px 10px;white-space:nowrap;">${actionBtns}</td>
+            </tr>`;
         }
+
+        function renderCsvRowEdit(item, idx) {
+            const raw = item.raw || {};
+            const cats = ['정치', '경제', '사회', '국제'];
+            const currentCat = (raw.mnforceCategory || '').trim();
+            const catOptions = ['<option value="">(미사용)</option>']
+                .concat(cats.map(c => `<option value="${c}"${c === currentCat ? ' selected' : ''}>${c}</option>`))
+                .join('');
+
+            return `<tr style="background:#fffbeb; border-bottom:1px solid #f1f5f9;">
+                <td colspan="6" style="padding:14px 16px;">
+                    <div style="font-size:0.78rem; font-weight:800; color:#92400e; margin-bottom:10px;">행 ${idx + 1} 수정 ${item.errors.length > 0 ? `<span style="color:#ef4444; font-weight:700;"> — ⚠ ${item.errors.join(', ')}</span>` : ''}</div>
+                    <div style="display:grid; grid-template-columns: 1fr 2fr; gap:10px 14px; font-size:0.78rem;">
+                        <div>
+                            <label style="display:block; font-weight:700; color:#475569; margin-bottom:4px;">날짜 (YYYY-MM-DD) <span style="color:#ef4444;">*</span></label>
+                            <input id="edit-date-${idx}" type="text" value="${escAttr(raw.date)}" placeholder="2026-03-13" style="width:100%; padding:7px 10px; border:1px solid #cbd5e1; border-radius:6px; font-family:monospace; font-size:0.82rem;">
+                        </div>
+                        <div>
+                            <label style="display:block; font-weight:700; color:#475569; margin-bottom:4px;">제목 <span style="color:#ef4444;">*</span></label>
+                            <input id="edit-title-${idx}" type="text" value="${escAttr(raw.title)}" style="width:100%; padding:7px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:0.82rem;">
+                        </div>
+                        <div>
+                            <label style="display:block; font-weight:700; color:#475569; margin-bottom:4px;">mnforce_category</label>
+                            <select id="edit-cat-${idx}" style="width:100%; padding:7px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:0.82rem; background:#fff;">
+                                ${catOptions}
+                            </select>
+                        </div>
+                        <div>
+                            <label style="display:block; font-weight:700; color:#475569; margin-bottom:4px;">mnforce_keyword</label>
+                            <input id="edit-kw-${idx}" type="text" value="${escAttr(raw.mnforceKeyword)}" placeholder="(선택)" style="width:100%; padding:7px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:0.82rem;">
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;">
+                        <button type="button" onclick="cancelCsvRowEdit()" style="background:#f1f5f9; color:#475569; border:none; padding:7px 16px; border-radius:6px; font-size:0.78rem; font-weight:700; cursor:pointer;">취소</button>
+                        <button type="button" onclick="saveCsvRowEdit(${idx})" style="background:#059669; color:#fff; border:none; padding:7px 16px; border-radius:6px; font-size:0.78rem; font-weight:700; cursor:pointer;">저장 후 재검증</button>
+                    </div>
+                </td>
+            </tr>`;
+        }
+
+        function renderCsvPreview() {
+            const tbody = document.getElementById('csv-preview-tbody');
+            if (!tbody) return;
+
+            const indexed = csvParsedRows.map((p, i) => ({ item: p, idx: i }));
+            const rowsToShow = csvShowErrorsOnly
+                ? indexed.filter(({ item, idx }) => item.errors.length > 0 || idx === csvEditingIndex)
+                : indexed;
+
+            if (rowsToShow.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" style="padding:24px; text-align:center; color:#64748b; font-size:0.82rem;">${csvShowErrorsOnly ? '오류 행이 없습니다. 모든 행이 정상입니다 ✓' : '데이터가 없습니다.'}</td></tr>`;
+            } else {
+                tbody.innerHTML = rowsToShow.map(({ item, idx }) =>
+                    idx === csvEditingIndex ? renderCsvRowEdit(item, idx) : renderCsvRowView(item, idx)
+                ).join('');
+            }
+
+            const validCount = csvParsedRows.filter(p => p.errors.length === 0).length;
+            const errorCount = csvParsedRows.length - validCount;
+            document.getElementById('csv-row-count').textContent = `총 ${csvParsedRows.length}행 (정상 ${validCount}건${errorCount > 0 ? ', 오류 ' + errorCount + '건' : ''})`;
+            document.getElementById('csv-import-btn').style.display = validCount > 0 ? 'inline-block' : 'none';
+
+            const errorsOnlyWrap = document.getElementById('csv-errors-only-wrap');
+            if (errorsOnlyWrap) errorsOnlyWrap.style.display = errorCount > 0 ? 'inline-flex' : 'none';
+        }
+
+        window.editCsvRow = (idx) => {
+            if (idx < 0 || idx >= csvParsedRows.length) return;
+            csvEditingIndex = idx;
+            renderCsvPreview();
+            setTimeout(() => {
+                const dateInput = document.getElementById('edit-date-' + idx);
+                if (dateInput) dateInput.focus();
+            }, 0);
+        };
+
+        window.cancelCsvRowEdit = () => {
+            csvEditingIndex = -1;
+            renderCsvPreview();
+        };
+
+        window.saveCsvRowEdit = (idx) => {
+            if (idx < 0 || idx >= csvParsedRows.length) return;
+            const current = csvParsedRows[idx];
+            const dateEl = document.getElementById('edit-date-' + idx);
+            const titleEl = document.getElementById('edit-title-' + idx);
+            const catEl = document.getElementById('edit-cat-' + idx);
+            const kwEl = document.getElementById('edit-kw-' + idx);
+            if (!dateEl || !titleEl || !catEl || !kwEl) return;
+
+            const newRaw = Object.assign({}, current.raw, {
+                date: dateEl.value.trim(),
+                title: titleEl.value.trim(),
+                mnforceCategory: catEl.value.trim(),
+                mnforceKeyword: kwEl.value.trim()
+            });
+
+            const rebuilt = buildEventFromRaw(newRaw, idx);
+            csvParsedRows[idx] = Object.assign({ raw: newRaw }, rebuilt);
+
+            if (rebuilt.errors.length === 0) {
+                csvEditingIndex = -1;
+                window.showNotification && window.showNotification("재검증 완료", `행 ${idx + 1}이(가) 정상으로 변경되었습니다.`, "success");
+            } else {
+                window.showNotification && window.showNotification("아직 오류가 있습니다", rebuilt.errors.join(', '), "error");
+            }
+            renderCsvPreview();
+        };
+
+        window.deleteCsvRow = (idx) => {
+            if (idx < 0 || idx >= csvParsedRows.length) return;
+            if (!confirm(`행 ${idx + 1}을(를) 목록에서 제거합니다. 계속하시겠어요?`)) return;
+            csvParsedRows.splice(idx, 1);
+            if (csvEditingIndex === idx) csvEditingIndex = -1;
+            else if (csvEditingIndex > idx) csvEditingIndex -= 1;
+            renderCsvPreview();
+        };
+
+        window.toggleCsvErrorsOnly = (checked) => {
+            csvShowErrorsOnly = !!checked;
+            renderCsvPreview();
+        };
 
         // 텍스트 붙여넣기 → 파싱 → 미리보기 표시 (항상)
         window.handleCsvPasteImport = () => {
