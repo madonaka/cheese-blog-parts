@@ -812,35 +812,14 @@
                             </div>
                             
                             <div style="background: #f8fafc; padding: 24px; border-radius: 12px;">
-                                <h4 style="margin-top: 0; margin-bottom: 24px; color: #1e293b;"><i class="fas fa-star"></i> 2. 메인 추천 컬렉션 (가계도 등)</h4>
-                                <div class="form-group">
-                                    <label>대표 이미지 URL (파일 업로드 시 자동 입력)</label>
-                                    <div style="display: flex; gap: 10px;">
-                                        <input type="text" id="iptFeatureImg" class="modern-input" style="flex:1;" placeholder="이미지 URL 주소">
-                                        <input type="file" id="iptFeatureImgFile" style="display:none;" accept="image/*" onchange="uploadFeatureImg(this)">
-                                        <button type="button" class="btn-premium" style="background:#475569; border:none; padding: 0 20px;" onclick="document.getElementById('iptFeatureImgFile').click()">
-                                            <i class="fas fa-upload"></i> 파일 업로드
-                                        </button>
-                                    </div>
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <h4 style="margin: 0; color: #1e293b;"><i class="fas fa-star"></i> 2. 메인 추천 컬렉션 (다중 등록)</h4>
+                                    <button type="button" class="btn-premium" style="padding: 8px 16px; font-size: 0.85rem;" onclick="addFeatureCollection()">
+                                        <i class="fas fa-plus"></i> 컬렉션 추가
+                                    </button>
                                 </div>
-                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-                                    <div class="form-group">
-                                        <label>뱃지 (주제 식별자)</label>
-                                        <input type="text" id="iptFeatureBadge" class="modern-input" placeholder="예: Collection Series 01">
-                                    </div>
-                                    <div class="form-group">
-                                        <label>연결 버튼 텍스트</label>
-                                        <input type="text" id="iptFeatureLink" class="modern-input" placeholder="예: 가계도 컬렉션 보러가기">
-                                    </div>
-                                </div>
-                                <div class="form-group" style="margin-top: 0;">
-                                    <label>메인 제목 (HTML &lt;br&gt; 태그 지원)</label>
-                                    <input type="text" id="iptFeatureTitle" class="modern-input" placeholder="예: 치즈 가계도 시리즈:<br>계보로 읽는 맛의 역사">
-                                </div>
-                                <div class="form-group">
-                                    <label>상세 설명 (HTML 지원)</label>
-                                    <textarea id="iptFeatureDesc" class="modern-input" style="height: 120px; resize: vertical;" placeholder="고객들에게 보여질 구체적인 설명을 작성해주세요..."></textarea>
-                                </div>
+                                <p style="font-size: 0.8rem; color: #64748b; margin: 0 0 16px;">⬆️⬇️ 순서 변경, ❌ 삭제. 인덱스 페이지에서 위에서부터 차례로 노출됩니다.</p>
+                                <div id="featureCollectionsList"></div>
                             </div>
                         </form>
                     </div>
@@ -1097,6 +1076,121 @@
         // =============================
         // Main Page Management
         // =============================
+        let featureCollectionsState = [];
+
+        function escapeAttr(s) {
+            return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        function renderFeatureCollections() {
+            const container = document.getElementById('featureCollectionsList');
+            if (!container) return;
+            if (featureCollectionsState.length === 0) {
+                container.innerHTML = '<p style="color:#94a3b8; text-align:center; padding:32px; background:#fff; border:1px dashed #cbd5e1; border-radius:8px;">등록된 컬렉션이 없습니다. [컬렉션 추가] 버튼을 눌러 첫 컬렉션을 만드세요.</p>';
+                return;
+            }
+            const lastIdx = featureCollectionsState.length - 1;
+            container.innerHTML = featureCollectionsState.map((c, idx) => `
+                <div style="background:#fff; border:1px solid #e2e8f0; border-radius:10px; padding:16px; margin-bottom:12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; padding-bottom:10px; border-bottom:1px solid #f1f5f9;">
+                        <strong style="color:#475569;">📚 컬렉션 #${idx + 1}</strong>
+                        <div style="display:flex; gap:6px;">
+                            <button type="button" onclick="moveFeatureCollection(${idx}, -1)" ${idx === 0 ? 'disabled' : ''} style="background:#f1f5f9; border:none; border-radius:6px; padding:4px 10px; cursor:${idx === 0 ? 'not-allowed' : 'pointer'}; opacity:${idx === 0 ? '0.4' : '1'};" title="위로">⬆️</button>
+                            <button type="button" onclick="moveFeatureCollection(${idx}, 1)" ${idx === lastIdx ? 'disabled' : ''} style="background:#f1f5f9; border:none; border-radius:6px; padding:4px 10px; cursor:${idx === lastIdx ? 'not-allowed' : 'pointer'}; opacity:${idx === lastIdx ? '0.4' : '1'};" title="아래로">⬇️</button>
+                            <button type="button" onclick="deleteFeatureCollection(${idx})" style="background:#fee2e2; color:#b91c1c; border:none; border-radius:6px; padding:4px 10px; cursor:pointer; font-weight:700;" title="삭제">❌ 삭제</button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>대표 이미지 URL (파일 업로드 시 자동 입력)</label>
+                        <div style="display:flex; gap:10px;">
+                            <input type="text" data-fc-field="imageUrl" data-fc-idx="${idx}" class="modern-input" style="flex:1;" value="${escapeAttr(c.imageUrl)}" placeholder="이미지 URL 주소">
+                            <input type="file" id="featImgFile_${idx}" style="display:none;" accept="image/*" onchange="uploadCollectionImg(this, ${idx})">
+                            <button type="button" class="btn-premium" style="background:#475569; border:none; padding: 0 16px;" onclick="document.getElementById('featImgFile_${idx}').click()">
+                                <i class="fas fa-upload"></i> 업로드
+                            </button>
+                        </div>
+                        ${c.imageUrl ? `<img src="${escapeAttr(c.imageUrl)}" alt="preview" style="max-width:200px; max-height:120px; margin-top:8px; border-radius:6px; border:1px solid #e2e8f0;" onerror="this.style.display='none'">` : ''}
+                    </div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                        <div class="form-group">
+                            <label>뱃지 (주제 식별자)</label>
+                            <input type="text" data-fc-field="badge" data-fc-idx="${idx}" class="modern-input" value="${escapeAttr(c.badge)}" placeholder="예: Collection Series 01">
+                        </div>
+                        <div class="form-group">
+                            <label>연결 버튼 텍스트</label>
+                            <input type="text" data-fc-field="linkText" data-fc-idx="${idx}" class="modern-input" value="${escapeAttr(c.linkText)}" placeholder="예: 가계도 컬렉션 보기">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>연결 버튼 URL</label>
+                        <input type="text" data-fc-field="linkUrl" data-fc-idx="${idx}" class="modern-input" value="${escapeAttr(c.linkUrl)}" placeholder="예: /shop/products.html">
+                    </div>
+                    <div class="form-group">
+                        <label>메인 제목 (HTML &lt;br&gt; 지원)</label>
+                        <input type="text" data-fc-field="title" data-fc-idx="${idx}" class="modern-input" value="${escapeAttr(c.title)}" placeholder="예: 치즈 가계도 시리즈:<br>계보로 읽는 맛의 역사">
+                    </div>
+                    <div class="form-group">
+                        <label>상세 설명 (HTML 지원)</label>
+                        <textarea data-fc-field="desc" data-fc-idx="${idx}" class="modern-input" style="height:100px; resize:vertical;" placeholder="고객에게 노출할 설명을 입력하세요...">${escapeAttr(c.desc)}</textarea>
+                    </div>
+                </div>
+            `).join('');
+
+            container.querySelectorAll('[data-fc-field]').forEach(el => {
+                el.addEventListener('input', e => {
+                    const i = +e.target.dataset.fcIdx;
+                    const f = e.target.dataset.fcField;
+                    if (featureCollectionsState[i]) featureCollectionsState[i][f] = e.target.value;
+                });
+            });
+        }
+
+        function addFeatureCollection() {
+            featureCollectionsState.push({
+                imageUrl: '', badge: '', title: '', desc: '', linkText: '', linkUrl: ''
+            });
+            renderFeatureCollections();
+        }
+
+        function deleteFeatureCollection(idx) {
+            if (!confirm(`컬렉션 #${idx + 1}을(를) 삭제하시겠습니까?`)) return;
+            featureCollectionsState.splice(idx, 1);
+            renderFeatureCollections();
+        }
+
+        function moveFeatureCollection(idx, dir) {
+            const newIdx = idx + dir;
+            if (newIdx < 0 || newIdx >= featureCollectionsState.length) return;
+            const tmp = featureCollectionsState[idx];
+            featureCollectionsState[idx] = featureCollectionsState[newIdx];
+            featureCollectionsState[newIdx] = tmp;
+            renderFeatureCollections();
+        }
+
+        async function uploadCollectionImg(input, idx) {
+            const file = input.files[0];
+            if (!file) return;
+            const btn = input.nextElementSibling;
+            const originalHtml = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            btn.disabled = true;
+            try {
+                const result = await window.uploadFileToGoogleDrive(file);
+                const url = result && (result.downloadUrl || result.url);
+                if (!url) throw new Error("URL을 받아오지 못했습니다.");
+                if (!featureCollectionsState[idx]) throw new Error("대상 컬렉션이 사라졌습니다.");
+                featureCollectionsState[idx].imageUrl = url;
+                renderFeatureCollections();
+                alert("이미지 업로드가 완료되었습니다.");
+            } catch (err) {
+                alert("업로드 실패: " + err.message);
+            } finally {
+                btn.innerHTML = originalHtml;
+                btn.disabled = false;
+                input.value = "";
+            }
+        }
+
         async function loadMainPageContent() {
             try {
                 const res = await safeFetchDB({ action: "get_doc", collection: "store_main_content", id: "main_page" });
@@ -1111,12 +1205,29 @@
                         document.getElementById('iptHeroLoggedInUrl').value = data.heroLoggedInUrl || '';
                         document.getElementById('iptHeroLink2Text').value = data.heroLink2Text || '';
                         document.getElementById('iptHeroLink2Url').value = data.heroLink2Url || '';
-                        
-                        document.getElementById('iptFeatureImg').value = data.featureImageUrl || '';
-                        document.getElementById('iptFeatureBadge').value = data.featureBadge || '';
-                        document.getElementById('iptFeatureTitle').value = data.featureTitle || '';
-                        document.getElementById('iptFeatureDesc').value = data.featureDesc || '';
-                        document.getElementById('iptFeatureLink').value = data.featureLink || '';
+
+                        if (Array.isArray(data.featureCollections) && data.featureCollections.length > 0) {
+                            featureCollectionsState = data.featureCollections.map(c => ({
+                                imageUrl: c.imageUrl || '',
+                                badge: c.badge || '',
+                                title: c.title || '',
+                                desc: c.desc || '',
+                                linkText: c.linkText || '',
+                                linkUrl: c.linkUrl || ''
+                            }));
+                        } else if (data.featureImageUrl || data.featureTitle || data.featureBadge) {
+                            featureCollectionsState = [{
+                                imageUrl: data.featureImageUrl || '',
+                                badge: data.featureBadge || '',
+                                title: data.featureTitle || '',
+                                desc: data.featureDesc || '',
+                                linkText: data.featureLink || '',
+                                linkUrl: '/shop/products.html'
+                            }];
+                        } else {
+                            featureCollectionsState = [];
+                        }
+                        renderFeatureCollections();
                     }
                 }
             } catch (err) {
@@ -1133,11 +1244,14 @@
                 heroLoggedInUrl: document.getElementById('iptHeroLoggedInUrl').value,
                 heroLink2Text: document.getElementById('iptHeroLink2Text').value,
                 heroLink2Url: document.getElementById('iptHeroLink2Url').value,
-                featureImageUrl: document.getElementById('iptFeatureImg').value,
-                featureBadge: document.getElementById('iptFeatureBadge').value,
-                featureTitle: document.getElementById('iptFeatureTitle').value,
-                featureDesc: document.getElementById('iptFeatureDesc').value,
-                featureLink: document.getElementById('iptFeatureLink').value,
+                featureCollections: featureCollectionsState.map(c => ({
+                    imageUrl: c.imageUrl || '',
+                    badge: c.badge || '',
+                    title: c.title || '',
+                    desc: c.desc || '',
+                    linkText: c.linkText || '',
+                    linkUrl: c.linkUrl || ''
+                })),
                 updatedAt: new Date().toISOString()
             };
             try {
@@ -1146,30 +1260,6 @@
                 else throw new Error(res.error || "저장 실패");
             } catch (err) {
                 alert("저장 에러: " + err.message);
-            }
-        }
-
-        async function uploadFeatureImg(input) {
-            const file = input.files[0];
-            if (!file) return;
-            const btn = input.nextElementSibling;
-            const originalText = btn.innerHTML;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 업로드 중...';
-            btn.disabled = true;
-            try {
-                const url = await window.uploadFileToGoogleDrive(file);
-                if (url) {
-                    document.getElementById('iptFeatureImg').value = url;
-                    alert("이미지 업로드가 완료되었습니다.");
-                } else {
-                    throw new Error("URL을 받아오지 못했습니다.");
-                }
-            } catch (err) {
-                alert("업로드 실패: " + err.message);
-            } finally {
-                btn.innerHTML = originalText;
-                btn.disabled = false;
-                input.value = "";
             }
         }
 
