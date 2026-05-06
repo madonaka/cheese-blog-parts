@@ -76,6 +76,7 @@
         table.admin-table {
             width: 100%;
             border-collapse: collapse;
+            table-layout: fixed;
         }
 
         table.admin-table th,
@@ -83,6 +84,12 @@
             padding: 16px;
             text-align: left;
             border-bottom: 1px solid #f1f5f9;
+            overflow: hidden;
+        }
+
+        table.admin-table th:first-child,
+        table.admin-table td:first-child {
+            width: 30%;
         }
 
         table.admin-table th {
@@ -97,6 +104,12 @@
             display: flex;
             align-items: center;
             gap: 12px;
+            min-width: 0;
+        }
+
+        .user-info > div {
+            min-width: 0;
+            overflow: hidden;
         }
 
         .user-avatar {
@@ -105,17 +118,25 @@
             border-radius: 50%;
             object-fit: cover;
             background: #f1f5f9;
+            flex-shrink: 0;
         }
 
         .user-name {
             font-weight: 700;
             color: #1e293b;
             display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .user-email {
             font-size: 0.8rem;
             color: #64748b;
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .status-active { background: #dcfce7; color: #166534; }
@@ -287,6 +308,7 @@
 
             <div style="margin-top: 30px; display: flex; gap: 10px; justify-content: flex-end;">
                 <button class="btn-cancel" onclick="closeUserModal()" style="padding: 10px 20px; border-radius: 8px; border: 1px solid #e2e8f0; background: #fff; cursor: pointer;">닫기</button>
+                <button id="btn-purge-now" style="display:none; padding: 10px 20px; border-radius: 8px; border: none; background: #7c3aed; color: #fff; cursor: pointer; font-weight: 600;">즉시 파기</button>
                 <button id="btn-toggle-block" class="btn-submit" style="padding: 10px 20px; border-radius: 8px; border: none; background: #ef4444; color: #fff; cursor: pointer; font-weight: 600;">상태 변경</button>
             </div>
         </div>
@@ -521,11 +543,11 @@
                     유예 기간이 만료되었습니다. Cloud Function 스케줄러가 다음 실행 시 자동으로 개인정보를 파기합니다.
                 </div>` : ''}
                 <div style="display: flex; gap: 20px; align-items: center; margin-bottom: 25px;">
-                    <img src="${user.photo_url || 'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg'}" style="width: 80px; height: 80px; border-radius: 50%;" />
-                    <div>
-                        <h4 style="margin: 0; font-size: 1.2rem;">${user.displayName || user.email?.split('@')[0] || 'Member'}</h4>
-                        <p style="margin: 5px 0 0; color: #64748b;">${user.email}</p>
-                        <p style="margin: 5px 0 0; font-size: 0.8rem; color: #94a3b8;">UID: ${user.id}</p>
+                    <img src="${user.photo_url || 'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg'}" style="width: 80px; height: 80px; border-radius: 50%; flex-shrink: 0;" />
+                    <div style="min-width: 0; overflow: hidden;">
+                        <h4 style="margin: 0; font-size: 1.2rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${user.displayName || user.email?.split('@')[0] || 'Member'}</h4>
+                        <p style="margin: 5px 0 0; color: #64748b; word-break: break-all; font-size: 0.85rem;">${user.email}</p>
+                        <p style="margin: 5px 0 0; font-size: 0.75rem; color: #94a3b8; word-break: break-all;">UID: ${user.id}</p>
                     </div>
                 </div>
 
@@ -597,10 +619,14 @@
             `;
 
             const blockBtn = document.getElementById('btn-toggle-block');
+            const purgeBtn = document.getElementById('btn-purge-now');
+
             const isBlocked = user.status === 'blocked';
             blockBtn.innerText = isBlocked ? "차단 해제" : "계정 차단";
             blockBtn.style.background = isBlocked ? "#3b82f6" : "#ef4444";
-            blockBtn.style.display = isPending ? 'none' : '';
+            blockBtn.style.display = (isPending || user.status === 'withdrawn_permanent') ? 'none' : '';
+
+            purgeBtn.style.display = (isPending && wInfo.expired) ? '' : 'none';
 
             blockBtn.onclick = async () => {
                 const nextStatus = isBlocked ? "active" : "blocked";
@@ -613,6 +639,22 @@
                     loadUsers();
                 } catch (e) {
                     alert("변경 실패");
+                }
+            };
+
+            purgeBtn.onclick = async () => {
+                if (!confirm("유예 기간이 만료된 회원의 개인정보를 즉시 파기합니다.\n이 작업은 되돌릴 수 없습니다. 계속하시겠습니까?")) return;
+                purgeBtn.disabled = true;
+                purgeBtn.innerText = "파기 중...";
+                try {
+                    await safeFetchDB({ action: "purge_withdrawn_user", collection: "users", id: id });
+                    alert("개인정보 파기가 완료되었습니다.");
+                    closeUserModal();
+                    loadUsers();
+                } catch (e) {
+                    alert("파기 실패: " + e.message);
+                    purgeBtn.disabled = false;
+                    purgeBtn.innerText = "즉시 파기";
                 }
             };
 

@@ -7,13 +7,12 @@
   <link rel="stylesheet" href="../../admin.css">
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
   <style>
-    /* 알림 관리 전용 스타일 */
     .noti-card { background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 30px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); max-width: 800px; }
-    
+
     .form-group { margin-bottom: 24px; }
     .form-label { display: block; font-size: 0.9rem; font-weight: 800; color: #1e293b; margin-bottom: 8px; }
     .form-desc { font-size: 0.75rem; color: #64748b; margin-bottom: 8px; display: block; }
-    
+
     .styled-input, .styled-textarea, .styled-select {
       width: 100%; padding: 14px 18px; border: 1.5px solid #f1f5f9; border-radius: 12px;
       font-size: 0.95rem; background: #f8fafc; transition: all 0.2s;
@@ -27,15 +26,47 @@
     .radio-label { display: flex; align-items: center; gap: 8px; font-size: 0.95rem; font-weight: 600; cursor: pointer; color: #334155; }
     .radio-label input[type="radio"] { width: 18px; height: 18px; accent-color: #3b82f6; }
 
-    .btn-send { 
-      padding: 16px 32px; border-radius: 12px; background: #2563eb; color: #fff; border: none; 
-      font-weight: 800; font-size: 1rem; cursor: pointer; box-shadow: 0 4px 10px rgba(37, 99, 235, 0.2); 
+    .btn-send {
+      padding: 16px 32px; border-radius: 12px; background: #2563eb; color: #fff; border: none;
+      font-weight: 800; font-size: 1rem; cursor: pointer; box-shadow: 0 4px 10px rgba(37, 99, 235, 0.2);
       width: 100%; transition: all 0.2s;
     }
     .btn-send:hover { background: #1d4ed8; transform: translateY(-2px); }
     .btn-send:disabled { background: #94a3b8; cursor: not-allowed; transform: none; box-shadow: none; }
 
-    /* 로딩 오버레이 */
+    .member-search-section { margin-bottom: 12px; }
+    .search-input-row { display: flex; gap: 8px; }
+    .search-input-row .styled-input { flex: 1; }
+    .btn-search {
+      padding: 14px 20px; border-radius: 12px; background: #f1f5f9; color: #334155;
+      border: 1.5px solid #e2e8f0; font-weight: 700; font-size: 0.9rem; cursor: pointer;
+      white-space: nowrap; transition: all 0.2s;
+    }
+    .btn-search:hover { background: #e2e8f0; }
+    .search-results-box {
+      border: 1.5px solid #e2e8f0; border-radius: 12px; overflow: hidden;
+      background: #fff; box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      max-height: 240px; overflow-y: auto; margin-top: 6px;
+    }
+    .search-result-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 12px 16px; cursor: pointer; transition: background 0.15s;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .search-result-item:last-child { border-bottom: none; }
+    .search-result-item:hover { background: #f0f7ff; }
+    .result-name { font-weight: 700; color: #1e293b; font-size: 0.9rem; }
+    .result-email { color: #64748b; font-size: 0.85rem; }
+    .search-no-result { padding: 14px 16px; color: #94a3b8; font-size: 0.9rem; text-align: center; }
+    .selected-badge {
+      display: flex; align-items: center; gap: 8px;
+      padding: 9px 14px; background: #eff6ff; border: 1.5px solid #bfdbfe;
+      border-radius: 8px; color: #1d4ed8; font-size: 0.85rem; font-weight: 600; margin-top: 8px;
+    }
+    .selected-badge .badge-clear { margin-left: auto; cursor: pointer; color: #93c5fd; font-size: 1rem; line-height: 1; }
+    .selected-badge .badge-clear:hover { color: #1d4ed8; }
+    .direct-email-label { font-size: 0.78rem; color: #94a3b8; margin: 10px 0 6px; display: block; }
+
     #loading-overlay {
       display: none; position: fixed; inset: 0; background: rgba(255,255,255,0.8); backdrop-filter: blur(4px);
       z-index: 9999; align-items: center; justify-content: center; flex-direction: column; gap: 15px;
@@ -50,7 +81,7 @@
     <div id="admin-header-slot"></div>
     <main class="admin-main">
       <aside id="admin-menu-slot" class="admin-sidebar"></aside>
-      
+
       <section class="admin-content">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:25px;">
           <div>
@@ -60,7 +91,6 @@
         </div>
 
         <div class="noti-card">
-          <!-- 타겟 설정 -->
           <div class="form-group">
             <label class="form-label">발송 대상 선택</label>
             <div class="radio-group">
@@ -76,14 +106,27 @@
           </div>
 
           <div class="form-group" id="target-email-group">
-            <label class="form-label">회원 이메일</label>
-            <span class="form-desc">알림을 받을 회원의 로그인 이메일을 정확히 입력하세요.</span>
+            <label class="form-label">회원 검색</label>
+            <span class="form-desc">이름 또는 이메일로 회원을 검색해 선택하세요.</span>
+            <div class="member-search-section">
+              <div class="search-input-row">
+                <input type="text" id="member-search-input" class="styled-input"
+                  placeholder="이름 또는 이메일 입력..."
+                  onkeydown="if(event.key==='Enter') searchMembers()">
+                <button type="button" class="btn-search" onclick="searchMembers()">🔍 검색</button>
+              </div>
+              <div id="member-search-results" style="display:none;"></div>
+              <div id="selected-member-badge" class="selected-badge" style="display:none;">
+                <span id="selected-badge-text"></span>
+                <span class="badge-clear" onclick="clearSelectedMember()" title="선택 해제">✕</span>
+              </div>
+            </div>
+            <span class="direct-email-label">또는 이메일 직접 입력</span>
             <input type="email" id="target-email" class="styled-input" placeholder="user@example.com">
           </div>
 
           <hr style="border: 0; border-top: 1px dashed #e2e8f0; margin: 30px 0;">
 
-          <!-- 알림 컨텐츠 구성 -->
           <div style="display: grid; grid-template-columns: 1fr 3fr; gap: 20px;">
             <div class="form-group">
               <label class="form-label">아이콘 (이모지)</label>
@@ -106,37 +149,15 @@
     </main>
   </div>
 
-  <!-- Loading Overlay -->
   <div id="loading-overlay">
     <div class="spinner"></div>
     <div id="loading-text" style="font-weight: 700; color: #1e293b;">발송 준비 중...</div>
   </div>
 
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-  import { getFirestore, collection, getDocs, doc, query, where, serverTimestamp, writeBatch } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-
-  const firebaseConfig = {
-    apiKey: "AIzaSyBgLF7lEKQxdsUked-i_Pf0FJEdP_d1Ab4",
-    authDomain: "auth.cheesehistory.com",
-    projectId: "cheese-history-platform",
-    storageBucket: "cheese-history-platform.firebasestorage.app",
-    messagingSenderId: "206588835864",
-    appId: "1:206588835864:web:18cc695d72c6fc96c4ab6d"
-  };
-
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
-
-  window.toggleTargetInput = function() {
-    const type = document.querySelector('input[name="targetType"]:checked').value;
-    const emailGroup = document.getElementById('target-email-group');
-    if (type === 'specific') {
-      emailGroup.style.display = 'block';
-    } else {
-      emailGroup.style.display = 'none';
-    }
-  };
+<script>
+  function getApiBase() {
+    return window.CHEESE_ADMIN_DB_API || "https://asia-northeast3-cheese-history-platform.cloudfunctions.net/adminDataApi";
+  }
 
   function showLoading(text) {
     document.getElementById('loading-text').innerText = text;
@@ -146,6 +167,66 @@
     document.getElementById('loading-overlay').style.display = 'none';
   }
 
+  window.toggleTargetInput = function() {
+    const type = document.querySelector('input[name="targetType"]:checked').value;
+    document.getElementById('target-email-group').style.display = type === 'specific' ? 'block' : 'none';
+  };
+
+  window.searchMembers = async function() {
+    const term = document.getElementById('member-search-input').value.trim();
+    const resultsBox = document.getElementById('member-search-results');
+
+    if (term.length < 2) {
+      resultsBox.innerHTML = '<div class="search-no-result">2글자 이상 입력 후 검색하세요.</div>';
+      resultsBox.className = 'search-results-box';
+      resultsBox.style.display = 'block';
+      return;
+    }
+
+    resultsBox.innerHTML = '<div class="search-no-result">검색 중...</div>';
+    resultsBox.className = 'search-results-box';
+    resultsBox.style.display = 'block';
+
+    try {
+      const res = await fetch(getApiBase(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'searchUsers', searchTerm: term })
+      });
+      const json = await res.json();
+
+      if (!json.ok) throw new Error(json.error || '검색 실패');
+
+      const results = json.data || [];
+      if (results.length === 0) {
+        resultsBox.innerHTML = '<div class="search-no-result">검색 결과가 없습니다.</div>';
+        return;
+      }
+
+      resultsBox.innerHTML = results.map(r => `
+        <div class="search-result-item" onclick="selectMember('${r.email.replace(/'/g, "\\'")}', '${r.name.replace(/'/g, "\\'")}')">
+          <span class="result-name">${r.name || '(이름 없음)'}</span>
+          <span class="result-email">${r.email}</span>
+        </div>
+      `).join('');
+    } catch (e) {
+      resultsBox.innerHTML = `<div class="search-no-result" style="color:#ef4444;">오류: ${e.message}</div>`;
+    }
+  };
+
+  window.selectMember = function(email, name) {
+    document.getElementById('target-email').value = email;
+    document.getElementById('selected-badge-text').textContent = name ? `${name} (${email})` : email;
+    document.getElementById('selected-member-badge').style.display = 'flex';
+    document.getElementById('member-search-results').style.display = 'none';
+    document.getElementById('member-search-input').value = '';
+  };
+
+  window.clearSelectedMember = function() {
+    document.getElementById('target-email').value = '';
+    document.getElementById('selected-member-badge').style.display = 'none';
+  };
+
   window.sendNotification = async function() {
     const targetType = document.querySelector('input[name="targetType"]:checked').value;
     const targetEmail = document.getElementById('target-email').value.trim();
@@ -153,111 +234,48 @@
     const link = document.getElementById('noti-link').value.trim() || '#';
     const message = document.getElementById('noti-message').value.trim();
 
-    if (!message) {
-      alert("알림 메시지 내용을 입력해 주세요.");
-      return;
-    }
+    if (!message) { alert("알림 메시지 내용을 입력해 주세요."); return; }
+    if (targetType === 'specific' && !targetEmail) { alert("전송할 회원의 이메일을 입력해 주세요."); return; }
 
-    if (targetType === 'specific' && !targetEmail) {
-      alert("전송할 회원의 이메일을 입력해 주세요.");
-      return;
-    }
-
-    const confirmMsg = targetType === 'all' 
+    const confirmMsg = targetType === 'all'
       ? `⚠️ 정말로 서비스의 [전체 회원]에게 알림을 발송하시겠습니까?\n\n메시지: ${message}`
       : `[${targetEmail}] 회원님에게 알림을 발송하시겠습니까?`;
 
     if (!confirm(confirmMsg)) return;
 
-    showLoading("데이터베이스 확인 중...");
+    showLoading(targetType === 'all' ? "전체 회원에게 알림 발송 중..." : "알림 발송 중...");
+    document.getElementById('btn-submit').disabled = true;
 
     try {
-      if (targetType === 'specific') {
-        const q = query(collection(db, "users"), where("email", "==", targetEmail));
-        const snap = await getDocs(q);
-        
-        if (snap.empty) {
-          hideLoading();
-          alert("가입된 정보가 없는 회원이거나 이메일이 잘못되었습니다.");
-          return;
-        }
+      const res = await fetch(getApiBase(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'sendAdminNotification',
+          targetType,
+          targetEmail: targetType === 'specific' ? targetEmail : undefined,
+          icon,
+          message,
+          link
+        })
+      });
+      const json = await res.json();
 
-        const uid = snap.docs[0].id;
-        showLoading("알림 발송 중...");
-        
-        // 단일 배치 발송 (안전성)
-        const batch = writeBatch(db);
-        const ref = doc(collection(db, "notifications"));
-        batch.set(ref, {
-          uid: uid,
-          icon: icon,
-          message: message,
-          link: link,
-          is_read: false,
-          is_hidden: false,
-          created_at: serverTimestamp()
-        });
-        await batch.commit();
-
-      } else if (targetType === 'all') {
-        showLoading("전체 회원 목록 가져오는 중...");
-        const usersSnap = await getDocs(collection(db, "users"));
-        
-        if (usersSnap.empty) {
-          hideLoading();
-          alert("발송할 회원이 없습니다.");
-          return;
-        }
-
-        let batches = [];
-        let currentBatch = writeBatch(db);
-        let count = 0;
-        let totalSent = 0;
-
-        usersSnap.forEach(userDoc => {
-          const uid = userDoc.id;
-          const ref = doc(collection(db, "notifications"));
-          
-          currentBatch.set(ref, {
-            uid: uid,
-            icon: icon,
-            message: message,
-            link: link,
-            is_read: false,
-            is_hidden: false,
-            created_at: serverTimestamp()
-          });
-          
-          count++;
-          totalSent++;
-
-          // Firestore batch는 최대 500개까지만 허용되므로 여유있게 450개 단위로 나눔
-          if (count === 450) {
-            batches.push(currentBatch);
-            currentBatch = writeBatch(db);
-            count = 0;
-          }
-        });
-        
-        if (count > 0) batches.push(currentBatch);
-
-        showLoading(`총 ${totalSent}명에게 알림 발송 중...`);
-        for (const b of batches) {
-          await b.commit();
-        }
-      }
+      if (!json.ok) throw new Error(json.error || '발송 실패');
 
       hideLoading();
-      alert("🎉 알림 전송이 완료되었습니다!");
-      
-      // 폼 초기화
-      document.getElementById('noti-message').value = '';
-      if(targetType === 'specific') document.getElementById('target-email').value = '';
+      alert(`🎉 알림 전송이 완료되었습니다! (${json.sent}명)`);
 
+      document.getElementById('noti-message').value = '';
+      if (targetType === 'specific') {
+        document.getElementById('target-email').value = '';
+        document.getElementById('selected-member-badge').style.display = 'none';
+      }
     } catch (e) {
       hideLoading();
-      console.error(e);
       alert("알림 전송 중 오류가 발생했습니다: " + e.message);
+    } finally {
+      document.getElementById('btn-submit').disabled = false;
     }
   };
 </script>
