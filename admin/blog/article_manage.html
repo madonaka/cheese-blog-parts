@@ -292,6 +292,51 @@
         .tag-modal-scan-hint { text-align: center; padding: 40px 20px; color: #94a3b8; font-size: 13px; line-height: 1.7; }
         .tag-modal-item-added { opacity: 0.45; cursor: default; background: #f8fafc; }
 
+        /* 추가 정보 (Info Box) 행 */
+        .info-row-edit {
+            display: flex; align-items: center; gap: 6px;
+        }
+        .info-row-edit .info-row-label {
+            flex: 0 0 130px; font-weight: 700;
+        }
+        .info-row-edit .info-row-value {
+            flex: 1; min-width: 0;
+        }
+        .info-row-edit .btn-info-move {
+            flex: 0 0 auto; width: 26px; height: 30px;
+            padding: 0; line-height: 1; font-size: 13px;
+            background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0;
+            border-radius: 5px; cursor: pointer; transition: 0.12s;
+        }
+        .info-row-edit .btn-info-move:hover { background: #e2e8f0; color: #0f172a; }
+        @media (max-width: 720px) {
+            .info-row-edit { flex-wrap: wrap; }
+            .info-row-edit .info-row-label { flex: 1 1 100%; }
+            .info-row-edit .info-row-value { flex: 1 1 60%; }
+        }
+
+        /* 추가 시점 (다중 시작 시점) */
+        .extra-event-row {
+            display: flex; align-items: center; gap: 8px;
+            padding: 7px 10px; background: #f0f9ff;
+            border: 1px solid #bae6fd; border-radius: 6px;
+            transition: background 0.12s;
+        }
+        .extra-event-row:hover { background: #e0f2fe; }
+        .extra-event-date {
+            flex: 0 0 auto; font-family: monospace; font-size: 11px;
+            font-weight: 900; color: #0369a1; min-width: 90px;
+        }
+        .extra-event-tag {
+            flex: 0 0 auto; font-size: 10px; color: #64748b; font-weight: 700;
+            padding: 2px 6px; background: #fff; border-radius: 99px;
+            border: 1px solid #cbd5e1;
+        }
+        .extra-event-title {
+            flex: 1; min-width: 0; font-size: 12px; font-weight: 700;
+            color: #0f172a; word-break: keep-all; line-height: 1.4;
+        }
+
         /* 시작/종료 사건 핀 */
         .date-pin-row {
             display: flex; align-items: center; gap: 6px; margin-top: 6px;
@@ -475,6 +520,19 @@
                                 </div>
 
                                 <div class="am-field">
+                                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                                        <label class="am-label" style="margin:0;">추가 시점 <span style="font-weight:400;color:#94a3b8;font-size:11px;">(선택)</span></label>
+                                        <button type="button" onclick="openExtraEventPicker()"
+                                            style="background:#0ea5e9;color:#fff;border:none;padding:5px 12px;border-radius:7px;font-weight:900;font-size:11px;cursor:pointer;">+ 시점 추가</button>
+                                    </div>
+                                    <p style="font-size:10px;color:#94a3b8;margin:0 0 8px;line-height:1.5;">
+                                        시작 시점이 여러 개로 나뉘는 사건일 때 사용 (예: 폭로·시발점이 누적되는 케이스).
+                                        <strong style="color:#b45309;">등록 시 종료일·물결표(~)는 표시되지 않고</strong> 모든 시점이 날짜순으로 나열됩니다.
+                                    </p>
+                                    <div id="extra-events-list" style="display:flex;flex-direction:column;gap:6px;"></div>
+                                </div>
+
+                                <div class="am-field">
                                     <label class="am-label">진행상황 (Status)</label>
                                     <input id="am-status-val" class="am-input" type="text" placeholder="예: 2심 진행 중 / 판결 확정 / 수사 종결">
                                 </div>
@@ -482,6 +540,18 @@
                                 <div class="am-field">
                                     <label class="am-label">사건 개요 (Overview)</label>
                                     <textarea id="am-overview" class="am-textarea" placeholder="사건의 핵심 배경과 개요를 간략히 작성하세요..."></textarea>
+                                </div>
+
+                                <div class="am-field">
+                                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                                        <label class="am-label" style="margin:0;">추가 정보 (Info Box 행)</label>
+                                        <button type="button" onclick="addInfoRow()"
+                                            style="background:#3b82f6;color:#fff;border:none;padding:5px 12px;border-radius:7px;font-weight:900;font-size:11px;cursor:pointer;">+ 행 추가</button>
+                                    </div>
+                                    <p style="font-size:10px;color:#94a3b8;margin:0 0 8px;">
+                                        시리즈 페이지 상단 인포박스에 "기간" 외에 표시할 항목 (예: 장소 · 당사자 · 발의자 · 결과)
+                                    </p>
+                                    <div id="info-rows-list" style="display:flex;flex-direction:column;gap:6px;"></div>
                                 </div>
 
                                 <div class="am-field">
@@ -906,6 +976,8 @@
                 if (html && html !== '<p><br></p>' && html.trim()) return true;
             }
             if (getImpactTags().length > 0) return true;
+            if (typeof getInfoRows === 'function' && getInfoRows().length > 0) return true;
+            if (Array.isArray(extraEvents) && extraEvents.length > 0) return true;
             return false;
         }
 
@@ -1068,7 +1140,8 @@
         // ────────────────────────────────────────
         // 저장 형식: { tag, title, date_start, year, month }
         let pickedEvents = { start: null, end: null };
-        let _eventPickTarget = null; // 'start' | 'end'
+        let extraEvents = []; // 추가 시점 — 다중 시작 시점이 있는 케이스
+        let _eventPickTarget = null; // 'start' | 'end' | 'extra'
 
         // 태그(label)에 속한 모든 이벤트 수집 (날짜 오름차순)
         function collectEventsForTag(tagLabel) {
@@ -1095,6 +1168,36 @@
             return out;
         }
 
+        // 시리즈 ID 목록 전체에 매칭되는 이벤트 수집 (중복 제거, 날짜순)
+        function collectEventsForTags(tagLabels) {
+            if (!Array.isArray(tagLabels) || !tagLabels.length) return [];
+            const out = [];
+            const seen = new Set();
+            for (const doc of cachedIssuesData) {
+                const year = (doc.id || '').replace('year_', '');
+                Object.entries(doc.months || {}).forEach(([m, mData]) => {
+                    (mData.events || []).forEach(ev => {
+                        const tagList = (ev.tags || '').split(',').map(t => t.trim()).filter(Boolean);
+                        const matched = tagList.find(t => tagLabels.includes(tagToLabel(t)));
+                        if (!matched) return;
+                        const key = `${ev.title || ''}|${ev.date_start || ''}|${year}|${m}`;
+                        if (seen.has(key)) return;
+                        seen.add(key);
+                        out.push({
+                            tag: tagToLabel(matched),
+                            title: ev.title || '',
+                            date_start: ev.date_start || '',
+                            year, month: m
+                        });
+                    });
+                });
+            }
+            out.sort((a, b) =>
+                `${a.year}${a.month}${a.date_start || ''}`.localeCompare(
+                    `${b.year}${b.month}${b.date_start || ''}`));
+            return out;
+        }
+
         async function openEventPicker(target) {
             const sel = document.getElementById(`am-date-${target}-tag`);
             const tag = sel ? sel.value.trim() : '';
@@ -1103,7 +1206,34 @@
                 return;
             }
             _eventPickTarget = target;
+            document.getElementById('event-pick-title').textContent = '특정 사건 지정';
             document.getElementById('event-pick-tag-label').textContent = tag;
+            document.getElementById('event-pick-search').value = '';
+            document.getElementById('event-pick-modal').classList.add('open');
+
+            const listEl = document.getElementById('event-pick-list');
+            if (!cachedIssuesData.length) {
+                listEl.innerHTML = '<div class="tag-modal-scan-hint">아카이브에서 사건을 불러오는 중...</div>';
+                try {
+                    const issuesRes = await safeFetchDB({ action: "get", collection: "historical_issues" });
+                    cachedIssuesData = issuesRes.data || [];
+                } catch (e) {
+                    listEl.innerHTML = `<div class="event-pick-empty">불러오기 실패: ${escHtml(e.message)}</div>`;
+                    return;
+                }
+            }
+            renderEventPickList();
+        }
+
+        async function openExtraEventPicker() {
+            const ids = getSeriesIds();
+            if (!ids.length) {
+                showStatus('먼저 시리즈 ID를 추가하세요.', 'err');
+                return;
+            }
+            _eventPickTarget = 'extra';
+            document.getElementById('event-pick-title').textContent = '추가 시점 — 사건 선택';
+            document.getElementById('event-pick-tag-label').textContent = ids.join(', ');
             document.getElementById('event-pick-search').value = '';
             document.getElementById('event-pick-modal').classList.add('open');
 
@@ -1123,57 +1253,120 @@
 
         function renderEventPickList() {
             if (!_eventPickTarget) return;
-            const tag = document.getElementById(`am-date-${_eventPickTarget}-tag`).value.trim();
             const q = (document.getElementById('event-pick-search').value || '').toLowerCase();
-            const events = collectEventsForTag(tag);
+
+            let events;
+            let emptyHint;
+            if (_eventPickTarget === 'extra') {
+                const ids = getSeriesIds();
+                events = collectEventsForTags(ids);
+                emptyHint = `시리즈 ID "${escHtml(ids.join(', '))}"에 등록된 사건이 없습니다.`;
+            } else {
+                const tag = document.getElementById(`am-date-${_eventPickTarget}-tag`).value.trim();
+                events = collectEventsForTag(tag);
+                emptyHint = `태그 "${escHtml(tag)}"에 등록된 사건이 없습니다.`;
+            }
+
             const filtered = events.filter(ev => {
                 if (!q) return true;
                 return (ev.title || '').toLowerCase().includes(q)
-                    || (ev.date_start || '').toLowerCase().includes(q);
+                    || (ev.date_start || '').toLowerCase().includes(q)
+                    || (ev.tag || '').toLowerCase().includes(q);
             });
             const listEl = document.getElementById('event-pick-list');
             if (!events.length) {
-                listEl.innerHTML = `<div class="event-pick-empty">태그 "${escHtml(tag)}"에 등록된 사건이 없습니다.<br><span style="font-size:11px;">historical_issues에 해당 태그를 가진 이벤트가 있는지 확인하세요.</span></div>`;
+                listEl.innerHTML = `<div class="event-pick-empty">${emptyHint}<br><span style="font-size:11px;">historical_issues에 해당 태그를 가진 이벤트가 있는지 확인하세요.</span></div>`;
                 return;
             }
             if (!filtered.length) {
                 listEl.innerHTML = '<div class="event-pick-empty">검색 조건에 맞는 사건이 없습니다.</div>';
                 return;
             }
-            const picked = pickedEvents[_eventPickTarget];
+
+            const isExtra = _eventPickTarget === 'extra';
+            const picked = isExtra ? null : pickedEvents[_eventPickTarget];
+
             listEl.innerHTML = filtered.map((ev, i) => {
                 const dateText = ev.date_start || `${ev.year}-${ev.month}`;
-                const isCurrent = picked
-                    && picked.title === ev.title
-                    && picked.date_start === ev.date_start
-                    && picked.year === ev.year
-                    && picked.month === ev.month;
+                let isMarked = false, markLabel = '';
+                if (isExtra) {
+                    isMarked = extraEvents.some(e =>
+                        e.title === ev.title && e.date_start === ev.date_start
+                        && e.year === ev.year && e.month === ev.month);
+                    markLabel = '✓ 이미 추가됨';
+                } else {
+                    isMarked = picked
+                        && picked.title === ev.title
+                        && picked.date_start === ev.date_start
+                        && picked.year === ev.year
+                        && picked.month === ev.month;
+                    markLabel = '✓ 현재 선택';
+                }
                 return `
-                    <div class="event-pick-item${isCurrent ? ' tag-modal-item-added' : ''}"
+                    <div class="event-pick-item${isMarked ? ' tag-modal-item-added' : ''}"
                          onclick='_pickEventByIndex(${i})' data-idx="${i}">
                         <div class="event-pick-date">${escHtml(dateText)}</div>
                         <div class="event-pick-title">
                             ${escHtml(ev.title || '제목 없음')}
-                            ${isCurrent ? '<span style="color:#94a3b8;font-size:10px;font-weight:700;margin-left:6px;">✓ 현재 선택</span>' : ''}
+                            ${isExtra ? `<span style="font-size:10px;color:#64748b;margin-left:6px;font-weight:700;">[${escHtml(ev.tag)}]</span>` : ''}
+                            ${isMarked ? `<span style="color:#94a3b8;font-size:10px;font-weight:700;margin-left:6px;">${markLabel}</span>` : ''}
                         </div>
                     </div>`;
             }).join('');
-            // 검색 결과를 정확히 클릭 매핑하기 위해 임시 보관
             window._eventPickFiltered = filtered;
         }
 
         function _pickEventByIndex(idx) {
             const ev = (window._eventPickFiltered || [])[idx];
             if (!ev || !_eventPickTarget) return;
-            pickedEvents[_eventPickTarget] = {
+            const eventData = {
                 tag:        ev.tag,
                 title:      ev.title,
                 date_start: ev.date_start,
                 year:       ev.year,
                 month:      ev.month
             };
+            if (_eventPickTarget === 'extra') {
+                const dup = extraEvents.some(e =>
+                    e.title === eventData.title && e.date_start === eventData.date_start
+                    && e.year === eventData.year && e.month === eventData.month);
+                if (!dup) extraEvents.push(eventData);
+                renderExtraEvents();
+                // extra 모드는 모달 유지 — 여러 개 연속 추가 가능하도록 리스트 갱신만
+                renderEventPickList();
+                return;
+            }
+            pickedEvents[_eventPickTarget] = eventData;
             updatePinDisplay(_eventPickTarget);
             closeEventPicker();
+        }
+
+        function renderExtraEvents() {
+            const list = document.getElementById('extra-events-list');
+            if (!list) return;
+            // 날짜순 정렬
+            extraEvents.sort((a, b) =>
+                `${a.year || ''}${a.month || ''}${a.date_start || ''}`.localeCompare(
+                    `${b.year || ''}${b.month || ''}${b.date_start || ''}`));
+            if (!extraEvents.length) {
+                list.innerHTML = '';
+                return;
+            }
+            list.innerHTML = extraEvents.map((ev, i) => {
+                const dateText = ev.date_start || `${ev.year}-${ev.month}`;
+                return `
+                    <div class="extra-event-row">
+                        <span class="extra-event-date">${escHtml(dateText)}</span>
+                        <span class="extra-event-tag">${escHtml(ev.tag || '')}</span>
+                        <span class="extra-event-title">${escHtml(ev.title || '제목 없음')}</span>
+                        <button type="button" class="btn-remove-tag" onclick="removeExtraEvent(${i})" title="삭제">×</button>
+                    </div>`;
+            }).join('');
+        }
+
+        function removeExtraEvent(idx) {
+            extraEvents.splice(idx, 1);
+            renderExtraEvents();
         }
 
         function clearPickedEvent(target) {
@@ -1336,6 +1529,14 @@
                 : null;
             updatePinDisplay('start');
             updatePinDisplay('end');
+            extraEvents = Array.isArray(d.date_extra_events)
+                ? d.date_extra_events.filter(e => e && e.title).map(e => ({
+                    tag: e.tag || '', title: e.title || '',
+                    date_start: e.date_start || '',
+                    year: e.year || '', month: e.month || ''
+                }))
+                : [];
+            renderExtraEvents();
             document.getElementById('am-status-val').value = d.status  || '';
             document.getElementById('am-overview').value   = d.overview || '';
             document.getElementById('am-title').value      = d.title   || '';
@@ -1343,6 +1544,7 @@
             document.getElementById('am-date').value       = d.date    || '';
             if (quill) quill.root.innerHTML = d.content || '';
             renderImpactTags(Array.isArray(d.impact_tags) ? d.impact_tags : []);
+            renderInfoRows(Array.isArray(d.info_rows) ? d.info_rows : []);
             clearStatus();
         }
 
@@ -1370,6 +1572,8 @@
             pickedEvents.end   = null;
             updatePinDisplay('start');
             updatePinDisplay('end');
+            extraEvents = [];
+            renderExtraEvents();
             document.getElementById('am-status-val').value = '';
             document.getElementById('am-overview').value   = '';
             document.getElementById('am-title').value      = '';
@@ -1377,6 +1581,7 @@
             document.getElementById('am-date').value       = '';
             if (quill) quill.root.innerHTML = '';
             renderImpactTags([]);
+            renderInfoRows([]);
             document.getElementById('related-tags-panel')?.classList.add('am-hidden');
             document.getElementById('impact-timeline-preview')?.classList.add('am-hidden');
             clearStatus();
@@ -1395,6 +1600,11 @@
                 date_end_tag:    document.getElementById('am-date-end-tag').value.trim(),
                 date_start_event: pickedEvents.start || null,
                 date_end_event:   pickedEvents.end   || null,
+                date_extra_events: extraEvents.map(e => ({
+                    tag: e.tag || '', title: e.title || '',
+                    date_start: e.date_start || '',
+                    year: e.year || '', month: e.month || ''
+                })),
                 status:          document.getElementById('am-status-val').value.trim(),
                 overview:        document.getElementById('am-overview').value.trim(),
                 title:           document.getElementById('am-title').value.trim(),
@@ -1402,6 +1612,7 @@
                 date:            document.getElementById('am-date').value.trim(),
                 content:         quill ? quill.root.innerHTML : '',
                 impact_tags:     getImpactTags(),
+                info_rows:       getInfoRows(),
                 updatedAt:       new Date().toISOString()
             };
             const saveBtn = document.getElementById('am-save-btn');
@@ -1436,6 +1647,47 @@
             } finally {
                 hideAdminLoading();
             }
+        }
+
+        // ────────────────────────────────────────
+        // 추가 정보 (Info Box 행) — 시리즈 페이지 상단 인포박스에 표시되는 추가 항목
+        // ────────────────────────────────────────
+        function addInfoRow(label='', value='') {
+            const list = document.getElementById('info-rows-list');
+            const row  = document.createElement('div');
+            row.className = 'info-row-edit';
+            row.innerHTML =
+                `<input type="text" class="am-input info-row-label" placeholder="라벨 (예: 장소)" value="${escAttr(label)}">` +
+                `<input type="text" class="am-input info-row-value" placeholder="값 (예: 베트남 하노이)" value="${escAttr(value)}">` +
+                `<button type="button" class="btn-info-move" onclick="moveInfoRow(this,-1)" title="위로">↑</button>` +
+                `<button type="button" class="btn-info-move" onclick="moveInfoRow(this, 1)" title="아래로">↓</button>` +
+                `<button type="button" class="btn-remove-tag" onclick="this.closest('.info-row-edit').remove()" title="삭제">×</button>`;
+            list.appendChild(row);
+        }
+
+        function moveInfoRow(btn, dir) {
+            const row = btn.closest('.info-row-edit');
+            if (!row) return;
+            const list = row.parentElement;
+            if (dir < 0 && row.previousElementSibling) {
+                list.insertBefore(row, row.previousElementSibling);
+            } else if (dir > 0 && row.nextElementSibling) {
+                list.insertBefore(row.nextElementSibling, row);
+            }
+        }
+
+        function getInfoRows() {
+            return Array.from(document.querySelectorAll('#info-rows-list .info-row-edit'))
+                .map(row => ({
+                    label: row.querySelector('.info-row-label').value.trim(),
+                    value: row.querySelector('.info-row-value').value.trim()
+                }))
+                .filter(r => r.label && r.value);
+        }
+
+        function renderInfoRows(rows) {
+            document.getElementById('info-rows-list').innerHTML = '';
+            (Array.isArray(rows) ? rows : []).forEach(r => addInfoRow(r.label || '', r.value || ''));
         }
 
         // ────────────────────────────────────────
