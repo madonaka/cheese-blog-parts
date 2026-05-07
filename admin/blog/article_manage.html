@@ -292,6 +292,56 @@
         .tag-modal-scan-hint { text-align: center; padding: 40px 20px; color: #94a3b8; font-size: 13px; line-height: 1.7; }
         .tag-modal-item-added { opacity: 0.45; cursor: default; background: #f8fafc; }
 
+        /* 시작/종료 사건 핀 */
+        .date-pin-row {
+            display: flex; align-items: center; gap: 6px; margin-top: 6px;
+            padding: 6px 8px; background: #f8fafc; border: 1px dashed #cbd5e1;
+            border-radius: 6px; flex-wrap: wrap;
+        }
+        .date-pin-status {
+            flex: 1 1 auto; font-size: 11px; color: #64748b; line-height: 1.4;
+            min-width: 0; word-break: keep-all;
+        }
+        .date-pin-status.pinned { color: #0f172a; }
+        .date-pin-status.pinned strong {
+            color: #b45309; font-weight: 900;
+        }
+        .date-pin-status .pin-date { color: #94a3b8; font-size: 10px; margin-left: 4px; }
+        .btn-pin {
+            background: #fff; color: #475569; border: 1px solid #cbd5e1;
+            padding: 4px 9px; border-radius: 5px; font-size: 11px; font-weight: 700;
+            cursor: pointer; transition: 0.12s; white-space: nowrap;
+        }
+        .btn-pin:hover { background: #f1f5f9; border-color: #94a3b8; }
+        .btn-pin:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-pin-clear {
+            background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca;
+            padding: 4px 8px; border-radius: 5px; font-size: 11px; font-weight: 900;
+            cursor: pointer; transition: 0.12s;
+        }
+        .btn-pin-clear:hover { background: #fee2e2; }
+
+        /* 사건 지정 모달 — 리스트 아이템 */
+        .event-pick-item {
+            padding: 10px 14px; border-bottom: 1px solid #f1f5f9;
+            cursor: pointer; transition: background 0.12s;
+            display: flex; gap: 12px; align-items: flex-start;
+        }
+        .event-pick-item:hover { background: #f0f7ff; }
+        .event-pick-item:last-child { border-bottom: none; }
+        .event-pick-date {
+            flex: 0 0 auto; font-family: monospace; font-size: 11px; font-weight: 900;
+            color: #b45309; padding-top: 1px; min-width: 84px;
+        }
+        .event-pick-title {
+            flex: 1; font-size: 13px; font-weight: 700; color: #0f172a;
+            line-height: 1.45; word-break: keep-all;
+        }
+        .event-pick-empty {
+            text-align: center; padding: 40px 20px; color: #94a3b8;
+            font-size: 13px; line-height: 1.7;
+        }
+
         /* 이미지/표 모달 */
         .am-modal-img { width: 360px; }
         .am-modal-table { width: 320px; }
@@ -400,17 +450,27 @@
                                 <div class="am-row2">
                                     <div class="am-field">
                                         <label class="am-label">시작일 기준 태그</label>
-                                        <select id="am-date-start-tag" class="am-input am-select">
+                                        <select id="am-date-start-tag" class="am-input am-select" onchange="onDateTagChange('start')">
                                             <option value="">-- 선택하세요 --</option>
                                         </select>
                                         <p style="font-size:10px;color:#94a3b8;margin:4px 0 0;">해당 태그의 가장 이른 이벤트 날짜를 시작일로 사용</p>
+                                        <div class="date-pin-row" id="am-date-start-pin-row">
+                                            <span class="date-pin-status" id="am-date-start-pin-display">자동 (가장 이른 사건)</span>
+                                            <button type="button" class="btn-pin" id="am-date-start-pin-btn" onclick="openEventPicker('start')">📌 사건 지정</button>
+                                            <button type="button" class="btn-pin-clear am-hidden" id="am-date-start-pin-clear" onclick="clearPickedEvent('start')">✕</button>
+                                        </div>
                                     </div>
                                     <div class="am-field">
                                         <label class="am-label">종료일 기준 태그</label>
-                                        <select id="am-date-end-tag" class="am-input am-select">
+                                        <select id="am-date-end-tag" class="am-input am-select" onchange="onDateTagChange('end')">
                                             <option value="">없음 (진행 중)</option>
                                         </select>
                                         <p style="font-size:10px;color:#94a3b8;margin:4px 0 0;">해당 태그의 가장 늦은 이벤트 날짜를 종료일로 사용</p>
+                                        <div class="date-pin-row" id="am-date-end-pin-row">
+                                            <span class="date-pin-status" id="am-date-end-pin-display">자동 (가장 늦은 사건)</span>
+                                            <button type="button" class="btn-pin" id="am-date-end-pin-btn" onclick="openEventPicker('end')">📌 사건 지정</button>
+                                            <button type="button" class="btn-pin-clear am-hidden" id="am-date-end-pin-clear" onclick="clearPickedEvent('end')">✕</button>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -515,6 +575,27 @@
             </div>
             <div class="am-modal-btns">
                 <button class="btn-cancel" onclick="closeTagModal()">취소</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── 사건 지정 모달 ── -->
+    <div id="event-pick-modal" class="am-overlay" onclick="if(event.target===this)closeEventPicker()">
+        <div class="am-modal tag-modal-wrap">
+            <h4 id="event-pick-title">특정 사건 지정</h4>
+            <div style="font-size:12px;color:#475569;margin:0 0 8px;line-height:1.5;">
+                태그 <strong id="event-pick-tag-label" style="color:#0f172a;"></strong>에 속한 사건 중 하나를 선택하세요.<br>
+                <span style="color:#94a3b8;font-size:11px;">선택 시 해당 사건의 날짜와 사건명이 시리즈 표시 페이지에 노출됩니다.</span>
+            </div>
+            <div class="tag-modal-controls">
+                <input type="text" class="tag-modal-search" id="event-pick-search"
+                    placeholder="사건명 또는 날짜(YYYY-MM-DD)로 검색..." oninput="renderEventPickList()">
+            </div>
+            <div class="tag-modal-list" id="event-pick-list">
+                <div class="tag-modal-scan-hint">사건을 불러오는 중입니다...</div>
+            </div>
+            <div class="am-modal-btns">
+                <button class="btn-cancel" onclick="closeEventPicker()">취소</button>
             </div>
         </div>
     </div>
@@ -983,6 +1064,168 @@
         }
 
         // ────────────────────────────────────────
+        // 시작/종료 사건 핀 (특정 사건 지정)
+        // ────────────────────────────────────────
+        // 저장 형식: { tag, title, date_start, year, month }
+        let pickedEvents = { start: null, end: null };
+        let _eventPickTarget = null; // 'start' | 'end'
+
+        // 태그(label)에 속한 모든 이벤트 수집 (날짜 오름차순)
+        function collectEventsForTag(tagLabel) {
+            const out = [];
+            for (const doc of cachedIssuesData) {
+                const year = (doc.id || '').replace('year_', '');
+                Object.entries(doc.months || {}).forEach(([m, mData]) => {
+                    (mData.events || []).forEach(ev => {
+                        const tagList = (ev.tags || '').split(',').map(t => t.trim()).filter(Boolean);
+                        if (tagList.some(t => tagToLabel(t) === tagLabel)) {
+                            out.push({
+                                tag: tagLabel,
+                                title: ev.title || '',
+                                date_start: ev.date_start || '',
+                                year, month: m
+                            });
+                        }
+                    });
+                });
+            }
+            out.sort((a, b) =>
+                `${a.year}${a.month}${a.date_start || ''}`.localeCompare(
+                    `${b.year}${b.month}${b.date_start || ''}`));
+            return out;
+        }
+
+        async function openEventPicker(target) {
+            const sel = document.getElementById(`am-date-${target}-tag`);
+            const tag = sel ? sel.value.trim() : '';
+            if (!tag) {
+                showStatus(`먼저 ${target === 'start' ? '시작일' : '종료일'} 기준 태그를 선택하세요.`, 'err');
+                return;
+            }
+            _eventPickTarget = target;
+            document.getElementById('event-pick-tag-label').textContent = tag;
+            document.getElementById('event-pick-search').value = '';
+            document.getElementById('event-pick-modal').classList.add('open');
+
+            const listEl = document.getElementById('event-pick-list');
+            if (!cachedIssuesData.length) {
+                listEl.innerHTML = '<div class="tag-modal-scan-hint">아카이브에서 사건을 불러오는 중...</div>';
+                try {
+                    const issuesRes = await safeFetchDB({ action: "get", collection: "historical_issues" });
+                    cachedIssuesData = issuesRes.data || [];
+                } catch (e) {
+                    listEl.innerHTML = `<div class="event-pick-empty">불러오기 실패: ${escHtml(e.message)}</div>`;
+                    return;
+                }
+            }
+            renderEventPickList();
+        }
+
+        function renderEventPickList() {
+            if (!_eventPickTarget) return;
+            const tag = document.getElementById(`am-date-${_eventPickTarget}-tag`).value.trim();
+            const q = (document.getElementById('event-pick-search').value || '').toLowerCase();
+            const events = collectEventsForTag(tag);
+            const filtered = events.filter(ev => {
+                if (!q) return true;
+                return (ev.title || '').toLowerCase().includes(q)
+                    || (ev.date_start || '').toLowerCase().includes(q);
+            });
+            const listEl = document.getElementById('event-pick-list');
+            if (!events.length) {
+                listEl.innerHTML = `<div class="event-pick-empty">태그 "${escHtml(tag)}"에 등록된 사건이 없습니다.<br><span style="font-size:11px;">historical_issues에 해당 태그를 가진 이벤트가 있는지 확인하세요.</span></div>`;
+                return;
+            }
+            if (!filtered.length) {
+                listEl.innerHTML = '<div class="event-pick-empty">검색 조건에 맞는 사건이 없습니다.</div>';
+                return;
+            }
+            const picked = pickedEvents[_eventPickTarget];
+            listEl.innerHTML = filtered.map((ev, i) => {
+                const dateText = ev.date_start || `${ev.year}-${ev.month}`;
+                const isCurrent = picked
+                    && picked.title === ev.title
+                    && picked.date_start === ev.date_start
+                    && picked.year === ev.year
+                    && picked.month === ev.month;
+                return `
+                    <div class="event-pick-item${isCurrent ? ' tag-modal-item-added' : ''}"
+                         onclick='_pickEventByIndex(${i})' data-idx="${i}">
+                        <div class="event-pick-date">${escHtml(dateText)}</div>
+                        <div class="event-pick-title">
+                            ${escHtml(ev.title || '제목 없음')}
+                            ${isCurrent ? '<span style="color:#94a3b8;font-size:10px;font-weight:700;margin-left:6px;">✓ 현재 선택</span>' : ''}
+                        </div>
+                    </div>`;
+            }).join('');
+            // 검색 결과를 정확히 클릭 매핑하기 위해 임시 보관
+            window._eventPickFiltered = filtered;
+        }
+
+        function _pickEventByIndex(idx) {
+            const ev = (window._eventPickFiltered || [])[idx];
+            if (!ev || !_eventPickTarget) return;
+            pickedEvents[_eventPickTarget] = {
+                tag:        ev.tag,
+                title:      ev.title,
+                date_start: ev.date_start,
+                year:       ev.year,
+                month:      ev.month
+            };
+            updatePinDisplay(_eventPickTarget);
+            closeEventPicker();
+        }
+
+        function clearPickedEvent(target) {
+            pickedEvents[target] = null;
+            updatePinDisplay(target);
+        }
+
+        function updatePinDisplay(target) {
+            const display = document.getElementById(`am-date-${target}-pin-display`);
+            const clearBtn = document.getElementById(`am-date-${target}-pin-clear`);
+            const sel = document.getElementById(`am-date-${target}-tag`);
+            const ev = pickedEvents[target];
+            if (!display || !clearBtn) return;
+
+            if (ev && ev.title) {
+                display.classList.add('pinned');
+                display.innerHTML = `📌 <strong>${escHtml(ev.title)}</strong>`
+                    + (ev.date_start ? `<span class="pin-date">(${escHtml(ev.date_start)})</span>` : '');
+                clearBtn.classList.remove('am-hidden');
+            } else {
+                display.classList.remove('pinned');
+                if (target === 'start') {
+                    display.textContent = sel && sel.value
+                        ? '자동 (태그 내 가장 이른 사건)'
+                        : '태그를 먼저 선택하세요';
+                } else {
+                    display.textContent = sel && sel.value
+                        ? '자동 (태그 내 가장 늦은 사건)'
+                        : '태그 미선택 시 진행 중으로 표시';
+                }
+                clearBtn.classList.add('am-hidden');
+            }
+        }
+
+        function closeEventPicker() {
+            _eventPickTarget = null;
+            window._eventPickFiltered = null;
+            document.getElementById('event-pick-modal').classList.remove('open');
+        }
+
+        // 셀렉트의 태그가 바뀌면, 핀이 다른 태그를 가리키고 있을 경우 무효화
+        function onDateTagChange(target) {
+            const sel = document.getElementById(`am-date-${target}-tag`);
+            const newTag = sel ? sel.value.trim() : '';
+            const ev = pickedEvents[target];
+            if (ev && ev.tag !== newTag) {
+                pickedEvents[target] = null;
+            }
+            updatePinDisplay(target);
+        }
+
+        // ────────────────────────────────────────
         // 시리즈 ID 관리
         // ────────────────────────────────────────
         // tagItems에서 해당 ID의 날짜 범위 반환 (스캔 전이면 '')
@@ -1013,6 +1256,11 @@
             endSel.innerHTML   = `<option value="">없음 (진행 중)</option>${opts}`;
             startSel.value = prevStart;
             endSel.value   = prevEnd;
+            // 핀 표시도 현재 셀렉트 상태와 동기화 (태그가 제거되면 핀 무효화)
+            if (typeof onDateTagChange === 'function') {
+                onDateTagChange('start');
+                onDateTagChange('end');
+            }
         }
 
         function renderSeriesIds(ids) {
@@ -1076,6 +1324,18 @@
             document.getElementById('am-form-title').textContent = '시리즈 수정';
             document.getElementById('am-date-start-tag').value = d.date_start_tag || '';
             document.getElementById('am-date-end-tag').value   = d.date_end_tag   || '';
+            pickedEvents.start = (d.date_start_event && typeof d.date_start_event === 'object' && d.date_start_event.title)
+                ? { tag: d.date_start_event.tag || '', title: d.date_start_event.title || '',
+                    date_start: d.date_start_event.date_start || '',
+                    year: d.date_start_event.year || '', month: d.date_start_event.month || '' }
+                : null;
+            pickedEvents.end = (d.date_end_event && typeof d.date_end_event === 'object' && d.date_end_event.title)
+                ? { tag: d.date_end_event.tag || '', title: d.date_end_event.title || '',
+                    date_start: d.date_end_event.date_start || '',
+                    year: d.date_end_event.year || '', month: d.date_end_event.month || '' }
+                : null;
+            updatePinDisplay('start');
+            updatePinDisplay('end');
             document.getElementById('am-status-val').value = d.status  || '';
             document.getElementById('am-overview').value   = d.overview || '';
             document.getElementById('am-title').value      = d.title   || '';
@@ -1106,6 +1366,10 @@
             renderSeriesIds([]);
             document.getElementById('am-date-start-tag').value = '';
             document.getElementById('am-date-end-tag').value   = '';
+            pickedEvents.start = null;
+            pickedEvents.end   = null;
+            updatePinDisplay('start');
+            updatePinDisplay('end');
             document.getElementById('am-status-val').value = '';
             document.getElementById('am-overview').value   = '';
             document.getElementById('am-title').value      = '';
@@ -1129,6 +1393,8 @@
                 series_ids:      ids,
                 date_start_tag:  document.getElementById('am-date-start-tag').value.trim(),
                 date_end_tag:    document.getElementById('am-date-end-tag').value.trim(),
+                date_start_event: pickedEvents.start || null,
+                date_end_event:   pickedEvents.end   || null,
                 status:          document.getElementById('am-status-val').value.trim(),
                 overview:        document.getElementById('am-overview').value.trim(),
                 title:           document.getElementById('am-title').value.trim(),
