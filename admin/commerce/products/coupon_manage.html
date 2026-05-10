@@ -163,6 +163,44 @@
         }
         .btn-inline:hover { background: #f1f5f9; color: #1e293b; }
 
+        .coupon-card { cursor: pointer; }
+
+        /* Coupon Edit Modal */
+        .coupon-edit-modal {
+            background: #fff;
+            border-radius: 20px;
+            width: 720px;
+            max-width: 95vw;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .edit-modal-header {
+            padding: 24px 30px;
+            border-bottom: 1px solid #f1f5f9;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        .edit-modal-body {
+            padding: 24px 30px;
+            overflow-y: auto;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+        }
+        .edit-modal-footer {
+            padding: 20px 30px;
+            border-top: 1px solid #f1f5f9;
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            flex-shrink: 0;
+        }
+
         /* Mobile Responsiveness */
         @media (max-width: 768px) {
             .form-grid { grid-template-columns: 1fr; gap: 15px; }
@@ -272,9 +310,17 @@
                                     </div>
                                 </div>
                                 <div class="form-item" id="fcTargetListRow" style="display: none; grid-column: span 2;">
-                                    <label>외부 주문 정보 리스트 (주문번호 | 주문일시)</label>
-                                    <textarea id="fcTargetList" class="styled-input" style="height: 100px; resize: vertical;" placeholder="#7159355 | 26.03.14&#10;#7159356 | 26.03.15"></textarea>
-                                    <p style="font-size: 0.75rem; color: #94a3b8; margin-top: 5px;">외부 사이트(크몽 등) 데이터를 한 줄에 하나씩 입력해 주세요.</p>
+                                    <label>외부 주문 정보 리스트</label>
+                                    <div style="border:1.5px solid #e2e8f0; border-radius:12px; overflow:hidden; margin-bottom:8px;">
+                                        <div style="display:grid; grid-template-columns:1fr 1fr 36px; gap:0; background:#f8fafc; border-bottom:1px solid #e2e8f0; padding:8px 12px; font-size:0.75rem; font-weight:700; color:#64748b;">
+                                            <span>주문번호</span>
+                                            <span>주문일시 <span style="font-weight:400; color:#94a3b8;">— YY.MM.DD 형식 (예: 26.03.14)</span></span>
+                                            <span></span>
+                                        </div>
+                                        <div id="fcTargetListRows" style="display:flex; flex-direction:column; gap:0;"></div>
+                                    </div>
+                                    <button type="button" onclick="window.addExternalOrderRow()" style="padding:7px 16px; background:#f0f9ff; color:#0369a1; border:1.5px solid #bae6fd; border-radius:8px; font-size:0.82rem; font-weight:700; cursor:pointer;">+ 주문 추가</button>
+                                    <p style="font-size:0.75rem; color:#94a3b8; margin-top:6px;">크몽 등 외부 사이트 구매자의 주문번호와 주문일시를 입력하세요.</p>
                                 </div>
                             </div>
                         </div>
@@ -292,8 +338,14 @@
                                 </div>
                                 <div class="form-item">
                                     <label>전체 선착순 수량 (총 발행 수량)</label>
-                                    <input type="number" id="fcLimit" class="styled-input" value="100">
-                                    <p style="font-size: 0.75rem; color: #94a3b8; margin-top: 5px;">전체 발급 가능 총량 (선착순 수량)</p>
+                                    <div style="display:flex; align-items:center; gap:10px;">
+                                        <input type="number" id="fcLimit" class="styled-input" value="100" style="flex:1; min-width:0;">
+                                        <label style="display:flex; align-items:center; gap:6px; white-space:nowrap; cursor:pointer; font-size:0.85rem; font-weight:700; color:#475569; flex-shrink:0;">
+                                            <input type="checkbox" id="fcLimitUnlimited" onchange="window.toggleLimitUnlimited(this)" style="width:16px; height:16px; cursor:pointer; accent-color:#6366f1;">
+                                            무제한
+                                        </label>
+                                    </div>
+                                    <p style="font-size: 0.75rem; color: #94a3b8; margin-top: 5px;">선착순 총량. '무제한' 체크 시 수량 제한 없음</p>
                                 </div>
                                 <div class="form-item">
                                     <label>1인당 사용 가능 횟수</label>
@@ -358,6 +410,172 @@
         </div>
     </div>
 
+    <!-- Coupon Detail / Edit Modal -->
+    <div id="couponDetailModal" class="modal-overlay">
+        <div class="coupon-edit-modal">
+            <div class="edit-modal-header">
+                <div>
+                    <h3 style="margin:0; font-size:1.2rem; font-weight:800; color:#1e293b;">🎫 쿠폰 상세 / 수정</h3>
+                    <p style="margin:4px 0 0; font-size:0.82rem; color:#94a3b8;">쿠폰 정보를 수정한 후 저장하세요.</p>
+                </div>
+                <button onclick="closeCouponDetail()" style="background:none; border:none; font-size:1.8rem; cursor:pointer; color:#94a3b8; line-height:1;">&times;</button>
+            </div>
+            <div class="edit-modal-body">
+                <div class="form-steps-wrapper">
+                    <!-- Step 1 -->
+                    <div class="form-step">
+                        <div class="step-header">
+                            <span class="step-number">1</span>
+                            <span class="step-title">핵심 혜택 및 코드 설정</span>
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-item">
+                                <label>쿠폰 코드 (변경 불가)</label>
+                                <input type="text" id="edCode" class="styled-input" readonly style="background:#f8fafc; color:#94a3b8; cursor:not-allowed;">
+                            </div>
+                            <div class="form-item">
+                                <label>쿠폰 종류</label>
+                                <select id="edType" class="styled-input">
+                                    <option value="percent">퍼센트 할인 (%)</option>
+                                    <option value="fixed">고정 금액 할인 (원)</option>
+                                </select>
+                            </div>
+                            <div class="form-item">
+                                <label>할인 값</label>
+                                <input type="number" id="edValue" class="styled-input">
+                            </div>
+                            <div class="form-item">
+                                <label>최소 주문금액</label>
+                                <input type="number" id="edMinAmount" class="styled-input">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 2 -->
+                    <div class="form-step">
+                        <div class="step-header">
+                            <span class="step-number">2</span>
+                            <span class="step-title">발행 유형 및 타겟팅 설정</span>
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-item">
+                                <label>발행 유형</label>
+                                <select id="edIssueType" class="styled-input">
+                                    <option value="public">공용 코드 (직접 입력)</option>
+                                    <option value="download">다운로드형 (상품페이지 노출)</option>
+                                    <option value="auto">자동 지급 (가입/이벤트)</option>
+                                </select>
+                            </div>
+                            <div class="form-item">
+                                <label>발급 대상 조건 (Targeting)</label>
+                                <select id="edTargetCriteria" class="styled-input">
+                                    <option value="everyone">모든 사용자 (로그인 시)</option>
+                                    <option value="purchased_product">특정 상품 주문 경험자</option>
+                                    <option value="purchased_external">외부 사이트 구매자 (주문정보)</option>
+                                    <option value="new_user">신규 가입자 (첫 주문 전)</option>
+                                </select>
+                            </div>
+                            <div class="form-item" id="edTargetRow" style="display:none;">
+                                <label id="edTargetLabel">대상 상품 ID / 조건값</label>
+                                <div style="display:flex; gap:8px;">
+                                    <input type="text" id="edTargetValue" class="styled-input" placeholder="예: prod_usa_001">
+                                    <button class="btn-inline" id="edTargetSearchBtn" onclick="openProductSelector('edTargetValue')">🔍 검색</button>
+                                </div>
+                            </div>
+                            <div class="form-item" id="edTargetListRow" style="display:none; grid-column:span 2;">
+                                <label>외부 주문 정보 리스트</label>
+                                <div style="border:1.5px solid #e2e8f0; border-radius:12px; overflow:hidden; margin-bottom:8px;">
+                                    <div style="display:grid; grid-template-columns:1fr 1fr 36px; gap:0; background:#f8fafc; border-bottom:1px solid #e2e8f0; padding:8px 12px; font-size:0.75rem; font-weight:700; color:#64748b;">
+                                        <span>주문번호</span>
+                                        <span>주문일시 <span style="font-weight:400; color:#94a3b8;">— YY.MM.DD 형식 (예: 26.03.14)</span></span>
+                                        <span></span>
+                                    </div>
+                                    <div id="edTargetListRows" style="display:flex; flex-direction:column; gap:0;"></div>
+                                </div>
+                                <button type="button" onclick="window.addEditExternalOrderRow()" style="padding:7px 16px; background:#f0f9ff; color:#0369a1; border:1.5px solid #bae6fd; border-radius:8px; font-size:0.82rem; font-weight:700; cursor:pointer;">+ 주문 추가</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 3 -->
+                    <div class="form-step">
+                        <div class="step-header">
+                            <span class="step-number">3</span>
+                            <span class="step-title">유효 기간 및 사용 한도</span>
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-item">
+                                <label>만료일 (유효 기간)</label>
+                                <input type="date" id="edExpiry" class="styled-input">
+                            </div>
+                            <div class="form-item">
+                                <label>전체 선착순 수량</label>
+                                <div style="display:flex; align-items:center; gap:10px;">
+                                    <input type="number" id="edLimit" class="styled-input" style="flex:1; min-width:0;">
+                                    <label style="display:flex; align-items:center; gap:6px; white-space:nowrap; cursor:pointer; font-size:0.85rem; font-weight:700; color:#475569; flex-shrink:0;">
+                                        <input type="checkbox" id="edLimitUnlimited" onchange="window.edToggleLimitUnlimited(this)" style="width:16px; height:16px; cursor:pointer; accent-color:#6366f1;">
+                                        무제한
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="form-item">
+                                <label>사용 현황 (읽기 전용)</label>
+                                <div style="padding:12px; border-radius:10px; border:1px solid #e2e8f0; background:#f8fafc; font-size:0.9rem; color:#64748b;">
+                                    사용: <strong id="edUsedCount">0</strong>회
+                                </div>
+                            </div>
+                            <div class="form-item">
+                                <label>1인당 사용 가능 횟수</label>
+                                <input type="number" id="edPerUser" class="styled-input" value="1">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 4 -->
+                    <div class="form-step">
+                        <div class="step-header">
+                            <span class="step-number">4</span>
+                            <span class="step-title">상품 적용 범위 설정</span>
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-item" style="grid-column:span 2;">
+                                <label>쿠폰이 적용될 상품 범위</label>
+                                <select id="edRange" class="styled-input">
+                                    <option value="all">전체 상품 적용</option>
+                                    <option value="category">특정 카테고리만 적용</option>
+                                    <option value="product">특정 상품에만 전용</option>
+                                </select>
+                            </div>
+                            <div class="form-item" id="edRangeTargetRow" style="display:none; grid-column:span 2;">
+                                <label>대상 카테고리명 또는 상품 ID (쉼표 구분)</label>
+                                <div style="display:flex; gap:8px;">
+                                    <input type="text" id="edRangeTarget" class="styled-input">
+                                    <button class="btn-inline" id="edRangeSearchBtn" onclick="openProductSelector('edRangeTarget')">🔍 상품 검색</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 5: Status -->
+                    <div class="form-step">
+                        <div class="step-header">
+                            <span class="step-number">5</span>
+                            <span class="step-title">활성화 상태</span>
+                        </div>
+                        <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:0.9rem; font-weight:600; color:#1e293b;">
+                            <input type="checkbox" id="edIsActive" style="width:18px; height:18px; cursor:pointer; accent-color:#10b981;">
+                            쿠폰 활성화 (체크 해제 시 비활성화)
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="edit-modal-footer">
+                <button class="btn-delete" onclick="closeCouponDetail()" style="padding:12px 24px; border:1px solid #e2e8f0;">취소</button>
+                <button class="btn-primary" onclick="saveCouponEdit()" style="padding:12px 40px; font-size:1rem;">저장</button>
+            </div>
+        </div>
+    </div>
+
     <script src="../../admin-common.js"></script>
 
     <script type="module">
@@ -406,7 +624,7 @@
                 const valueText = c.type === 'percent' ? `${c.value}%` : `${Number(c.value).toLocaleString()}원`;
 
                 return `
-                    <div class="coupon-card ${statusClass}">
+                    <div class="coupon-card ${statusClass}" onclick="openCouponDetail('${c.id}')">
                         <div class="coupon-header">
                             <span class="coupon-icon">🎫</span>
                             <span class="coupon-code">${c.code}</span>
@@ -418,7 +636,7 @@
                         <div class="coupon-meta">
                             <div class="meta-item">
                                 <span class="meta-label">사용 현황</span>
-                                <span class="meta-value">${c.used_count || 0} / ${c.usage_limit}</span>
+                                <span class="meta-value">${c.used_count || 0} / ${(c.usage_limit >= 999999 || c.usage_limit == null) ? '무제한' : c.usage_limit}</span>
                             </div>
                             <div class="meta-item">
                                 <span class="meta-label">만료일</span>
@@ -434,10 +652,10 @@
                             </div>
                         </div>
                         <div class="coupon-actions">
-                            <button class="btn-coupon btn-deactivate" onclick="toggleCouponStatus('${c.id}', ${c.is_active})">
+                            <button class="btn-coupon btn-deactivate" onclick="event.stopPropagation(); toggleCouponStatus('${c.id}', ${c.is_active})">
                                 ${c.is_active ? '비활성화' : '활성화'}
                             </button>
-                            <button class="btn-coupon btn-delete" onclick="deleteCoupon('${c.id}')">삭제</button>
+                            <button class="btn-coupon btn-delete" onclick="event.stopPropagation(); deleteCoupon('${c.id}')">삭제</button>
                         </div>
                     </div>
                 `;
@@ -453,14 +671,19 @@
             const type = document.getElementById('fcType').value;
             const value = Number(document.getElementById('fcValue').value);
             const minAmount = Number(document.getElementById('fcMinAmount').value);
-            const limitVal = Number(document.getElementById('fcLimit').value);
+            const isUnlimited = document.getElementById('fcLimitUnlimited').checked;
+            const limitVal = isUnlimited ? 999999 : Number(document.getElementById('fcLimit').value);
             const perUserLimit = Number(document.getElementById('fcPerUser').value) || 1;
             const expiry = document.getElementById('fcExpiry').value;
             const issueType = document.getElementById('fcIssueType').value;
             const targetCriteria = document.getElementById('fcTargetCriteria').value;
             const targetValue = document.getElementById('fcTargetValue').value.trim();
-            const targetListRaw = document.getElementById('fcTargetList').value;
-            const targetList = targetListRaw.split('\n').map(s => s.trim()).filter(s => s);
+            const targetList = Array.from(document.querySelectorAll('.ext-order-row')).map(row => {
+                const no = row.querySelector('.ext-no').value.trim();
+                const dateText = row.querySelector('.ext-date-text').value.trim(); // YY.MM.DD
+                if (!no || !dateText) return null;
+                return `${no} | ${dateText}`;
+            }).filter(Boolean);
             const range = document.getElementById('fcRange').value;
             const rangeTarget = document.getElementById('fcRangeTarget').value;
 
@@ -579,6 +802,176 @@
             renderProductSelectorList(e.target.value);
         });
 
+        let _editingCouponId = null;
+
+        window.openCouponDetail = (id) => {
+            const c = allCoupons.find(x => x.id === id);
+            if (!c) return;
+            _editingCouponId = id;
+
+            // Step 1
+            document.getElementById('edCode').value = c.code || '';
+            document.getElementById('edType').value = c.type || 'percent';
+            document.getElementById('edValue').value = c.value || '';
+            document.getElementById('edMinAmount').value = c.min_order_amount ?? 0;
+
+            // Step 2
+            document.getElementById('edIssueType').value = c.issue_type || 'public';
+            const criteria = c.target_criteria || 'everyone';
+            document.getElementById('edTargetCriteria').value = criteria;
+            _applyEdTargetCriteria(criteria);
+            document.getElementById('edTargetValue').value = c.target_value || '';
+
+            const rowsContainer = document.getElementById('edTargetListRows');
+            rowsContainer.innerHTML = '';
+            (c.target_list || []).forEach(entry => {
+                const parts = entry.split(' | ');
+                window.addEditExternalOrderRow(parts[0] || '', parts[1] || '');
+            });
+
+            // Step 3
+            document.getElementById('edExpiry').value = c.expired_at || '';
+            const isUnlimited = c.usage_limit >= 999999 || c.usage_limit == null;
+            const limitChk = document.getElementById('edLimitUnlimited');
+            limitChk.checked = isUnlimited;
+            window.edToggleLimitUnlimited(limitChk);
+            if (!isUnlimited) document.getElementById('edLimit').value = c.usage_limit ?? 100;
+            document.getElementById('edUsedCount').textContent = c.used_count || 0;
+            document.getElementById('edPerUser').value = c.per_user_limit || 1;
+
+            // Step 4
+            const range = c.range || 'all';
+            document.getElementById('edRange').value = range;
+            document.getElementById('edRangeTarget').value = c.range_target || '';
+            _applyEdRange(range);
+
+            // Step 5
+            document.getElementById('edIsActive').checked = c.is_active !== false;
+
+            document.getElementById('couponDetailModal').classList.add('show');
+        };
+
+        function _applyEdTargetCriteria(val) {
+            const targetRow = document.getElementById('edTargetRow');
+            const listRow = document.getElementById('edTargetListRow');
+            if (val === 'purchased_product') {
+                targetRow.style.display = 'block';
+                listRow.style.display = 'none';
+                document.getElementById('edTargetLabel').innerText = '대상 상품 ID';
+                document.getElementById('edTargetSearchBtn').style.display = 'inline-block';
+                document.getElementById('edTargetValue').placeholder = '예: prod_usa_001';
+            } else if (val === 'purchased_external') {
+                targetRow.style.display = 'block';
+                listRow.style.display = 'block';
+                document.getElementById('edTargetLabel').innerText = '외부 이벤트 명칭 (참고용)';
+                document.getElementById('edTargetSearchBtn').style.display = 'none';
+                document.getElementById('edTargetValue').placeholder = '예: 크몽 미국사연표 구매자';
+            } else {
+                targetRow.style.display = 'none';
+                listRow.style.display = 'none';
+            }
+        }
+
+        function _applyEdRange(val) {
+            const row = document.getElementById('edRangeTargetRow');
+            const btn = document.getElementById('edRangeSearchBtn');
+            row.style.display = val === 'all' ? 'none' : 'block';
+            if (btn) btn.style.display = val === 'category' ? 'none' : 'inline-block';
+        }
+
+        window.closeCouponDetail = () => {
+            document.getElementById('couponDetailModal').classList.remove('show');
+            _editingCouponId = null;
+        };
+
+        window.saveCouponEdit = async () => {
+            if (!_editingCouponId) return;
+
+            const type = document.getElementById('edType').value;
+            const value = Number(document.getElementById('edValue').value);
+            const minAmount = Number(document.getElementById('edMinAmount').value);
+            const isUnlimited = document.getElementById('edLimitUnlimited').checked;
+            const limitVal = isUnlimited ? 999999 : Number(document.getElementById('edLimit').value);
+            const perUserLimit = Number(document.getElementById('edPerUser').value) || 1;
+            const expiry = document.getElementById('edExpiry').value;
+            const issueType = document.getElementById('edIssueType').value;
+            const targetCriteria = document.getElementById('edTargetCriteria').value;
+            const targetValue = document.getElementById('edTargetValue').value.trim();
+            const targetList = Array.from(document.querySelectorAll('#edTargetListRows .ext-order-row')).map(row => {
+                const no = row.querySelector('.ext-no').value.trim();
+                const dateText = row.querySelector('.ext-date-text').value.trim();
+                if (!no || !dateText) return null;
+                return `${no} | ${dateText}`;
+            }).filter(Boolean);
+            const range = document.getElementById('edRange').value;
+            const rangeTarget = document.getElementById('edRangeTarget').value;
+            const isActive = document.getElementById('edIsActive').checked;
+
+            if (!value) { alert('할인 값을 입력해 주세요.'); return; }
+
+            try {
+                await safeFetchDB({
+                    action: 'update',
+                    collection: 'coupons',
+                    id: _editingCouponId,
+                    data: {
+                        type, value,
+                        min_order_amount: minAmount,
+                        usage_limit: limitVal,
+                        per_user_limit: perUserLimit,
+                        expired_at: expiry,
+                        issue_type: issueType,
+                        target_criteria: targetCriteria,
+                        target_value: targetValue,
+                        target_list: targetList,
+                        range,
+                        range_target: rangeTarget,
+                        is_active: isActive
+                    }
+                });
+                window.closeCouponDetail();
+                loadCoupons();
+            } catch (err) {
+                console.error('Update Coupon Error:', err);
+                alert('저장 실패: ' + err.message);
+            }
+        };
+
+        window.addEditExternalOrderRow = (orderNo = '', orderDate = '') => {
+            const container = document.getElementById('edTargetListRows');
+            const row = document.createElement('div');
+            row.className = 'ext-order-row';
+            row.style.cssText = 'display:grid; grid-template-columns:1fr 1fr 36px; gap:0; border-top:1px solid #f1f5f9;';
+            const inputStyle = 'border:none; outline:none; padding:9px 12px; font-size:0.88rem; background:transparent; width:100%; box-sizing:border-box;';
+            let pickerVal = '';
+            if (orderDate) {
+                const p = orderDate.split('.');
+                if (p.length === 3) pickerVal = `20${p[0]}-${p[1]}-${p[2]}`;
+            }
+            row.innerHTML = `
+                <input class="ext-no" type="text" placeholder="예: #7159355" value="${orderNo}" style="${inputStyle}">
+                <div style="display:flex; align-items:center; border-left:1px solid #f1f5f9; overflow:hidden;">
+                    <input class="ext-date-text" type="text" placeholder="YY.MM.DD" value="${orderDate}"
+                        style="${inputStyle} flex:1;"
+                        oninput="window._syncPickerFromText(this)">
+                    <input class="ext-date-picker" type="date" value="${pickerVal}"
+                        title="달력으로 선택"
+                        style="width:30px; height:30px; border:none; background:transparent; cursor:pointer; padding:0; opacity:0.45; flex-shrink:0; margin-right:6px;"
+                        onchange="window._syncTextFromPicker(this)">
+                </div>
+                <button type="button" onclick="this.closest('.ext-order-row').remove()" style="border:none; background:none; color:#94a3b8; font-size:1rem; cursor:pointer; padding:0; display:flex; align-items:center; justify-content:center; border-left:1px solid #f1f5f9;">✕</button>
+            `;
+            container.appendChild(row);
+        };
+
+        window.edToggleLimitUnlimited = (chk) => {
+            const input = document.getElementById('edLimit');
+            input.disabled = chk.checked;
+            input.style.opacity = chk.checked ? '0.4' : '1';
+            if (chk.checked) { input.dataset.prev = input.value; input.value = ''; input.placeholder = '무제한'; }
+            else { input.value = input.dataset.prev || 100; input.placeholder = ''; }
+        };
+
         window.deleteCoupon = async (id) => {
             if (!confirm("정말 이 쿠폰을 삭제하시겠습니까? 기록이 영구삭제됩니다.")) return;
             try {
@@ -606,6 +999,66 @@
                 const targetRow = document.getElementById('fcRangeTargetRow');
                 targetRow.style.display = (e.target.value === 'all') ? 'none' : 'block';
             });
+
+            window.addExternalOrderRow = (orderNo = '', orderDate = '') => {
+                const container = document.getElementById('fcTargetListRows');
+                const row = document.createElement('div');
+                row.className = 'ext-order-row';
+                row.style.cssText = 'display:grid; grid-template-columns:1fr 1fr 36px; gap:0; border-top:1px solid #f1f5f9;';
+                const inputStyle = 'border:none; outline:none; padding:9px 12px; font-size:0.88rem; background:transparent; width:100%; box-sizing:border-box;';
+
+                // orderDate is stored as "YY.MM.DD" — convert to YYYY-MM-DD for the date picker
+                let pickerVal = '';
+                if (orderDate) {
+                    const p = orderDate.split('.');
+                    if (p.length === 3) pickerVal = `20${p[0]}-${p[1]}-${p[2]}`;
+                }
+
+                row.innerHTML = `
+                    <input class="ext-no" type="text" placeholder="예: #7159355" value="${orderNo}" style="${inputStyle}">
+                    <div style="display:flex; align-items:center; border-left:1px solid #f1f5f9; overflow:hidden;">
+                        <input class="ext-date-text" type="text" placeholder="YY.MM.DD" value="${orderDate}"
+                            style="${inputStyle} flex:1;"
+                            oninput="window._syncPickerFromText(this)">
+                        <input class="ext-date-picker" type="date" value="${pickerVal}"
+                            title="달력으로 선택"
+                            style="width:30px; height:30px; border:none; background:transparent; cursor:pointer; padding:0; opacity:0.45; flex-shrink:0; margin-right:6px;"
+                            onchange="window._syncTextFromPicker(this)">
+                    </div>
+                    <button type="button" onclick="this.closest('.ext-order-row').remove()" style="border:none; background:none; color:#94a3b8; font-size:1rem; cursor:pointer; padding:0; display:flex; align-items:center; justify-content:center; border-left:1px solid #f1f5f9;">✕</button>
+                `;
+                container.appendChild(row);
+            };
+
+            // 텍스트 입력(YY.MM.DD) → 날짜 피커(YYYY-MM-DD) 동기화
+            window._syncPickerFromText = (el) => {
+                const v = el.value.trim();
+                const picker = el.closest('div').querySelector('.ext-date-picker');
+                if (!picker) return;
+                const p = v.split('.');
+                if (p.length === 3 && p.every(s => /^\d{2}$/.test(s))) {
+                    picker.value = `20${p[0]}-${p[1]}-${p[2]}`;
+                } else {
+                    picker.value = '';
+                }
+            };
+
+            // 날짜 피커(YYYY-MM-DD) → 텍스트(YY.MM.DD) 동기화
+            window._syncTextFromPicker = (picker) => {
+                const v = picker.value; // YYYY-MM-DD
+                const textEl = picker.closest('div').querySelector('.ext-date-text');
+                if (!textEl || !v) return;
+                const [yyyy, mm, dd] = v.split('-');
+                textEl.value = `${yyyy.slice(2)}.${mm}.${dd}`;
+            };
+
+            window.toggleLimitUnlimited = (chk) => {
+                const input = document.getElementById('fcLimit');
+                input.disabled = chk.checked;
+                input.style.opacity = chk.checked ? '0.4' : '1';
+                if (chk.checked) { input.dataset.prev = input.value; input.value = ''; input.placeholder = '무제한'; }
+                else { input.value = input.dataset.prev || 100; input.placeholder = ''; }
+            };
 
             document.getElementById('fcTargetCriteria').addEventListener('change', (e) => {
                 const targetRow = document.getElementById('fcTargetRow');
@@ -635,6 +1088,21 @@
                 } else if (e.target.value === 'product') {
                     btn.style.display = 'inline-block';
                 }
+            });
+
+            // Edit modal: target criteria change
+            document.getElementById('edTargetCriteria').addEventListener('change', (e) => {
+                _applyEdTargetCriteria(e.target.value);
+            });
+
+            // Edit modal: range change
+            document.getElementById('edRange').addEventListener('change', (e) => {
+                _applyEdRange(e.target.value);
+            });
+
+            // Close edit modal on overlay click
+            document.getElementById('couponDetailModal').addEventListener('click', (e) => {
+                if (e.target === document.getElementById('couponDetailModal')) window.closeCouponDetail();
             });
         });
     </script>
