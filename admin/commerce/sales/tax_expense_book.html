@@ -426,8 +426,30 @@
       return data;
     }
 
-    const STORAGE_KEY = 'cheese_tax_expenses';
-    let autoSalesData = []; // DB에서 불러온 판매 데이터
+    let autoSalesData = [];    // DB에서 불러온 판매 데이터
+    let manualExpenses = [];   // Firestore에서 불러온 수동 경비
+
+    // ---------- 수동 경비 Firestore CRUD ----------
+    async function loadManualExpenses() {
+      try {
+        const res = await safeFetchDB({ collection: "tax_manual_expenses", orderByField: "date" });
+        manualExpenses = (res.data || []).map(d => ({ ...d, source: 'manual' }));
+      } catch (err) {
+        console.error("수동 경비 로드 실패:", err);
+        manualExpenses = [];
+      }
+    }
+
+    async function createManualExpense(item) {
+      const res = await safeFetchDB({ action: "create", collection: "tax_manual_expenses", data: item });
+      item.id = res.id;
+      manualExpenses.unshift(item);
+    }
+
+    async function deleteManualExpense(id) {
+      await safeFetchDB({ action: "delete", collection: "tax_manual_expenses", id });
+      manualExpenses = manualExpenses.filter(m => m.id !== id);
+    }
 
     // ---------- 판매 데이터 동기화 ----------
     async function syncSalesData() {
@@ -491,8 +513,7 @@
       const typeFilter = document.getElementById('filter-type').value;
       const search = document.getElementById('filter-search').value.trim().toLowerCase();
 
-      let manual = loadManualExpenses();
-      let combined = [...autoSalesData, ...manual];
+      let combined = [...autoSalesData, ...manualExpenses];
 
       // 필터 적용
       if (monthTrim) combined = combined.filter(item => (item.date || '').startsWith(monthTrim));
@@ -574,7 +595,7 @@
       document.getElementById('calc-supply').innerText = supply.toLocaleString();
       document.getElementById('calc-vat').innerText = vat.toLocaleString();
     }
-    function saveTaxExpense() {
+    async function saveTaxExpense() {
       const date = document.getElementById('tax-date').value;
       const vendor = document.getElementById('tax-vendor').value.trim();
       const total = Number(document.getElementById('tax-total').value);
@@ -583,7 +604,6 @@
       const supply = Math.round(total / 1.1);
       const vat = total - supply;
       const newItem = {
-        id: 'MANUAL-' + Date.now(),
         date,
         type: '매입',
         account: document.getElementById('tax-account').value,
@@ -591,21 +611,30 @@
         supply, vat, total,
         evidence: document.getElementById('tax-evidence').value,
         memo: document.getElementById('tax-memo').value,
-        source: 'manual'
       };
 
-      let manual = loadManualExpenses();
-      manual.unshift(newItem);
-      saveManualExpenses(manual);
-      closeTaxModal();
-      renderAll();
+      const btn = document.querySelector('#tax-modal-overlay .tbtn.primary');
+      btn.disabled = true;
+      btn.textContent = '저장 중...';
+      try {
+        await createManualExpense(newItem);
+        closeTaxModal();
+        renderAll();
+      } catch (err) {
+        alert("저장 실패: " + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '💾 저장하기';
+      }
     }
-    function deleteExpense(id) {
+    async function deleteExpense(id) {
       if(!confirm("이 지출 내역을 삭제할까요?")) return;
-      let manual = loadManualExpenses();
-      manual = manual.filter(m => m.id !== id);
-      saveManualExpenses(manual);
-      renderAll();
+      try {
+        await deleteManualExpense(id);
+        renderAll();
+      } catch (err) {
+        alert("삭제 실패: " + err.message);
+      }
     }
 
     // ---------- CSV 추출 (홈택스 양식 참고) ----------
@@ -613,7 +642,7 @@
       const month = document.getElementById('filter-month').value || '전체기간';
       const search = document.getElementById('filter-search').value.trim().toLowerCase();
       
-      const combined = [...autoSalesData, ...loadManualExpenses()].filter(item => {
+      const combined = [...autoSalesData, ...manualExpenses].filter(item => {
         if (month !== '전체기간' && !(item.date || '').startsWith(month)) return false;
         if (search && !(item.vendor + item.desc).toLowerCase().includes(search)) return false;
         return true;
@@ -800,11 +829,11 @@
     }
 
     // ---------- 초기화 ----------
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
       document.getElementById('filter-month').value = new Date().toISOString().slice(0, 7);
-      setTimeout(() => {
-        syncSalesData();
-      }, 500);
+      await loadManualExpenses();
+      renderAll();
+      setTimeout(() => syncSalesData(), 500);
     });
   </script>
 </body>
