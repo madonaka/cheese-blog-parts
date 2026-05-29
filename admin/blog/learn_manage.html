@@ -675,6 +675,62 @@
             .set-panel-filter { flex-direction: column; }
         }
 
+        /* ── 청크 개요 모달 ── */
+        .overview-list { display: flex; flex-direction: column; }
+        .overview-row {
+            display: grid;
+            grid-template-columns: 32px 1fr;
+            gap: 12px;
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--border);
+            cursor: pointer;
+            transition: background 0.1s;
+            align-items: start;
+        }
+        .overview-row:last-child { border-bottom: none; }
+        .overview-row:hover { background: #f0f4ff; }
+        .overview-num {
+            width: 28px; height: 28px;
+            border-radius: 50%;
+            background: #e8eeff;
+            color: var(--primary);
+            border: 1.5px solid var(--primary);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.7rem; font-weight: 800;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+        .overview-text {
+            font-size: 0.87rem;
+            line-height: 1.65;
+            color: #1e293b;
+            word-break: keep-all;
+            white-space: pre-wrap;
+        }
+        .overview-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-top: 7px;
+        }
+        .overview-kw {
+            font-size: 0.68rem; font-weight: 700;
+            background: #e8eeff; color: var(--primary);
+            border-radius: 10px; padding: 1px 8px;
+        }
+        .overview-note {
+            font-size: 0.72rem; color: var(--text-sub);
+            font-style: italic;
+            margin-top: 5px;
+            padding-left: 2px;
+        }
+        .overview-empty {
+            padding: 32px 20px;
+            text-align: center;
+            color: var(--text-sub);
+            font-size: 0.85rem;
+        }
+
         /* ── 청크 드래그 & 삽입 ── */
         .drag-handle {
             cursor: grab;
@@ -991,6 +1047,9 @@
 
                                 <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
                                     <h3 style="font-size:0.88rem; font-weight:700; flex:1;">청크(Step) 목록</h3>
+                                    <button class="btn btn-ghost btn-sm" onclick="openStepOverviewModal()">
+                                        <i class="fas fa-list-ul"></i> 개요 보기
+                                    </button>
                                     <button class="btn btn-ghost btn-sm" onclick="openBulkStepsModal()">
                                         <i class="fas fa-paste"></i> 대량 입력
                                     </button>
@@ -1186,6 +1245,18 @@
             <button class="btn btn-ghost" onclick="closeDeleteModal()">취소</button>
             <button class="btn btn-danger" onclick="confirmDeleteSequence()">삭제</button>
         </div>
+    </div>
+</div>
+
+<!-- 청크 개요 모달 -->
+<div class="modal-overlay" id="step-overview-modal">
+    <div class="modal-card" style="max-width:620px; width:95vw; max-height:88vh; display:flex; flex-direction:column; padding:0; border-radius:14px; overflow:hidden;">
+        <div style="padding:14px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px; flex-shrink:0;">
+            <h3 style="flex:1; margin:0; font-size:1rem; font-weight:800;"><i class="fas fa-list-ul" style="color:var(--primary);"></i> 청크 개요</h3>
+            <span id="overview-count" style="font-size:0.78rem; color:var(--text-sub); font-weight:600;"></span>
+            <button class="btn btn-ghost btn-sm" onclick="closeStepOverviewModal()">닫기</button>
+        </div>
+        <div class="overview-list" id="overview-list" style="flex:1; overflow-y:auto;"></div>
     </div>
 </div>
 
@@ -1735,6 +1806,51 @@ function applyBulkSteps() {
     markDirty();
     closeBulkStepsModal();
     toast(`${blocks.length}개 청크가 추가되었습니다.`);
+}
+
+// ── 청크 개요 모달 ────────────────────────
+function openStepOverviewModal() {
+    syncStepsFromForm();
+    const listEl = document.getElementById('overview-list');
+    const countEl = document.getElementById('overview-count');
+    if (!listEl) return;
+
+    if (!stepsData.length) {
+        listEl.innerHTML = '<div class="overview-empty">청크가 없습니다.</div>';
+        countEl.textContent = '';
+    } else {
+        countEl.textContent = `총 ${stepsData.length}개`;
+        listEl.innerHTML = stepsData.map((step, i) => {
+            const text = (step.text ?? '').trim() || '<span style="color:#9ca3af;">(내용 없음)</span>';
+            const kws  = (step.keywords ?? []);
+            const note = (step.annotation ?? '').trim();
+            return `
+            <div class="overview-row" onclick="jumpToStep(${i})">
+                <div class="overview-num">${i + 1}</div>
+                <div>
+                    <div class="overview-text">${text}</div>
+                    ${kws.length ? `<div class="overview-meta">${kws.map(k => `<span class="overview-kw">${k}</span>`).join('')}</div>` : ''}
+                    ${note ? `<div class="overview-note">✱ ${note}</div>` : ''}
+                </div>
+            </div>`;
+        }).join('');
+    }
+    document.getElementById('step-overview-modal').classList.add('open');
+}
+
+function closeStepOverviewModal() {
+    document.getElementById('step-overview-modal').classList.remove('open');
+}
+
+function jumpToStep(idx) {
+    closeStepOverviewModal();
+    switchTab('steps');
+    setTimeout(() => {
+        const target = document.querySelector(`.step-card[data-step-idx="${idx}"]`);
+        if (!target) return;
+        target.classList.remove('collapsed');
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
 }
 
 function syncStepsFromForm() {
