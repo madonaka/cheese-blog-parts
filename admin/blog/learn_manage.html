@@ -675,6 +675,63 @@
             .set-panel-filter { flex-direction: column; }
         }
 
+        /* ── 청크 드래그 & 삽입 ── */
+        .drag-handle {
+            cursor: grab;
+            color: #cbd5e1;
+            font-size: 0.85rem;
+            flex-shrink: 0;
+            padding: 0 3px;
+            display: flex;
+            align-items: center;
+        }
+        .drag-handle:hover { color: var(--primary); }
+        .drag-handle:active { cursor: grabbing; }
+
+        .step-card.dragging { opacity: 0.4; border-style: dashed; }
+        .step-card.drag-over-top { border-top: 3px solid var(--primary); }
+
+        .step-insert-zone {
+            height: 26px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            cursor: pointer;
+        }
+        .step-insert-zone::before {
+            content: '';
+            position: absolute;
+            left: 0; right: 0;
+            top: 50%;
+            height: 1.5px;
+            background: transparent;
+            transition: background 0.12s;
+        }
+        .step-insert-zone:hover::before { background: var(--primary); }
+        .step-insert-label {
+            position: relative;
+            z-index: 1;
+            background: #fff;
+            border: 1.5px dashed var(--border);
+            border-radius: 20px;
+            padding: 2px 12px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: var(--text-sub);
+            opacity: 0;
+            transition: all 0.12s;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            white-space: nowrap;
+        }
+        .step-insert-zone:hover .step-insert-label {
+            opacity: 1;
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
         /* ── spinner ── */
         .spinner {
             display: inline-block;
@@ -1518,15 +1575,28 @@ function renderStepList() {
         listEl.innerHTML = '<div class="empty-state">청크가 없습니다. 추가 버튼을 눌러 시작하세요.</div>';
         return;
     }
-    listEl.innerHTML = stepsData.map((step, i) => {
+    const parts = [];
+    parts.push(`<div class="step-insert-zone" onclick="insertStepAt(-1)" title="첫 번째 위치에 삽입">
+        <span class="step-insert-label"><i class="fas fa-plus"></i> 여기에 삽입</span>
+    </div>`);
+    stepsData.forEach((step, i) => {
         const preview = (step.text ?? '').substring(0, 40) + ((step.text ?? '').length > 40 ? '…' : '');
         const kwCount = (step.keywords ?? []).length;
         const thumb = step.image_url
             ? `<img src="${step.image_url}" class="step-head-thumb" onerror="this.style.visibility='hidden'">`
             : `<span class="step-head-thumb placeholder"><i class="fas fa-image"></i></span>`;
-        return `
-        <div class="step-card collapsed" data-step-idx="${i}">
+        parts.push(`
+        <div class="step-card collapsed" data-step-idx="${i}"
+             draggable="true"
+             ondragstart="onCardDragStart(event,${i})"
+             ondragover="onCardDragOver(event,${i})"
+             ondragleave="onCardDragLeave(event,${i})"
+             ondrop="onCardDrop(event,${i})"
+             ondragend="onCardDragEnd(event)">
             <div class="step-card-head" onclick="toggleStep(${i})">
+                <span class="drag-handle" onclick="event.stopPropagation()" title="드래그하여 순서 변경">
+                    <i class="fas fa-grip-vertical"></i>
+                </span>
                 <span class="step-order-badge">${i + 1}</span>
                 ${thumb}
                 <span class="step-head-text">${preview || '(빈 청크)'}</span>
@@ -1541,16 +1611,16 @@ function renderStepList() {
                 </div>
                 <div class="form-group">
                     <label class="form-label">청크 이미지 (직접 드래그하거나 붙여넣으세요)</label>
-                    <div class="img-upload-area" id="img-area-${i}" 
-                         ondragover="handleStepDragOver(event, ${i})" 
-                         ondragleave="handleStepDragLeave(event, ${i})" 
-                         ondrop="handleStepDrop(event, ${i})">
-                        <input type="text" class="form-control" placeholder="이미지 URL (직접 입력도 가능)" 
+                    <div class="img-upload-area" id="img-area-${i}"
+                         ondragover="handleStepDragOver(event,${i})"
+                         ondragleave="handleStepDragLeave(event,${i})"
+                         ondrop="handleStepDrop(event,${i})">
+                        <input type="text" class="form-control" placeholder="이미지 URL (직접 입력도 가능)"
                                value="${step.image_url ?? ''}" data-step-img="${i}"
-                               onpaste="handleStepImagePaste(event, ${i})"
+                               onpaste="handleStepImagePaste(event,${i})"
                                oninput="syncStepPreview(${i})">
                         <div class="img-upload-hint"><i class="fas fa-upload"></i> 이미지를 여기에 드래그하거나 붙여넣으세요</div>
-                        <img id="step-preview-${i}" src="${step.image_url ?? ''}" class="step-img-preview" 
+                        <img id="step-preview-${i}" src="${step.image_url ?? ''}" class="step-img-preview"
                              style="display: ${step.image_url ? 'block' : 'none'}"
                              onerror="this.style.display='none'">
                     </div>
@@ -1558,6 +1628,13 @@ function renderStepList() {
                 <div class="form-group">
                     <label class="form-label">본문 (2~3문장)</label>
                     <textarea class="form-control" rows="3" placeholder="이 청크에서 전달할 내용을 2~3문장으로 작성합니다." data-step-text="${i}">${step.text ?? ''}</textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">주석 <span style="font-weight:400; color:var(--text-sub);">(선택 · 뷰어에서 본문 아래 작은 글씨로 표시)</span></label>
+                    <textarea class="form-control" rows="2" placeholder="보충 설명, 출처, 맥락 등. 비워두면 표시되지 않습니다." data-step-note="${i}">${step.annotation ?? ''}</textarea>
+                    <input type="text" class="form-control" style="margin-top:6px;"
+                        placeholder="참조 텍스트 — 본문에서 주석과 연결할 단어/구문 (없으면 비워두세요)"
+                        value="${step.annotation_ref ?? ''}" data-step-note-ref="${i}">
                 </div>
                 <div class="form-group">
                     <label class="form-label">키워드 (버튼으로 노출됨)</label>
@@ -1574,8 +1651,12 @@ function renderStepList() {
                     <input type="text" class="form-control" placeholder="연결할 learn_sequence 문서 ID (없으면 비워두세요)" value="${step.sub_sequence_id ?? ''}" data-step-subid="${i}">
                 </div>
             </div>
-        </div>`;
-    }).join('');
+        </div>`);
+        parts.push(`<div class="step-insert-zone" onclick="insertStepAt(${i})" title="${i + 1}번 청크 뒤에 삽입">
+            <span class="step-insert-label"><i class="fas fa-plus"></i> 여기에 삽입</span>
+        </div>`);
+    });
+    listEl.innerHTML = parts.join('');
 }
 
 // 청크 카드 접기/펼치기
@@ -1662,6 +1743,8 @@ function syncStepsFromForm() {
         id:              (document.querySelector(`[data-step-id="${i}"]`)?.value ?? '').trim(),
         image_url:       (document.querySelector(`[data-step-img="${i}"]`)?.value ?? '').trim(),
         text:            (document.querySelector(`[data-step-text="${i}"]`)?.value ?? '').trim(),
+        annotation:      (document.querySelector(`[data-step-note="${i}"]`)?.value ?? '').trim(),
+        annotation_ref:  (document.querySelector(`[data-step-note-ref="${i}"]`)?.value ?? '').trim(),
         sub_sequence_id: (document.querySelector(`[data-step-subid="${i}"]`)?.value ?? '').trim(),
     }));
 }
@@ -1686,6 +1769,70 @@ function removeStep(idx) {
     renderStepList();
     refreshBadges();
     markDirty();
+}
+
+function insertStepAt(afterIdx) {
+    syncStepsFromForm();
+    stepsData.splice(afterIdx + 1, 0, { id: '', image_url: '', text: '', keywords: [], sub_sequence_id: '' });
+    renderStepList();
+    refreshBadges();
+    markDirty();
+    setTimeout(() => {
+        const inserted = document.querySelector(`.step-card[data-step-idx="${afterIdx + 1}"]`);
+        inserted?.classList.remove('collapsed');
+        inserted?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+}
+
+// ── 청크 드래그&드롭 순서 변경 ───────────────
+let _cardDragSrcIdx = null;
+
+function onCardDragStart(e, idx) {
+    _cardDragSrcIdx = idx;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(idx));
+    setTimeout(() => {
+        document.querySelector(`.step-card[data-step-idx="${idx}"]`)?.classList.add('dragging');
+    }, 0);
+}
+
+function onCardDragOver(e, idx) {
+    if (_cardDragSrcIdx === null) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    if (idx === _cardDragSrcIdx) return;
+    document.querySelectorAll('.step-card.drag-over-top').forEach(c => c.classList.remove('drag-over-top'));
+    document.querySelector(`.step-card[data-step-idx="${idx}"]`)?.classList.add('drag-over-top');
+}
+
+function onCardDragLeave(e, idx) {
+    if (_cardDragSrcIdx === null) return;
+    document.querySelector(`.step-card[data-step-idx="${idx}"]`)?.classList.remove('drag-over-top');
+}
+
+function onCardDrop(e, targetIdx) {
+    e.preventDefault();
+    e.stopPropagation();
+    const src = _cardDragSrcIdx;
+    _cardDragSrcIdx = null;
+    document.querySelectorAll('.step-card.dragging, .step-card.drag-over-top').forEach(c => {
+        c.classList.remove('dragging', 'drag-over-top');
+    });
+    if (src === null || src === targetIdx) return;
+    syncStepsFromForm();
+    const [moved] = stepsData.splice(src, 1);
+    stepsData.splice(src < targetIdx ? targetIdx - 1 : targetIdx, 0, moved);
+    renderStepList();
+    refreshBadges();
+    markDirty();
+}
+
+function onCardDragEnd(e) {
+    _cardDragSrcIdx = null;
+    document.querySelectorAll('.step-card.dragging, .step-card.drag-over-top').forEach(c => {
+        c.classList.remove('dragging', 'drag-over-top');
+    });
 }
 
 function collectStepFormData() {
@@ -2027,17 +2174,21 @@ function syncStepPreview(idx) {
 
 function handleStepDragOver(e, idx) {
     e.preventDefault();
+    e.stopPropagation();
     document.getElementById(`img-area-${idx}`).classList.add('drag-over');
 }
 
 function handleStepDragLeave(e, idx) {
     e.preventDefault();
+    e.stopPropagation();
     document.getElementById(`img-area-${idx}`).classList.remove('drag-over');
 }
 
 function handleStepDrop(e, idx) {
     e.preventDefault();
+    e.stopPropagation();
     document.getElementById(`img-area-${idx}`).classList.remove('drag-over');
+    if (_cardDragSrcIdx !== null) return; // 카드 순서 변경 중이면 이미지 드롭 무시
     const files = e.dataTransfer.files;
     if (files && files.length > 0) {
         uploadImageFile(files[0], idx);
