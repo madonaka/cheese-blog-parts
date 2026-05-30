@@ -740,6 +740,7 @@
             padding: 0 3px;
             display: flex;
             align-items: center;
+            touch-action: none; /* 터치 드래그 시 브라우저 스크롤 차단 */
         }
         .drag-handle:hover { color: var(--primary); }
         .drag-handle:active { cursor: grabbing; }
@@ -1697,7 +1698,7 @@ function renderStepList() {
              ondrop="onCardDrop(event,${i})"
              ondragend="onCardDragEnd(event)">
             <div class="step-card-head" onclick="toggleStep(${i})">
-                <span class="drag-handle" onclick="event.stopPropagation()" title="드래그하여 순서 변경">
+                <span class="drag-handle" onclick="event.stopPropagation()" ontouchstart="onHandleTouchStart(event,${i})" title="드래그하여 순서 변경">
                     <i class="fas fa-grip-vertical"></i>
                 </span>
                 <span class="step-order-badge">${i + 1}</span>
@@ -1978,6 +1979,78 @@ function onCardDrop(e, targetIdx) {
 
 function onCardDragEnd(e) {
     _cardDragSrcIdx = null;
+    document.querySelectorAll('.step-card.dragging, .step-card.drag-over-top').forEach(c => {
+        c.classList.remove('dragging', 'drag-over-top');
+    });
+}
+
+// ── 터치 드래그 (모바일) ──────────────────────────────
+let _touchDragIdx = null;
+
+function onHandleTouchStart(e, idx) {
+    e.stopPropagation();
+    _touchDragIdx = idx;
+    document.querySelector(`.step-card[data-step-idx="${idx}"]`)?.classList.add('dragging');
+    document.addEventListener('touchmove', _onTouchDragMove, { passive: false });
+    document.addEventListener('touchend',    _onTouchDragEnd,  { once: true });
+    document.addEventListener('touchcancel', _onTouchDragCancel, { once: true });
+}
+
+function _onTouchDragMove(e) {
+    if (_touchDragIdx === null) return;
+    e.preventDefault(); // 스크롤 방지
+
+    const touch = e.touches[0];
+    const draggingCard = document.querySelector(`.step-card[data-step-idx="${_touchDragIdx}"]`);
+
+    // 드래깅 카드를 잠깐 pointer-events:none 처리해야 아래 카드가 잡힘
+    if (draggingCard) draggingCard.style.pointerEvents = 'none';
+    const el = document.elementFromPoint(touch.clientX, touch.clientY);
+    if (draggingCard) draggingCard.style.pointerEvents = '';
+
+    const targetCard = el?.closest('.step-card');
+    document.querySelectorAll('.step-card.drag-over-top').forEach(c => c.classList.remove('drag-over-top'));
+    if (targetCard) {
+        const targetIdx = parseInt(targetCard.dataset.stepIdx);
+        if (!isNaN(targetIdx) && targetIdx !== _touchDragIdx) {
+            targetCard.classList.add('drag-over-top');
+        }
+    }
+}
+
+function _onTouchDragEnd(e) {
+    document.removeEventListener('touchmove', _onTouchDragMove);
+    document.removeEventListener('touchcancel', _onTouchDragCancel);
+
+    const touch = e.changedTouches[0];
+    const src = _touchDragIdx;
+    _touchDragIdx = null;
+
+    document.querySelectorAll('.step-card.dragging, .step-card.drag-over-top').forEach(c => {
+        c.classList.remove('dragging', 'drag-over-top');
+    });
+
+    const draggingCard = document.querySelector(`.step-card[data-step-idx="${src}"]`);
+    if (draggingCard) draggingCard.style.pointerEvents = 'none';
+    const el = document.elementFromPoint(touch.clientX, touch.clientY);
+    if (draggingCard) draggingCard.style.pointerEvents = '';
+
+    const targetCard = el?.closest('.step-card');
+    if (!targetCard || src === null) return;
+    const targetIdx = parseInt(targetCard.dataset.stepIdx);
+    if (isNaN(targetIdx) || targetIdx === src) return;
+
+    syncStepsFromForm();
+    const [moved] = stepsData.splice(src, 1);
+    stepsData.splice(src < targetIdx ? targetIdx - 1 : targetIdx, 0, moved);
+    renderStepList();
+    refreshBadges();
+    markDirty();
+}
+
+function _onTouchDragCancel() {
+    document.removeEventListener('touchmove', _onTouchDragMove);
+    _touchDragIdx = null;
     document.querySelectorAll('.step-card.dragging, .step-card.drag-over-top').forEach(c => {
         c.classList.remove('dragging', 'drag-over-top');
     });
