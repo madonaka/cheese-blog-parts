@@ -601,6 +601,23 @@
             align-items: start;
         }
 
+        /* ── 청크 주석 (복수) ── */
+        .step-ann-list { display: flex; flex-direction: column; gap: 8px; }
+        .step-ann-row {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px 8px 8px 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            position: relative;
+        }
+        .step-ann-row .step-ann-del {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+        }
+
         /* ── empty state ── */
         .empty-state {
             padding: 32px 20px;
@@ -2010,11 +2027,13 @@ function renderStepList() {
                     <textarea class="form-control" rows="3" placeholder="이 청크에서 전달할 내용을 2~3문장으로 작성합니다." data-step-text="${i}">${step.text ?? ''}</textarea>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">주석 <span style="font-weight:400; color:var(--text-sub);">(선택 · 뷰어에서 본문 아래 작은 글씨로 표시)</span></label>
-                    <textarea class="form-control" rows="2" placeholder="보충 설명, 출처, 맥락 등. 비워두면 표시되지 않습니다." data-step-note="${i}">${step.annotation ?? ''}</textarea>
-                    <input type="text" class="form-control" style="margin-top:6px;"
-                        placeholder="참조 텍스트 — 본문에서 주석과 연결할 단어/구문 (없으면 비워두세요)"
-                        value="${step.annotation_ref ?? ''}" data-step-note-ref="${i}">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        <label class="form-label" style="margin:0;">주석 <span style="font-weight:400; color:var(--text-sub);">(선택 · 뷰어에서 본문 아래 작은 글씨로 표시)</span></label>
+                        <button class="btn btn-ghost btn-sm" type="button" onclick="addStepAnnotation(${i})"><i class="fas fa-plus"></i> 추가</button>
+                    </div>
+                    <div id="ann-list-${i}" class="step-ann-list">
+                        ${(step.annotations ?? (step.annotation ? [{text: step.annotation, ref: step.annotation_ref ?? ''}] : [])).map((ann, ai) => renderStepAnnotationRow(i, ai, ann)).join('')}
+                    </div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">키워드 (버튼으로 노출됨)</label>
@@ -2082,6 +2101,26 @@ function removeKeyword(stepIdx, kwIdx) {
     markDirty();
 }
 
+// ── 청크 주석 (복수) ──────────────────────
+function renderStepAnnotationRow(stepIdx, annIdx, ann) {
+    return `<div class="step-ann-row" data-ann-idx="${annIdx}">
+        <button class="btn btn-danger btn-sm step-ann-del" type="button" onclick="removeStepAnnotation(this)" title="주석 삭제"><i class="fas fa-times"></i></button>
+        <textarea class="form-control step-ann-text" rows="2" placeholder="보충 설명, 출처, 맥락 등.">${ann.text ?? ''}</textarea>
+        <input type="text" class="form-control step-ann-ref" placeholder="참조 텍스트 — 본문에서 주석과 연결할 단어/구문 (없으면 비워두세요)" value="${ann.ref ?? ''}">
+    </div>`;
+}
+
+function addStepAnnotation(stepIdx) {
+    const list = document.getElementById(`ann-list-${stepIdx}`);
+    if (!list) return;
+    const ai = list.querySelectorAll('.step-ann-row').length;
+    list.insertAdjacentHTML('beforeend', renderStepAnnotationRow(stepIdx, ai, {}));
+}
+
+function removeStepAnnotation(btn) {
+    btn.closest('.step-ann-row').remove();
+}
+
 // ── 청크 대량 입력 ────────────────────────
 function openBulkStepsModal() {
     document.getElementById('bulk-steps-input').value = '';
@@ -2132,14 +2171,14 @@ function openStepOverviewModal() {
         listEl.innerHTML = stepsData.map((step, i) => {
             const text = (step.text ?? '').trim() || '<span style="color:#9ca3af;">(내용 없음)</span>';
             const kws  = (step.keywords ?? []);
-            const note = (step.annotation ?? '').trim();
+            const anns = step.annotations ?? (step.annotation ? [{text: step.annotation}] : []);
             return `
             <div class="overview-row" onclick="jumpToStep(${i})">
                 <div class="overview-num">${i + 1}</div>
                 <div>
                     <div class="overview-text">${text}</div>
                     ${kws.length ? `<div class="overview-meta">${kws.map(k => `<span class="overview-kw">${k}</span>`).join('')}</div>` : ''}
-                    ${note ? `<div class="overview-note">✱ ${note}</div>` : ''}
+                    ${anns.filter(a => a.text).map(a => `<div class="overview-note">✱ ${a.text}</div>`).join('')}
                 </div>
             </div>`;
         }).join('');
@@ -2163,15 +2202,23 @@ function jumpToStep(idx) {
 }
 
 function syncStepsFromForm() {
-    stepsData = stepsData.map((step, i) => ({
-        ...step,
-        id:              (document.querySelector(`[data-step-id="${i}"]`)?.value ?? '').trim(),
-        image_url:       (document.querySelector(`[data-step-img="${i}"]`)?.value ?? '').trim(),
-        text:            (document.querySelector(`[data-step-text="${i}"]`)?.value ?? '').trim(),
-        annotation:      (document.querySelector(`[data-step-note="${i}"]`)?.value ?? '').trim(),
-        annotation_ref:  (document.querySelector(`[data-step-note-ref="${i}"]`)?.value ?? '').trim(),
-        sub_sequence_id: (document.querySelector(`[data-step-subid="${i}"]`)?.value ?? '').trim(),
-    }));
+    stepsData = stepsData.map((step, i) => {
+        const annList = document.getElementById(`ann-list-${i}`);
+        const annotations = annList
+            ? Array.from(annList.querySelectorAll('.step-ann-row')).map(row => ({
+                text: (row.querySelector('.step-ann-text')?.value ?? '').trim(),
+                ref:  (row.querySelector('.step-ann-ref')?.value ?? '').trim(),
+              })).filter(a => a.text || a.ref)
+            : (step.annotations ?? []);
+        return {
+            ...step,
+            id:              (document.querySelector(`[data-step-id="${i}"]`)?.value ?? '').trim(),
+            image_url:       (document.querySelector(`[data-step-img="${i}"]`)?.value ?? '').trim(),
+            text:            (document.querySelector(`[data-step-text="${i}"]`)?.value ?? '').trim(),
+            annotations,
+            sub_sequence_id: (document.querySelector(`[data-step-subid="${i}"]`)?.value ?? '').trim(),
+        };
+    });
 }
 
 function addStep() {
