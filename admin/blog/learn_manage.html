@@ -550,26 +550,80 @@
         .set-item-level { flex-shrink: 0; }
 
         /* ── 퀴즈 목록 ── */
-        .quiz-list { display: flex; flex-direction: column; gap: 10px; }
+        .quiz-list { display: flex; flex-direction: column; gap: 12px; }
 
         .quiz-card {
             border: 1.5px solid var(--border);
-            border-radius: 8px;
+            border-radius: 12px;
+            background: #fff;
+            overflow: hidden;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+        }
+
+        .quiz-card-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
             background: #f8fafc;
-            padding: 14px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .quiz-card-body { padding: 14px; }
+
+        .quiz-num {
+            width: 22px; height: 22px;
+            border-radius: 50%;
+            background: var(--primary);
+            color: #fff;
+            font-size: 0.72rem;
+            font-weight: 800;
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0;
         }
 
         .quiz-type-badge {
-            display: inline-block;
             font-size: 0.68rem;
             font-weight: 700;
-            padding: 2px 8px;
-            border-radius: 4px;
-            margin-bottom: 8px;
+            padding: 2px 9px;
+            border-radius: 20px;
         }
 
-        .type-ox     { background: #dcfce7; color: #166534; }
-        .type-short  { background: #fff7ed; color: #c2410c; }
+        .type-ox    { background: #dcfce7; color: #166534; }
+        .type-short { background: #fff7ed; color: #c2410c; }
+
+        .ox-btn-group { display: flex; gap: 8px; margin-top: 4px; }
+        .ox-btn {
+            flex: 1;
+            padding: 10px;
+            border-radius: 8px;
+            border: 2px solid var(--border);
+            font-size: 1.25rem;
+            font-weight: 900;
+            cursor: pointer;
+            background: #fff;
+            transition: all 0.15s;
+            font-family: inherit;
+        }
+        .ox-btn:hover { border-color: #94a3b8; }
+        .ox-btn.sel-o { border-color: #22c55e; background: #f0fdf4; color: #166534; }
+        .ox-btn.sel-x { border-color: #ef4444; background: #fef2f2; color: #991b1b; }
+
+        .quiz-add-bottom {
+            width: 100%;
+            margin-top: 4px;
+            padding: 11px;
+            border: 2px dashed var(--border);
+            border-radius: 10px;
+            background: transparent;
+            color: var(--text-sub);
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.15s;
+        }
+        .quiz-add-bottom:hover { border-color: var(--primary); color: var(--primary); background: #f0f4ff; }
 
         /* ── 플래시카드 ── */
         .flashcard-list { display: flex; flex-direction: column; gap: 8px; }
@@ -1191,19 +1245,23 @@
                             <!-- ══ TAB: 퀴즈 ══ -->
                             <div class="tab-panel" id="panel-quizzes">
 
-                                <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
+                                <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
                                     <h3 style="font-size:0.88rem; font-weight:700; flex:1;">아웃트로 미니 퀴즈</h3>
+                                    <span id="quiz-count-label" style="font-size:0.75rem; color:var(--text-sub); font-weight:600;"></span>
                                     <button class="btn btn-ghost btn-sm" onclick="addQuiz()">
                                         <i class="fas fa-plus"></i> 문항 추가
                                     </button>
                                 </div>
                                 <p style="font-size:0.78rem; color:var(--text-sub); margin-bottom:14px;">
-                                    OX 또는 단답형 문항을 작성합니다. 오답 시 연계될 학습 모드(플래시카드/타임라인)를 지정하세요.
+                                    OX 또는 단답형 문항을 작성합니다. 오답 시 연계될 학습 모드를 지정하세요.
                                 </p>
 
                                 <div class="quiz-list" id="quiz-list">
-                                    <div class="empty-state">퀴즈가 없습니다. 추가 버튼을 눌러 시작하세요.</div>
+                                    <div class="empty-state">퀴즈가 없습니다. 아래 버튼을 눌러 시작하세요.</div>
                                 </div>
+                                <button class="quiz-add-bottom" onclick="addQuiz()" style="margin-top:10px;">
+                                    <i class="fas fa-plus"></i> 문항 추가
+                                </button>
 
                             </div>
 
@@ -2423,49 +2481,88 @@ async function loadQuizzes(seqId) {
 
 function renderQuizList() {
     const listEl = document.getElementById('quiz-list');
+    const countEl = document.getElementById('quiz-count-label');
+    if (countEl) countEl.textContent = quizzesData.length ? `총 ${quizzesData.length}개` : '';
     if (!quizzesData.length) {
-        listEl.innerHTML = '<div class="empty-state">퀴즈가 없습니다. 추가 버튼을 눌러 시작하세요.</div>';
+        listEl.innerHTML = '<div class="empty-state">퀴즈가 없습니다. 아래 버튼을 눌러 시작하세요.</div>';
         return;
     }
-    listEl.innerHTML = quizzesData.map((q, i) => `
+    listEl.innerHTML = quizzesData.map((q, i) => {
+        const qType = q.type ?? 'ox';
+        const isOx  = qType === 'ox';
+        const oxO   = (q.answer ?? '').toUpperCase() === 'O';
+        const oxX   = (q.answer ?? '').toUpperCase() === 'X';
+        const answerField = isOx
+            ? `<div class="ox-btn-group">
+                   <button type="button" class="ox-btn ${oxO ? 'sel-o' : ''}" onclick="setOxAnswer(${i}, 'O')">O</button>
+                   <button type="button" class="ox-btn ${oxX ? 'sel-x' : ''}" onclick="setOxAnswer(${i}, 'X')">X</button>
+               </div>
+               <input type="hidden" data-quiz-answer="${i}" value="${q.answer ?? ''}">`
+            : `<input type="text" class="form-control" data-quiz-answer="${i}" value="${q.answer ?? ''}" placeholder="정답을 입력하세요">`;
+        return `
         <div class="quiz-card" data-quiz-idx="${i}">
-            <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
-                <select class="form-control" style="width:120px;" data-quiz-type="${i}" onchange="renderQuizList()">
-                    <option value="ox"    ${(q.type ?? 'ox') === 'ox'    ? 'selected' : ''}>OX 퀴즈</option>
-                    <option value="short" ${(q.type ?? 'ox') === 'short' ? 'selected' : ''}>단답형</option>
+            <div class="quiz-card-header">
+                <span class="quiz-num">${i + 1}</span>
+                <select class="form-control" style="width:110px; font-size:0.8rem;" data-quiz-type="${i}" onchange="onQuizTypeChange(this, ${i})">
+                    <option value="ox"    ${isOx          ? 'selected' : ''}>OX 퀴즈</option>
+                    <option value="short" ${!isOx         ? 'selected' : ''}>단답형</option>
                 </select>
-                <span class="quiz-type-badge type-${q.type ?? 'ox'}">${q.type === 'short' ? '단답형' : 'OX'}</span>
+                <span class="quiz-type-badge type-${qType}">${isOx ? 'OX' : '단답형'}</span>
                 <div style="flex:1;"></div>
                 <button class="btn btn-danger btn-sm" onclick="removeQuiz(${i})"><i class="fas fa-trash-alt"></i></button>
             </div>
-            <div class="form-grid">
-                <div class="form-group form-full">
+            <div class="quiz-card-body">
+                <div class="form-group form-full" style="margin-bottom:10px;">
                     <label class="form-label">문제</label>
-                    <textarea class="form-control" rows="2" data-quiz-question="${i}" placeholder="문제를 입력하세요">${q.question ?? ''}</textarea>
+                    <textarea class="form-control" rows="2" data-quiz-question="${i}" placeholder="문제를 입력하세요" oninput="markDirty()">${q.question ?? ''}</textarea>
                 </div>
-                <div class="form-group">
-                    <label class="form-label">${q.type === 'short' ? '정답 (단답)' : '정답 (O 또는 X)'}</label>
-                    <input type="text" class="form-control" data-quiz-answer="${i}" value="${q.answer ?? ''}" placeholder="${q.type === 'short' ? '예: 이토 히로부미' : 'O 또는 X'}">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">힌트 (선택)</label>
-                    <input type="text" class="form-control" data-quiz-hint="${i}" value="${q.hint ?? ''}" placeholder="오답 시 힌트 메시지">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">오답 시 학습 모드</label>
-                    <select class="form-control" data-quiz-remedial="${i}">
-                        <option value="flashcard" ${q.remedial_mode === 'flashcard' ? 'selected' : ''}>플래시카드</option>
-                        <option value="timeline"  ${q.remedial_mode === 'timeline'  ? 'selected' : ''}>타임라인 배열</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">연계 세트 ID (선택)</label>
-                    <input type="text" class="form-control" data-quiz-set="${i}" value="${q.remedial_set_id ?? (currentSeqId ?? '')}" placeholder="비워두면 이 시퀀스 ID 자동 사용">
-                    <span style="font-size:0.72rem; color:var(--text-sub);">비워두면 현재 시퀀스의 플래시카드/타임라인을 사용합니다.</span>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label">${isOx ? '정답' : '정답 (단답)'}</label>
+                        ${answerField}
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">힌트 <span style="font-weight:400;color:var(--text-sub);">(선택)</span></label>
+                        <input type="text" class="form-control" data-quiz-hint="${i}" value="${q.hint ?? ''}" placeholder="오답 시 힌트">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">오답 시 학습 모드</label>
+                        <select class="form-control" data-quiz-remedial="${i}">
+                            <option value="flashcard" ${(q.remedial_mode ?? 'flashcard') === 'flashcard' ? 'selected' : ''}>플래시카드</option>
+                            <option value="timeline"  ${q.remedial_mode === 'timeline'  ? 'selected' : ''}>타임라인 배열</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">연계 세트 ID <span style="font-weight:400;color:var(--text-sub);">(비우면 자동)</span></label>
+                        <input type="text" class="form-control" data-quiz-set="${i}" value="${q.remedial_set_id ?? ''}" placeholder="${currentSeqId ?? '현재 시퀀스 ID'}">
+                    </div>
                 </div>
             </div>
-        </div>
-    `).join('');
+        </div>`;
+    }).join('');
+}
+
+function onQuizTypeChange(sel, idx) {
+    syncQuizzesFromForm();
+    quizzesData[idx].type = sel.value;
+    if (sel.value === 'ox' && !['O', 'X'].includes((quizzesData[idx].answer ?? '').toUpperCase())) {
+        quizzesData[idx].answer = '';
+    }
+    renderQuizList();
+    markDirty();
+}
+
+function setOxAnswer(idx, val) {
+    const hidden = document.querySelector(`[data-quiz-answer="${idx}"]`);
+    if (hidden) hidden.value = val;
+    const card = document.querySelector(`[data-quiz-idx="${idx}"]`);
+    if (card) {
+        card.querySelectorAll('.ox-btn').forEach(btn => {
+            btn.className = 'ox-btn';
+            if (btn.textContent.trim() === val) btn.classList.add(val === 'O' ? 'sel-o' : 'sel-x');
+        });
+    }
+    markDirty();
 }
 
 function syncQuizzesFromForm() {
@@ -2486,6 +2583,8 @@ function addQuiz() {
     renderQuizList();
     refreshBadges();
     markDirty();
+    const cards = document.querySelectorAll('.quiz-card');
+    if (cards.length) cards[cards.length - 1].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 function removeQuiz(idx) {
@@ -2504,6 +2603,7 @@ function collectQuizFormData(seqId) {
         answer:          document.querySelector(`[data-quiz-answer="${i}"]`)?.value?.trim() ?? '',
         hint:            document.querySelector(`[data-quiz-hint="${i}"]`)?.value?.trim() ?? '',
         remedial_mode:   document.querySelector(`[data-quiz-remedial="${i}"]`)?.value ?? 'flashcard',
+        remedial_set_id: document.querySelector(`[data-quiz-set="${i}"]`)?.value?.trim() ?? '',
         order:           i + 1,
     }));
 }
