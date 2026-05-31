@@ -609,6 +609,18 @@
         .ox-btn.sel-o { border-color: #22c55e; background: #f0fdf4; color: #166534; }
         .ox-btn.sel-x { border-color: #ef4444; background: #fef2f2; color: #991b1b; }
 
+        .quiz-field-tag {
+            display: inline-block;
+            font-size: 0.62rem;
+            font-weight: 700;
+            padding: 1px 6px;
+            border-radius: 20px;
+            margin-left: 5px;
+            vertical-align: middle;
+        }
+        .tag-wrong   { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+        .tag-correct { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+
         .quiz-add-bottom {
             width: 100%;
             margin-top: 4px;
@@ -2504,38 +2516,50 @@ function renderQuizList() {
             <div class="quiz-card-header">
                 <span class="quiz-num">${i + 1}</span>
                 <select class="form-control" style="width:110px; font-size:0.8rem;" data-quiz-type="${i}" onchange="onQuizTypeChange(this, ${i})">
-                    <option value="ox"    ${isOx          ? 'selected' : ''}>OX 퀴즈</option>
-                    <option value="short" ${!isOx         ? 'selected' : ''}>단답형</option>
+                    <option value="ox"    ${isOx  ? 'selected' : ''}>OX 퀴즈</option>
+                    <option value="short" ${!isOx ? 'selected' : ''}>단답형</option>
                 </select>
                 <span class="quiz-type-badge type-${qType}">${isOx ? 'OX' : '단답형'}</span>
                 <div style="flex:1;"></div>
                 <button class="btn btn-danger btn-sm" onclick="removeQuiz(${i})"><i class="fas fa-trash-alt"></i></button>
             </div>
             <div class="quiz-card-body">
-                <div class="form-group form-full" style="margin-bottom:10px;">
+                <div class="form-group form-full" style="margin-bottom:12px;">
                     <label class="form-label">문제</label>
                     <textarea class="form-control" rows="2" data-quiz-question="${i}" placeholder="문제를 입력하세요" oninput="markDirty()">${q.question ?? ''}</textarea>
                 </div>
-                <div class="form-grid">
+                <div class="form-grid" style="margin-bottom:12px;">
                     <div class="form-group">
                         <label class="form-label">${isOx ? '정답' : '정답 (단답)'}</label>
                         ${answerField}
                     </div>
                     <div class="form-group">
-                        <label class="form-label">힌트 <span style="font-weight:400;color:var(--text-sub);">(선택)</span></label>
-                        <input type="text" class="form-control" data-quiz-hint="${i}" value="${q.hint ?? ''}" placeholder="오답 시 힌트">
-                    </div>
-                    <div class="form-group">
                         <label class="form-label">오답 시 학습 모드</label>
                         <select class="form-control" data-quiz-remedial="${i}">
                             <option value="flashcard" ${(q.remedial_mode ?? 'flashcard') === 'flashcard' ? 'selected' : ''}>플래시카드</option>
-                            <option value="timeline"  ${q.remedial_mode === 'timeline'  ? 'selected' : ''}>타임라인 배열</option>
+                            <option value="timeline"  ${q.remedial_mode === 'timeline' ? 'selected' : ''}>타임라인 배열</option>
                         </select>
                     </div>
+                </div>
+                <div class="form-grid" style="margin-bottom:12px;">
                     <div class="form-group">
-                        <label class="form-label">연계 세트 ID <span style="font-weight:400;color:var(--text-sub);">(비우면 자동)</span></label>
-                        <input type="text" class="form-control" data-quiz-set="${i}" value="${q.remedial_set_id ?? ''}" placeholder="${currentSeqId ?? '현재 시퀀스 ID'}">
+                        <label class="form-label">
+                            오답 시 힌트
+                            <span class="quiz-field-tag tag-wrong">오답</span>
+                        </label>
+                        <textarea class="form-control" rows="2" data-quiz-hint="${i}" placeholder="틀렸을 때 보여줄 힌트나 보충 설명을 입력하세요" oninput="markDirty()">${q.hint ?? ''}</textarea>
                     </div>
+                    <div class="form-group">
+                        <label class="form-label">
+                            정답 시 설명
+                            <span class="quiz-field-tag tag-correct">정답</span>
+                        </label>
+                        <textarea class="form-control" rows="2" data-quiz-explanation="${i}" placeholder="맞혔을 때 보여줄 추가 설명을 입력하세요" oninput="markDirty()">${q.explanation ?? ''}</textarea>
+                    </div>
+                </div>
+                <div class="form-group form-full">
+                    <label class="form-label">연계 세트 ID <span style="font-weight:400;color:var(--text-sub);">(비우면 현재 시퀀스 자동 사용)</span></label>
+                    <input type="text" class="form-control" data-quiz-set="${i}" value="${q.remedial_set_id ?? ''}" placeholder="${currentSeqId ?? '현재 시퀀스 ID'}">
                 </div>
             </div>
         </div>`;
@@ -2572,6 +2596,7 @@ function syncQuizzesFromForm() {
         question:        document.querySelector(`[data-quiz-question="${i}"]`)?.value?.trim() ?? '',
         answer:          document.querySelector(`[data-quiz-answer="${i}"]`)?.value?.trim() ?? '',
         hint:            document.querySelector(`[data-quiz-hint="${i}"]`)?.value?.trim() ?? '',
+        explanation:     document.querySelector(`[data-quiz-explanation="${i}"]`)?.value?.trim() ?? '',
         remedial_mode:   document.querySelector(`[data-quiz-remedial="${i}"]`)?.value ?? 'flashcard',
         remedial_set_id: document.querySelector(`[data-quiz-set="${i}"]`)?.value?.trim() ?? '',
     }));
@@ -2579,7 +2604,7 @@ function syncQuizzesFromForm() {
 
 function addQuiz() {
     syncQuizzesFromForm();
-    quizzesData.push({ type: 'ox', question: '', answer: '', hint: '', remedial_mode: 'flashcard', remedial_set_id: '' });
+    quizzesData.push({ type: 'ox', question: '', answer: '', hint: '', explanation: '', remedial_mode: 'flashcard', remedial_set_id: '' });
     renderQuizList();
     refreshBadges();
     markDirty();
@@ -2602,6 +2627,7 @@ function collectQuizFormData(seqId) {
         question:        document.querySelector(`[data-quiz-question="${i}"]`)?.value?.trim() ?? '',
         answer:          document.querySelector(`[data-quiz-answer="${i}"]`)?.value?.trim() ?? '',
         hint:            document.querySelector(`[data-quiz-hint="${i}"]`)?.value?.trim() ?? '',
+        explanation:     document.querySelector(`[data-quiz-explanation="${i}"]`)?.value?.trim() ?? '',
         remedial_mode:   document.querySelector(`[data-quiz-remedial="${i}"]`)?.value ?? 'flashcard',
         remedial_set_id: document.querySelector(`[data-quiz-set="${i}"]`)?.value?.trim() ?? '',
         order:           i + 1,
