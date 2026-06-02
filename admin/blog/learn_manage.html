@@ -1504,11 +1504,17 @@
 <div class="modal-overlay" id="bulk-steps-modal">
     <div class="modal-card" style="max-width:560px; width:92vw;">
         <h3><i class="fas fa-paste" style="color:var(--primary);"></i> 청크 대량 입력</h3>
-        <p>여러 문단을 붙여넣으면 <strong>빈 줄(엔터 2번)</strong>을 기준으로 각각 별도의 청크로 자동 분리됩니다. 기존 청크 뒤에 추가됩니다.</p>
+        <p>여러 문단을 붙여넣으면 <strong>빈 줄(엔터 2번)</strong>을 기준으로 각각 별도의 청크로 자동 분리됩니다.</p>
         <textarea id="bulk-steps-input" class="form-control" style="min-height:220px; max-height:55vh; font-size:0.85rem; line-height:1.7;"
             oninput="updateBulkStepsCount()"
             placeholder="첫 번째 청크 내용을 여기에 작성합니다.&#10;&#10;빈 줄로 구분하면 두 번째 청크가 됩니다.&#10;&#10;세 번째 청크..."></textarea>
         <div style="font-size:0.75rem; color:var(--text-sub); margin-top:6px;" id="bulk-steps-count">감지된 청크: 0개</div>
+        <div class="form-group" style="margin-top:12px;">
+            <label class="form-label">추가 위치</label>
+            <select class="form-control" id="bulk-steps-insert-pos">
+                <option value="end" selected>맨 끝에 추가</option>
+            </select>
+        </div>
         <div class="modal-actions" style="margin-top:16px;">
             <button class="btn btn-ghost" onclick="closeBulkStepsModal()">취소</button>
             <button class="btn btn-primary" onclick="applyBulkSteps()"><i class="fas fa-plus"></i> 청크 추가</button>
@@ -2249,8 +2255,20 @@ function removeStepAnnotation(btn) {
 
 // ── 청크 대량 입력 ────────────────────────
 function openBulkStepsModal() {
+    syncStepsFromForm();
     document.getElementById('bulk-steps-input').value = '';
     updateBulkStepsCount();
+
+    const sel = document.getElementById('bulk-steps-insert-pos');
+    sel.innerHTML = '<option value="end" selected>맨 끝에 추가</option><option value="-1">맨 앞에 삽입</option>';
+    stepsData.forEach((step, i) => {
+        const preview = (step.text ?? '').substring(0, 28) + ((step.text ?? '').length > 28 ? '…' : '');
+        const opt = document.createElement('option');
+        opt.value = String(i);
+        opt.textContent = `${i + 1}번 청크 뒤: ${preview || '(빈 청크)'}`;
+        sel.appendChild(opt);
+    });
+
     document.getElementById('bulk-steps-modal').classList.add('open');
 }
 
@@ -2274,7 +2292,14 @@ function applyBulkSteps() {
     const blocks = parseBulkStepBlocks();
     if (!blocks.length) { toast('입력된 내용이 없습니다.', true); return; }
     syncStepsFromForm();
-    blocks.forEach(text => stepsData.push({ id: '', image_url: '', text, keywords: [], sub_sequence_id: '' }));
+    const newSteps = blocks.map(text => ({ id: '', image_url: '', text, keywords: [], sub_sequence_id: '' }));
+    const posVal = document.getElementById('bulk-steps-insert-pos').value;
+    if (posVal === 'end') {
+        stepsData.push(...newSteps);
+    } else {
+        const afterIdx = parseInt(posVal, 10); // -1 → 맨 앞(index 0), N → N번 청크 뒤
+        stepsData.splice(afterIdx + 1, 0, ...newSteps);
+    }
     renderStepList();
     refreshBadges();
     markDirty();
