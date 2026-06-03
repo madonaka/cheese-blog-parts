@@ -1104,6 +1104,21 @@
                                                 </select>
                                             </div>
 
+                                            <div class="form-group form-full">
+                                                <label class="form-label">시리즈 <span style="font-weight:400; color:var(--text-sub); font-size:0.78rem;">(같은 시리즈끼리 뷰어에서 "다음 내용 이어보기"로 연결)</span></label>
+                                                <div style="position:relative;">
+                                                    <input type="text" class="form-control" id="seq-series-name" placeholder="예: 공산주의 특집" autocomplete="off">
+                                                    <input type="hidden" id="seq-series-id">
+                                                    <div id="series-picker-dropdown" style="display:none; position:absolute; top:calc(100% + 4px); left:0; right:0; background:#fff; border:1px solid #e0d5c8; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,0.12); z-index:200; max-height:200px; overflow-y:auto;"></div>
+                                                </div>
+                                                <span style="font-size:0.72rem; color:var(--text-sub);">기존 시리즈명을 검색하거나 새 이름을 입력하세요. 시리즈 ID는 자동 생성됩니다.</span>
+                                            </div>
+
+                                            <div class="form-group">
+                                                <label class="form-label">시리즈 순서</label>
+                                                <input type="number" class="form-control" id="seq-series-order" placeholder="1" min="1" style="max-width:120px;">
+                                            </div>
+
                                             <div class="form-group">
                                                 <label class="form-label">그룹 (시대·유형)</label>
                                                 <select class="form-control" id="seq-group">
@@ -1796,6 +1811,9 @@ function clearInfoForm() {
     setFulltextEditorContent('');
     const fnListEl = document.getElementById('footnote-list');
     if (fnListEl) fnListEl.innerHTML = '';
+    document.getElementById('seq-series-name').value  = '';
+    document.getElementById('seq-series-id').value    = '';
+    document.getElementById('seq-series-order').value = '';
     setCategory('korean');
 }
 
@@ -1808,6 +1826,9 @@ function populateInfoForm(d) {
     document.getElementById('seq-topics').value      = (d.topics ?? []).join(', ');
     document.getElementById('seq-level').value       = d.level ?? 'intermediate';
     document.getElementById('seq-group').value       = d.group ?? '';
+    document.getElementById('seq-series-name').value  = d.series_name ?? '';
+    document.getElementById('seq-series-id').value    = d.series_id ?? '';
+    document.getElementById('seq-series-order').value = d.series_order != null ? String(d.series_order) : '';
     document.getElementById('seq-thumbnail').value  = d.thumbnail_url ?? '';
     document.getElementById('seq-status').value      = d.status ?? 'draft';
     document.getElementById('seq-first-step').value  = d.first_step_id ?? '';
@@ -2097,6 +2118,14 @@ async function buildAndSavePayload() {
         category:            currentCategory,
         level:               document.getElementById('seq-level').value,
         group:               document.getElementById('seq-group').value,
+        series_name:         (function() { return document.getElementById('seq-series-name').value.trim() || null; })(),
+        series_id:           (function() {
+                                 const name = document.getElementById('seq-series-name').value.trim();
+                                 let id = document.getElementById('seq-series-id').value.trim();
+                                 if (name && !id) { id = 'series-' + Date.now(); document.getElementById('seq-series-id').value = id; }
+                                 return id || null;
+                             })(),
+        series_order:        document.getElementById('seq-series-order').value !== '' ? Number(document.getElementById('seq-series-order').value) : null,
         thumbnail_url:       document.getElementById('seq-thumbnail').value.trim(),
         status:              document.getElementById('seq-status').value,
         tags:                document.getElementById('seq-tags').value.split(',').map(t => t.trim()).filter(Boolean),
@@ -3568,9 +3597,64 @@ async function startBulkImport() {
 }
 
 // ── 초기화 ──────────────────────────────
+function initSeriesPicker() {
+    const nameInput = document.getElementById('seq-series-name');
+    const idInput   = document.getElementById('seq-series-id');
+    const dropdown  = document.getElementById('series-picker-dropdown');
+    if (!nameInput || !dropdown) return;
+
+    function getExistingSeries(q) {
+        const seen = new Map();
+        allSequences.forEach(s => {
+            if (s.series_id && s.series_name && !seen.has(s.series_id)) {
+                seen.set(s.series_id, s.series_name);
+            }
+        });
+        const lower = (q || '').trim().toLowerCase();
+        return [...seen.entries()]
+            .filter(([, name]) => !lower || name.toLowerCase().includes(lower))
+            .map(([id, name]) => ({ id, name }));
+    }
+
+    function renderDropdown(items) {
+        if (!items.length) { dropdown.style.display = 'none'; return; }
+        dropdown.innerHTML = items.map(s =>
+            `<div class="series-picker-item" data-id="${s.id}" data-name="${encodeURIComponent(s.name)}"
+                  style="padding:10px 14px; cursor:pointer; font-size:0.9rem; border-bottom:1px solid #f5ede4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${s.name}</div>`
+        ).join('');
+        dropdown.querySelectorAll('.series-picker-item').forEach(el => {
+            el.addEventListener('mousedown', e => {
+                e.preventDefault();
+                nameInput.value = decodeURIComponent(el.dataset.name);
+                idInput.value   = el.dataset.id;
+                dropdown.style.display = 'none';
+            });
+            el.addEventListener('mouseover', () => el.style.background = '#faf5ef');
+            el.addEventListener('mouseout',  () => el.style.background = '');
+        });
+        dropdown.style.display = '';
+    }
+
+    nameInput.addEventListener('input', () => {
+        idInput.value = '';
+        const q = nameInput.value.trim();
+        if (!q) { dropdown.style.display = 'none'; return; }
+        renderDropdown(getExistingSeries(q));
+    });
+
+    nameInput.addEventListener('focus', () => {
+        renderDropdown(getExistingSeries(nameInput.value.trim()));
+    });
+
+    nameInput.addEventListener('blur', () => {
+        setTimeout(() => { dropdown.style.display = 'none'; }, 150);
+    });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     loadSequenceList();
     loadProductsCache();
+    initSeriesPicker();
 
     // 초기 로드된 textarea 들의 높이 조절
     setTimeout(() => {
