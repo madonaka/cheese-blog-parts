@@ -985,7 +985,7 @@
                             <i class="fas fa-plus"></i> 새 학습
                         </button>
                     </div>
-                    <div class="set-panel-filter">
+                    <div class="set-panel-filter" style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
                         <select id="filter-category" onchange="renderSequenceList()">
                             <option value="">전체 분야</option>
                             <option value="korean">한국사</option>
@@ -997,6 +997,10 @@
                             <option value="">전체 상태</option>
                             <option value="published">공개</option>
                             <option value="draft">초안</option>
+                        </select>
+                        <select id="filter-series" onchange="renderSequenceList()" style="grid-column: 1 / -1; font-size: 0.78rem; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; background: #f8fafc; color: #374151;">
+                            <option value="">모든 시리즈/단독</option>
+                            <option value="_none_">단독 학습만</option>
                         </select>
                     </div>
                     <div class="set-list" id="seq-list">
@@ -1202,7 +1206,7 @@
 
                                             <div class="form-group">
                                                 <label class="form-label">유료 잠금</label>
-                                                <select class="form-control" id="seq-locked" onchange="markDirty()">
+                                                <select class="form-control" id="seq-locked" onchange="onLockedChange(); markDirty()">
                                                     <option value="false">무료 (전체 공개)</option>
                                                     <option value="true">유료 잠금 (구매 시 전체 열람)</option>
                                                 </select>
@@ -1211,6 +1215,8 @@
                                             <div class="form-group">
                                                 <label class="form-label">무료 공개 비율</label>
                                                 <select class="form-control" id="seq-free-ratio" onchange="markDirty()">
+                                                    <option value="1.0">전체 공개 (100%)</option>
+                                                    <option value="0">무료 공개 없음 (0%)</option>
                                                     <option value="0.3333">앞 1/3</option>
                                                     <option value="0.5">앞 1/2</option>
                                                     <option value="0.25">앞 1/4</option>
@@ -1680,6 +1686,32 @@ let flashcardsData = [];
 let timelineData   = [];
 
 // ── 목록 로드 ──────────────────────────────
+// 고유 시리즈 옵션 업데이트 함수
+function updateSeriesFilterOptions() {
+    const filterSeriesEl = document.getElementById('filter-series');
+    if (!filterSeriesEl) return;
+
+    const seriesNames = [...new Set(allSequences
+        .map(s => (s.series_name ?? '').trim())
+        .filter(Boolean)
+    )].sort();
+
+    let html = `
+        <option value="">모든 시리즈/단독</option>
+        <option value="_none_">단독 학습만</option>
+    `;
+
+    seriesNames.forEach(name => {
+        html += `<option value="${name}">${name}</option>`;
+    });
+
+    const savedVal = filterSeriesEl.value;
+    filterSeriesEl.innerHTML = html;
+    if (savedVal && [...filterSeriesEl.options].some(opt => opt.value === savedVal)) {
+        filterSeriesEl.value = savedVal;
+    }
+}
+
 async function loadSequenceList() {
     const listEl = document.getElementById('seq-list');
     listEl.innerHTML = '<div class="empty-state">불러오는 중...</div>';
@@ -1687,6 +1719,7 @@ async function loadSequenceList() {
     try {
         const res = await safeFetchDB({ collection: 'learn_sequences', orderByField: 'created_at' });
         allSequences = (res.data ?? []);
+        updateSeriesFilterOptions();
         renderSequenceList();
     } catch (e) {
         listEl.innerHTML = `<div class="empty-state">로드 실패: ${e.message}</div>`;
@@ -1697,10 +1730,40 @@ function renderSequenceList() {
     const listEl = document.getElementById('seq-list');
     const catFilter    = document.getElementById('filter-category').value;
     const statusFilter = document.getElementById('filter-status').value;
+    const seriesFilter = document.getElementById('filter-series').value;
 
     let docs = allSequences.slice();
     if (catFilter)    docs = docs.filter(d => d.category === catFilter);
     if (statusFilter) docs = docs.filter(d => d.status   === statusFilter);
+
+    if (seriesFilter === '_none_') {
+        docs = docs.filter(d => !d.series_name && !d.series_id);
+    } else if (seriesFilter) {
+        docs = docs.filter(d => d.series_name === seriesFilter);
+    }
+
+    if (seriesFilter && seriesFilter !== '_none_') {
+        // 특정 시리즈가 지정된 경우: 에피소드 순서(series_order) 오름차순으로 정렬
+        docs.sort((a, b) => (a.series_order ?? 9999) - (b.series_order ?? 9999));
+    } else {
+        // 전체 목록 또는 단독 학습 목록인 경우: 
+        // 시리즈가 있는 항목들은 같은 시리즈끼리 묶어 순서대로 정렬하고, 시리즈가 없는 항목들은 최신 생성순 등으로 정렬
+        docs.sort((a, b) => {
+            const aSeries = a.series_id ?? '';
+            const bSeries = b.series_id ?? '';
+
+            if (aSeries && bSeries) {
+                if (aSeries !== bSeries) {
+                    return aSeries.localeCompare(bSeries);
+                }
+                return (a.series_order ?? 9999) - (b.series_order ?? 9999);
+            }
+            if (aSeries && !bSeries) return -1; // 시리즈 우선 배치
+            if (!aSeries && bSeries) return 1;
+
+            return (b.created_at ?? 0) - (a.created_at ?? 0);
+        });
+    }
 
     if (docs.length === 0) {
         listEl.innerHTML = '<div class="empty-state">학습 시퀀스가 없습니다.</div>';
@@ -1719,14 +1782,20 @@ function renderSequenceList() {
             ? `<img src="${thumbUrl}" class="set-item-thumb" onerror="this.src='https://via.placeholder.com/50?text=No+Img'">`
             : `<div class="set-item-thumb" style="display:flex; align-items:center; justify-content:center; font-size:1.2rem; color:#cbd5e1;"><i class="fas fa-image"></i></div>`;
 
+        const seriesOrderText = d.series_order != null ? ` - ${d.series_order}편` : '';
+        const seriesBadgeHtml = d.series_name 
+            ? `<span style="font-size: 0.65rem; font-weight: 800; background: #efebe9; color: #4e342e; border: 1px solid #d7ccc8; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-bottom: 4px; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${d.series_name}${seriesOrderText}">📦 ${d.series_name}${seriesOrderText}</span>` 
+            : '';
+
         return `
         <div class="set-item${currentSeqId === d.id ? ' active' : ''}" onclick="openSequence('${d.id}')">
             ${thumbHtml}
             <div class="set-item-main">
-                <div style="display:flex; align-items:center; gap:6px; margin-bottom:4px;">
+                <div style="display:flex; align-items:center; gap:6px; margin-bottom:4px; flex-wrap: wrap;">
                     <span class="set-item-cat ${catClass}">${catLabel}</span>
                     ${lvlLabel ? `<span class="set-item-level ${lvlClass}">${lvlLabel}</span>` : ''}
                 </div>
+                ${seriesBadgeHtml}
                 <div class="set-item-title">${d.title ?? '(제목 없음)'}</div>
                 <div class="set-item-meta">
                     <span class="pub-dot ${isPublished ? 'pub' : 'draft'}"></span>
@@ -1835,7 +1904,7 @@ function clearInfoForm() {
     document.getElementById('seq-first-step').value  = '';
     setSelectedProducts([]);
     document.getElementById('seq-locked').value      = 'false';
-    document.getElementById('seq-free-ratio').value  = '0.34';
+    document.getElementById('seq-free-ratio').value  = '1.0';
     setFulltextEditorContent('');
     const fnListEl = document.getElementById('footnote-list');
     if (fnListEl) fnListEl.innerHTML = '';
@@ -1843,6 +1912,7 @@ function clearInfoForm() {
     document.getElementById('seq-series-id').value    = '';
     document.getElementById('seq-series-order').value = '';
     setCategory('korean');
+    onLockedChange();
 }
 
 function populateInfoForm(d) {
@@ -1862,7 +1932,7 @@ function populateInfoForm(d) {
     document.getElementById('seq-first-step').value  = d.first_step_id ?? '';
     setSelectedProducts(d.related_product_ids ?? []);
     document.getElementById('seq-locked').value      = d.is_locked ? 'true' : 'false';
-    document.getElementById('seq-free-ratio').value  = String(d.free_ratio ?? 0.34);
+    document.getElementById('seq-free-ratio').value  = String(d.free_ratio ?? (d.is_locked ? 0.3333 : 1.0));
     setFulltextEditorContent(d.full_text ?? '');
     document.getElementById('seq-cta-test-label').value    = d.cta_test_label    ?? '';
     document.getElementById('seq-cta-quiz-set-id').value   = d.cta_quiz_set_id   ?? '';
@@ -1871,6 +1941,7 @@ function populateInfoForm(d) {
     document.getElementById('seq-cta-shop-url').value = d.cta_shop_url ?? '';
     setCategory(d.category ?? 'korean');
     renderFootnotes(d.footnotes ?? []);
+    onLockedChange();
 }
 
 function setCategory(val) {
@@ -1879,6 +1950,24 @@ function setCategory(val) {
         btn.classList.toggle('active', btn.dataset.val === val);
     });
     markDirty();
+}
+
+function onLockedChange() {
+    const isLocked = document.getElementById('seq-locked').value === 'true';
+    const freeRatioEl = document.getElementById('seq-free-ratio');
+    if (!freeRatioEl) return;
+
+    if (!isLocked) {
+        freeRatioEl.value = '1.0';
+        freeRatioEl.disabled = true;
+        freeRatioEl.style.opacity = '0.5';
+    } else {
+        freeRatioEl.disabled = false;
+        freeRatioEl.style.opacity = '1';
+        if (freeRatioEl.value === '1.0') {
+            freeRatioEl.value = '0.3333';
+        }
+    }
 }
 
 function generateSeqId() {
@@ -2128,14 +2217,19 @@ async function buildAndSavePayload() {
 
     // ── 유료 잠금: 공개 문서엔 앞쪽 무료 청크만, 전체 청크는 보호 컬렉션에 분리 저장 ──
     const isLocked  = document.getElementById('seq-locked').value === 'true';
-    const freeRatio = parseFloat(document.getElementById('seq-free-ratio').value) || 0.3333;
+    const freeRatioVal = parseFloat(document.getElementById('seq-free-ratio').value);
+    const freeRatio = isNaN(freeRatioVal) ? 0.3333 : freeRatioVal;
     const totalSteps = steps.length;
     let publicSteps = steps;
     let freeCount   = totalSteps;
     if (isLocked && totalSteps > 0) {
-        freeCount = Math.max(1, Math.round(totalSteps * freeRatio));
-        // 청크가 2개 이상이면 최소 1개는 잠기도록 보장
-        if (totalSteps >= 2) freeCount = Math.min(freeCount, totalSteps - 1);
+        if (freeRatio === 0) {
+            freeCount = 0;
+        } else {
+            freeCount = Math.max(1, Math.round(totalSteps * freeRatio));
+            // 청크가 2개 이상이면 최소 1개는 잠기도록 보장
+            if (totalSteps >= 2) freeCount = Math.min(freeCount, totalSteps - 1);
+        }
         publicSteps = steps.slice(0, freeCount);
     }
 
