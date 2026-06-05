@@ -1116,7 +1116,12 @@
 
                                             <div class="form-group">
                                                 <label class="form-label">시리즈 순서</label>
-                                                <input type="number" class="form-control" id="seq-series-order" placeholder="1" min="1" style="max-width:120px;">
+                                                <div style="display:flex; gap:8px; align-items:center;">
+                                                    <input type="number" class="form-control" id="seq-series-order" placeholder="1" min="1" style="max-width:120px;">
+                                                    <button type="button" class="btn btn-ghost btn-sm" id="btn-series-order-picker" onclick="openSeriesOrderModal()" title="시리즈 목록에서 위치 선택" style="white-space:nowrap;">
+                                                        <i class="fas fa-list-ol"></i> 목록
+                                                    </button>
+                                                </div>
                                             </div>
 
                                             <div class="form-group">
@@ -1423,6 +1428,29 @@
             <button class="btn btn-primary btn-sm" id="btn-save-sort-order" onclick="saveSortOrder()">
                 <i class="fas fa-save"></i> 저장
             </button>
+        </div>
+    </div>
+</div>
+
+<!-- 시리즈 순서 설정 모달 -->
+<div class="modal-overlay" id="series-order-picker-modal">
+    <div class="modal-card" style="max-width:520px; width:92vw; max-height:88vh; display:flex; flex-direction:column; padding:0; border-radius:14px; overflow:hidden;">
+        <div style="padding:16px 22px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px; flex-shrink:0;">
+            <h3 style="flex:1; margin:0; font-size:1rem; font-weight:800;"><i class="fas fa-list-ol" style="color:var(--primary);"></i> <span id="series-order-modal-series-name"></span> — 시리즈 순서</h3>
+            <button class="btn btn-ghost btn-sm" onclick="closeSeriesOrderModal()">닫기</button>
+        </div>
+        <div style="padding:8px 16px 9px; border-bottom:1px solid var(--border); font-size:0.78rem; color:var(--text-sub); flex-shrink:0;">
+            드래그해서 순서를 조정하고, <strong style="color:var(--primary);">이 학습</strong> 행을 원하는 위치에 놓으세요.
+        </div>
+        <div id="series-order-picker-list" style="flex:1; overflow-y:auto; padding:0;"></div>
+        <div style="padding:12px 20px; border-top:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; flex-shrink:0; background:#f8fafc;">
+            <span style="font-size:0.78rem; color:var(--text-sub);">적용 시 기존 학습들의 순서도 함께 저장됩니다.</span>
+            <div style="display:flex; gap:8px;">
+                <button class="btn btn-ghost btn-sm" onclick="closeSeriesOrderModal()">취소</button>
+                <button class="btn btn-primary btn-sm" id="btn-apply-series-order" onclick="applySeriesOrder()">
+                    <i class="fas fa-check"></i> 적용
+                </button>
+            </div>
         </div>
     </div>
 </div>
@@ -3596,6 +3624,149 @@ async function startBulkImport() {
     }
 }
 
+// ── 시리즈 순서 설정 모달 ────────────────
+let _seriesPickerItems  = [];
+let _seriesPickerDragSrc = null;
+const _SERIES_NEW_ID = '__series_new__';
+
+function openSeriesOrderModal() {
+    const seriesId   = document.getElementById('seq-series-id').value.trim();
+    const seriesName = document.getElementById('seq-series-name').value.trim();
+    if (!seriesId || !seriesName) return;
+
+    const existing = allSequences
+        .filter(s => s.series_id === seriesId && s.id !== currentSeqId)
+        .map(s => ({ id: s.id, title: s.title ?? '(제목 없음)', series_order: s.series_order ?? 9999, status: s.status }))
+        .sort((a, b) => a.series_order - b.series_order);
+
+    if (!existing.length) {
+        document.getElementById('seq-series-order').value = '1';
+        toast('시리즈의 첫 번째 학습입니다. 순서 1이 자동 지정되었습니다.');
+        return;
+    }
+
+    const currentTitle = (document.getElementById('seq-title') || {}).value?.trim() || '(이 학습)';
+    const newItem = { id: _SERIES_NEW_ID, title: currentTitle, isNew: true };
+
+    const currentOrderVal = parseInt(document.getElementById('seq-series-order').value || '0', 10);
+    if (currentOrderVal > 0) {
+        const insertIdx = existing.findIndex(s => s.series_order >= currentOrderVal);
+        if (insertIdx >= 0) {
+            _seriesPickerItems = [...existing.slice(0, insertIdx), newItem, ...existing.slice(insertIdx)];
+        } else {
+            _seriesPickerItems = [...existing, newItem];
+        }
+    } else {
+        _seriesPickerItems = [...existing, newItem];
+    }
+
+    document.getElementById('series-order-modal-series-name').textContent = seriesName;
+    document.getElementById('series-order-picker-modal').classList.add('open');
+    renderSeriesPickerList();
+}
+
+function closeSeriesOrderModal() {
+    document.getElementById('series-order-picker-modal').classList.remove('open');
+}
+
+function renderSeriesPickerList() {
+    const listEl = document.getElementById('series-order-picker-list');
+    if (!_seriesPickerItems.length) {
+        listEl.innerHTML = '<div class="empty-state">시리즈 항목이 없습니다.</div>';
+        return;
+    }
+    listEl.innerHTML = _seriesPickerItems.map((s, i) => {
+        const isNew = !!s.isNew;
+        const rowBg  = isNew ? '#fffbe6' : '#fff';
+        const leftBd = isNew ? '3px solid var(--primary)' : '3px solid transparent';
+        const badge  = isNew
+            ? `<span style="font-size:0.68rem; background:var(--primary); color:#fff; border-radius:8px; padding:1px 8px; font-weight:700; flex-shrink:0;">이 학습</span>`
+            : `<span style="width:22px; height:22px; border-radius:50%; background:#e8eeff; color:var(--primary); border:1.5px solid var(--primary); display:inline-flex; align-items:center; justify-content:center; font-size:0.7rem; font-weight:800; flex-shrink:0;">${i + 1}</span>`;
+        const dot = !isNew
+            ? `<span class="pub-dot ${s.status === 'published' ? 'pub' : 'draft'}" style="flex-shrink:0;"></span>`
+            : '';
+        return `<div class="series-picker-row" data-picker-idx="${i}" draggable="true"
+            ondragstart="onSeriesPickerDragStart(event,${i})"
+            ondragover="onSeriesPickerDragOver(event,${i})"
+            ondragleave="onSeriesPickerDragLeave(event,${i})"
+            ondrop="onSeriesPickerDrop(event,${i})"
+            ondragend="onSeriesPickerDragEnd()"
+            style="display:flex; align-items:center; gap:10px; padding:10px 16px; border-bottom:1px solid var(--border); background:${rowBg}; border-left:${leftBd}; transition:background 0.1s; cursor:grab;">
+            <span style="color:#cbd5e1; font-size:0.9rem; flex-shrink:0;"><i class="fas fa-grip-vertical"></i></span>
+            ${badge}
+            <span style="flex:1; font-size:0.85rem; font-weight:600; color:#1e293b; word-break:keep-all;">${s.title}</span>
+            ${dot}
+        </div>`;
+    }).join('');
+}
+
+function onSeriesPickerDragStart(e, i) {
+    _seriesPickerDragSrc = i;
+    e.dataTransfer.effectAllowed = 'move';
+    setTimeout(() => {
+        const el = document.querySelector(`.series-picker-row[data-picker-idx="${i}"]`);
+        if (el) el.style.opacity = '0.4';
+    }, 0);
+}
+function onSeriesPickerDragOver(e, i) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const el = document.querySelector(`.series-picker-row[data-picker-idx="${i}"]`);
+    if (el) el.style.background = '#e8eeff';
+}
+function onSeriesPickerDragLeave(e, i) {
+    const el = document.querySelector(`.series-picker-row[data-picker-idx="${i}"]`);
+    if (el) el.style.background = (_seriesPickerItems[i] && _seriesPickerItems[i].isNew) ? '#fffbe6' : '#fff';
+}
+function onSeriesPickerDrop(e, i) {
+    e.preventDefault();
+    if (_seriesPickerDragSrc === null || _seriesPickerDragSrc === i) return;
+    const moved = _seriesPickerItems.splice(_seriesPickerDragSrc, 1)[0];
+    _seriesPickerItems.splice(i, 0, moved);
+    _seriesPickerDragSrc = null;
+    renderSeriesPickerList();
+}
+function onSeriesPickerDragEnd() {
+    _seriesPickerDragSrc = null;
+    document.querySelectorAll('.series-picker-row').forEach((el, i) => {
+        el.style.opacity = '';
+        el.style.background = (_seriesPickerItems[i] && _seriesPickerItems[i].isNew) ? '#fffbe6' : '#fff';
+    });
+}
+
+async function applySeriesOrder() {
+    const newIdx = _seriesPickerItems.findIndex(s => s.isNew);
+    if (newIdx < 0) { closeSeriesOrderModal(); return; }
+
+    document.getElementById('seq-series-order').value = String(newIdx + 1);
+    markDirty();
+
+    const btn = document.getElementById('btn-apply-series-order');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>';
+    try {
+        await Promise.all(
+            _seriesPickerItems
+                .filter(s => !s.isNew)
+                .map(s => {
+                    const pos = _seriesPickerItems.indexOf(s) + 1;
+                    return safeFetchDB({ action: 'update', collection: 'learn_sequences', id: s.id, data: { series_order: pos } });
+                })
+        );
+        _seriesPickerItems.filter(s => !s.isNew).forEach(s => {
+            const cached = allSequences.find(x => x.id === s.id);
+            if (cached) cached.series_order = _seriesPickerItems.indexOf(s) + 1;
+        });
+        toast('시리즈 순서가 적용되었습니다.');
+        closeSeriesOrderModal();
+    } catch (err) {
+        toast('저장 실패: ' + err.message, true);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-check"></i> 적용';
+    }
+}
+
 // ── 초기화 ──────────────────────────────
 function initSeriesPicker() {
     const nameInput = document.getElementById('seq-series-name');
@@ -3628,6 +3799,7 @@ function initSeriesPicker() {
                 nameInput.value = decodeURIComponent(el.dataset.name);
                 idInput.value   = el.dataset.id;
                 dropdown.style.display = 'none';
+                setTimeout(openSeriesOrderModal, 50);
             });
             el.addEventListener('mouseover', () => el.style.background = '#faf5ef');
             el.addEventListener('mouseout',  () => el.style.background = '');
