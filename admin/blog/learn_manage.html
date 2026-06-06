@@ -559,6 +559,8 @@
             overflow: hidden;
             box-shadow: 0 1px 4px rgba(0,0,0,0.04);
         }
+        .quiz-card.collapsed .quiz-card-body { display: none; }
+        .quiz-card.collapsed .quiz-chevron { transform: rotate(-90deg); }
 
         .quiz-card-header {
             display: flex;
@@ -567,6 +569,8 @@
             padding: 10px 14px;
             background: #f8fafc;
             border-bottom: 1px solid var(--border);
+            cursor: pointer;
+            user-select: none;
         }
 
         .quiz-card-body { padding: 14px; }
@@ -1321,6 +1325,9 @@
                                     <button class="btn btn-ghost btn-sm" onclick="openSplitModal()">
                                         <i class="fas fa-cut"></i> 분할
                                     </button>
+                                    <button class="btn btn-ghost btn-sm btn-danger" onclick="openDeleteRangeModal()">
+                                        <i class="fas fa-trash-alt"></i> 범위 삭제
+                                    </button>
                                     <button class="btn btn-ghost btn-sm" onclick="addStep()">
                                         <i class="fas fa-plus"></i> 청크 추가
                                     </button>
@@ -1342,6 +1349,9 @@
                                 <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
                                     <h3 style="font-size:0.88rem; font-weight:700; flex:1;">아웃트로 미니 퀴즈</h3>
                                     <span id="quiz-count-label" style="font-size:0.75rem; color:var(--text-sub); font-weight:600;"></span>
+                                    <button class="btn btn-ghost btn-sm" onclick="openBulkQuizzesModal()">
+                                        <i class="fas fa-paste"></i> 대량 입력
+                                    </button>
                                     <button class="btn btn-ghost btn-sm" onclick="addQuiz()">
                                         <i class="fas fa-plus"></i> 문항 추가
                                     </button>
@@ -1581,6 +1591,41 @@
     </div>
 </div>
 
+<!-- 퀴즈 대량 입력 모달 -->
+<div class="modal-overlay" id="bulk-quizzes-modal">
+    <div class="modal-card" style="max-width:680px; width:92vw;">
+        <h3><i class="fas fa-paste" style="color:var(--primary);"></i> 퀴즈 대량 입력 (CSV)</h3>
+        <p style="font-size:0.78rem; line-height:1.6; color:#475569; background:#f8fafc; padding:10px 14px; border-radius:8px; border:1px solid #e2e8f0; margin-bottom:12px; font-family:inherit;">
+            <strong>[CSV 입력 형식 가이드]</strong><br>
+            첫 줄에 헤더(<code>유형,문제,정답,보기A,보기B,힌트,해설,연계세트ID</code>)를 적고 줄바꿈하여 데이터를 입력하세요.<br>
+            - <strong>유형 <span style="color:#dc2626;">[필수]</span></strong>: <code>ox</code> (OX 퀴즈) 또는 <code>short</code> (이지선다형)<br>
+            - <strong>문제 <span style="color:#dc2626;">[필수]</span></strong>: 퀴즈 질문 내용<br>
+            - <strong>정답 <span style="color:#dc2626;">[필수]</span></strong>: OX는 <code>O</code> 또는 <code>X</code> / 이지선다는 <strong>보기A</strong> 또는 <strong>보기B</strong>에 적은 텍스트 값과 정확히 일치해야 함<br>
+            - <strong>보기A, 보기B <span style="color:#2563eb;">[이지선다형 필수]</span></strong>: 이지선다형 선택지 텍스트 (OX 퀴즈인 경우 비워둠)<br>
+            - <strong>힌트, 해설, 연계세트ID <span style="color:#4b5563;">[선택]</span></strong>: 생략 가능하며, 생략하더라도 쉼표(<code>,</code>) 구분자는 유지해야 함<br>
+            <br>
+            <strong>[예시 복사용 텍스트]</strong>
+            <textarea readonly style="width:100%; min-height:85px; font-family:monospace; font-size:0.75rem; color:#475569; background:#fff; border:1px solid #cbd5e1; border-radius:4px; padding:6px; margin-top:4px; resize:none; overflow-y:auto;" onclick="this.select()">유형,문제,정답,보기A,보기B,힌트,해설,연계세트ID
+ox,마르크스는 프랑스 혁명에 직접 참여했다,X,,,참여하지 않고 비판적으로 분석했습니다,마르크스는 프랑스 혁명 당시 생존하지 않았거나 참여하지 않았습니다,
+short,자본주의의 구조를 해부한 평생의 역작이었던 책의 제목은?,자본론,자본론,공산당 선언,자본주의를 해부한 책입니다,자본론은 마르크스의 대표작입니다,kr-mq1ldq92</textarea>
+        </p>
+        <textarea id="bulk-quizzes-input" class="form-control" style="min-height:180px; max-height:40vh; font-size:0.85rem; line-height:1.7; font-family:monospace;"
+            oninput="updateBulkQuizzesCount()"
+            placeholder="여기에 CSV 형식으로 퀴즈 데이터를 입력하거나 복사해 붙여넣으세요."></textarea>
+        <div style="font-size:0.75rem; color:var(--text-sub); margin-top:6px;" id="bulk-quizzes-count">감지된 문항: 0개</div>
+        <div class="form-group" style="margin-top:12px;">
+            <label class="form-label">추가 위치</label>
+            <select class="form-control" id="bulk-quizzes-insert-pos">
+                <option value="end" selected>맨 끝에 추가</option>
+            </select>
+        </div>
+        <div class="modal-actions" style="margin-top:16px;">
+            <button class="btn btn-ghost" onclick="closeBulkQuizzesModal()">취소</button>
+            <button class="btn btn-primary" onclick="applyBulkQuizzes()"><i class="fas fa-plus"></i> 퀴즈 추가</button>
+        </div>
+    </div>
+</div>
+
 <!-- 청크 대량 입력 모달 -->
 <div class="modal-overlay" id="bulk-steps-modal">
     <div class="modal-card" style="max-width:560px; width:92vw;">
@@ -1628,6 +1673,36 @@
             <button class="btn btn-ghost" onclick="closeSplitModal()">취소</button>
             <button class="btn btn-primary" id="btn-split-execute" onclick="executeSplit()">
                 <i class="fas fa-cut"></i> 분할 실행
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- 청크 범위 삭제 모달 -->
+<div class="modal-overlay" id="delete-range-modal">
+    <div class="modal-card" style="max-width:520px; width:92vw;">
+        <h3><i class="fas fa-trash-alt" style="color:#dc2626;"></i> 청크 범위 삭제</h3>
+        <p style="font-size:0.85rem; color:var(--text-sub); line-height:1.6; margin-bottom:16px;">
+            선택한 범위의 청크를 목록에서 삭제합니다.<br>
+            <strong>실제 저장하려면 우측 상단의 [저장] 버튼을 누르셔야 합니다.</strong>
+        </p>
+        <div style="display:grid; grid-template-columns:1fr auto 1fr; gap:8px; align-items:end; margin-bottom:12px;">
+            <div class="form-group" style="margin:0;">
+                <label class="form-label">시작 번호</label>
+                <input type="number" class="form-control" id="delete-range-start" min="1" value="1" oninput="updateDeleteRangePreview()">
+            </div>
+            <span style="font-size:1.1rem; color:var(--text-sub); padding-bottom:8px; text-align:center;">~</span>
+            <div class="form-group" style="margin:0;">
+                <label class="form-label">끝 번호</label>
+                <input type="number" class="form-control" id="delete-range-end" min="1" value="1" oninput="updateDeleteRangePreview()">
+            </div>
+        </div>
+        <div id="delete-range-preview" style="display:none; margin-bottom:10px;"></div>
+        <div id="delete-range-error" style="display:none; padding:8px 12px; background:#fef2f2; border:1px solid #fca5a5; border-radius:8px; font-size:0.8rem; color:#dc2626; margin-bottom:10px;"></div>
+        <div class="modal-actions" style="margin-top:16px;">
+            <button class="btn btn-ghost" onclick="closeDeleteRangeModal()">취소</button>
+            <button class="btn btn-danger" id="btn-delete-range-execute" onclick="executeDeleteRange()">
+                <i class="fas fa-trash-alt"></i> 삭제 실행
             </button>
         </div>
     </div>
@@ -2466,6 +2541,110 @@ function removeStepAnnotation(btn) {
     btn.closest('.step-ann-row').remove();
 }
 
+// ── 퀴즈 대량 입력 ────────────────────────
+function parseCSVLine(line) {
+    const result = [];
+    let curVal = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"') {
+            if (inQuotes && line[i + 1] === '"') {
+                curVal += '"';
+                i++;
+            } else {
+                inQuotes = !inQuotes;
+            }
+        } else if (char === ',' && !inQuotes) {
+            result.push(curVal);
+            curVal = '';
+        } else {
+            curVal += char;
+        }
+    }
+    result.push(curVal);
+    return result;
+}
+
+function parseCSVQuizzes(csvText) {
+    const lines = csvText.split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('유형,문제,정답'));
+    const parsedQuizzes = [];
+    for (let i = 0; i < lines.length; i++) {
+        const cols = parseCSVLine(lines[i]);
+        if (cols.length < 3) continue;
+        
+        const type = cols[0]?.trim() || 'ox';
+        const question = cols[1]?.trim() || '';
+        const answer = cols[2]?.trim() || '';
+        const option_a = cols[3]?.trim() || '';
+        const option_b = cols[4]?.trim() || '';
+        const hint = cols[5]?.trim() || '';
+        const explanation = cols[6]?.trim() || '';
+        const remedial_set_id = cols[7]?.trim() || '';
+        
+        parsedQuizzes.push({
+            type,
+            question,
+            answer,
+            option_a,
+            option_b,
+            hint,
+            explanation,
+            remedial_mode: 'flashcard',
+            remedial_set_id
+        });
+    }
+    return parsedQuizzes;
+}
+
+function openBulkQuizzesModal() {
+    syncQuizzesFromForm();
+    document.getElementById('bulk-quizzes-input').value = '';
+    updateBulkQuizzesCount();
+
+    const sel = document.getElementById('bulk-quizzes-insert-pos');
+    sel.innerHTML = '<option value="end" selected>맨 끝에 추가</option><option value="-1">맨 앞에 삽입</option>';
+    quizzesData.forEach((quiz, i) => {
+        const preview = (quiz.question ?? '').substring(0, 28) + ((quiz.question ?? '').length > 28 ? '…' : '');
+        const opt = document.createElement('option');
+        opt.value = String(i);
+        opt.textContent = `${i + 1}번 퀴즈 뒤: ${preview || '(내용 없음)'}`;
+        sel.appendChild(opt);
+    });
+
+    document.getElementById('bulk-quizzes-modal').classList.add('open');
+}
+
+function closeBulkQuizzesModal() {
+    document.getElementById('bulk-quizzes-modal').classList.remove('open');
+}
+
+function updateBulkQuizzesCount() {
+    const text = document.getElementById('bulk-quizzes-input').value;
+    const items = parseCSVQuizzes(text);
+    document.getElementById('bulk-quizzes-count').textContent = `감지된 문항: ${items.length}개`;
+}
+
+function applyBulkQuizzes() {
+    const text = document.getElementById('bulk-quizzes-input').value;
+    const items = parseCSVQuizzes(text);
+    if (!items.length) { toast('입력된 유효한 퀴즈가 없습니다. 형식을 확인하세요.', true); return; }
+    
+    syncQuizzesFromForm();
+    const posVal = document.getElementById('bulk-quizzes-insert-pos').value;
+    if (posVal === 'end') {
+        quizzesData.push(...items);
+    } else {
+        const afterIdx = parseInt(posVal, 10);
+        quizzesData.splice(afterIdx + 1, 0, ...items);
+    }
+    renderQuizList();
+    refreshBadges();
+    closeBulkQuizzesModal();
+    markDirty();
+    toast(`${items.length}개의 퀴즈가 성공적으로 추가되었습니다.`);
+}
+
 // ── 청크 대량 입력 ────────────────────────
 function openBulkStepsModal() {
     syncStepsFromForm();
@@ -2639,6 +2818,79 @@ function openSplitSequenceForm(extractedSteps, sourceData) {
     switchTab('steps');
     markDirty();
     renderSequenceList();
+}
+
+// ── 청크 범위 삭제 ──────────────────────────
+function openDeleteRangeModal() {
+    if (!stepsData.length) { toast('삭제할 청크가 없습니다.', true); return; }
+    syncStepsFromForm();
+    document.getElementById('delete-range-start').value = '1';
+    document.getElementById('delete-range-end').value   = String(stepsData.length);
+    document.getElementById('delete-range-error').style.display = 'none';
+    document.getElementById('btn-delete-range-execute').disabled = false;
+    updateDeleteRangePreview();
+    document.getElementById('delete-range-modal').classList.add('open');
+}
+
+function closeDeleteRangeModal() {
+    document.getElementById('delete-range-modal').classList.remove('open');
+}
+
+function updateDeleteRangePreview() {
+    const s0      = parseInt(document.getElementById('delete-range-start').value);
+    const e0      = parseInt(document.getElementById('delete-range-end').value);
+    const preview = document.getElementById('delete-range-preview');
+    const errEl   = document.getElementById('delete-range-error');
+    const btn     = document.getElementById('btn-delete-range-execute');
+    const total   = stepsData.length;
+
+    const invalid = isNaN(s0) || isNaN(e0) || s0 < 1 || e0 < s0 || e0 > total;
+    if (invalid) {
+        errEl.textContent = `유효한 범위를 입력하세요. (1 ~ ${total})`;
+        errEl.style.display = 'block';
+        preview.style.display = 'none';
+        btn.disabled = true;
+        return;
+    }
+    errEl.style.display = 'none';
+    btn.disabled = false;
+
+    const selected = stepsData.slice(s0 - 1, e0);
+    preview.style.display = 'block';
+    preview.innerHTML = `
+        <div style="font-size:0.78rem; font-weight:700; color:var(--text-sub); margin-bottom:6px;">
+            삭제될 청크 <span style="color:#dc2626;">${selected.length}</span>개
+        </div>
+        <div style="max-height:180px; overflow-y:auto; border:1px solid var(--border); border-radius:8px;">
+            ${selected.map((step, i) => {
+                const text = (step.text ?? '').substring(0, 60) + ((step.text ?? '').length > 60 ? '…' : '');
+                return `<div style="padding:8px 12px; border-bottom:1px solid #f0f2f5; font-size:0.82rem; display:flex; gap:8px; align-items:center;">
+                    <span style="width:22px; height:22px; border-radius:50%; background:#fef2f2; color:#dc2626; border:1.5px solid #fca5a5; display:inline-flex; align-items:center; justify-content:center; font-size:0.7rem; font-weight:800; flex-shrink:0;">${s0 + i}</span>
+                    <span style="color:#374151; word-break:break-all;">${text || '(빈 청크)'}</span>
+                </div>`;
+            }).join('')}
+        </div>`;
+}
+
+function executeDeleteRange() {
+    const s0    = parseInt(document.getElementById('delete-range-start').value);
+    const e0    = parseInt(document.getElementById('delete-range-end').value);
+    const total = stepsData.length;
+    if (isNaN(s0) || isNaN(e0) || s0 < 1 || e0 < s0 || e0 > total) return;
+
+    if (!confirm(`선택한 범위(${s0} ~ ${e0})의 청크 ${e0 - s0 + 1}개를 정말로 삭제하시겠습니까?`)) {
+        return;
+    }
+
+    syncStepsFromForm();
+    stepsData.splice(s0 - 1, e0 - s0 + 1);
+
+    renderStepList();
+    refreshBadges();
+    markDirty();
+
+    closeDeleteRangeModal();
+    toast(`${e0 - s0 + 1}개 청크가 삭제되었습니다. 저장을 완료하려면 [저장] 버튼을 누르세요.`);
 }
 
 // ── 청크 개요 모달 ────────────────────────
@@ -2918,33 +3170,54 @@ function renderQuizList() {
         const isOx  = qType === 'ox';
         const oxO   = (q.answer ?? '').toUpperCase() === 'O';
         const oxX   = (q.answer ?? '').toUpperCase() === 'X';
+        
+        const isAnsA = q.answer && q.answer === q.option_a;
+        const isAnsB = q.answer && q.answer === q.option_b;
+        
+        const isCollapsed = q._collapsed !== false;
+
         const answerField = isOx
             ? `<div class="ox-btn-group">
                    <button type="button" class="ox-btn ${oxO ? 'sel-o' : ''}" onclick="setOxAnswer(${i}, 'O')">O</button>
                    <button type="button" class="ox-btn ${oxX ? 'sel-x' : ''}" onclick="setOxAnswer(${i}, 'X')">X</button>
                </div>
                <input type="hidden" data-quiz-answer="${i}" value="${q.answer ?? ''}">`
-            : `<input type="text" class="form-control" data-quiz-answer="${i}" value="${q.answer ?? ''}" placeholder="정답을 입력하세요">`;
+            : `<div style="display:flex; flex-direction:column; gap:8px; width:100%;">
+                   <div style="display:flex; align-items:center; gap:8px;">
+                       <span style="font-weight:700; color:var(--primary); font-size:0.85rem; width:15px; flex-shrink:0;">A</span>
+                       <input type="text" class="form-control" data-quiz-option-a="${i}" value="${q.option_a ?? ''}" placeholder="보기 A를 입력하세요" oninput="onOptionTextChange(${i})">
+                       <button type="button" class="btn btn-sm ${isAnsA ? 'btn-primary' : 'btn-ghost'}" id="opt-a-btn-${i}" onclick="selectChoiceAnswer(${i}, 'A')" style="flex-shrink:0;">정답 지정</button>
+                   </div>
+                   <div style="display:flex; align-items:center; gap:8px;">
+                       <span style="font-weight:700; color:var(--primary); font-size:0.85rem; width:15px; flex-shrink:0;">B</span>
+                       <input type="text" class="form-control" data-quiz-option-b="${i}" value="${q.option_b ?? ''}" placeholder="보기 B를 입력하세요" oninput="onOptionTextChange(${i})">
+                       <button type="button" class="btn btn-sm ${isAnsB ? 'btn-primary' : 'btn-ghost'}" id="opt-b-btn-${i}" onclick="selectChoiceAnswer(${i}, 'B')" style="flex-shrink:0;">정답 지정</button>
+                   </div>
+                   <input type="hidden" data-quiz-answer="${i}" value="${q.answer ?? ''}">
+               </div>`;
         return `
-        <div class="quiz-card" data-quiz-idx="${i}">
-            <div class="quiz-card-header">
+        <div class="quiz-card ${isCollapsed ? 'collapsed' : ''}" data-quiz-idx="${i}">
+            <div class="quiz-card-header" onclick="toggleQuizCard(this, event, ${i})">
                 <span class="quiz-num">${i + 1}</span>
-                <select class="form-control" style="width:110px; font-size:0.8rem;" data-quiz-type="${i}" onchange="onQuizTypeChange(this, ${i})">
+                <select class="form-control" style="width:120px; font-size:0.8rem;" data-quiz-type="${i}" onchange="onQuizTypeChange(this, ${i})">
                     <option value="ox"    ${isOx  ? 'selected' : ''}>OX 퀴즈</option>
-                    <option value="short" ${!isOx ? 'selected' : ''}>단답형</option>
+                    <option value="short" ${!isOx ? 'selected' : ''}>이지선다형</option>
                 </select>
-                <span class="quiz-type-badge type-${qType}">${isOx ? 'OX' : '단답형'}</span>
-                <div style="flex:1;"></div>
+                <span class="quiz-type-badge type-${qType}">${isOx ? 'OX' : '이지선다'}</span>
+                <span class="quiz-header-preview" style="font-size:0.82rem; font-weight:600; color:#475569; margin-left:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:280px; flex:1;">
+                    ${q.question ? q.question.substring(0, 35) + (q.question.length > 35 ? '...' : '') : '(빈 문제)'}
+                </span>
+                <i class="fas fa-chevron-down quiz-chevron" style="transition: transform 0.18s; color: var(--text-sub); font-size: 0.8rem; margin-left: 8px; margin-right: 8px;"></i>
                 <button class="btn btn-danger btn-sm" onclick="removeQuiz(${i})"><i class="fas fa-trash-alt"></i></button>
             </div>
             <div class="quiz-card-body">
                 <div class="form-group form-full" style="margin-bottom:12px;">
                     <label class="form-label">문제</label>
-                    <textarea class="form-control" rows="2" data-quiz-question="${i}" placeholder="문제를 입력하세요" oninput="markDirty()">${q.question ?? ''}</textarea>
+                    <textarea class="form-control" rows="2" data-quiz-question="${i}" placeholder="문제를 입력하세요" oninput="onQuizQuestionInput(this, ${i})">${q.question ?? ''}</textarea>
                 </div>
                 <div class="form-grid" style="margin-bottom:12px;">
                     <div class="form-group">
-                        <label class="form-label">${isOx ? '정답' : '정답 (단답)'}</label>
+                        <label class="form-label">${isOx ? '정답' : '보기 및 정답 선택'}</label>
                         ${answerField}
                     </div>
                     <div class="form-group">
@@ -2980,11 +3253,78 @@ function renderQuizList() {
     }).join('');
 }
 
+function toggleQuizCard(headerEl, event, idx) {
+    if (event.target.tagName === 'SELECT' || event.target.closest('button')) {
+        return;
+    }
+    const card = headerEl.closest('.quiz-card');
+    if (card) {
+        const isCollapsed = card.classList.toggle('collapsed');
+        if (quizzesData[idx]) {
+            quizzesData[idx]._collapsed = isCollapsed;
+        }
+    }
+}
+
+function onQuizQuestionInput(textarea, idx) {
+    markDirty();
+    const val = textarea.value.trim();
+    const previewEl = textarea.closest('.quiz-card')?.querySelector('.quiz-header-preview');
+    if (previewEl) {
+        previewEl.textContent = val ? val.substring(0, 35) + (val.length > 35 ? '...' : '') : '(빈 문제)';
+    }
+}
+
+function selectChoiceAnswer(idx, choice) {
+    const optAVal = document.querySelector(`[data-quiz-option-a="${idx}"]`)?.value?.trim() ?? '';
+    const optBVal = document.querySelector(`[data-quiz-option-b="${idx}"]`)?.value?.trim() ?? '';
+    const hidden = document.querySelector(`[data-quiz-answer="${idx}"]`);
+    if (!hidden) return;
+
+    if (choice === 'A') {
+        hidden.value = optAVal;
+        const btnA = document.getElementById(`opt-a-btn-${idx}`);
+        const btnB = document.getElementById(`opt-b-btn-${idx}`);
+        if (btnA) { btnA.classList.remove('btn-ghost'); btnA.classList.add('btn-primary'); }
+        if (btnB) { btnB.classList.remove('btn-primary'); btnB.classList.add('btn-ghost'); }
+    } else {
+        hidden.value = optBVal;
+        const btnA = document.getElementById(`opt-a-btn-${idx}`);
+        const btnB = document.getElementById(`opt-b-btn-${idx}`);
+        if (btnA) { btnA.classList.remove('btn-primary'); btnA.classList.add('btn-ghost'); }
+        if (btnB) { btnB.classList.remove('btn-ghost'); btnB.classList.add('btn-primary'); }
+    }
+    markDirty();
+}
+
+function onOptionTextChange(idx) {
+    const optAVal = document.querySelector(`[data-quiz-option-a="${idx}"]`)?.value?.trim() ?? '';
+    const optBVal = document.querySelector(`[data-quiz-option-b="${idx}"]`)?.value?.trim() ?? '';
+    const hidden = document.querySelector(`[data-quiz-answer="${idx}"]`);
+    const btnA = document.getElementById(`opt-a-btn-${idx}`);
+    const btnB = document.getElementById(`opt-b-btn-${idx}`);
+    const isAnsA = btnA?.classList.contains('btn-primary');
+    const isAnsB = btnB?.classList.contains('btn-primary');
+    
+    if (hidden) {
+        if (isAnsA) {
+            hidden.value = optAVal;
+        } else if (isAnsB) {
+            hidden.value = optBVal;
+        }
+    }
+    markDirty();
+}
+
 function onQuizTypeChange(sel, idx) {
     syncQuizzesFromForm();
     quizzesData[idx].type = sel.value;
     if (sel.value === 'ox' && !['O', 'X'].includes((quizzesData[idx].answer ?? '').toUpperCase())) {
         quizzesData[idx].answer = '';
+    } else if (sel.value === 'short') {
+        quizzesData[idx].answer = '';
+        quizzesData[idx].option_a = '';
+        quizzesData[idx].option_b = '';
     }
     renderQuizList();
     markDirty();
@@ -3009,16 +3349,19 @@ function syncQuizzesFromForm() {
         type:            document.querySelector(`[data-quiz-type="${i}"]`)?.value ?? 'ox',
         question:        document.querySelector(`[data-quiz-question="${i}"]`)?.value?.trim() ?? '',
         answer:          document.querySelector(`[data-quiz-answer="${i}"]`)?.value?.trim() ?? '',
+        option_a:        document.querySelector(`[data-quiz-option-a="${i}"]`)?.value?.trim() ?? '',
+        option_b:        document.querySelector(`[data-quiz-option-b="${i}"]`)?.value?.trim() ?? '',
         hint:            document.querySelector(`[data-quiz-hint="${i}"]`)?.value?.trim() ?? '',
         explanation:     document.querySelector(`[data-quiz-explanation="${i}"]`)?.value?.trim() ?? '',
         remedial_mode:   document.querySelector(`[data-quiz-remedial="${i}"]`)?.value ?? 'flashcard',
         remedial_set_id: document.querySelector(`[data-quiz-set="${i}"]`)?.value?.trim() ?? '',
+        _collapsed:      quizzesData[i]?._collapsed
     }));
 }
 
 function addQuiz() {
     syncQuizzesFromForm();
-    quizzesData.push({ type: 'ox', question: '', answer: '', hint: '', explanation: '', remedial_mode: 'flashcard', remedial_set_id: '' });
+    quizzesData.push({ type: 'ox', question: '', answer: '', option_a: '', option_b: '', hint: '', explanation: '', remedial_mode: 'flashcard', remedial_set_id: '', _collapsed: false });
     renderQuizList();
     refreshBadges();
     markDirty();
@@ -3035,17 +3378,23 @@ function removeQuiz(idx) {
 }
 
 function collectQuizFormData(seqId) {
-    return quizzesData.map((q, i) => ({
-        ...q,
-        type:            document.querySelector(`[data-quiz-type="${i}"]`)?.value ?? 'ox',
-        question:        document.querySelector(`[data-quiz-question="${i}"]`)?.value?.trim() ?? '',
-        answer:          document.querySelector(`[data-quiz-answer="${i}"]`)?.value?.trim() ?? '',
-        hint:            document.querySelector(`[data-quiz-hint="${i}"]`)?.value?.trim() ?? '',
-        explanation:     document.querySelector(`[data-quiz-explanation="${i}"]`)?.value?.trim() ?? '',
-        remedial_mode:   document.querySelector(`[data-quiz-remedial="${i}"]`)?.value ?? 'flashcard',
-        remedial_set_id: document.querySelector(`[data-quiz-set="${i}"]`)?.value?.trim() ?? '',
-        order:           i + 1,
-    }));
+    return quizzesData.map((q, i) => {
+        const item = {
+            ...q,
+            type:            document.querySelector(`[data-quiz-type="${i}"]`)?.value ?? 'ox',
+            question:        document.querySelector(`[data-quiz-question="${i}"]`)?.value?.trim() ?? '',
+            answer:          document.querySelector(`[data-quiz-answer="${i}"]`)?.value?.trim() ?? '',
+            option_a:        document.querySelector(`[data-quiz-option-a="${i}"]`)?.value?.trim() ?? '',
+            option_b:        document.querySelector(`[data-quiz-option-b="${i}"]`)?.value?.trim() ?? '',
+            hint:            document.querySelector(`[data-quiz-hint="${i}"]`)?.value?.trim() ?? '',
+            explanation:     document.querySelector(`[data-quiz-explanation="${i}"]`)?.value?.trim() ?? '',
+            remedial_mode:   document.querySelector(`[data-quiz-remedial="${i}"]`)?.value ?? 'flashcard',
+            remedial_set_id: document.querySelector(`[data-quiz-set="${i}"]`)?.value?.trim() ?? '',
+            order:           i + 1,
+        };
+        delete item._collapsed; // 내부 상태 속성 삭제
+        return item;
+    });
 }
 
 // ════════════════════════════
