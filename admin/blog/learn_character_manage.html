@@ -482,7 +482,7 @@
       <!-- JSON 입력란 -->
       <div style="display:flex; flex-direction:column; gap:10px;">
         <label style="font-size:12px; font-weight:800; color:var(--text);">JSON 데이터 붙여넣기 (배열 형태 * )</label>
-        <textarea id="bulk-json-input" style="flex:1; min-height:380px; font-family:monospace; font-size:12px; padding:12px; border:1.5px solid var(--line); border-radius:10px; resize:none;" placeholder="[&#10;  {&#10;    &quot;name&quot;: &quot;리다자오&quot;,&#10;    &quot;type&quot;: &quot;character&quot;,&#10;    &quot;alt_names&quot;: [&quot;베이징대 도서관장&quot;],&#10;    &quot;birth_year&quot;: &quot;1889&quot;,&#10;    &quot;death_year&quot;: &quot;1927&quot;,&#10;    &quot;memo&quot;: &quot;공동 창립자.&quot;,&#10;    &quot;related_events&quot;: [&quot;5.4 운동&quot;]&#10;  }&#10;]"></textarea>
+        <textarea id="bulk-json-input" style="flex:1; min-height:380px; font-family:monospace; font-size:12px; padding:12px; border:1.5px solid var(--line); border-radius:10px; resize:none;" placeholder="[&#10;  {&#10;    &quot;name&quot;: &quot;저우언라이&quot;,&#10;    &quot;type&quot;: &quot;character&quot;,&#10;    &quot;alt_names&quot;: [&quot;주은래&quot;, &quot;周恩來&quot;, &quot;Zhou Enlai&quot;],&#10;    &quot;birth_year&quot;: &quot;1898&quot;,&#10;    &quot;death_year&quot;: &quot;1976&quot;,&#10;    &quot;memo&quot;: &quot;닉슨 방중 실무 전체를 총괄한 주역으로 등장한다.&quot;,&#10;    &quot;related_events&quot;: [&quot;닉슨 방중&quot;],&#10;    &quot;appearances&quot;: [&#10;      {&#10;        &quot;series_name&quot;: &quot;공산주의 시리즈 (중국공산당편)&quot;,&#10;        &quot;title&quot;: &quot;5편 - '마오쩌둥주의'는 마르크스·레닌주의와 무엇이 달랐나&quot;,&#10;        &quot;content_connection&quot;: &quot;닉슨 방중 실무 전체를 총괄한 주역으로 등장&quot;&#10;      }&#10;    ]&#10;  }&#10;]"></textarea>
       </div>
       
       <!-- 가이드라인 설명 -->
@@ -545,6 +545,12 @@
               <td>연관된 사건의 name 목록 (예: `["5.4 운동", "국공합작"]`)</td>
               <td>선택</td>
             </tr>
+            <tr>
+              <td><strong>appearances</strong></td>
+              <td>Array</td>
+              <td>등장 학습 위치 배열. 하위 객체 필드:<br>- <code>series_name</code>: 시리즈명 (선택)<br>- <code>title</code>: 학습단계(편) 제목 (필수)<br>- <code>content_connection</code>: 연결 설명/메모 (선택)</td>
+              <td>선택</td>
+            </tr>
           </tbody>
         </table>
         
@@ -566,7 +572,11 @@
   async function safeFetchDB(payload) {
     if (!window.CHEESE_ADMIN_DB_API) throw new Error("API 엔드포인트가 정의되지 않았습니다.");
     const res = await fetch(window.CHEESE_ADMIN_DB_API, {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Admin-Token": window.CHEESE_ADMIN_TOKEN || ""
+      },
       body: JSON.stringify(payload)
     });
     const data = await res.json();
@@ -582,6 +592,43 @@
     return String(s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   }
 
+  async function syncExistingRelations() {
+    let updatedCount = 0;
+    const updatePromises = [];
+
+    ALL_ITEMS.forEach(item => {
+      const name = item.name;
+      const rels = item.related_events || [];
+
+      rels.forEach(relName => {
+        const target = ALL_ITEMS.find(x => x.name === relName);
+        if (target) {
+          const targetRels = target.related_events || [];
+          if (!targetRels.includes(name)) {
+            targetRels.push(name);
+            target.related_events = targetRels;
+            target.updated_at = new Date().toISOString();
+
+            updatePromises.push(
+              safeFetchDB({ action: "set", collection: "learn_characters", id: target.id, data: target })
+            );
+            updatedCount++;
+          }
+        }
+      });
+    });
+
+    if (updatePromises.length > 0) {
+      try {
+        await Promise.all(updatePromises);
+        console.log(`기존의 어긋난 연동 데이터 ${updatedCount}건을 양방향으로 동기화 완료했습니다.`);
+        renderList();
+      } catch (err) {
+        console.error("기존 연동 데이터 일괄 동기화 실패:", err);
+      }
+    }
+  }
+
   async function loadAll() {
     try {
       const [cRes, sRes] = await Promise.all([
@@ -592,6 +639,9 @@
       ALL_SEQUENCES = sRes.data || [];
       buildSeqFilter();
       renderList();
+      
+      // 기존 불일치 연관 데이터 자동 동기화
+      await syncExistingRelations();
     } catch (e) {
       const tbody = document.getElementById("cm-tbody");
       if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="empty-msg" style="color:#dc2626;"><i class="fa-solid fa-triangle-exclamation"></i> 불러오기 실패: ${e.message}</td></tr>`;
@@ -663,13 +713,33 @@
     renderList();
   }
 
+  function getSearchScore(item, q) {
+    if (!item || !q) return 0;
+    const cleanQ = q.normalize("NFC").trim().toLowerCase();
+    const name = (item.name || "").normalize("NFC").trim().toLowerCase();
+    
+    if (name === cleanQ) return 100;
+    if (name.startsWith(cleanQ)) return 80;
+    if (name.includes(cleanQ)) return 60;
+    
+    const altNames = Array.isArray(item.alt_names) ? item.alt_names : [];
+    if (altNames.some(n => String(n || "").normalize("NFC").trim().toLowerCase() === cleanQ)) return 50;
+    if (altNames.some(n => String(n || "").normalize("NFC").trim().toLowerCase().startsWith(cleanQ))) return 40;
+    if (altNames.some(n => String(n || "").normalize("NFC").trim().toLowerCase().includes(cleanQ))) return 30;
+    
+    const memo = (item.memo || "").normalize("NFC").toLowerCase();
+    if (memo.includes(cleanQ)) return 10;
+    return 0;
+  }
+
   function renderList() {
     // 목록 렌더링 시 체크박스 상태 초기화
     const master = document.getElementById("select-all");
     if (master) master.checked = false;
     updateBatchActionBar();
 
-    const q = (document.getElementById("cm-search")?.value || "").toLowerCase();
+    const rawQ = (document.getElementById("cm-search")?.value || "");
+    const q = rawQ.normalize("NFC").trim().toLowerCase();
     const typeFilter = document.getElementById("cm-type-filter")?.value || "";
     const seriesFilter = document.getElementById("cm-series-filter")?.value || "";
     const seqFilter = document.getElementById("cm-seq-filter")?.value || "";
@@ -683,10 +753,6 @@
     }
     
     const filtered = ALL_ITEMS.filter(item => {
-      const matchQ = !q ||
-        (item.name || "").toLowerCase().includes(q) ||
-        (item.alt_names || []).some(n => n.toLowerCase().includes(q)) ||
-        (item.memo || "").toLowerCase().includes(q);
       const matchType = !typeFilter || item.type === typeFilter;
       
       let matchSeq = true;
@@ -696,8 +762,41 @@
         matchSeq = (item.appearances || []).some(a => allowedSeqIds.includes(a.sequence_id));
       }
       
-      return matchQ && matchType && matchSeq;
+      if (!matchSeq || !matchType) return false;
+      if (!q) return true;
+      
+      const name = (item.name || "").normalize("NFC").toLowerCase();
+      const altNames = Array.isArray(item.alt_names) ? item.alt_names : [];
+      const memo = (item.memo || "").normalize("NFC").toLowerCase();
+
+      const matchQ = name.includes(q) ||
+        altNames.some(n => String(n || "").normalize("NFC").toLowerCase().includes(q)) ||
+        memo.includes(q);
+      
+      return matchQ;
     });
+
+    if (q) {
+      try {
+        const itemIndices = new Map();
+        ALL_ITEMS.forEach((item, idx) => itemIndices.set(item.id, idx));
+
+        filtered.sort((a, b) => {
+          const scoreA = getSearchScore(a, q);
+          const scoreB = getSearchScore(b, q);
+          if (scoreA !== scoreB) {
+            return scoreB - scoreA;
+          }
+          const idxA = itemIndices.get(a.id) ?? 999999;
+          const idxB = itemIndices.get(b.id) ?? 999999;
+          return idxA - idxB;
+        });
+        
+        console.log(`[검색 정렬 디버깅] 검색어: "${q}"`, filtered.slice(0, 5).map(x => `${x.name} (${getSearchScore(x, q)}점)`));
+      } catch (err) {
+        console.error("검색결과 정렬 중 오류 발생:", err);
+      }
+    }
 
     const tbody = document.getElementById("cm-tbody");
     if (!tbody) return;
@@ -742,16 +841,23 @@
     const deathField = document.getElementById("death-year-field");
     const relEventsField = document.getElementById("related-events-field");
     
+    const relLabel = relEventsField.querySelector("label");
+    const relInput = document.getElementById("event-rel-input");
+    
     if (type === "event") {
       lblBirth.textContent = "발생 연도 / 시기";
       birthInput.placeholder = "예: 1919 또는 해방 전후";
       deathField.style.display = "none";
-      relEventsField.style.display = "none"; // 사건일 경우 연관 사건은 숨김
+      relEventsField.style.display = "block";
+      if (relLabel) relLabel.innerHTML = "⚡ 연관 인물 및 사건 (사전의 인물/사건 항목에서 검색)";
+      if (relInput) relInput.placeholder = "인물명 또는 사건명 검색...";
     } else {
       lblBirth.textContent = "생년";
       birthInput.placeholder = "예: 1889 또는 19xx";
       deathField.style.display = "block";
-      relEventsField.style.display = "block"; // 인물일 경우 연관 사건 표시
+      relEventsField.style.display = "block";
+      if (relLabel) relLabel.innerHTML = "⚡ 연관 사건 (사전의 사건 항목에서 검색)";
+      if (relInput) relInput.placeholder = "사건명 검색...";
     }
   }
 
@@ -779,24 +885,39 @@
       .map(i => i.value.trim()).filter(Boolean);
   }
 
-  /* ── 연관 사건 검색 ── */
+  /* ── 연관 사건/인물 검색 ── */
   function searchRelEvents() {
-    const q = (document.getElementById("event-rel-input")?.value || "").toLowerCase();
+    const q = (document.getElementById("event-rel-input")?.value || "").toLowerCase().trim();
     const res = document.getElementById("event-rel-results");
     if (!res) return;
     if (!q) { res.classList.remove("visible"); return; }
     
-    // 사전 DB에서 type이 event인 항목 매칭
-    const matches = ALL_ITEMS.filter(e =>
-      e.type === "event" &&
-      !selectedRelEventNames.includes(e.name) &&
-      (e.name || "").toLowerCase().includes(q)
-    ).slice(0, 8);
+    const type = document.getElementById("cm-type").value;
+    const currentName = (document.getElementById("cm-name")?.value || "").trim().toLowerCase();
+    
+    let matches = [];
+    if (type === "character") {
+      matches = ALL_ITEMS.filter(e =>
+        e.type === "event" &&
+        !selectedRelEventNames.includes(e.name) &&
+        (e.name || "").toLowerCase().includes(q)
+      );
+    } else {
+      matches = ALL_ITEMS.filter(e =>
+        (e.type === "character" || e.type === "event") &&
+        e.name && e.name.toLowerCase() !== currentName &&
+        !selectedRelEventNames.includes(e.name) &&
+        ((e.name || "").toLowerCase().includes(q) || (e.alt_names || []).some(n => n.toLowerCase().includes(q)))
+      );
+    }
+    
+    matches = matches.slice(0, 8);
     
     if (!matches.length) { res.classList.remove("visible"); return; }
-    res.innerHTML = matches.map(e =>
-      `<div class="rel-result-item" onclick="selectRelEvent('${esc(e.name)}')">${esc(e.name)}</div>`
-    ).join("");
+    res.innerHTML = matches.map(e => {
+      const typeBadge = e.type === "event" ? `<span class="badge-type event" style="margin-left: 6px; font-size: 9px; padding: 1px 4px;">사건</span>` : `<span class="badge-type character" style="margin-left: 6px; font-size: 9px; padding: 1px 4px;">인물</span>`;
+      return `<div class="rel-result-item" onclick="selectRelEvent('${esc(e.name)}')">${esc(e.name)}${typeBadge}</div>`;
+    }).join("");
     res.classList.add("visible");
   }
 
@@ -1151,6 +1272,21 @@
     const isNew = !document.getElementById("cm-id")?.value;
     const type = document.getElementById("cm-type").value;
 
+    let oldName = "";
+    let nameChanged = false;
+    const oldItem = ALL_ITEMS.find(x => x.id === id);
+    if (!isNew && oldItem) {
+      if (oldItem.name !== name) {
+        oldName = oldItem.name;
+        nameChanged = true;
+      }
+    }
+
+    const oldRels = oldItem ? (oldItem.related_events || []) : [];
+    const newRels = [...selectedRelEventNames];
+    const addedRels = newRels.filter(r => !oldRels.includes(r));
+    const removedRels = oldRels.filter(r => !newRels.includes(r));
+
     const data = {
       name,
       type,
@@ -1159,7 +1295,7 @@
       death_year: type === "character" ? (document.getElementById("cm-death-year")?.value || "").trim() : "",
       memo: (document.getElementById("cm-memo")?.value || "").trim(),
       appearances: getAppearances(),
-      related_events: type === "character" ? [...selectedRelEventNames] : [],
+      related_events: [...selectedRelEventNames],
       updated_at: new Date().toISOString()
     };
     if (isNew) data.created_at = new Date().toISOString();
@@ -1173,6 +1309,67 @@
         const idx = ALL_ITEMS.findIndex(c => c.id === id);
         if (idx >= 0) ALL_ITEMS[idx] = { ...data, id };
       }
+
+      // 1. 연동된 인물/사건들의 이름 변경 처리 (동방향/역방향 동기화)
+      if (nameChanged && oldName) {
+        const itemsToUpdate = ALL_ITEMS.filter(x => x.related_events && x.related_events.includes(oldName));
+        if (itemsToUpdate.length > 0) {
+          const updatePromises = itemsToUpdate.map(async (item) => {
+            const updatedRels = item.related_events.map(evName => evName === oldName ? name : evName);
+            const updatedItemData = {
+              ...item,
+              related_events: updatedRels,
+              updated_at: new Date().toISOString()
+            };
+            await safeFetchDB({ action: "set", collection: "learn_characters", id: item.id, data: updatedItemData });
+            const idx = ALL_ITEMS.findIndex(x => x.id === item.id);
+            if (idx >= 0) ALL_ITEMS[idx] = updatedItemData;
+          });
+          await Promise.all(updatePromises);
+          alert(`이름이 변경되어 연관된 항목 ${itemsToUpdate.length}개의 연관 정보도 함께 업데이트되었습니다.`);
+        }
+      }
+
+      // 2. 추가된 연관 상대방에 내 이름 등록
+      if (addedRels.length > 0) {
+        const targets = ALL_ITEMS.filter(x => addedRels.includes(x.name));
+        const addedPromises = targets.map(async (target) => {
+          const currentRels = target.related_events || [];
+          if (!currentRels.includes(name)) {
+            const updatedRels = [...currentRels, name];
+            const updatedData = {
+              ...target,
+              related_events: updatedRels,
+              updated_at: new Date().toISOString()
+            };
+            await safeFetchDB({ action: "set", collection: "learn_characters", id: target.id, data: updatedData });
+            const idx = ALL_ITEMS.findIndex(x => x.id === target.id);
+            if (idx >= 0) ALL_ITEMS[idx] = updatedData;
+          }
+        });
+        await Promise.all(addedPromises);
+      }
+
+      // 3. 삭제된 연관 상대방에서 내 이름 제거
+      if (removedRels.length > 0) {
+        const targets = ALL_ITEMS.filter(x => removedRels.includes(x.name));
+        const removedPromises = targets.map(async (target) => {
+          const currentRels = target.related_events || [];
+          const updatedRels = currentRels.filter(r => r !== name && r !== oldName);
+          if (currentRels.length !== updatedRels.length) {
+            const updatedData = {
+              ...target,
+              related_events: updatedRels,
+              updated_at: new Date().toISOString()
+            };
+            await safeFetchDB({ action: "set", collection: "learn_characters", id: target.id, data: updatedData });
+            const idx = ALL_ITEMS.findIndex(x => x.id === target.id);
+            if (idx >= 0) ALL_ITEMS[idx] = updatedData;
+          }
+        });
+        await Promise.all(removedPromises);
+      }
+
       renderList();
     } catch (e) {
       alert("저장 실패: " + e.message);
@@ -1182,6 +1379,26 @@
   async function deleteItem(id, name) {
     if (!confirm(`"${name}" 항목을 사전에서 삭제하시겠습니까?`)) return;
     try {
+      const targetItem = ALL_ITEMS.find(x => x.id === id);
+      if (targetItem) {
+        const deletedName = targetItem.name;
+        const itemsToUpdate = ALL_ITEMS.filter(x => x.related_events && x.related_events.includes(deletedName));
+        if (itemsToUpdate.length > 0) {
+          const updatePromises = itemsToUpdate.map(async (item) => {
+            const updatedRels = item.related_events.filter(evName => evName !== deletedName);
+            const updatedItemData = {
+              ...item,
+              related_events: updatedRels,
+              updated_at: new Date().toISOString()
+            };
+            await safeFetchDB({ action: "set", collection: "learn_characters", id: item.id, data: updatedItemData });
+            const idx = ALL_ITEMS.findIndex(x => x.id === item.id);
+            if (idx >= 0) ALL_ITEMS[idx] = updatedItemData;
+          });
+          await Promise.all(updatePromises);
+        }
+      }
+
       await safeFetchDB({ action: "delete", collection: "learn_characters", id });
       ALL_ITEMS = ALL_ITEMS.filter(c => c.id !== id);
       renderList();
@@ -1205,15 +1422,24 @@
   }
 
   async function copyGuideSchema() {
-    const schema = `{
-  "name": "리다자오",
-  "type": "character",
-  "alt_names": ["베이징대 도서관장", "리다자오 대표"],
-  "birth_year": "1889",
-  "death_year": "1927",
-  "memo": "중국 공산당의 공동 창립자 중 한 명.",
-  "related_events": ["중국공산당 창당", "5.4 운동"]
-}`;
+    const schema = `[
+  {
+    "name": "저우언라이",
+    "type": "character",
+    "alt_names": ["주은래", "周恩來", "Zhou Enlai"],
+    "birth_year": "1898",
+    "death_year": "1976",
+    "memo": "1954년 제네바 회의 당시 미국에 악수를 거부당했던 인물로 재조명되며, 18년 뒤인 1972년 2월 베이징 공항에서 미국 대통령의 악수를 직접 받아내며 힘의 균형추가 베이징으로 이동했음을 증명하는 외교적 설계자이자 닉슨 방중 실무 전체를 총괄한 주역으로 등장한다.",
+    "related_events": ["닉슨 방중", "상하이 코뮈니케 발표", "유엔 중국 대표권 교체 사태"],
+    "appearances": [
+      {
+        "series_name": "공산주의 시리즈 (중국공산당편)",
+        "title": "5편 - '마오쩌둥주의'는 마르크스·레닌주의와 무엇이 달랐나",
+        "content_connection": "닉슨 방중 실무 전체를 총괄한 주역으로 등장"
+      }
+    ]
+  }
+]`;
     try {
       await navigator.clipboard.writeText(schema);
       alert("AI 프롬프트용 샘플 JSON 스키마가 클립보드에 복사되었습니다.");
@@ -1312,7 +1538,7 @@
           death_year: item.type === "character" && item.death_year ? String(item.death_year).trim() : "",
           memo: item.memo ? String(item.memo).trim() : "",
           appearances: Array.isArray(item.appearances) ? item.appearances : [],
-          related_events: item.type === "character" && Array.isArray(item.related_events) ? item.related_events.map(e => String(e).trim()).filter(Boolean) : [],
+          related_events: Array.isArray(item.related_events) ? item.related_events.map(e => String(e).trim()).filter(Boolean) : [],
           created_at: now,
           updated_at: now
         };
@@ -1342,7 +1568,7 @@
 
           // related_events 병합
           const existingRels = existingItem.related_events || [];
-          const newRels = item.type === "character" && Array.isArray(item.related_events) ? item.related_events.map(e => String(e).trim()).filter(Boolean) : [];
+          const newRels = Array.isArray(item.related_events) ? item.related_events.map(e => String(e).trim()).filter(Boolean) : [];
           const mergedRels = Array.from(new Set([...existingRels, ...newRels]));
 
           // 빈 값 보완 채우기
@@ -1357,7 +1583,7 @@
             death_year: existingItem.type === "character" ? death_year : "",
             memo,
             appearances: mergedApps,
-            related_events: existingItem.type === "character" ? mergedRels : [],
+            related_events: mergedRels,
             updated_at: now
           };
 
@@ -1471,6 +1697,27 @@
     delBtn.disabled = true;
 
     try {
+      const itemsToDelete = ALL_ITEMS.filter(item => idsToDelete.includes(item.id));
+      const namesToDelete = itemsToDelete.map(item => item.name);
+
+      if (namesToDelete.length > 0) {
+        const itemsToUpdate = ALL_ITEMS.filter(x => x.related_events && x.related_events.some(ev => namesToDelete.includes(ev)));
+        if (itemsToUpdate.length > 0) {
+          const updatePromises = itemsToUpdate.map(async (item) => {
+            const updatedRels = item.related_events.filter(evName => !namesToDelete.includes(evName));
+            const updatedItemData = {
+              ...item,
+              related_events: updatedRels,
+              updated_at: new Date().toISOString()
+            };
+            await safeFetchDB({ action: "set", collection: "learn_characters", id: item.id, data: updatedItemData });
+            const idx = ALL_ITEMS.findIndex(x => x.id === item.id);
+            if (idx >= 0) ALL_ITEMS[idx] = updatedItemData;
+          });
+          await Promise.all(updatePromises);
+        }
+      }
+
       const promises = idsToDelete.map(id => 
         safeFetchDB({ action: "delete", collection: "learn_characters", id })
       );
