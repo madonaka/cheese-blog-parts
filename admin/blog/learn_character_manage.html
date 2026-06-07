@@ -567,8 +567,39 @@
   function buildSeqFilter() {
     const sel = document.getElementById("cm-seq-filter");
     if (!sel) return;
-    sel.innerHTML = '<option value="">전체 시리즈</option>' +
-      ALL_SEQUENCES.map(s => `<option value="${s.id}">${esc(s.title)}</option>`).join("");
+
+    // series_name -> group -> 단독 학습 순으로 그룹화
+    const groups = {};
+    ALL_SEQUENCES.forEach(s => {
+      const gName = s.series_name || s.group || "단독 학습";
+      if (!groups[gName]) groups[gName] = [];
+      groups[gName].push(s);
+    });
+
+    // 정렬 규칙: 단독 학습은 가장 아래로, 나머지는 이름 정렬
+    const groupNames = Object.keys(groups).sort((a, b) => {
+      if (a === "단독 학습") return 1;
+      if (b === "단독 학습") return -1;
+      return a.localeCompare(b);
+    });
+
+    let html = '<option value="">전체 시리즈</option>';
+    groupNames.forEach(gName => {
+      html += `<optgroup label="${esc(gName)}">`;
+      // 시리즈 순서(series_order) 또는 제목순 정렬
+      const sorted = groups[gName].sort((x, y) => {
+        const orderX = x.series_order !== undefined && x.series_order !== null ? x.series_order : 999;
+        const orderY = y.series_order !== undefined && y.series_order !== null ? y.series_order : 999;
+        if (orderX !== orderY) return orderX - orderY;
+        return (x.title || "").localeCompare(y.title || "");
+      });
+      sorted.forEach(s => {
+        html += `<option value="${s.id}">${esc(s.title)}</option>`;
+      });
+      html += '</optgroup>';
+    });
+
+    sel.innerHTML = html;
   }
 
   function renderList() {
