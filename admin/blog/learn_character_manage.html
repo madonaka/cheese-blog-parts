@@ -824,6 +824,9 @@
     const seqId = selectEl.value;
     const seq = ALL_SEQUENCES.find(s => s.id === seqId);
     buildStepUI(entry, seq, "", "");
+    
+    const badge = entry.querySelector(".app-scan-badge");
+    if (badge) badge.textContent = "";
   }
 
   function buildStepUI(entry, seq, selectedStepId, defaultStepTitle) {
@@ -854,6 +857,67 @@
       o.selected = true;
       stepSel.appendChild(o);
     }
+  }
+
+  const SEQUENCE_FULL_CACHE = {};
+  async function updateStepScanCount(entry, seqId, stepId, name, altNames) {
+    const badge = entry.querySelector(".app-scan-badge");
+    if (!badge) return;
+
+    badge.innerHTML = `<i class="fa-solid fa-spinner fa-spin" style="font-size:10px;"></i> 스캔 중...`;
+    badge.style.color = "var(--sub)";
+
+    try {
+      if (!SEQUENCE_FULL_CACHE[seqId]) {
+        const res = await safeFetchDB({ action: "getDoc", collection: "learn_sequences_full", id: seqId });
+        SEQUENCE_FULL_CACHE[seqId] = res.data?.steps || [];
+      }
+
+      const steps = SEQUENCE_FULL_CACHE[seqId] || [];
+      const foundStep = steps.find((st, idx) => (st.id || `step_${idx}`) === stepId);
+      const stepText = foundStep ? (foundStep.text || "") : "";
+
+      let totalCount = 0;
+      const searchWords = [name, ...altNames].map(w => w.trim()).filter(Boolean);
+      const lowerText = stepText.toLowerCase();
+
+      searchWords.forEach(word => {
+        const lowerWord = word.toLowerCase();
+        let pos = 0;
+        while ((pos = lowerText.indexOf(lowerWord, pos)) !== -1) {
+          totalCount++;
+          pos += lowerWord.length;
+        }
+      });
+
+      if (totalCount > 0) {
+        badge.textContent = `(본문 내 ${totalCount}회 출현)`;
+        badge.style.color = "var(--success)";
+      } else {
+        badge.textContent = `(본문에 없음)`;
+        badge.style.color = "#dc2626";
+      }
+    } catch (err) {
+      badge.textContent = `(스캔 실패)`;
+      badge.style.color = "#dc2626";
+      console.error("실시간 본문 스캔 실패:", err);
+    }
+  }
+
+  function onAppStepChange(selectEl) {
+    const entry = selectEl.closest(".appearance-entry");
+    if (!entry) return;
+    const seqId = entry.querySelector(".app-seq-id")?.value || "";
+    const stepId = selectEl.value;
+
+    const badge = entry.querySelector(".app-scan-badge");
+    if (badge) badge.textContent = "";
+
+    if (!seqId || !stepId) return;
+
+    const name = document.getElementById("cm-name")?.value || "";
+    const altNames = getAltNames();
+    updateStepScanCount(entry, seqId, stepId, name, altNames);
   }
 
   function addAppearanceRow(data) {
@@ -909,8 +973,8 @@
         <button class="remove-row-btn" onclick="this.closest('.appearance-entry').remove()" type="button" style="margin-top:16px;">✕</button>
       </div>
       <div class="app-step-select-wrap">
-        <span class="app-field-label">학습 단계(편)</span>
-        <select class="app-step-select">
+        <span class="app-field-label">학습 단계(편) <span class="app-scan-badge" style="font-size:11px; font-weight:800; margin-left:6px; transition:color 0.2s;"></span></span>
+        <select class="app-step-select" onchange="onAppStepChange(this)">
           <option value="">학습 단계 선택</option>
         </select>
       </div>
@@ -927,6 +991,13 @@
     if (d.sequence_id) {
       const seq = ALL_SEQUENCES.find(s => s.id === d.sequence_id);
       buildStepUI(entry, seq, d.step_id || "", d.step_title || "");
+
+      // 기존 로딩된 아이템인 경우 백그라운드 실시간 스캔 트리거
+      if (d.step_id) {
+        const name = document.getElementById("cm-name")?.value || "";
+        const altNames = getAltNames();
+        updateStepScanCount(entry, d.sequence_id, d.step_id, name, altNames);
+      }
     }
   }
 
