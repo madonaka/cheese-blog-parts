@@ -340,6 +340,10 @@
           <select class="cm-select" id="cm-seq-filter" onchange="renderList()" style="display: none;">
             <option value="">전체 편</option>
           </select>
+          <select class="cm-select" id="cm-sort" onchange="renderList()">
+            <option value="name_asc">이름 순</option>
+            <option value="created_desc">최신 등록 순</option>
+          </select>
         </div>
         
         <!-- 일괄 삭제 액션 바 -->
@@ -776,26 +780,36 @@
       return matchQ;
     });
 
+    const sortBy = document.getElementById("cm-sort")?.value || "name_asc";
+    const compareItems = (a, b) => {
+      if (sortBy === "created_desc") {
+        const timeA = a.created_at || "";
+        const timeB = b.created_at || "";
+        return timeB.localeCompare(timeA);
+      } else {
+        const nameA = a.name || "";
+        const nameB = b.name || "";
+        return nameA.localeCompare(nameB);
+      }
+    };
+
     if (q) {
       try {
-        const itemIndices = new Map();
-        ALL_ITEMS.forEach((item, idx) => itemIndices.set(item.id, idx));
-
         filtered.sort((a, b) => {
           const scoreA = getSearchScore(a, q);
           const scoreB = getSearchScore(b, q);
           if (scoreA !== scoreB) {
             return scoreB - scoreA;
           }
-          const idxA = itemIndices.get(a.id) ?? 999999;
-          const idxB = itemIndices.get(b.id) ?? 999999;
-          return idxA - idxB;
+          return compareItems(a, b);
         });
         
         console.log(`[검색 정렬 디버깅] 검색어: "${q}"`, filtered.slice(0, 5).map(x => `${x.name} (${getSearchScore(x, q)}점)`));
       } catch (err) {
         console.error("검색결과 정렬 중 오류 발생:", err);
       }
+    } else {
+      filtered.sort(compareItems);
     }
 
     const tbody = document.getElementById("cm-tbody");
@@ -1475,6 +1489,83 @@
         alert("JSON 데이터는 객체 배열( [ {...}, {...} ] ) 형태여야 합니다.");
         return;
       }
+
+      // appearances 변환용 헬퍼 함수 정의
+      const convertAppearances = (rawApps) => {
+        if (!Array.isArray(rawApps)) return [];
+        const processed = [];
+        
+        for (const app of rawApps) {
+          if (!app) continue;
+          
+          // 이미 sequence_id가 들어있는 정규 포맷인 경우 그대로 사용
+          if (app.sequence_id) {
+            processed.push({
+              sequence_id: String(app.sequence_id).trim(),
+              sequence_title: String(app.sequence_title || app.title || "").trim(),
+              step_id: String(app.step_id || "").trim(),
+              step_title: String(app.step_title || "").trim(),
+              content_connection: String(app.content_connection || "").trim()
+            });
+            continue;
+          }
+          
+          const titleStr = String(app.title || "").trim();
+          const seriesNameStr = String(app.series_name || "").trim();
+          
+          if (!titleStr) continue;
+          
+          // ALL_SEQUENCES에서 매칭 찾기 (공백 제거, 소문자화하여 비교)
+          const normTitle = titleStr.toLowerCase().replace(/\s/g, "");
+          
+          // 1순위: 타이틀 완전 일치 검색
+          let foundSeq = ALL_SEQUENCES.find(s => {
+            const sTitle = String(s.title || "").trim().toLowerCase().replace(/\s/g, "");
+            return sTitle === normTitle;
+          });
+          
+          // 2순위: 부분 일치 검색
+          if (!foundSeq) {
+            foundSeq = ALL_SEQUENCES.find(s => {
+              const sTitle = String(s.title || "").trim().toLowerCase().replace(/\s/g, "");
+              return sTitle.includes(normTitle) || normTitle.includes(sTitle);
+            });
+          }
+          
+          if (foundSeq) {
+            let firstStepId = "";
+            let firstStepTitle = "";
+            const steps = SEQUENCE_FULL_CACHE[foundSeq.id] || foundSeq.steps || [];
+            if (steps.length > 0) {
+              firstStepId = steps[0].id || "";
+              firstStepTitle = steps[0].title || steps[0].text?.substring(0, 30) || "";
+            }
+            
+            processed.push({
+              sequence_id: foundSeq.id,
+              sequence_title: foundSeq.title,
+              step_id: firstStepId,
+              step_title: firstStepTitle,
+              content_connection: String(app.content_connection || "").trim()
+            });
+          } else {
+            // 찾지 못한 경우 하위 호환성 포맷으로 sequence_id에 시리즈명을, step_title에 편 제목을 기입하여 백업
+            processed.push({
+              sequence_id: seriesNameStr || "단독 학습",
+              sequence_title: seriesNameStr || "단독 학습",
+              step_id: "",
+              step_title: titleStr,
+              content_connection: String(app.content_connection || "").trim()
+            });
+          }
+        }
+        return processed;
+      };
+
+      // 입력된 데이터의 appearances 정규화 및 매칭 수행
+      items.forEach(item => {
+        item.appearances = convertAppearances(item.appearances);
+      });
 
       // 유효성 검사
       for (let i = 0; i < items.length; i++) {
