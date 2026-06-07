@@ -1136,13 +1136,44 @@
       }
     }
 
+    // 중복 항목 선별 (공백 무시, 소문자 매칭)
+    const duplicates = [];
+    const newItems = [];
+
+    items.forEach(item => {
+      const normalizedName = item.name.trim().toLowerCase().replace(/\s/g, "");
+      const exists = ALL_ITEMS.find(x => x.name.trim().toLowerCase().replace(/\s/g, "") === normalizedName);
+      if (exists) {
+        duplicates.push({ item, existing: exists });
+      } else {
+        newItems.push(item);
+      }
+    });
+
+    let shouldMerge = false;
+    if (duplicates.length > 0) {
+      const dupNames = duplicates.map(d => d.item.name).slice(0, 15).join(", ") + (duplicates.length > 15 ? ` 외 ${duplicates.length - 15}건` : "");
+      shouldMerge = confirm(
+        `[중복 사전 항목 발견]\n` +
+        `다음 ${duplicates.length}개 항목이 이미 사전에 존재합니다:\n` +
+        `👉 ${dupNames}\n\n` +
+        `기존 사전에 등록된 데이터를 유지하면서, 이번에 일괄 입력된 등장 학습 정보(appearances) 및 별명 등을 추가로 병합하여 업데이트하시겠습니까?\n\n` +
+        `[확인] - 병합하여 업데이트\n` +
+        `[취소] - 중복 항목은 제외하고 신규 항목(${newItems.length}건)만 등록`
+      );
+    }
+
     const btn = document.getElementById("bulk-import-btn");
     btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 저장 중...`;
     btn.disabled = true;
 
     try {
       const now = new Date().toISOString();
-      const promises = items.map(async (item) => {
+      const savedItems = [];
+      const updatedCacheItems = [];
+
+      // A. 신규 항목 저장
+      for (const item of newItems) {
         const id = "dict_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5);
         const data = {
           name: item.name.trim(),
@@ -1151,21 +1182,80 @@
           birth_year: item.birth_year ? String(item.birth_year).trim() : "",
           death_year: item.type === "character" && item.death_year ? String(item.death_year).trim() : "",
           memo: item.memo ? String(item.memo).trim() : "",
-          appearances: [],
+          appearances: Array.isArray(item.appearances) ? item.appearances : [],
           related_events: item.type === "character" && Array.isArray(item.related_events) ? item.related_events.map(e => String(e).trim()).filter(Boolean) : [],
           created_at: now,
           updated_at: now
         };
         await safeFetchDB({ action: "set", collection: "learn_characters", id, data });
-        return { ...data, id };
-      });
+        savedItems.push({ ...data, id });
+      }
 
-      const savedItems = await Promise.all(promises);
-      alert(`${savedItems.length}건의 데이터가 성공적으로 일괄 등록되었습니다.`);
-      closeBulkModal();
-      
-      // 목록 캐시에 추가 및 렌더링
+      // B. 중복 항목 저장 (사용자가 병합을 동의한 경우에만)
+      if (shouldMerge) {
+        for (const dup of duplicates) {
+          const item = dup.item;
+          const existingItem = dup.existing;
+
+          // appearances 병합 (sequence_id & step_id 기준 중복 제거)
+          const existingApps = existingItem.appearances || [];
+          const newApps = Array.isArray(item.appearances) ? item.appearances : [];
+          const mergedApps = [...existingApps];
+          newApps.forEach(na => {
+            const exists = mergedApps.some(ea => ea.sequence_id === na.sequence_id && ea.step_id === na.step_id);
+            if (!exists) mergedApps.push(na);
+          });
+
+          // alt_names 병합 (중복 제거)
+          const existingAlts = existingItem.alt_names || [];
+          const newAlts = Array.isArray(item.alt_names) ? item.alt_names.map(n => String(n).trim()).filter(Boolean) : [];
+          const mergedAlts = Array.from(new Set([...existingAlts, ...newAlts]));
+
+          // related_events 병합 (중복 제거)
+          const existingRels = existingItem.related_events || [];
+          const newRels = item.type === "character" && Array.isArray(item.related_events) ? item.related_events.map(e => String(e).trim()).filter(Boolean) : [];
+          const mergedRels = Array.from(new Set([...existingRels, ...newRels]));
+
+          // 빈 값 보완 채우기
+          const birth_year = (item.birth_year ? String(item.birth_year).trim() : "") || existingItem.birth_year || "";
+          const death_year = (item.type === "character" && item.death_year ? String(item.death_year).trim() : "") || existingItem.death_year || "";
+          const memo = (item.memo ? String(item.memo).trim() : "") || existingItem.memo || "";
+
+          const data = {
+            ...existingItem,
+            alt_names: mergedAlts,
+            birth_year,
+            death_year: existingItem.type === "character" ? death_year : "",
+            memo,
+            appearances: mergedApps,
+            related_events: existingItem.type === "character" ? mergedRels : [],
+            updated_at: now
+          };
+
+          await safeFetchDB({ action: "set", collection: "learn_characters", id: existingItem.id, data });
+          updatedCacheItems.push(data);
+        }
+      }
+
+      // 로컬 캐시 갱신
+      updatedCacheItems.forEach(updated => {
+        const idx = ALL_ITEMS.findIndex(x => x.id === updated.id);
+        if (idx >= 0) ALL_ITEMS[idx] = updated;
+      });
       ALL_ITEMS = [...savedItems, ...ALL_ITEMS];
+
+      let msg = "";
+      if (duplicates.length > 0) {
+        if (shouldMerge) {
+          msg = `${savedItems.length}건이 신규 등록되었고, 중복된 ${updatedCacheItems.length}건이 기존 정보에 성공적으로 병합되었습니다.`;
+        } else {
+          msg = `${savedItems.length}건이 신규 등록되었습니다. (중복 항목 ${duplicates.length}건 제외)`;
+        }
+      } else {
+        msg = `${savedItems.length}건의 데이터가 성공적으로 신규 등록되었습니다.`;
+      }
+      alert(msg);
+      closeBulkModal();
       renderList();
     } catch (e) {
       alert("일괄 등록 중 오류 발생: " + e.message);
