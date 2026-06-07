@@ -246,7 +246,7 @@
       .cm-title-row { flex-direction: column; align-items: flex-start; gap: 12px; }
       .cm-top-bar { padding: 12px; gap: 8px; }
       .cm-search-wrap { min-width: 100%; }
-      .cm-select { flex: 1; min-width: 0; width: 48%; }
+      .cm-select { flex: 1 1 calc(50% - 8px); min-width: 0; }
       .cm-btn { width: 100%; justify-content: center; }
       
       /* 테이블 모바일 카드 변환 */
@@ -338,21 +338,26 @@
           </select>
         </div>
         
+        <!-- 일괄 삭제 액션 바 -->
+        <div id="batch-action-bar" style="display: none; align-items: center; justify-content: space-between; background: #fffbeb; border: 1.5px solid #fef3c7; border-radius: 12px; padding: 12px 18px; margin-bottom: 16px; box-shadow: var(--shadow);">
+          <span style="font-size: 13px; font-weight: 700; color: #b45309;"><i class="fa-solid fa-circle-info"></i> <span id="selected-count">0</span>개 항목이 선택되었습니다.</span>
+          <button class="action-btn del-btn" onclick="deleteSelectedItems()" style="background: #dc2626; color: #fff; border: none; padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;"><i class="fa-solid fa-trash"></i> 선택 삭제</button>
+        </div>
+
         <div class="cm-table-wrap">
           <table>
             <thead>
               <tr>
+                <th style="width: 45px; text-align: center;"><input type="checkbox" id="select-all" onchange="toggleSelectAll(this)"></th>
                 <th>구분</th>
                 <th>이름</th>
                 <th>별명/이명</th>
                 <th>시기 · 생몰년</th>
-                <th>등장 시리즈</th>
-                <th>연관 사건</th>
                 <th style="text-align: right;">관리</th>
               </tr>
             </thead>
             <tbody id="cm-tbody">
-              <tr><td colspan="7" class="empty-msg"><i class="fa-solid fa-spinner fa-spin"></i> 데이터를 불러오는 중입니다...</td></tr>
+              <tr><td colspan="6" class="empty-msg"><i class="fa-solid fa-spinner fa-spin"></i> 데이터를 불러오는 중입니다...</td></tr>
             </tbody>
           </table>
         </div>
@@ -654,6 +659,11 @@
   }
 
   function renderList() {
+    // 목록 렌더링 시 체크박스 상태 초기화
+    const master = document.getElementById("select-all");
+    if (master) master.checked = false;
+    updateBatchActionBar();
+
     const q = (document.getElementById("cm-search")?.value || "").toLowerCase();
     const typeFilter = document.getElementById("cm-type-filter")?.value || "";
     const seriesFilter = document.getElementById("cm-series-filter")?.value || "";
@@ -687,14 +697,12 @@
     const tbody = document.getElementById("cm-tbody");
     if (!tbody) return;
     if (!filtered.length) {
-      tbody.innerHTML = `<tr><td colspan="7" class="empty-msg">등록된 인물/사건이 없습니다.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" class="empty-msg">등록된 인물/사건이 없습니다.</td></tr>`;
       return;
     }
 
     tbody.innerHTML = filtered.map(item => {
       const altNames = (item.alt_names || []).filter(Boolean).join(", ");
-      const appearances = item.appearances || [];
-      const seqTitles = [...new Set(appearances.map(a => a.sequence_title || "").filter(Boolean))];
       
       const typeLabel = item.type === "event" ? "사건" : "인물";
       const typeClass = item.type === "event" ? "event" : "character";
@@ -708,21 +716,13 @@
         if (b || d) eraPeriod = `${b} ~ ${d}`;
       }
       
-      const related = (item.related_events || []).map(e => `<span class="badge-type event" style="margin-right:2px; font-size:10px;">${esc(e)}</span>`).join("") || "-";
-
       return `<tr>
+        <td data-label="선택" style="text-align: center;"><input type="checkbox" class="item-checkbox" value="${item.id}" onchange="onItemCheckboxChange()"></td>
         <td data-label="구분"><span class="badge-type ${typeClass}">${typeLabel}</span></td>
-        <td data-label="이름"><strong>${esc(item.name || "(이름 없음)")}</strong></td>
+        <td data-label="이름"><strong onclick="openModal('${item.id}')" style="color: #2563eb; cursor: pointer; text-decoration: underline; text-underline-offset: 4px;" onmouseover="this.style.color='#1d4ed8'" onmouseout="this.style.color='#2563eb'">${esc(item.name || "(이름 없음)")}</strong></td>
         <td data-label="별명/이명" class="alt-names-cell">${altNames ? esc(altNames) : "-"}</td>
         <td data-label="시기·생몰년" style="font-weight: 600;">${eraPeriod}</td>
-        <td data-label="등장 시리즈">
-          <div class="appearance-chips">
-            ${seqTitles.map(t => `<span class="app-chip">${esc(t)}</span>`).join("") || "-"}
-          </div>
-        </td>
-        <td data-label="연관 사건">${related}</td>
         <td class="td-actions" style="text-align: right;">
-          <button class="action-btn edit-btn" onclick="openModal('${item.id}')"><i class="fa-solid fa-edit"></i> 수정</button>
           <button class="action-btn del-btn" onclick="deleteItem('${item.id}', '${esc(item.name || "")}')"><i class="fa-solid fa-trash"></i> 삭제</button>
         </td>
       </tr>`;
@@ -1306,6 +1306,81 @@
     if (dupModalResolver) {
       dupModalResolver(result);
       dupModalResolver = null;
+    }
+  }
+
+  /* ── 일괄 선택 및 삭제 관련 기능 ── */
+  function toggleSelectAll(masterCheckbox) {
+    const checkboxes = document.querySelectorAll(".item-checkbox");
+    checkboxes.forEach(cb => {
+      cb.checked = masterCheckbox.checked;
+    });
+    updateBatchActionBar();
+  }
+
+  function onItemCheckboxChange() {
+    const checkboxes = document.querySelectorAll(".item-checkbox");
+    const checkedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
+    
+    const masterCheckbox = document.getElementById("select-all");
+    if (masterCheckbox) {
+      masterCheckbox.checked = (checkedCount === checkboxes.length);
+    }
+    updateBatchActionBar();
+  }
+
+  function updateBatchActionBar() {
+    const checkboxes = document.querySelectorAll(".item-checkbox");
+    const checkedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
+    const bar = document.getElementById("batch-action-bar");
+    const countTxt = document.getElementById("selected-count");
+    
+    if (bar && countTxt) {
+      if (checkedCount > 0) {
+        countTxt.textContent = checkedCount;
+        bar.style.display = "flex";
+      } else {
+        bar.style.display = "none";
+      }
+    }
+  }
+
+  async function deleteSelectedItems() {
+    const checkboxes = document.querySelectorAll(".item-checkbox:checked");
+    const idsToDelete = Array.from(checkboxes).map(cb => cb.value);
+    if (idsToDelete.length === 0) return;
+
+    if (!confirm(`선택한 ${idsToDelete.length}개 항목을 일괄 삭제하시겠습니까?\n삭제 후에는 복구할 수 없습니다.`)) {
+      return;
+    }
+
+    const bar = document.getElementById("batch-action-bar");
+    const delBtn = bar.querySelector(".del-btn");
+    const originalHtml = delBtn.innerHTML;
+    delBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 삭제 중...`;
+    delBtn.disabled = true;
+
+    try {
+      const promises = idsToDelete.map(id => 
+        safeFetchDB({ action: "delete", collection: "learn_characters", id })
+      );
+      await Promise.all(promises);
+
+      alert(`${idsToDelete.length}개 항목이 성공적으로 삭제되었습니다.`);
+      
+      // 로컬 캐시 동기화
+      ALL_ITEMS = ALL_ITEMS.filter(item => !idsToDelete.includes(item.id));
+      
+      const masterCheckbox = document.getElementById("select-all");
+      if (masterCheckbox) masterCheckbox.checked = false;
+      
+      updateBatchActionBar();
+      renderList();
+    } catch (e) {
+      alert("삭제 중 오류가 발생했습니다: " + e.message);
+    } finally {
+      delBtn.innerHTML = originalHtml;
+      delBtn.disabled = false;
     }
   }
 
