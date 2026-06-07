@@ -354,6 +354,7 @@
             display: inline-block;
         }
         .pub-dot.pub   { background: #22c55e; }
+        .pub-dot.upcoming { background: #3b82f6; } /* 예고: 파란색 */
         .pub-dot.draft { background: #9ca3af; }
 
         /* ── 오른쪽 패널 ── */
@@ -1474,6 +1475,7 @@
                         <select id="filter-status" onchange="renderSequenceList()">
                             <option value="">전체 상태</option>
                             <option value="published">공개</option>
+                            <option value="upcoming">예고</option>
                             <option value="draft">초안</option>
                         </select>
                         <select id="filter-series" onchange="renderSequenceList()" style="grid-column: 1 / -1; font-size: 0.78rem; border: 1.5px solid var(--border); border-radius: 8px; padding: 6px 10px; background: #ffffff; color: #374151; cursor: pointer; transition: all 0.2s; outline: none; box-shadow: 0 1px 2px rgba(0,0,0,0.03);">
@@ -1675,6 +1677,7 @@
                                                 <label class="form-label">게시 상태</label>
                                                 <select class="form-control" id="seq-status">
                                                     <option value="draft">초안 (비공개)</option>
+                                                    <option value="upcoming">예고</option>
                                                     <option value="published">공개</option>
                                                 </select>
                                             </div>
@@ -2833,7 +2836,16 @@ function renderSingleItemHtml(d, GROUP_LABEL) {
     const grpClass    = 'grp-' + (d.group || 'unclassified');
     const lvlClass    = 'lvl-' + (d.level ?? 'intermediate');
     const lvlLabel    = { beginner: '입문', intermediate: '중급', advanced: '심화' }[d.level] ?? '';
-    const isPublished = d.status === 'published';
+    
+    let statusDotClass = 'draft';
+    let statusText = '초안';
+    if (d.status === 'published') {
+        statusDotClass = 'pub';
+        statusText = '공개';
+    } else if (d.status === 'upcoming') {
+        statusDotClass = 'upcoming';
+        statusText = '예고';
+    }
     
     const thumbUrl = d.steps?.[0]?.image_url || '';
     const thumbHtml = thumbUrl 
@@ -2850,8 +2862,8 @@ function renderSingleItemHtml(d, GROUP_LABEL) {
             </div>
             <div class="set-item-title">${d.title ?? '(제목 없음)'}</div>
             <div class="set-item-meta">
-                <span class="pub-dot ${isPublished ? 'pub' : 'draft'}"></span>
-                <span>${isPublished ? '공개' : '초안'}</span>
+                <span class="pub-dot ${statusDotClass}"></span>
+                <span>${statusText}</span>
                 <span>${(d.tags ?? []).slice(0,2).join(', ')}</span>
             </div>
         </div>
@@ -2875,9 +2887,14 @@ function renderSeriesFolderHtml(s, GROUP_LABEL) {
             titleToShow = titleToShow.replace(regex, '');
         }
 
-        const statusBadge = ep.status === 'published'
-            ? `<span style="font-size:0.6rem; font-weight:700; color:#166534; background:#dcfce7; border: 1px solid #bbf7d0; padding:1px 4px; border-radius:4px; line-height:1.2;">공개</span>`
-            : `<span style="font-size:0.6rem; font-weight:700; color:#374151; background:#f3f4f6; border: 1px solid #e5e7eb; padding:1px 4px; border-radius:4px; line-height:1.2;">초안</span>`;
+        let statusBadge = '';
+        if (ep.status === 'published') {
+            statusBadge = `<span style="font-size:0.6rem; font-weight:700; color:#166534; background:#dcfce7; border: 1px solid #bbf7d0; padding:1px 4px; border-radius:4px; line-height:1.2;">공개</span>`;
+        } else if (ep.status === 'upcoming') {
+            statusBadge = `<span style="font-size:0.6rem; font-weight:700; color:#1e40af; background:#dbeafe; border: 1px solid #bfdbfe; padding:1px 4px; border-radius:4px; line-height:1.2;">예고</span>`;
+        } else {
+            statusBadge = `<span style="font-size:0.6rem; font-weight:700; color:#374151; background:#f3f4f6; border: 1px solid #e5e7eb; padding:1px 4px; border-radius:4px; line-height:1.2;">초안</span>`;
+        }
 
         const lvlBadge = epLvlClass 
             ? `<span class="set-item-level ${epLvlClass}" style="margin:0; font-size:0.6rem; padding:1px 4px; border-radius:4px; line-height:1.2; border-width:1px;">${epLvlLabel}</span>`
@@ -5342,7 +5359,7 @@ function renderSortList() {
             <span style="width:22px; height:22px; border-radius:50%; background:#e8eeff; color:var(--primary); border:1.5px solid var(--primary); display:inline-flex; align-items:center; justify-content:center; font-size:0.7rem; font-weight:800; flex-shrink:0;">${i + 1}</span>
             ${grpBadge}
             <span style="flex:1; font-size:0.85rem; font-weight:600; color:#1e293b; word-break:keep-all; white-space:normal;">${s.title ?? '(제목 없음)'}</span>
-            <span class="pub-dot ${s.status === 'published' ? 'pub' : 'draft'}" style="flex-shrink:0;"></span>
+            <span class="pub-dot ${s.status === 'published' ? 'pub' : (s.status === 'upcoming' ? 'upcoming' : 'draft')}" style="flex-shrink:0;"></span>
         </div>`;
     }).join('');
 }
@@ -5612,7 +5629,7 @@ function renderSeriesPickerList() {
             ? `<span style="font-size:0.68rem; background:var(--primary); color:#fff; border-radius:8px; padding:1px 8px; font-weight:700; flex-shrink:0;">이 학습</span>`
             : `<span style="width:22px; height:22px; border-radius:50%; background:#e8eeff; color:var(--primary); border:1.5px solid var(--primary); display:inline-flex; align-items:center; justify-content:center; font-size:0.7rem; font-weight:800; flex-shrink:0;">${i + 1}</span>`;
         const dot = !isNew
-            ? `<span class="pub-dot ${s.status === 'published' ? 'pub' : 'draft'}" style="flex-shrink:0;"></span>`
+            ? `<span class="pub-dot ${s.status === 'published' ? 'pub' : (s.status === 'upcoming' ? 'upcoming' : 'draft')}" style="flex-shrink:0;"></span>`
             : '';
         return `<div class="series-picker-row" data-picker-idx="${i}" draggable="true"
             ondragstart="onSeriesPickerDragStart(event,${i})"
