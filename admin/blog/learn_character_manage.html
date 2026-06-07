@@ -435,6 +435,27 @@
     <div class="cm-modal-footer">
       <button class="cancel-btn" onclick="closeModal()">취소</button>
       <button class="save-btn" onclick="saveDictItem()">저장</button>
+  </div>
+</div>
+
+<!-- 모달 3: 중복 확인 커스텀 모달 -->
+<div class="cm-modal-bg" id="cm-dup-modal-bg" style="z-index: 1100; align-items: center; justify-content: center; background: rgba(15,23,42,0.6);">
+  <div class="cm-modal" style="width: 520px; max-width: 90vw; border-radius: 16px;">
+    <div class="cm-modal-header" style="padding: 20px 24px;">
+      <h3 class="cm-modal-title" style="font-size: 16px; font-weight: 900; display: flex; align-items: center; gap: 8px; color: var(--text);">
+        <i class="fa-solid fa-triangle-exclamation" style="color: #d97706;"></i> 중복 사전 항목 발견
+      </h3>
+      <button class="close-modal-x" onclick="resolveDupModal('cancel')">&times;</button>
+    </div>
+    <div style="padding: 20px 24px; font-size: 13px; line-height: 1.6; color: var(--text); border-bottom: 1px solid var(--line);">
+      <p style="margin: 0 0 10px 0;">다음 <strong id="dup-count-txt" style="color: #dc2626; font-size: 14px;">X</strong>개 항목이 이미 사전에 존재합니다:</p>
+      <div id="dup-names-box" style="background: #f8fafc; border: 1.5px solid var(--line); border-radius: 10px; padding: 12px; max-height: 100px; overflow-y: auto; font-weight: 700; color: var(--accent); margin-bottom: 16px; word-break: break-all;"></div>
+      <p style="margin: 0;">기존 사전에 등록된 데이터를 유지하면서, 이번에 일괄 입력된 등장 학습 정보(appearances) 및 별명 등을 추가로 병합하여 업데이트하시겠습니까?</p>
+    </div>
+    <div class="cm-modal-footer" style="padding: 16px 24px; display: flex; gap: 8px; background: #f8fafc;">
+      <button class="save-btn" onclick="resolveDupModal('merge')" style="flex: 1.2; background: var(--accent); border-radius: 8px; font-size: 12px; padding: 10px;">병합하여 업데이트</button>
+      <button class="cancel-btn" onclick="resolveDupModal('skip')" style="flex: 1; background: #cbd5e1; color: var(--text); border-radius: 8px; font-size: 12px; padding: 10px;">중복 제외 신규만 등록</button>
+      <button class="cancel-btn" onclick="resolveDupModal('cancel')" style="flex: none; width: 80px; background: #e2e8f0; color: var(--text); border-radius: 8px; font-size: 12px; padding: 10px;">전체 취소</button>
     </div>
   </div>
 </div>
@@ -1152,15 +1173,13 @@
 
     let shouldMerge = false;
     if (duplicates.length > 0) {
-      const dupNames = duplicates.map(d => d.item.name).slice(0, 15).join(", ") + (duplicates.length > 15 ? ` 외 ${duplicates.length - 15}건` : "");
-      shouldMerge = confirm(
-        `[중복 사전 항목 발견]\n` +
-        `다음 ${duplicates.length}개 항목이 이미 사전에 존재합니다:\n` +
-        `👉 ${dupNames}\n\n` +
-        `기존 사전에 등록된 데이터를 유지하면서, 이번에 일괄 입력된 등장 학습 정보(appearances) 및 별명 등을 추가로 병합하여 업데이트하시겠습니까?\n\n` +
-        `[확인] - 병합하여 업데이트\n` +
-        `[취소] - 중복 항목은 제외하고 신규 항목(${newItems.length}건)만 등록`
-      );
+      const userChoice = await showDupConfirmModal(duplicates, newItems.length);
+      if (userChoice === "cancel" || !userChoice) {
+        return; // 전체 작업 취소
+      }
+      if (userChoice === "merge") {
+        shouldMerge = true;
+      }
     }
 
     const btn = document.getElementById("bulk-import-btn");
@@ -1262,6 +1281,31 @@
     } finally {
       btn.innerHTML = `일괄 추가`;
       btn.disabled = false;
+    }
+  }
+
+  let dupModalResolver = null;
+  function showDupConfirmModal(dupList, newCount) {
+    return new Promise((resolve) => {
+      const modal = document.getElementById("cm-dup-modal-bg");
+      if (!modal) { resolve('cancel'); return; }
+
+      document.getElementById("dup-count-txt").textContent = dupList.length;
+
+      const dupNames = dupList.map(d => d.item.name).join(", ");
+      document.getElementById("dup-names-box").textContent = dupNames;
+
+      dupModalResolver = resolve;
+      modal.classList.add("open");
+    });
+  }
+
+  function resolveDupModal(result) {
+    const modal = document.getElementById("cm-dup-modal-bg");
+    if (modal) modal.classList.remove("open");
+    if (dupModalResolver) {
+      dupModalResolver(result);
+      dupModalResolver = null;
     }
   }
 
