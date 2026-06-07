@@ -840,9 +840,34 @@
     if (!list) return;
     const d = data || {};
     
-    const seqOptions = ALL_SEQUENCES.map(s =>
-      `<option value="${s.id}" ${s.id === d.sequence_id ? "selected" : ""}>${esc(s.title)}</option>`
-    ).join("");
+    // series_name -> group -> 단독 학습 순으로 그룹화
+    const groups = {};
+    ALL_SEQUENCES.forEach(s => {
+      const gName = s.series_name || s.group || "단독 학습";
+      if (!groups[gName]) groups[gName] = [];
+      groups[gName].push(s);
+    });
+
+    const groupNames = Object.keys(groups).sort((a, b) => {
+      if (a === "단독 학습") return 1;
+      if (b === "단독 학습") return -1;
+      return a.localeCompare(b);
+    });
+
+    let seqOptions = "";
+    groupNames.forEach(gName => {
+      seqOptions += `<optgroup label="${esc(gName)}">`;
+      const sorted = groups[gName].sort((x, y) => {
+        const orderX = x.series_order !== undefined && x.series_order !== null ? x.series_order : 999;
+        const orderY = y.series_order !== undefined && y.series_order !== null ? y.series_order : 999;
+        if (orderX !== orderY) return orderX - orderY;
+        return (x.title || "").localeCompare(y.title || "");
+      });
+      sorted.forEach(s => {
+        seqOptions += `<option value="${s.id}" ${s.id === d.sequence_id ? "selected" : ""}>${esc(s.title)}</option>`;
+      });
+      seqOptions += `</optgroup>`;
+    });
 
     const entry = document.createElement("div");
     entry.className = "appearance-entry";
