@@ -6158,6 +6158,37 @@ async function syncDictAppearances(docId, title) {
             }
         }
     }
+
+    // ── 시퀀스 ID를 참조하는 다른 모든 사전 항목들의 제목(sequence_title)도 일괄 업데이트 ──
+    if (Array.isArray(localDictPool)) {
+        for (const item of localDictPool) {
+            if (!item.appearances || !Array.isArray(item.appearances)) continue;
+            
+            let updated = false;
+            const newAppearances = item.appearances.map(a => {
+                if (a.sequence_id === docId && a.sequence_title !== title) {
+                    updated = true;
+                    return { ...a, sequence_title: title };
+                }
+                return a;
+            });
+            
+            if (updated) {
+                item.appearances = newAppearances;
+                try {
+                    await safeFetchDB({
+                        action: 'update',
+                        collection: 'learn_characters',
+                        id: item.id,
+                        data: { appearances: newAppearances, updated_at: new Date().toISOString() }
+                    });
+                    console.log(`사전 항목 "${item.name}"의 학습 단계 제목을 "${title}"(으)로 일괄 업데이트했습니다.`);
+                } catch (e) {
+                    console.error(`사전 제목 일괄 업데이트 실패 (${item.name}):`, e);
+                }
+            }
+        }
+    }
 }
 
 /* ── 키워드 사전 즉석 편집 기능 ── */
