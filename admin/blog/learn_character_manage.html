@@ -592,6 +592,27 @@
   let ALL_SEQUENCES = [];
   let selectedRelEventNames = []; // 연관 사건 명칭 목록
 
+  function getTimestampFromItem(item) {
+    if (item.created_at) {
+      const parsed = Date.parse(item.created_at);
+      if (!isNaN(parsed)) return parsed;
+    }
+    if (item.id && item.id.startsWith("dict_")) {
+      const parts = item.id.split("_");
+      if (parts[1]) {
+        const ts = parseInt(parts[1], 10);
+        if (!isNaN(ts)) return ts;
+      }
+    }
+    return 0;
+  }
+
+  let JUST_IMPORTED_IDS = new Set(); // 방금 일괄 추가한 항목들의 ID 저장
+
+  function isJustImported(item) {
+    return JUST_IMPORTED_IDS.has(item.id);
+  }
+
   function esc(s) {
     return String(s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   }
@@ -783,9 +804,9 @@
     const sortBy = document.getElementById("cm-sort")?.value || "name_asc";
     const compareItems = (a, b) => {
       if (sortBy === "created_desc") {
-        const timeA = a.created_at || "";
-        const timeB = b.created_at || "";
-        return timeB.localeCompare(timeA);
+        const timeA = getTimestampFromItem(a);
+        const timeB = getTimestampFromItem(b);
+        return timeB - timeA;
       } else {
         const nameA = a.name || "";
         const nameB = b.name || "";
@@ -834,10 +855,13 @@
         if (b || d) eraPeriod = `${b} ~ ${d}`;
       }
       
+      const isNewItem = isJustImported(item);
+      const newDot = isNewItem ? `<span class="new-dot" style="display: inline-block; width: 6px; height: 6px; background-color: #dc2626; border-radius: 50%; margin-left: 6px; vertical-align: middle;" title="방금 일괄 추가한 항목"></span>` : "";
+
       return `<tr>
         <td data-label="선택" style="text-align: center;"><input type="checkbox" class="item-checkbox" value="${item.id}" onchange="onItemCheckboxChange()"></td>
         <td data-label="구분"><span class="badge-type ${typeClass}">${typeLabel}</span></td>
-        <td data-label="이름"><strong onclick="openModal('${item.id}')" style="color: #2563eb; cursor: pointer; text-decoration: underline; text-underline-offset: 4px;" onmouseover="this.style.color='#1d4ed8'" onmouseout="this.style.color='#2563eb'">${esc(item.name || "(이름 없음)")}</strong></td>
+        <td data-label="이름"><strong onclick="openModal('${item.id}')" style="color: #2563eb; cursor: pointer; text-decoration: underline; text-underline-offset: 4px;" onmouseover="this.style.color='#1d4ed8'" onmouseout="this.style.color='#2563eb'">${esc(item.name || "(이름 없음)")}</strong>${newDot}</td>
         <td data-label="별명/이명" class="alt-names-cell">${altNames ? esc(altNames) : "-"}</td>
         <td data-label="시기·생몰년" style="font-weight: 600;">${eraPeriod}</td>
         <td class="td-actions" style="text-align: right;">
@@ -1474,6 +1498,7 @@
     const originalText = btn.innerHTML;
     
     try {
+      JUST_IMPORTED_IDS.clear();
       const raw = document.getElementById("bulk-json-input").value.trim();
       if (!raw) { alert("JSON 데이터를 입력하세요."); return; }
 
@@ -1635,6 +1660,7 @@
         };
         await safeFetchDB({ action: "set", collection: "learn_characters", id, data });
         savedItems.push({ ...data, id });
+        JUST_IMPORTED_IDS.add(id);
       }
 
       // B. 중복 항목 저장 (사용자가 병합을 동의한 경우에만)
@@ -1680,6 +1706,7 @@
 
           await safeFetchDB({ action: "set", collection: "learn_characters", id: existingItem.id, data });
           updatedCacheItems.push(data);
+          JUST_IMPORTED_IDS.add(existingItem.id);
         }
       }
 
