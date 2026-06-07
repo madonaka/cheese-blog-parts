@@ -1070,8 +1070,13 @@
         badge.style.color = "#dc2626";
       }
     } catch (err) {
-      badge.textContent = `(스캔 실패)`;
-      badge.style.color = "#dc2626";
+      if (err.message && err.message.includes("찾을 수 없습니다")) {
+        badge.textContent = `(본문 데이터 없음)`;
+        badge.style.color = "#a1a1aa";
+      } else {
+        badge.textContent = `(스캔 실패)`;
+        badge.style.color = "#dc2626";
+      }
       console.error("실시간 본문 스캔 실패:", err);
     }
   }
@@ -1318,6 +1323,154 @@
         oldName = oldItem.name;
         nameChanged = true;
       }
+    }
+
+    // 중복 체크 (수정 혹은 생성 시 기존에 동일한 구분의 다른 항목과 겹치는 경우 감지)
+    const normalizedNewName = name.toLowerCase().replace(/\s/g, "");
+    const dupTarget = ALL_ITEMS.find(x => 
+      x.id !== id && 
+      x.type === type && 
+      x.name.trim().toLowerCase().replace(/\s/g, "") === normalizedNewName
+    );
+
+    if (dupTarget) {
+      const typeText = type === "event" ? "사건" : "인물";
+      const confirmMerge = confirm(
+        `"${name}"(은)는 이미 등록되어 있는 ${typeText} 항목입니다.\n` +
+        `현재 수정 중인 항목의 데이터를 기존 항목("${dupTarget.name}")에 병합하시겠습니까?\n\n` +
+        `* 병합 시 현재 수정 중인 항목은 삭제되고, 등장 학습 위치/별명/메모가 기존 항목으로 합쳐집니다.`
+      );
+      if (!confirmMerge) return;
+
+      // 1. 데이터 병합
+      const currentAlts = getAltNames();
+      const existingAlts = dupTarget.alt_names || [];
+      const mergedAlts = Array.from(new Set([...existingAlts, ...currentAlts]));
+
+      const currentApps = getAppearances();
+      const existingApps = dupTarget.appearances || [];
+      const mergedApps = [...existingApps];
+      currentApps.forEach(na => {
+        const exists = mergedApps.some(ea => ea.sequence_id === na.sequence_id && ea.step_id === na.step_id);
+        if (!exists) mergedApps.push(na);
+      });
+
+      const currentRels = [...selectedRelEventNames];
+      const existingRels = dupTarget.related_events || [];
+      // 자기 자신 및 병합되어 사라지는 항목 이름(oldName) 등은 제외
+      const mergedRels = Array.from(new Set([...existingRels, ...currentRels])).filter(r => r !== name && r !== oldName && r !== dupTarget.name);
+
+      const birth_year = (document.getElementById("cm-birth-year")?.value || "").trim() || dupTarget.birth_year || "";
+      const death_year = type === "character" ? ((document.getElementById("cm-death-year")?.value || "").trim() || dupTarget.death_year || "") : "";
+      
+      const currentMemo = (document.getElementById("cm-memo")?.value || "").trim();
+      const existingMemo = dupTarget.memo || "";
+      let mergedMemo = existingMemo;
+      if (currentMemo && currentMemo !== existingMemo) {
+        if (existingMemo) {
+          mergedMemo = existingMemo + "\n" + currentMemo;
+        } else {
+          mergedMemo = currentMemo;
+        }
+      }
+
+      const mergedData = {
+        ...dupTarget,
+        alt_names: mergedAlts,
+        birth_year,
+        death_year,
+        memo: mergedMemo,
+        appearances: mergedApps,
+        related_events: mergedRels,
+        updated_at: new Date().toISOString()
+      };
+
+      try {
+        // 기존 항목 업데이트
+        await safeFetchDB({ action: "set", collection: "learn_characters", id: dupTarget.id, data: mergedData });
+        
+        // 현재 항목 삭제
+        if (!isNew) {
+          await safeFetchDB({ action: "delete", collection: "learn_characters", id });
+        }
+
+        // 로컬 캐시 업데이트
+        const targetIdx = ALL_ITEMS.findIndex(x => x.id === dupTarget.id);
+        if (targetIdx >= 0) ALL_ITEMS[targetIdx] = { ...mergedData, id: dupTarget.id };
+        
+        if (!isNew) {
+          ALL_ITEMS = ALL_ITEMS.filter(x => x.id !== id);
+        }
+
+        // 2. 다른 항목의 연관 관계 업데이트:
+        // 수정 중인 항목의 예전 이름(oldName)을 가리키던 항목들이 있으면, 이들을 name(새 이름/기존 타겟 이름)으로 대체 (중복이면 제거)
+        if (!isNew && oldName) {
+          const itemsToUpdate = ALL_ITEMS.filter(x => x.related_events && x.related_events.includes(oldName));
+          if (itemsToUpdate.length > 0) {
+            const updatePromises = itemsToUpdate.map(async (item) => {
+              let updatedRels = item.related_events.map(evName => evName === oldName ? name : evName);
+              updatedRels = Array.from(new Set(updatedRels)).filter(evName => evName !== item.name);
+              
+              const updatedItemData = {
+                ...item,
+                related_events: updatedRels,
+                updated_at: new Date().toISOString()
+              };
+              await safeFetchDB({ action: "set", collection: "learn_characters", id: item.id, data: updatedItemData });
+              const idx = ALL_ITEMS.findIndex(x => x.id === item.id);
+              if (idx >= 0) ALL_ITEMS[idx] = updatedItemData;
+            });
+            await Promise.all(updatePromises);
+          }
+        }
+
+        // 3. 추가된 연관 상대방에 내 이름 등록
+        if (mergedRels.length > 0) {
+          const targets = ALL_ITEMS.filter(x => mergedRels.includes(x.name));
+          const addedPromises = targets.map(async (target) => {
+            const currentRels = target.related_events || [];
+            if (!currentRels.includes(name)) {
+              const updatedRels = [...currentRels, name];
+              const updatedData = {
+                ...target,
+                related_events: updatedRels,
+                updated_at: new Date().toISOString()
+              };
+              await safeFetchDB({ action: "set", collection: "learn_characters", id: target.id, data: updatedData });
+              const idx = ALL_ITEMS.findIndex(x => x.id === target.id);
+              if (idx >= 0) ALL_ITEMS[idx] = updatedData;
+            }
+          });
+          await Promise.all(addedPromises);
+        }
+
+        // 4. 제외된 연관 상대방에서 내 이름 및 예전 이름 제거
+        const allTargetsToClean = ALL_ITEMS.filter(x => 
+          (x.related_events && (x.related_events.includes(name) || (!isNew && oldName && x.related_events.includes(oldName)))) &&
+          !mergedRels.includes(x.name)
+        );
+        if (allTargetsToClean.length > 0) {
+          const cleanPromises = allTargetsToClean.map(async (target) => {
+            const updatedRels = (target.related_events || []).filter(r => r !== name && r !== oldName);
+            const updatedData = {
+              ...target,
+              related_events: updatedRels,
+              updated_at: new Date().toISOString()
+            };
+            await safeFetchDB({ action: "set", collection: "learn_characters", id: target.id, data: updatedData });
+            const idx = ALL_ITEMS.findIndex(x => x.id === target.id);
+            if (idx >= 0) ALL_ITEMS[idx] = updatedData;
+          });
+          await Promise.all(cleanPromises);
+        }
+
+        closeModal();
+        alert(`기존에 동일한 이름의 항목이 존재하여 "${dupTarget.name}" 항목으로 병합되었습니다.`);
+        renderList();
+      } catch (e) {
+        alert("병합 저장 실패: " + e.message);
+      }
+      return;
     }
 
     const oldRels = oldItem ? (oldItem.related_events || []) : [];
