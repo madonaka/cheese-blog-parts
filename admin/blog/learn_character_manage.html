@@ -330,8 +330,11 @@
             <option value="character">인물</option>
             <option value="event">사건</option>
           </select>
-          <select class="cm-select" id="cm-seq-filter" onchange="renderList()">
-            <option value="">전체 시리즈</option>
+          <select class="cm-select" id="cm-series-filter" onchange="onSeriesFilterChange()">
+            <option value="">전체 시리즈/그룹</option>
+          </select>
+          <select class="cm-select" id="cm-seq-filter" onchange="renderList()" style="display: none;">
+            <option value="">전체 편</option>
           </select>
         </div>
         
@@ -565,47 +568,83 @@
   }
 
   function buildSeqFilter() {
-    const sel = document.getElementById("cm-seq-filter");
-    if (!sel) return;
+    const seriesSel = document.getElementById("cm-series-filter");
+    if (!seriesSel) return;
 
-    // series_name -> group -> 단독 학습 순으로 그룹화
-    const groups = {};
+    // 고유 시리즈명/그룹명 목록 추출
+    const groups = new Set();
     ALL_SEQUENCES.forEach(s => {
       const gName = s.series_name || s.group || "단독 학습";
-      if (!groups[gName]) groups[gName] = [];
-      groups[gName].push(s);
+      groups.add(gName);
     });
 
-    // 정렬 규칙: 단독 학습은 가장 아래로, 나머지는 이름 정렬
-    const groupNames = Object.keys(groups).sort((a, b) => {
+    const sortedGroups = Array.from(groups).sort((a, b) => {
       if (a === "단독 학습") return 1;
       if (b === "단독 학습") return -1;
       return a.localeCompare(b);
     });
 
-    let html = '<option value="">전체 시리즈</option>';
-    groupNames.forEach(gName => {
-      html += `<optgroup label="${esc(gName)}">`;
-      // 시리즈 순서(series_order) 또는 제목순 정렬
-      const sorted = groups[gName].sort((x, y) => {
+    let html = '<option value="">전체 시리즈/그룹</option>';
+    sortedGroups.forEach(gName => {
+      html += `<option value="${esc(gName)}">${esc(gName)}</option>`;
+    });
+
+    seriesSel.innerHTML = html;
+
+    const seqSel = document.getElementById("cm-seq-filter");
+    if (seqSel) {
+      seqSel.innerHTML = '<option value="">전체 편</option>';
+      seqSel.style.display = "none";
+    }
+  }
+
+  function onSeriesFilterChange() {
+    const seriesVal = document.getElementById("cm-series-filter").value;
+    const seqSel = document.getElementById("cm-seq-filter");
+    if (!seqSel) return;
+
+    if (!seriesVal) {
+      seqSel.innerHTML = '<option value="">전체 편</option>';
+      seqSel.value = "";
+      seqSel.style.display = "none";
+    } else {
+      const matchedSeqs = ALL_SEQUENCES.filter(s => {
+        const gName = s.series_name || s.group || "단독 학습";
+        return gName === seriesVal;
+      });
+
+      const sorted = matchedSeqs.sort((x, y) => {
         const orderX = x.series_order !== undefined && x.series_order !== null ? x.series_order : 999;
         const orderY = y.series_order !== undefined && y.series_order !== null ? y.series_order : 999;
         if (orderX !== orderY) return orderX - orderY;
         return (x.title || "").localeCompare(y.title || "");
       });
+
+      let html = '<option value="">전체 편</option>';
       sorted.forEach(s => {
         html += `<option value="${s.id}">${esc(s.title)}</option>`;
       });
-      html += '</optgroup>';
-    });
+      seqSel.innerHTML = html;
+      seqSel.value = "";
+      seqSel.style.display = "inline-block";
+    }
 
-    sel.innerHTML = html;
+    renderList();
   }
 
   function renderList() {
     const q = (document.getElementById("cm-search")?.value || "").toLowerCase();
     const typeFilter = document.getElementById("cm-type-filter")?.value || "";
+    const seriesFilter = document.getElementById("cm-series-filter")?.value || "";
     const seqFilter = document.getElementById("cm-seq-filter")?.value || "";
+    
+    let allowedSeqIds = [];
+    if (seriesFilter && !seqFilter) {
+      allowedSeqIds = ALL_SEQUENCES.filter(s => {
+        const gName = s.series_name || s.group || "단독 학습";
+        return gName === seriesFilter;
+      }).map(s => s.id);
+    }
     
     const filtered = ALL_ITEMS.filter(item => {
       const matchQ = !q ||
@@ -613,7 +652,14 @@
         (item.alt_names || []).some(n => n.toLowerCase().includes(q)) ||
         (item.memo || "").toLowerCase().includes(q);
       const matchType = !typeFilter || item.type === typeFilter;
-      const matchSeq = !seqFilter || (item.appearances || []).some(a => a.sequence_id === seqFilter);
+      
+      let matchSeq = true;
+      if (seqFilter) {
+        matchSeq = (item.appearances || []).some(a => a.sequence_id === seqFilter);
+      } else if (seriesFilter) {
+        matchSeq = (item.appearances || []).some(a => allowedSeqIds.includes(a.sequence_id));
+      }
+      
       return matchQ && matchType && matchSeq;
     });
 
