@@ -1920,10 +1920,12 @@
                                     <div id="kw-autocomplete-results" style="display:none; position:absolute; top:100%; left:0; right:0; background:#fff; border:1px solid #e0d5c8; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,0.12); z-index:300; max-height:180px; overflow-y:auto;"></div>
                                 </div>
 
+
+
                                 <div style="margin-bottom:20px;">
-                                    <span class="form-label" style="font-size:0.78rem; display:block; margin-bottom:8px;">등록된 키워드 (칩 클릭 시 해당 키워드의 청크 분석 결과를 확인합니다)</span>
-                                    <div id="kw-chips-container" style="display:flex; flex-wrap:wrap; gap:8px; min-height:40px; padding:10px; background:#f8fafc; border:1px solid var(--border); border-radius:10px;">
-                                        <!-- 키워드 칩들이 동적으로 들어감 -->
+                                    <span class="form-label" style="font-size:0.82rem; display:block; margin-bottom:8px; font-weight:700;">📌 등록된 검색 키워드 목록 (키워드 클릭 시 청크 분석 결과 확인)</span>
+                                    <div id="kw-details-list-container" style="background:#fff; border:1px solid var(--border); border-radius:10px; overflow:hidden; min-height:60px;">
+                                        <!-- 상세 목록 테이블이 동적으로 들어감 -->
                                     </div>
                                 </div>
 
@@ -4957,6 +4959,7 @@ function switchTab(tab) {
     currentTab = tab;
     if (tab === 'keywords') {
         renderKeywordChips();
+        loadDictPool(true);
     }
     document.querySelectorAll('.editor-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tab));
     document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.toggle('active', panel.id === 'panel-' + tab));
@@ -5754,13 +5757,72 @@ let currentKeywordsData = [];
 let localDictPool = [];
 let activeAnalysisKeyword = null;
 
-async function loadDictPool() {
+let lastDictLoadedAt = 0;
+let isLoadingDictPool = false;
+
+async function loadDictPool(force = false) {
+    const now = Date.now();
+    if (!force && (now - lastDictLoadedAt < 5000)) return;
+    if (isLoadingDictPool) return;
+
+    isLoadingDictPool = true;
+    const searchInput = document.getElementById('kw-search-input');
+    let originalPlaceholder = '';
+    if (searchInput) {
+        originalPlaceholder = searchInput.placeholder;
+        searchInput.placeholder = '사전 데이터를 동기화 중...';
+    }
+
     try {
         const res = await safeFetchDB({ action: 'get', collection: 'learn_characters' });
         localDictPool = res.data || [];
+        lastDictLoadedAt = Date.now();
+        
+        if (currentSeqId) {
+            syncDictKeywordsToCurrentSeq();
+        }
+        
+        renderKeywordChips();
+
+        if (searchInput && searchInput.value.trim()) {
+            searchDictKeywords();
+        }
     } catch (e) {
         console.error('사전 DB 로드 실패:', e);
         localDictPool = [];
+    } finally {
+        isLoadingDictPool = false;
+        if (searchInput) {
+            searchInput.placeholder = originalPlaceholder || '인물/사건 이름 검색 또는 직접 입력...';
+        }
+    }
+}
+
+function syncDictKeywordsToCurrentSeq() {
+    if (!currentSeqId || !Array.isArray(localDictPool)) return;
+
+    const dictKeywords = [];
+    localDictPool.forEach(item => {
+        const hasAppearance = (item.appearances || []).some(app => app.sequence_id === currentSeqId);
+        if (hasAppearance && item.name) {
+            dictKeywords.push(item.name);
+        }
+    });
+
+    if (dictKeywords.length === 0) return;
+
+    // 기존 키워드와 병합 (중복 방지)
+    const merged = Array.from(new Set([
+        ...currentKeywordsData,
+        ...dictKeywords
+    ])).filter(Boolean);
+
+    // 변경사항이 있을 때만 업데이트
+    if (merged.length !== currentKeywordsData.length || merged.some((v, i) => v !== currentKeywordsData[i])) {
+        currentKeywordsData = merged;
+        const kwInput = document.getElementById('seq-keywords');
+        if (kwInput) kwInput.value = currentKeywordsData.join(', ');
+        renderKeywordChips();
     }
 }
 
@@ -5867,33 +5929,104 @@ function scanStepsForKeyword(keyword) {
 }
 
 function renderKeywordChips() {
-    const container = document.getElementById('kw-chips-container');
     const badge = document.getElementById('tab-kw-count');
     if (badge) badge.textContent = currentKeywordsData.length;
-    if (!container) return;
-
-    if (!currentKeywordsData.length) {
-        container.innerHTML = '<div style="color:#94a3b8; font-size:0.78rem; width:100%;">등록된 키워드가 없습니다.</div>';
-        return;
+    
+    // 사전 DB에서 상세 정보 (메모, 타입 등) 추출
+    const dictMap = new Map();
+    if (Array.isArray(localDictPool)) {
+        localDictPool.forEach(item => {
+            if (item.name) {
+                // 현재 시퀀스에 해당하는 appearance 찾기
+                const app = (item.appearances || []).find(a => a.sequence_id === currentSeqId);
+                dictMap.set(item.name, {
+                    type: item.type, // 'character' or 'event'
+                    memo: app ? (app.content_connection || '') : '', // 해당 편에 지정된 메모
+                    altNames: item.alt_names || []
+                });
+            }
+        });
     }
 
-    container.innerHTML = currentKeywordsData.map(keyword => {
-        const scanResult = scanStepsForKeyword(keyword);
-        const count = scanResult.reduce((sum, r) => sum + r.count, 0);
-        
-        let chipClass = 'kw-chip';
-        if (count === 0) chipClass += ' warning';
-        if (activeAnalysisKeyword === keyword) chipClass += ' active';
+    const detailsContainer = document.getElementById('kw-details-list-container');
+    if (detailsContainer) {
+        if (!currentKeywordsData.length) {
+            detailsContainer.innerHTML = '<div style="padding:24px; text-align:center; color:#94a3b8; font-size:0.78rem;">등록된 검색 키워드가 없습니다. 사전에서 키워드를 검색해 추가해보세요.</div>';
+        } else {
+            let html = `
+                <table style="width:100%; border-collapse:collapse; text-align:left; font-size:0.78rem; border-spacing:0;">
+                    <thead>
+                        <tr style="background:#f8fafc; border-bottom:1px solid var(--border);">
+                            <th style="padding:12px 14px; font-weight:700; color:var(--text-sub); width:180px;">키워드</th>
+                            <th style="padding:12px 14px; font-weight:700; color:var(--text-sub);">연결 설명 / 메모</th>
+                            <th style="padding:12px 14px; font-weight:700; color:var(--text-sub); width:130px;">본문 분석</th>
+                            <th style="padding:12px 14px; font-weight:700; color:var(--text-sub); width:80px; text-align:center;">관리</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
 
-        const warningIcon = count === 0 ? '<i class="fas fa-exclamation-triangle" style="color:#f97316;" title="본문에 키워드가 존재하지 않습니다."></i> ' : '';
+            html += currentKeywordsData.map(keyword => {
+                const scanResult = scanStepsForKeyword(keyword);
+                const count = scanResult.reduce((sum, r) => sum + r.count, 0);
+                
+                const dictInfo = dictMap.get(keyword) || { type: 'custom', memo: '', altNames: [] };
+                
+                let typeBadge = '';
+                if (dictInfo.type === 'character') {
+                    typeBadge = '<span style="background:hsl(0, 100%, 97%); color:hsl(0, 72%, 51%); border:1px solid hsl(0, 100%, 85%); font-size:0.65rem; padding:2px 6px; border-radius:6px; font-weight:700; margin-right:8px; white-space:nowrap;">인물</span>';
+                } else if (dictInfo.type === 'event') {
+                    typeBadge = '<span style="background:hsl(170, 100%, 96%); color:hsl(170, 85%, 32%); border:1px solid hsl(170, 80%, 85%); font-size:0.65rem; padding:2px 6px; border-radius:6px; font-weight:700; margin-right:8px; white-space:nowrap;">사건</span>';
+                } else {
+                    typeBadge = '<span style="background:hsl(210, 20%, 96%); color:hsl(210, 10%, 40%); border:1px solid hsl(210, 20%, 88%); font-size:0.65rem; padding:2px 6px; border-radius:6px; font-weight:700; margin-right:8px; white-space:nowrap;">직접추가</span>';
+                }
 
-        return `<div class="${chipClass}" onclick="selectChipKeyword('${escAttr_(keyword)}')">
-            ${warningIcon}${escapeHtml_(keyword)}
-            <span class="kw-badge">${scanResult.length}개 청크 (${count}회)</span>
-            <button type="button" class="kw-edit-btn" onclick="openKwEditModal('${escAttr_(keyword)}', event)" style="background:none; border:none; color:#64748b; cursor:pointer; padding:2px 4px; display:inline-flex; align-items:center; justify-content:center; border-radius:4px; margin-right:4px;" onmouseover="this.style.color='var(--primary)'" onmouseout="this.style.color='#64748b'" title="사전 항목 즉석 수정"><i class="fas fa-pen" style="font-size:0.75rem;"></i></button>
-            <button type="button" onclick="removeKeyword('${escAttr_(keyword)}', event)">&times;</button>
-        </div>`;
-    }).join('');
+                // 줄바꿈 대응 (\n -> <br>)
+                const formattedMemo = dictInfo.memo 
+                    ? escapeHtml_(dictInfo.memo).replace(/\n/g, '<br>') 
+                    : '<span style="color:#94a3b8; font-style:italic;">(등록된 설명/메모가 없습니다)</span>';
+                
+                const isWarning = (count === 0);
+                const analysisBadge = isWarning 
+                    ? '<span style="color:#ea580c; font-weight:700;"><i class="fas fa-exclamation-triangle" style="margin-right:4px;"></i> 0회</span>'
+                    : `<span style="color:#16a34a; font-weight:700;">${scanResult.length}개 청크 (${count}회)</span>`;
+
+                const trBg = isWarning ? 'background-color: hsl(30, 100%, 98.5%);' : '';
+                const hoverBg = isWarning ? 'hsl(30, 100%, 97%)' : '#f8fafc';
+                const isActive = (activeAnalysisKeyword === keyword);
+                const textStyle = isActive 
+                    ? 'color: var(--primary); font-weight: 700; text-decoration: underline; text-underline-offset:3px;' 
+                    : 'color: #1e293b; text-decoration: underline; text-underline-offset:3px;';
+
+                return `
+                    <tr style="border-bottom:1px solid var(--border); ${trBg}" onmouseover="this.style.backgroundColor='${hoverBg}'" onmouseout="this.style.backgroundColor='${isWarning ? 'hsl(30, 100%, 98.5%)' : 'transparent'}'">
+                        <td style="padding:12px 14px; font-weight:600; min-height:40px; box-sizing:border-box; vertical-align:middle;">
+                            <div style="display:inline-flex; align-items:center;">
+                                ${typeBadge}
+                                <span style="cursor:pointer; ${textStyle}" onclick="selectChipKeyword('${escAttr_(keyword)}')">${escapeHtml_(keyword)}</span>
+                            </div>
+                        </td>
+                        <td style="padding:12px 14px; color:#475569; line-height:1.5; word-break:break-all; vertical-align:middle;">
+                            ${formattedMemo}
+                        </td>
+                        <td style="padding:12px 14px; vertical-align:middle; white-space:nowrap;">
+                            ${analysisBadge}
+                        </td>
+                        <td style="padding:12px 14px; text-align:center; vertical-align:middle; white-space:nowrap;">
+                            <button type="button" onclick="openKwEditModal('${escAttr_(keyword)}', event)" style="background:none; border:none; color:#64748b; cursor:pointer; padding:6px; border-radius:4px; display:inline-flex; align-items:center; justify-content:center;" onmouseover="this.style.color='var(--primary)', this.style.backgroundColor='rgba(0,0,0,0.03)'" onmouseout="this.style.color='#64748b', this.style.backgroundColor='transparent'" title="수정"><i class="fas fa-pen" style="font-size:0.75rem;"></i></button>
+                            <button type="button" onclick="removeKeyword('${escAttr_(keyword)}', event)" style="background:none; border:none; color:#ef4444; cursor:pointer; padding:6px; margin-left:4px; border-radius:4px; display:inline-flex; align-items:center; justify-content:center;" onmouseover="this.style.backgroundColor='rgba(239, 68, 68, 0.05)'" onmouseout="this.style.backgroundColor='transparent'" title="삭제"><i class="fas fa-trash-alt" style="font-size:0.75rem;"></i></button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            html += `
+                    </tbody>
+                </table>
+            `;
+            detailsContainer.innerHTML = html;
+        }
+    }
 }
 
 function selectChipKeyword(keyword) {
