@@ -821,28 +821,37 @@
   function onAppSeqChange(selectEl) {
     const entry = selectEl.closest(".appearance-entry");
     if (!entry) return;
-    const seqId = selectEl.value;
-    const seq = ALL_SEQUENCES.find(s => s.id === seqId);
-    buildStepUI(entry, seq, "", "");
+    const seriesName = selectEl.value; // 선택된 시리즈/그룹명
+    buildStepUI(entry, seriesName, "", "");
     
     const badge = entry.querySelector(".app-scan-badge");
     if (badge) badge.textContent = "";
   }
 
-  function buildStepUI(entry, seq, selectedStepId, defaultStepTitle) {
+  function buildStepUI(entry, seriesName, selectedSeqId, defaultSeqTitle) {
     const stepSel = entry.querySelector(".app-step-select");
     if (!stepSel) return;
-    stepSel.innerHTML = '<option value="">학습 단계 선택</option>';
+    stepSel.innerHTML = '<option value="">학습 단계(편) 선택</option>';
     
     let found = false;
-    if (seq && Array.isArray(seq.steps)) {
-      seq.steps.forEach((step, idx) => {
-        const title = step.title || step.text.substring(0, 40) + (step.text.length > 40 ? "..." : "");
-        const val = step.id || `step_${idx}`;
+    if (seriesName) {
+      const matchedSeqs = ALL_SEQUENCES.filter(s => {
+        const gName = s.series_name || s.group || "단독 학습";
+        return gName === seriesName;
+      });
+      
+      const sorted = matchedSeqs.sort((x, y) => {
+        const orderX = x.series_order !== undefined && x.series_order !== null ? x.series_order : 999;
+        const orderY = y.series_order !== undefined && y.series_order !== null ? y.series_order : 999;
+        if (orderX !== orderY) return orderX - orderY;
+        return (x.title || "").localeCompare(y.title || "");
+      });
+      
+      sorted.forEach(s => {
         const o = document.createElement("option");
-        o.value = val;
-        o.textContent = `${idx + 1}편 - ${title}`;
-        if (val === selectedStepId) {
+        o.value = s.id;
+        o.textContent = s.title;
+        if (s.id === selectedSeqId) {
           o.selected = true;
           found = true;
         }
@@ -850,17 +859,17 @@
       });
     }
 
-    if (selectedStepId && !found) {
+    if (selectedSeqId && !found) {
       const o = document.createElement("option");
-      o.value = selectedStepId;
-      o.textContent = defaultStepTitle || selectedStepId;
+      o.value = selectedSeqId;
+      o.textContent = defaultSeqTitle || selectedSeqId;
       o.selected = true;
       stepSel.appendChild(o);
     }
   }
 
   const SEQUENCE_FULL_CACHE = {};
-  async function updateStepScanCount(entry, seqId, stepId, name, altNames) {
+  async function updateStepScanCount(entry, seqId, name, altNames) {
     const badge = entry.querySelector(".app-scan-badge");
     if (!badge) return;
 
@@ -874,12 +883,11 @@
       }
 
       const steps = SEQUENCE_FULL_CACHE[seqId] || [];
-      const foundStep = steps.find((st, idx) => (st.id || `step_${idx}`) === stepId);
-      const stepText = foundStep ? (foundStep.text || "") : "";
+      const fullTextOfSeq = steps.map(st => st.text || "").join(" ");
 
       let totalCount = 0;
       const searchWords = [name, ...altNames].map(w => w.trim()).filter(Boolean);
-      const lowerText = stepText.toLowerCase();
+      const lowerText = fullTextOfSeq.toLowerCase();
 
       searchWords.forEach(word => {
         const lowerWord = word.toLowerCase();
@@ -907,17 +915,16 @@
   function onAppStepChange(selectEl) {
     const entry = selectEl.closest(".appearance-entry");
     if (!entry) return;
-    const seqId = entry.querySelector(".app-seq-id")?.value || "";
-    const stepId = selectEl.value;
+    const seqId = selectEl.value; // 편 ID
 
     const badge = entry.querySelector(".app-scan-badge");
     if (badge) badge.textContent = "";
 
-    if (!seqId || !stepId) return;
+    if (!seqId) return;
 
     const name = document.getElementById("cm-name")?.value || "";
     const altNames = getAltNames();
-    updateStepScanCount(entry, seqId, stepId, name, altNames);
+    updateStepScanCount(entry, seqId, name, altNames);
   }
 
   function addAppearanceRow(data) {
@@ -930,33 +937,42 @@
     const isNewRow = !data || Object.keys(data).length === 0;
     const connVal = d.content_connection || (isNewRow ? baseMemoVal : "");
 
-    // series_name -> group -> 단독 학습 순으로 그룹화
-    const groups = {};
+    // 고유 시리즈명/그룹명 목록 추출 (대분류)
+    const uniqueSeries = new Set();
     ALL_SEQUENCES.forEach(s => {
-      const gName = s.series_name || s.group || "단독 학습";
-      if (!groups[gName]) groups[gName] = [];
-      groups[gName].push(s);
+      const sName = s.series_name || s.group || "단독 학습";
+      uniqueSeries.add(sName);
     });
 
-    const groupNames = Object.keys(groups).sort((a, b) => {
+    const sortedSeries = Array.from(uniqueSeries).sort((a, b) => {
       if (a === "단독 학습") return 1;
       if (b === "단독 학습") return -1;
       return a.localeCompare(b);
     });
 
+    // 로드된 데이터 d의 sequence_id가 진짜 편 ID인지 판별하여 시리즈명 및 편 복원 정보 찾기
+    let targetSeriesName = "";
+    let targetSeqId = "";
+    let targetSeqTitle = "";
+
+    if (d.sequence_id) {
+      const foundSeq = ALL_SEQUENCES.find(s => s.id === d.sequence_id);
+      if (foundSeq) {
+        // 정상적인 편 ID가 sequence_id로 들어가 있는 경우
+        targetSeriesName = foundSeq.series_name || foundSeq.group || "단독 학습";
+        targetSeqId = d.sequence_id;
+        targetSeqTitle = foundSeq.title;
+      } else {
+        // 하위 호환성: sequence_id에 시리즈명이 들어가 있는 구버전 데이터인 경우
+        targetSeriesName = d.sequence_id;
+        targetSeqId = d.step_id || "";
+        targetSeqTitle = d.step_title || "";
+      }
+    }
+
     let seqOptions = "";
-    groupNames.forEach(gName => {
-      seqOptions += `<optgroup label="${esc(gName)}">`;
-      const sorted = groups[gName].sort((x, y) => {
-        const orderX = x.series_order !== undefined && x.series_order !== null ? x.series_order : 999;
-        const orderY = y.series_order !== undefined && y.series_order !== null ? y.series_order : 999;
-        if (orderX !== orderY) return orderX - orderY;
-        return (x.title || "").localeCompare(y.title || "");
-      });
-      sorted.forEach(s => {
-        seqOptions += `<option value="${s.id}" ${s.id === d.sequence_id ? "selected" : ""}>${esc(s.title)}</option>`;
-      });
-      seqOptions += `</optgroup>`;
+    sortedSeries.forEach(sName => {
+      seqOptions += `<option value="${esc(sName)}" ${sName === targetSeriesName ? "selected" : ""}>${esc(sName)}</option>`;
     });
 
     const entry = document.createElement("div");
@@ -988,15 +1004,14 @@
     `;
     list.appendChild(entry);
 
-    if (d.sequence_id) {
-      const seq = ALL_SEQUENCES.find(s => s.id === d.sequence_id);
-      buildStepUI(entry, seq, d.step_id || "", d.step_title || "");
+    if (targetSeriesName) {
+      buildStepUI(entry, targetSeriesName, targetSeqId, targetSeqTitle);
 
       // 기존 로딩된 아이템인 경우 백그라운드 실시간 스캔 트리거
-      if (d.step_id) {
+      if (targetSeqId) {
         const name = document.getElementById("cm-name")?.value || "";
         const altNames = getAltNames();
-        updateStepScanCount(entry, d.sequence_id, d.step_id, name, altNames);
+        updateStepScanCount(entry, targetSeqId, name, altNames);
       }
     }
   }
@@ -1016,34 +1031,45 @@
 
   function getAppearances() {
     return Array.from(document.querySelectorAll("#cm-appearances-list .appearance-entry")).map(row => {
-      const seqId = row.querySelector(".app-seq-id")?.value || "";
-      const seq = ALL_SEQUENCES.find(s => s.id === seqId);
+      // 1단계(시리즈명)는 시리즈 매칭용이므로, DB에 저장할 진짜 편 정보는 2단계 셀렉트 박스에서 가져옵니다.
       const stepSel = row.querySelector(".app-step-select");
-      const stepId = stepSel ? stepSel.value : "";
+      const seqId = stepSel ? stepSel.value : ""; // 2단계 셀렉트 박스의 value가 진짜 편 ID입니다.
       
-      let stepTitle = "";
+      const seq = ALL_SEQUENCES.find(s => s.id === seqId);
+      
+      let seqTitle = "";
       if (stepSel && stepSel.selectedIndex >= 0) {
         const selectedOpt = stepSel.options[stepSel.selectedIndex];
         if (selectedOpt.value) {
-          stepTitle = selectedOpt.text;
+          seqTitle = selectedOpt.text; // 2단계 셀렉트 박스의 text가 진짜 편 제목입니다.
         }
       }
+      if (!seqTitle && seq) {
+        seqTitle = seq.title;
+      }
       
-      if (!stepTitle && seq && Array.isArray(seq.steps)) {
-        const foundStep = seq.steps.find((st, idx) => (st.id || `step_${idx}`) === stepId);
-        if (foundStep) {
-          stepTitle = foundStep.title || foundStep.text.substring(0, 40) + (foundStep.text.length > 40 ? "..." : "");
+      // DB 스키마 표준 규격에 따라:
+      // sequence_id = 편 ID, sequence_title = 편 제목
+      // step_id = 편의 첫 번째 step ID (마이크로 학습과의 연동 호환)
+      // step_title = 편의 첫 번째 step 제목
+      let firstStepId = "";
+      let firstStepTitle = "";
+      if (seq) {
+        const steps = SEQUENCE_FULL_CACHE[seqId] || seq.steps || [];
+        if (steps.length > 0) {
+          firstStepId = steps[0].id || "";
+          firstStepTitle = steps[0].title || steps[0].text.substring(0, 30);
         }
       }
       
       return {
         sequence_id: seqId,
-        sequence_title: seq ? seq.title : "",
-        step_id: stepId,
-        step_title: stepTitle,
+        sequence_title: seqTitle,
+        step_id: firstStepId,
+        step_title: firstStepTitle,
         content_connection: row.querySelector(".app-note-input")?.value.trim() || ""
       };
-    }).filter(a => a.sequence_id && a.step_id);
+    }).filter(a => a.sequence_id); // 편 ID가 유효한 것만 저장
   }
 
   /* ── 모달 열기/닫기 (실시간 Get 적용) ── */
