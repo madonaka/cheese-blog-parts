@@ -381,13 +381,13 @@
     </div>
     
     <div class="cm-bulk-body">
-      <!-- 왼쪽: JSON 입력란 -->
+      <!-- JSON 입력란 -->
       <div style="display:flex; flex-direction:column; gap:10px;">
         <label style="font-size:12px; font-weight:800; color:var(--text);">JSON 데이터 붙여넣기 (배열 형태 * )</label>
         <textarea id="bulk-json-input" style="flex:1; min-height:380px; font-family:monospace; font-size:12px; padding:12px; border:1.5px solid var(--line); border-radius:10px; resize:none;" placeholder="[&#10;  {&#10;    &quot;name&quot;: &quot;리다자오&quot;,&#10;    &quot;type&quot;: &quot;character&quot;,&#10;    &quot;alt_names&quot;: [&quot;베이징대 도서관장&quot;],&#10;    &quot;birth_year&quot;: &quot;1889&quot;,&#10;    &quot;death_year&quot;: &quot;1927&quot;,&#10;    &quot;memo&quot;: &quot;공동 창립자.&quot;,&#10;    &quot;related_events&quot;: [&quot;5.4 운동&quot;]&#10;  }&#10;]"></textarea>
       </div>
       
-      <!-- 오른쪽: 가이드라인 설명 -->
+      <!-- 가이드라인 설명 -->
       <div class="bulk-guide-box">
         <h4>
           <span><i class="fa-solid fa-lightbulb" style="color:var(--accent);"></i> AI 생성용 스키마 명세</span>
@@ -661,23 +661,36 @@
     if (!entry) return;
     const seqId = selectEl.value;
     const seq = ALL_SEQUENCES.find(s => s.id === seqId);
-    buildStepUI(entry, seq, "");
+    buildStepUI(entry, seq, "", "");
   }
 
-  function buildStepUI(entry, seq, selectedStepId) {
+  function buildStepUI(entry, seq, selectedStepId, defaultStepTitle) {
     const stepSel = entry.querySelector(".app-step-select");
     if (!stepSel) return;
     stepSel.innerHTML = '<option value="">학습 단계 선택</option>';
     
+    let found = false;
     if (seq && Array.isArray(seq.steps)) {
       seq.steps.forEach((step, idx) => {
         const title = step.title || step.text.substring(0, 40) + (step.text.length > 40 ? "..." : "");
+        const val = step.id || `step_${idx}`;
         const o = document.createElement("option");
-        o.value = step.id || `step_${idx}`;
+        o.value = val;
         o.textContent = `${idx + 1}편 - ${title}`;
-        if (o.value === selectedStepId) o.selected = true;
+        if (val === selectedStepId) {
+          o.selected = true;
+          found = true;
+        }
         stepSel.appendChild(o);
       });
+    }
+
+    if (selectedStepId && !found) {
+      const o = document.createElement("option");
+      o.value = selectedStepId;
+      o.textContent = defaultStepTitle || selectedStepId;
+      o.selected = true;
+      stepSel.appendChild(o);
     }
   }
 
@@ -718,7 +731,7 @@
 
     if (d.sequence_id) {
       const seq = ALL_SEQUENCES.find(s => s.id === d.sequence_id);
-      buildStepUI(entry, seq, d.step_id || "");
+      buildStepUI(entry, seq, d.step_id || "", d.step_title || "");
     }
   }
 
@@ -730,7 +743,14 @@
       const stepId = stepSel ? stepSel.value : "";
       
       let stepTitle = "";
-      if (seq && Array.isArray(seq.steps)) {
+      if (stepSel && stepSel.selectedIndex >= 0) {
+        const selectedOpt = stepSel.options[stepSel.selectedIndex];
+        if (selectedOpt.value) {
+          stepTitle = selectedOpt.text;
+        }
+      }
+      
+      if (!stepTitle && seq && Array.isArray(seq.steps)) {
         const foundStep = seq.steps.find((st, idx) => (st.id || `step_${idx}`) === stepId);
         if (foundStep) {
           stepTitle = foundStep.title || foundStep.text.substring(0, 40) + (foundStep.text.length > 40 ? "..." : "");
@@ -747,8 +767,8 @@
     }).filter(a => a.sequence_id && a.step_id);
   }
 
-  /* ── 모달 열기/닫기 ── */
-  function openModal(id) {
+  /* ── 모달 열기/닫기 (실시간 Get 적용) ── */
+  async function openModal(id) {
     const modal = document.getElementById("cm-modal-bg");
     if (!modal) return;
     
@@ -761,18 +781,37 @@
     switchTab("basic");
 
     if (id) {
-      const item = ALL_ITEMS.find(x => x.id === id);
-      if (!item) return;
-      document.getElementById("cm-modal-title").innerHTML = `<i class="fa-solid fa-pen-to-square"></i> 항목 수정`;
-      document.getElementById("cm-id").value = item.id;
-      document.getElementById("cm-name").value = item.name || "";
-      document.getElementById("cm-type").value = item.type || "character";
-      document.getElementById("cm-birth-year").value = item.birth_year || "";
-      document.getElementById("cm-death-year").value = item.death_year || "";
-      document.getElementById("cm-memo").value = item.memo || "";
-      (item.alt_names || []).forEach(n => addAltName(n));
-      selectedRelEventNames = [...(item.related_events || [])];
-      (item.appearances || []).forEach(a => addAppearanceRow(a));
+      document.getElementById("cm-modal-title").innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 로딩 중...`;
+      document.getElementById("cm-id").value = id;
+      modal.classList.add("open");
+
+      try {
+        const res = await safeFetchDB({ action: "getDoc", collection: "learn_characters", id });
+        const item = res.data;
+        if (!item) { alert("해당 항목을 찾을 수 없습니다."); closeModal(); return; }
+
+        // 로컬 캐시 동기화
+        const idx = ALL_ITEMS.findIndex(x => x.id === id);
+        if (idx >= 0) ALL_ITEMS[idx] = { ...item, id };
+
+        document.getElementById("cm-modal-title").innerHTML = `<i class="fa-solid fa-pen-to-square"></i> 항목 수정`;
+        document.getElementById("cm-name").value = item.name || "";
+        document.getElementById("cm-type").value = item.type || "character";
+        document.getElementById("cm-birth-year").value = item.birth_year || "";
+        document.getElementById("cm-death-year").value = item.death_year || "";
+        document.getElementById("cm-memo").value = item.memo || "";
+        
+        altList.innerHTML = "";
+        (item.alt_names || []).forEach(n => addAltName(n));
+        selectedRelEventNames = [...(item.related_events || [])];
+        renderRelEvents();
+        
+        appList.innerHTML = "";
+        (item.appearances || []).forEach(a => addAppearanceRow(a));
+      } catch (err) {
+        alert("최신 데이터를 가져오는 중 오류가 발생했습니다: " + err.message);
+        closeModal();
+      }
     } else {
       document.getElementById("cm-modal-title").innerHTML = `<i class="fa-solid fa-plus"></i> 항목 추가`;
       document.getElementById("cm-id").value = "";
@@ -781,11 +820,11 @@
       document.getElementById("cm-birth-year").value = "";
       document.getElementById("cm-death-year").value = "";
       document.getElementById("cm-memo").value = "";
+      renderRelEvents();
+      modal.classList.add("open");
     }
 
     toggleTypeFields();
-    renderRelEvents();
-    modal.classList.add("open");
   }
 
   function closeModal() {
