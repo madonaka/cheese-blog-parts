@@ -1885,6 +1885,12 @@
 
                                 <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
                                     <h3 style="font-size:0.88rem; font-weight:700; flex:1;">타임라인 드래그 세트</h3>
+                                    <button class="btn btn-ghost btn-sm" onclick="openTimelineBulkModal()" title="JSON으로 타임라인 이벤트 일괄 등록">
+                                        <i class="fas fa-file-import"></i> 일괄 등록
+                                    </button>
+                                    <button class="btn btn-danger btn-sm" onclick="bulkRemoveAllTimeline()" title="타임라인 이벤트 전체 삭제">
+                                        <i class="fas fa-trash-alt"></i> 일괄 해지
+                                    </button>
                                     <button class="btn btn-ghost btn-sm" onclick="addTimelineEvent()">
                                         <i class="fas fa-plus"></i> 이벤트 추가
                                     </button>
@@ -2217,6 +2223,131 @@
         <div class="modal-actions">
             <button class="btn btn-ghost" onclick="closeDeleteModal()">취소</button>
             <button class="btn btn-danger" onclick="confirmDeleteSequence()">삭제</button>
+        </div>
+    </div>
+</div>
+
+<!-- 타임라인 일괄 등록 모달 -->
+<div class="modal-overlay" id="tl-bulk-modal">
+    <div class="modal-card" style="max-width:720px; width:95vw; max-height:90vh; display:flex; flex-direction:column; padding:0; border-radius:14px; overflow:hidden;">
+        <div style="padding:16px 22px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px; flex-shrink:0;">
+            <h3 style="flex:1; margin:0; font-size:1rem; font-weight:800;"><i class="fas fa-stream" style="color:var(--primary);"></i> 타임라인 이벤트 일괄 등록</h3>
+            <button class="btn btn-ghost btn-sm" onclick="closeTimelineBulkModal()">닫기</button>
+        </div>
+
+        <div style="flex:1; overflow-y:auto; padding:20px;">
+
+            <!-- 모드 선택 -->
+            <div style="margin-bottom:16px;">
+                <label class="form-label">입력 방식</label>
+                <div style="display:flex; gap:0; margin-top:6px; border:1.5px solid var(--border); border-radius:8px; overflow:hidden;">
+                    <button class="btn btn-sm tl-bulk-mode-btn active" id="tl-mode-json" onclick="switchTlBulkMode('json')" style="flex:1; border-radius:0; border:none; font-size:0.78rem;">JSON 붙여넣기</button>
+                    <button class="btn btn-sm tl-bulk-mode-btn" id="tl-mode-csv" onclick="switchTlBulkMode('csv')" style="flex:1; border-radius:0; border:none; border-left:1px solid var(--border); font-size:0.78rem;">CSV / 탭 구분</button>
+                </div>
+            </div>
+
+            <!-- JSON 입력 -->
+            <div id="tl-bulk-json-area">
+                <label class="form-label">JSON 배열 붙여넣기</label>
+                <textarea id="tl-bulk-json-input" class="form-control"
+                    style="min-height:140px; font-family:'Consolas','Monaco',monospace; font-size:0.76rem; margin-top:4px; line-height:1.5;"
+                    placeholder='[{"label":"임진왜란","year":"1592","order":1},{"label":"정유재란","year":"1597","order":2}]'
+                    oninput="parseTlBulkInput()"></textarea>
+            </div>
+
+            <!-- CSV 입력 -->
+            <div id="tl-bulk-csv-area" style="display:none;">
+                <label class="form-label">CSV / 탭 구분 텍스트 (순서, 이벤트명, 연도)</label>
+                <textarea id="tl-bulk-csv-input" class="form-control"
+                    style="min-height:140px; font-family:'Consolas','Monaco',monospace; font-size:0.76rem; margin-top:4px; line-height:1.5;"
+                    placeholder="1,임진왜란,1592&#10;2,정유재란,1597&#10;3,노량해전,1598"
+                    oninput="parseTlBulkInput()"></textarea>
+            </div>
+
+            <!-- 접이식: 컬럼 설명 -->
+            <details style="margin-top:14px; border:1px solid var(--border); border-radius:8px; overflow:hidden;">
+                <summary style="padding:10px 14px; font-size:0.78rem; font-weight:700; color:var(--text-sub); cursor:pointer; background:#f8fafc; user-select:none;">
+                    <i class="fas fa-columns" style="color:var(--primary); margin-right:4px;"></i> 컬럼 설명
+                </summary>
+                <div style="padding:12px 16px; font-size:0.76rem; line-height:1.7; color:#475569;">
+                    <table style="width:100%; border-collapse:collapse; font-size:0.76rem;">
+                        <thead><tr style="background:#f1f5f9;"><th style="padding:6px 10px; text-align:left; border-bottom:1px solid var(--border);">컬럼</th><th style="padding:6px 10px; text-align:left; border-bottom:1px solid var(--border);">필수</th><th style="padding:6px 10px; text-align:left; border-bottom:1px solid var(--border);">설명</th></tr></thead>
+                        <tbody>
+                            <tr><td style="padding:5px 10px; border-bottom:1px solid #f0f2f5;"><code>label</code></td><td style="padding:5px 10px; border-bottom:1px solid #f0f2f5;"><span style="color:#dc2626; font-weight:700;">필수</span></td><td style="padding:5px 10px; border-bottom:1px solid #f0f2f5;">이벤트 이름 (예: 임진왜란, 단노우라 전투)</td></tr>
+                            <tr><td style="padding:5px 10px; border-bottom:1px solid #f0f2f5;"><code>year</code></td><td style="padding:5px 10px; border-bottom:1px solid #f0f2f5;"><span style="color:#dc2626; font-weight:700;">필수</span></td><td style="padding:5px 10px; border-bottom:1px solid #f0f2f5;">연도 (예: 1592, BC 108, 391년)</td></tr>
+                            <tr><td style="padding:5px 10px;"><code>order</code></td><td style="padding:5px 10px;"><span style="color:#4b5563;">선택</span></td><td style="padding:5px 10px;">정답 순서 (미지정 시 입력 순서대로 자동 부여)</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+
+            <!-- 접이식: JSON 예시 -->
+            <details style="margin-top:8px; border:1px solid var(--border); border-radius:8px; overflow:hidden;">
+                <summary style="padding:10px 14px; font-size:0.78rem; font-weight:700; color:var(--text-sub); cursor:pointer; background:#f8fafc; user-select:none;">
+                    <i class="fas fa-code" style="color:var(--primary); margin-right:4px;"></i> JSON 예시 (복사용)
+                </summary>
+                <div style="padding:12px 16px; position:relative;">
+                    <button class="btn btn-ghost btn-sm" onclick="copyTlBulkSample('json')" style="position:absolute; top:8px; right:12px; font-size:0.7rem;"><i class="fas fa-copy"></i> 복사</button>
+                    <pre id="tl-sample-json" style="margin:0; padding:10px; background:#f8fafc; border:1px solid var(--border); border-radius:6px; font-size:0.72rem; overflow-x:auto; line-height:1.6;">[
+  { "label": "위화도 회군",  "year": "1388", "order": 1 },
+  { "label": "과전법 실시",  "year": "1391", "order": 2 },
+  { "label": "조선 건국",    "year": "1392", "order": 3 },
+  { "label": "한양 천도",    "year": "1394", "order": 4 },
+  { "label": "경국대전 반포", "year": "1485", "order": 5 }
+]</pre>
+                </div>
+            </details>
+
+            <!-- 접이식: AI 프롬프트 예시 -->
+            <details style="margin-top:8px; border:1px solid #dbeafe; border-radius:8px; overflow:hidden; background:#f0f7ff;">
+                <summary style="padding:10px 14px; font-size:0.78rem; font-weight:700; color:#1e40af; cursor:pointer; background:#eff6ff; user-select:none;">
+                    <i class="fas fa-robot" style="color:#3b82f6; margin-right:4px;"></i> AI 프롬프트 예시 (ChatGPT/Claude에 붙여넣기)
+                </summary>
+                <div style="padding:12px 16px; position:relative;">
+                    <button class="btn btn-ghost btn-sm" onclick="copyTlBulkSample('prompt')" style="position:absolute; top:8px; right:12px; font-size:0.7rem;"><i class="fas fa-copy"></i> 복사</button>
+                    <pre id="tl-sample-prompt" style="margin:0; padding:10px; background:#fff; border:1px solid #bfdbfe; border-radius:6px; font-size:0.72rem; overflow-x:auto; line-height:1.7; white-space:pre-wrap; word-break:break-word;">다음 주제에 대해 타임라인 퀴즈용 역사 이벤트 목록을 JSON 배열로 만들어줘.
+
+📌 주제: [여기에 주제 입력 — 예: 조선 건국 과정, 임진왜란 주요 전투, 일본 전국시대]
+
+📐 형식:
+- JSON 배열로 출력
+- 각 객체: { "label": "이벤트 이름", "year": "연도", "order": 정답순서 }
+- order는 시간순(오래된 것부터)으로 1부터 부여
+- 연도는 문자열로 (예: "1592", "BC 108")
+- 5~10개 정도
+
+📎 출력 예시:
+[
+  { "label": "위화도 회군", "year": "1388", "order": 1 },
+  { "label": "조선 건국",   "year": "1392", "order": 2 }
+]</pre>
+                </div>
+            </details>
+
+            <!-- 미리보기 -->
+            <div id="tl-bulk-preview" style="display:none; margin-top:14px;">
+                <div style="font-size:0.8rem; font-weight:700; color:var(--text-sub); text-transform:uppercase; letter-spacing:0.3px; margin-bottom:6px;">
+                    감지된 이벤트 <span id="tl-bulk-count" style="color:var(--primary); font-weight:800;"></span>개
+                </div>
+                <div id="tl-bulk-preview-list" style="display:flex; flex-direction:column; gap:3px; max-height:160px; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:8px;"></div>
+            </div>
+
+            <!-- 에러 -->
+            <div id="tl-bulk-error" style="display:none; margin-top:10px; padding:10px 14px; background:#fef2f2; border:1px solid #fca5a5; border-radius:8px; font-size:0.8rem; color:#dc2626;"></div>
+
+            <!-- 옵션 -->
+            <div style="margin-top:14px; display:flex; align-items:center; gap:10px;">
+                <label style="font-size:0.78rem; color:#475569; display:flex; align-items:center; gap:5px; cursor:pointer;">
+                    <input type="checkbox" id="tl-bulk-append" checked> 기존 이벤트에 추가 (체크 해제 시 교체)
+                </label>
+            </div>
+        </div>
+
+        <div style="padding:12px 20px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:8px; flex-shrink:0; background:#f8fafc;">
+            <button class="btn btn-ghost" onclick="closeTimelineBulkModal()">취소</button>
+            <button class="btn btn-primary" id="btn-tl-bulk-apply" disabled onclick="applyTimelineBulkImport()">
+                <i class="fas fa-check"></i> 적용
+            </button>
         </div>
     </div>
 </div>
@@ -4959,6 +5090,128 @@ function removeTimelineEvent(idx) {
     renderTimelineList();
     refreshBadges();
     markDirty();
+}
+
+// ── 타임라인 일괄 등록 / 해지 ──
+let _tlBulkMode = 'json';
+let _tlBulkParsed = [];
+
+function openTimelineBulkModal() {
+    document.getElementById('tl-bulk-modal').classList.add('open');
+    document.getElementById('tl-bulk-json-input').value = '';
+    document.getElementById('tl-bulk-csv-input').value = '';
+    document.getElementById('tl-bulk-preview').style.display = 'none';
+    document.getElementById('tl-bulk-error').style.display = 'none';
+    document.getElementById('btn-tl-bulk-apply').disabled = true;
+    _tlBulkParsed = [];
+    switchTlBulkMode('json');
+}
+
+function closeTimelineBulkModal() {
+    document.getElementById('tl-bulk-modal').classList.remove('open');
+}
+
+function switchTlBulkMode(mode) {
+    _tlBulkMode = mode;
+    document.getElementById('tl-bulk-json-area').style.display = mode === 'json' ? '' : 'none';
+    document.getElementById('tl-bulk-csv-area').style.display  = mode === 'csv'  ? '' : 'none';
+    document.querySelectorAll('.tl-bulk-mode-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('tl-mode-' + mode).classList.add('active');
+    _tlBulkParsed = [];
+    document.getElementById('tl-bulk-preview').style.display = 'none';
+    document.getElementById('tl-bulk-error').style.display = 'none';
+    document.getElementById('btn-tl-bulk-apply').disabled = true;
+}
+
+function parseTlBulkInput() {
+    const errEl = document.getElementById('tl-bulk-error');
+    const prevEl = document.getElementById('tl-bulk-preview');
+    const btnEl = document.getElementById('btn-tl-bulk-apply');
+    errEl.style.display = 'none';
+    prevEl.style.display = 'none';
+    btnEl.disabled = true;
+    _tlBulkParsed = [];
+
+    try {
+        if (_tlBulkMode === 'json') {
+            const raw = document.getElementById('tl-bulk-json-input').value.trim();
+            if (!raw) return;
+            const arr = JSON.parse(raw);
+            if (!Array.isArray(arr)) throw new Error('JSON 배열 형식이어야 합니다.');
+            _tlBulkParsed = arr.map((item, i) => ({
+                label: String(item.label ?? '').trim(),
+                year:  String(item.year  ?? '').trim(),
+                order: item.order != null ? Number(item.order) : i + 1,
+            })).filter(ev => ev.label);
+        } else {
+            const raw = document.getElementById('tl-bulk-csv-input').value.trim();
+            if (!raw) return;
+            const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+            _tlBulkParsed = lines.map((line, i) => {
+                const sep = line.includes('\t') ? '\t' : ',';
+                const cols = line.split(sep).map(c => c.trim());
+                // order, label, year  또는  label, year  (2~3컬럼)
+                if (cols.length >= 3) {
+                    return { order: parseInt(cols[0], 10) || (i + 1), label: cols[1], year: cols[2] };
+                } else if (cols.length === 2) {
+                    return { order: i + 1, label: cols[0], year: cols[1] };
+                } else {
+                    return { order: i + 1, label: cols[0], year: '' };
+                }
+            }).filter(ev => ev.label);
+        }
+
+        if (!_tlBulkParsed.length) throw new Error('유효한 이벤트가 없습니다.');
+
+        // 미리보기 렌더
+        document.getElementById('tl-bulk-count').textContent = _tlBulkParsed.length;
+        document.getElementById('tl-bulk-preview-list').innerHTML = _tlBulkParsed.map((ev, i) =>
+            `<div style="display:flex; gap:8px; padding:4px 6px; font-size:0.78rem; border-bottom:1px solid #f0f2f5; align-items:center;">
+                <span style="width:28px; text-align:center; font-weight:700; color:var(--primary); font-size:0.72rem;">${ev.order}</span>
+                <span style="flex:1; font-weight:600; color:#1e293b;">${ev.label}</span>
+                <span style="font-size:0.72rem; color:var(--text-sub); font-family:monospace;">${ev.year}</span>
+            </div>`
+        ).join('');
+        prevEl.style.display = '';
+        btnEl.disabled = false;
+    } catch (e) {
+        errEl.textContent = '파싱 오류: ' + e.message;
+        errEl.style.display = '';
+    }
+}
+
+function applyTimelineBulkImport() {
+    if (!_tlBulkParsed.length) return;
+    syncTimelineFromForm();
+    const append = document.getElementById('tl-bulk-append').checked;
+    if (append) {
+        const base = timelineData.length;
+        _tlBulkParsed.forEach((ev, i) => {
+            timelineData.push({ id: '', label: ev.label, year: ev.year, order: base + i + 1 });
+        });
+    } else {
+        timelineData = _tlBulkParsed.map((ev, i) => ({ id: '', label: ev.label, year: ev.year, order: ev.order ?? (i + 1) }));
+    }
+    renderTimelineList();
+    refreshBadges();
+    markDirty();
+    closeTimelineBulkModal();
+    toast(`타임라인 이벤트 ${_tlBulkParsed.length}건이 ${append ? '추가' : '교체'}되었습니다.`);
+}
+
+function bulkRemoveAllTimeline() {
+    if (!timelineData.length) { toast('삭제할 타임라인 이벤트가 없습니다.', true); return; }
+    if (!confirm(`타임라인 이벤트 ${timelineData.length}건을 모두 삭제하시겠습니까?`)) return;
+    timelineData = [];
+    renderTimelineList();
+    refreshBadges();
+    markDirty();
+    toast('타임라인 이벤트가 모두 삭제되었습니다.');
+}
+
+function copyTlBulkSample(type) {
+    const el = type === 'json' ? document.getElementById('tl-sample-json') : document.getElementById('tl-sample-prompt');
+    navigator.clipboard.writeText(el.textContent).then(() => toast('클립보드에 복사되었습니다.'));
 }
 
 function collectTimelineFormData(seqId) {
