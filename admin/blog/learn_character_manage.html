@@ -86,6 +86,7 @@
     }
     .badge-type.character { background: var(--accent-light); color: var(--accent); }
     .badge-type.event { background: #e0e7ff; color: #4f46e5; }
+    .badge-type.concept { background: #ccfbf1; color: #0d9488; }
     
     .alt-names-cell { color: var(--sub); font-size: 12px; }
     .appearance-chips { display: flex; flex-wrap: wrap; gap: 4px; max-width: 320px; }
@@ -333,6 +334,7 @@
             <option value="">전체 구분</option>
             <option value="character">인물</option>
             <option value="event">사건</option>
+            <option value="concept">사상/개념</option>
           </select>
           <select class="cm-select" id="cm-series-filter" onchange="onSeriesFilterChange()">
             <option value="">전체 시리즈/그룹</option>
@@ -396,6 +398,7 @@
           <select id="cm-type" onchange="toggleTypeFields()">
             <option value="character">인물</option>
             <option value="event">사건</option>
+            <option value="concept">사상/개념</option>
           </select>
         </div>
         <div class="cm-field">
@@ -516,7 +519,7 @@
             <tr>
               <td><strong>type</strong></td>
               <td>String</td>
-              <td>구분 (`"character"` 인물 또는 `"event"` 사건)</td>
+              <td>구분 (`"character"` 인물, `"event"` 사건, `"concept"` 사상/개념)</td>
               <td><span style="color:#dc2626; font-weight:800;">필수</span></td>
             </tr>
             <tr>
@@ -843,11 +846,11 @@
     tbody.innerHTML = filtered.map(item => {
       const altNames = (item.alt_names || []).filter(Boolean).join(", ");
       
-      const typeLabel = item.type === "event" ? "사건" : "인물";
-      const typeClass = item.type === "event" ? "event" : "character";
-      
+      const typeLabel = item.type === "event" ? "사건" : item.type === "concept" ? "사상" : "인물";
+      const typeClass = item.type === "event" ? "event" : item.type === "concept" ? "concept" : "character";
+
       let eraPeriod = "-";
-      if (item.type === "event") {
+      if (item.type !== "character") {
         eraPeriod = item.birth_year ? `${item.birth_year}년` : "-";
       } else {
         const b = item.birth_year || "";
@@ -889,6 +892,13 @@
       relEventsField.style.display = "block";
       if (relLabel) relLabel.innerHTML = "⚡ 연관 인물 및 사건 (사전의 인물/사건 항목에서 검색)";
       if (relInput) relInput.placeholder = "인물명 또는 사건명 검색...";
+    } else if (type === "concept") {
+      lblBirth.textContent = "성립 시기 / 시대";
+      birthInput.placeholder = "예: 1848 또는 19세기 중반";
+      deathField.style.display = "none";
+      relEventsField.style.display = "block";
+      if (relLabel) relLabel.innerHTML = "⚡ 연관 인물·사건·사상 (사전 항목에서 검색)";
+      if (relInput) relInput.placeholder = "인물·사건·사상명 검색...";
     } else {
       lblBirth.textContent = "생년";
       birthInput.placeholder = "예: 1889 또는 19xx";
@@ -936,13 +946,13 @@
     let matches = [];
     if (type === "character") {
       matches = ALL_ITEMS.filter(e =>
-        e.type === "event" &&
+        (e.type === "event" || e.type === "concept") &&
         !selectedRelEventNames.includes(e.name) &&
         (e.name || "").toLowerCase().includes(q)
       );
     } else {
       matches = ALL_ITEMS.filter(e =>
-        (e.type === "character" || e.type === "event") &&
+        (e.type === "character" || e.type === "event" || e.type === "concept") &&
         e.name && e.name.toLowerCase() !== currentName &&
         !selectedRelEventNames.includes(e.name) &&
         ((e.name || "").toLowerCase().includes(q) || (e.alt_names || []).some(n => n.toLowerCase().includes(q)))
@@ -953,7 +963,7 @@
     
     if (!matches.length) { res.classList.remove("visible"); return; }
     res.innerHTML = matches.map(e => {
-      const typeBadge = e.type === "event" ? `<span class="badge-type event" style="margin-left: 6px; font-size: 9px; padding: 1px 4px;">사건</span>` : `<span class="badge-type character" style="margin-left: 6px; font-size: 9px; padding: 1px 4px;">인물</span>`;
+      const typeBadge = e.type === "event" ? `<span class="badge-type event" style="margin-left: 6px; font-size: 9px; padding: 1px 4px;">사건</span>` : e.type === "concept" ? `<span class="badge-type concept" style="margin-left: 6px; font-size: 9px; padding: 1px 4px;">사상</span>` : `<span class="badge-type character" style="margin-left: 6px; font-size: 9px; padding: 1px 4px;">인물</span>`;
       return `<div class="rel-result-item" onclick="selectRelEvent('${esc(e.name)}')">${esc(e.name)}${typeBadge}</div>`;
     }).join("");
     res.classList.add("visible");
@@ -1331,7 +1341,7 @@
     );
 
     if (dupTarget) {
-      const typeText = type === "event" ? "사건" : "인물";
+      const typeText = type === "event" ? "사건" : type === "concept" ? "사상" : "인물";
       const confirmMerge = confirm(
         `"${name}"(은)는 이미 등록되어 있는 ${typeText} 항목입니다.\n` +
         `현재 수정 중인 항목의 데이터를 기존 항목("${dupTarget.name}")에 병합하시겠습니까?\n\n` +
@@ -1624,6 +1634,21 @@
         "series_name": "공산주의 시리즈 (중국공산당편)",
         "title": "5편 - '마오쩌둥주의'는 마르크스·레닌주의와 무엇이 달랐나",
         "content_connection": "닉슨 방중 실무 전체를 총괄한 주역으로 등장"
+      }
+    ]
+  },
+  {
+    "name": "과학적 사회주의",
+    "type": "concept",
+    "alt_names": ["마르크스주의", "Scientific Socialism"],
+    "birth_year": "1848",
+    "memo": "공상적 사회주의와 대비되는 사상으로, 자본주의의 모순을 유물론적으로 분석하며 등장한다.",
+    "related_events": [],
+    "appearances": [
+      {
+        "series_name": "공산주의 시리즈 (중국공산당편)",
+        "title": "1편 - 마르크스 이전의 사회주의 알아보기",
+        "content_connection": "공상적 사회주의를 비판하며 제시되는 핵심 사상으로 등장"
       }
     ]
   }
