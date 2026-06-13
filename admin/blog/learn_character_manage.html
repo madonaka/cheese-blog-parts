@@ -156,7 +156,16 @@
       background: transparent; cursor: pointer; transition: background 0.2s;
     }
     .alt-name-row button:hover { background: #fef2f2; }
-    
+
+    .term-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+    .term-row input { flex: 1; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 8px; font-size: 13px; }
+    .term-row .term-sep { color: var(--sub); font-size: 13px; flex: 0 0 auto; }
+    .term-row button {
+      padding: 8px 12px; border: 1.5px solid #fecaca; border-radius: 8px; color: #dc2626;
+      background: transparent; cursor: pointer; transition: background 0.2s; flex: 0 0 auto;
+    }
+    .term-row button:hover { background: #fef2f2; }
+
     .add-row-btn {
       padding: 8px 14px; border: 1.5px dashed #cbd5e1; border-radius: 8px; background: transparent;
       color: #475569; font-size: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
@@ -424,15 +433,10 @@
         </div>
       </div>
 
-      <div class="cm-field-row" id="term-row">
-        <div class="cm-field">
-          <label>집권 시작 연도 (지도자일 때, 선택)</label>
-          <input type="text" id="cm-term-start" placeholder="예: 1949">
-        </div>
-        <div class="cm-field">
-          <label>집권 종료 연도 (선택)</label>
-          <input type="text" id="cm-term-end" placeholder="예: 1976 (재임 중이면 비움)">
-        </div>
+      <div class="cm-field" id="term-field">
+        <label>집권 기간 (지도자일 때, 선택 · 재집권 시 여러 개 추가)</label>
+        <div id="terms-list"></div>
+        <button class="add-row-btn" type="button" onclick="addTermRow()"><i class="fa-solid fa-plus"></i> 집권 기간 추가</button>
       </div>
 
       <div class="cm-field" id="faction-field">
@@ -558,15 +562,15 @@
               <td>선택</td>
             </tr>
             <tr>
-              <td><strong>term_start</strong></td>
-              <td>String</td>
-              <td>집권 시작 연도 (지도자 인물, 생몰 연표에서 빨간 구간으로 표시, 예: `"1949"`)</td>
+              <td><strong>terms</strong></td>
+              <td>Array</td>
+              <td>집권 기간 배열 `[{start, end}]` (지도자, 생몰 연표에서 빨간 구간으로 표시 · 재집권 시 여러 개, end 비우면 재임 중)</td>
               <td>선택</td>
             </tr>
             <tr>
-              <td><strong>term_end</strong></td>
+              <td><strong>term_start / term_end</strong></td>
               <td>String</td>
-              <td>집권 종료 연도 (비우면 재임 중으로 간주, 예: `"1976"`)</td>
+              <td>레거시 호환 필드 (terms[0]의 값이 자동 기록됨)</td>
               <td>선택</td>
             </tr>
             <tr>
@@ -915,7 +919,7 @@
     const lblBirth = document.getElementById("lbl-birth-year");
     const birthInput = document.getElementById("cm-birth-year");
     const deathField = document.getElementById("death-year-field");
-    const termRow = document.getElementById("term-row");
+    const termField = document.getElementById("term-field");
     const factionField = document.getElementById("faction-field");
     const relEventsField = document.getElementById("related-events-field");
     
@@ -926,7 +930,7 @@
       lblBirth.textContent = "발생 연도 / 시기";
       birthInput.placeholder = "예: 1919 또는 해방 전후";
       deathField.style.display = "none";
-      if (termRow) termRow.style.display = "none";
+      if (termField) termField.style.display = "none";
       if (factionField) factionField.style.display = "none";
       relEventsField.style.display = "block";
       if (relLabel) relLabel.innerHTML = "⚡ 연관 인물 및 사건 (사전의 인물/사건 항목에서 검색)";
@@ -935,7 +939,7 @@
       lblBirth.textContent = "성립 시기 / 시대";
       birthInput.placeholder = "예: 1848 또는 19세기 중반";
       deathField.style.display = "none";
-      if (termRow) termRow.style.display = "none";
+      if (termField) termField.style.display = "none";
       if (factionField) factionField.style.display = "none";
       relEventsField.style.display = "block";
       if (relLabel) relLabel.innerHTML = "⚡ 연관 인물·사건·사상 (사전 항목에서 검색)";
@@ -944,7 +948,7 @@
       lblBirth.textContent = "생년";
       birthInput.placeholder = "예: 1889 또는 19xx";
       deathField.style.display = "block";
-      if (termRow) termRow.style.display = "grid";
+      if (termField) termField.style.display = "block";
       if (factionField) factionField.style.display = "block";
       relEventsField.style.display = "block";
       if (relLabel) relLabel.innerHTML = "⚡ 연관 사건 (사전의 사건 항목에서 검색)";
@@ -986,6 +990,30 @@
   function getAltNames() {
     return Array.from(document.querySelectorAll(".alt-name-input"))
       .map(i => i.value.trim()).filter(Boolean);
+  }
+
+  /* ── 집권 기간(복수 임기) 입력 ── */
+  function addTermRow(start, end) {
+    const list = document.getElementById("terms-list");
+    if (!list) return;
+    const row = document.createElement("div");
+    row.className = "term-row";
+    row.innerHTML = `
+      <input type="text" class="term-start-input" placeholder="시작 (예: 2017)" value="${esc(start || "")}">
+      <span class="term-sep">~</span>
+      <input type="text" class="term-end-input" placeholder="종료 (재임 중이면 비움)" value="${esc(end || "")}">
+      <button onclick="this.closest('.term-row').remove()" type="button">&times;</button>
+    `;
+    list.appendChild(row);
+  }
+
+  function getTerms() {
+    return Array.from(document.querySelectorAll("#terms-list .term-row"))
+      .map(row => ({
+        start: (row.querySelector(".term-start-input")?.value || "").trim(),
+        end: (row.querySelector(".term-end-input")?.value || "").trim(),
+      }))
+      .filter(t => t.start);  // 시작 연도가 있는 행만
   }
 
   /* ── 연관 사건/인물 검색 ── */
@@ -1335,8 +1363,15 @@
         document.getElementById("cm-type").value = item.type || "character";
         document.getElementById("cm-birth-year").value = item.birth_year || "";
         document.getElementById("cm-death-year").value = item.death_year || "";
-        document.getElementById("cm-term-start").value = item.term_start || "";
-        document.getElementById("cm-term-end").value = item.term_end || "";
+        // 집권 기간 복원 (신규 terms 우선, 없으면 레거시 term_start/term_end)
+        const termsList = document.getElementById("terms-list");
+        if (termsList) {
+          termsList.innerHTML = "";
+          const terms = Array.isArray(item.terms) && item.terms.length > 0
+            ? item.terms
+            : (item.term_start ? [{ start: item.term_start, end: item.term_end || "" }] : []);
+          terms.forEach(t => addTermRow(t.start, t.end));
+        }
         document.getElementById("cm-faction").value = item.faction || "";
         document.getElementById("cm-memo").value = item.memo || "";
         
@@ -1358,8 +1393,8 @@
       document.getElementById("cm-type").value = "character";
       document.getElementById("cm-birth-year").value = "";
       document.getElementById("cm-death-year").value = "";
-      document.getElementById("cm-term-start").value = "";
-      document.getElementById("cm-term-end").value = "";
+      const termsListNew = document.getElementById("terms-list");
+      if (termsListNew) termsListNew.innerHTML = "";
       document.getElementById("cm-faction").value = "";
       document.getElementById("cm-memo").value = "";
       renderRelEvents();
@@ -1431,8 +1466,13 @@
 
       const birth_year = (document.getElementById("cm-birth-year")?.value || "").trim() || dupTarget.birth_year || "";
       const death_year = type === "character" ? ((document.getElementById("cm-death-year")?.value || "").trim() || dupTarget.death_year || "") : "";
-      const term_start = type === "character" ? ((document.getElementById("cm-term-start")?.value || "").trim() || dupTarget.term_start || "") : "";
-      const term_end = type === "character" ? ((document.getElementById("cm-term-end")?.value || "").trim() || dupTarget.term_end || "") : "";
+      // 집권 기간: 현재 입력이 있으면 그것, 없으면 기존 항목 값(신규 terms 우선, 레거시 폴백)
+      const curTerms = type === "character" ? getTerms() : [];
+      const terms = curTerms.length > 0
+        ? curTerms
+        : (Array.isArray(dupTarget.terms) && dupTarget.terms.length > 0
+            ? dupTarget.terms
+            : (dupTarget.term_start ? [{ start: dupTarget.term_start, end: dupTarget.term_end || "" }] : []));
       const faction = type === "character" ? ((document.getElementById("cm-faction")?.value || "").trim() || dupTarget.faction || "") : "";
       
       const currentMemo = (document.getElementById("cm-memo")?.value || "").trim();
@@ -1451,8 +1491,9 @@
         alt_names: mergedAlts,
         birth_year,
         death_year,
-        term_start,
-        term_end,
+        terms,
+        term_start: terms.length ? terms[0].start : "",
+        term_end: terms.length ? terms[0].end : "",
         faction,
         memo: mergedMemo,
         appearances: mergedApps,
@@ -1553,14 +1594,17 @@
     const addedRels = newRels.filter(r => !oldRels.includes(r));
     const removedRels = oldRels.filter(r => !newRels.includes(r));
 
+    const terms = type === "character" ? getTerms() : [];
     const data = {
       name,
       type,
       alt_names: getAltNames(),
       birth_year: (document.getElementById("cm-birth-year")?.value || "").trim(),
       death_year: type === "character" ? (document.getElementById("cm-death-year")?.value || "").trim() : "",
-      term_start: type === "character" ? (document.getElementById("cm-term-start")?.value || "").trim() : "",
-      term_end: type === "character" ? (document.getElementById("cm-term-end")?.value || "").trim() : "",
+      terms,
+      // 레거시 호환: 첫 임기를 term_start/term_end에도 기록
+      term_start: terms.length ? terms[0].start : "",
+      term_end: terms.length ? terms[0].end : "",
       faction: type === "character" ? (document.getElementById("cm-faction")?.value || "").trim() : "",
       memo: (document.getElementById("cm-memo")?.value || "").trim(),
       appearances: getAppearances(),
