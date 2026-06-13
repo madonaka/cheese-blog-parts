@@ -4017,7 +4017,8 @@ function renderStepList() {
         <span class="step-insert-label"><i class="fas fa-plus"></i> 여기에 삽입</span>
     </div>`);
     stepsData.forEach((step, i) => {
-        const preview = (step.text ?? '').substring(0, 40) + ((step.text ?? '').length > 40 ? '…' : '');
+        const subtitleBadge = step.is_subtitle ? `<span style="background:#d97706; color:#fff; font-size:0.65rem; font-weight:800; padding:2px 6px; border-radius:4px; margin-right:6px;">소제목</span>` : '';
+        const preview = subtitleBadge + (step.text ?? '').substring(0, 40) + ((step.text ?? '').length > 40 ? '…' : '');
         const kwCount = (step.keywords ?? []).length;
         const thumb = step.image_url
             ? `<img src="${step.image_url}" class="step-head-thumb" onerror="this.style.visibility='hidden'">`
@@ -4042,6 +4043,10 @@ function renderStepList() {
                 <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); removeStep(${i})"><i class="fas fa-trash-alt"></i></button>
             </div>
             <div class="step-card-body">
+                <div class="form-group" style="flex-direction: row; align-items: center; gap: 8px; margin-bottom: 12px;">
+                    <input type="checkbox" id="step-is-subtitle-${i}" data-step-issubtitle="${i}" ${step.is_subtitle ? 'checked' : ''} onchange="markDirty()">
+                    <label for="step-is-subtitle-${i}" class="form-label" style="margin: 0; cursor: pointer; text-transform: none;">이 청크를 소제목(섹션 구분) 카드로 지정</label>
+                </div>
                 <div class="form-group">
                     <label class="form-label">청크 ID</label>
                     <input type="text" class="form-control" placeholder="예: step_01" value="${step.id ?? ''}" data-step-id="${i}">
@@ -4105,8 +4110,10 @@ function toggleStep(i) {
     card.classList.toggle('collapsed');
     if (card.classList.contains('collapsed')) {
         const txt = card.querySelector(`[data-step-text="${i}"]`)?.value ?? '';
+        const isSub = card.querySelector(`[data-step-issubtitle="${i}"]`)?.checked ?? false;
+        const subtitleBadge = isSub ? `<span style="background:#d97706; color:#fff; font-size:0.65rem; font-weight:800; padding:2px 6px; border-radius:4px; margin-right:6px;">소제목</span>` : '';
         const head = card.querySelector('.step-head-text');
-        if (head) head.textContent = txt.substring(0, 40) + (txt.length > 40 ? '…' : '') || '(빈 청크)';
+        if (head) head.innerHTML = subtitleBadge + txt.substring(0, 40) + (txt.length > 40 ? '…' : '') || '(빈 청크)';
     }
 }
 
@@ -4304,7 +4311,7 @@ function applyBulkSteps() {
     const blocks = parseBulkStepBlocks();
     if (!blocks.length) { toast('입력된 내용이 없습니다.', true); return; }
     syncStepsFromForm();
-    const newSteps = blocks.map(text => ({ id: '', image_url: '', text, keywords: [], sub_sequence_id: '' }));
+    const newSteps = blocks.map(text => ({ id: '', is_subtitle: false, image_url: '', text, keywords: [], sub_sequence_id: '' }));
     const posVal = document.getElementById('bulk-steps-insert-pos').value;
     if (posVal === 'end') {
         stepsData.push(...newSteps);
@@ -4589,6 +4596,7 @@ function syncStepsFromForm() {
         return {
             ...step,
             id:              (document.querySelector(`[data-step-id="${i}"]`)?.value ?? '').trim(),
+            is_subtitle:     (document.querySelector(`[data-step-issubtitle="${i}"]`)?.checked ?? false),
             image_url:       (document.querySelector(`[data-step-img="${i}"]`)?.value ?? '').trim(),
             text:            (document.querySelector(`[data-step-text="${i}"]`)?.value ?? '').trim(),
             annotations,
@@ -4599,7 +4607,7 @@ function syncStepsFromForm() {
 
 function addStep() {
     syncStepsFromForm();
-    stepsData.push({ id: '', image_url: '', text: '', keywords: [], sub_sequence_id: '' });
+    stepsData.push({ id: '', is_subtitle: false, image_url: '', text: '', keywords: [], sub_sequence_id: '' });
     renderStepList();
     refreshBadges();
     markDirty();
@@ -4621,7 +4629,7 @@ function removeStep(idx) {
 
 function insertStepAt(afterIdx) {
     syncStepsFromForm();
-    stepsData.splice(afterIdx + 1, 0, { id: '', image_url: '', text: '', keywords: [], sub_sequence_id: '' });
+    stepsData.splice(afterIdx + 1, 0, { id: '', is_subtitle: false, image_url: '', text: '', keywords: [], sub_sequence_id: '' });
     renderStepList();
     refreshBadges();
     markDirty();
@@ -4759,6 +4767,7 @@ function collectStepFormData() {
     return stepsData.map((step, i) => ({
         ...step,
         id:              (document.querySelector(`[data-step-id="${i}"]`)?.value ?? '').trim() || ('step_' + String(i+1).padStart(2,'0')),
+        is_subtitle:     (document.querySelector(`[data-step-issubtitle="${i}"]`)?.checked ?? false),
         image_url:       (document.querySelector(`[data-step-img="${i}"]`)?.value ?? '').trim(),
         text:            (document.querySelector(`[data-step-text="${i}"]`)?.value ?? '').trim(),
         sub_sequence_id: (document.querySelector(`[data-step-subid="${i}"]`)?.value ?? '').trim(),
