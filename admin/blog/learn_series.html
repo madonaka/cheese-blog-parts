@@ -1,0 +1,1832 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8" />
+    <title>시리즈 관리 · Cheese Admin</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="stylesheet" href="../admin.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        main {
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - var(--admin-header-h));
+            overflow: hidden;
+            padding: 0 !important;
+        }
+
+        /* ── 상단 바 ── */
+        .page-topbar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 20px;
+            background: #fff;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        .page-topbar h1 { font-size: 1.05rem; font-weight: 800; flex: 1; }
+
+        /* ── 2패널 ── */
+        .two-panel { display: flex; flex: 1; overflow: hidden; }
+
+        /* ── 왼쪽: 시리즈 목록 ── */
+        .series-list-panel {
+            width: 320px;
+            flex-shrink: 0;
+            background: #fff;
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .list-panel-head {
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .list-panel-head span {
+            font-size: 0.78rem; font-weight: 700;
+            color: var(--text-sub); text-transform: uppercase;
+            letter-spacing: 0.4px; flex: 1;
+        }
+
+        .list-panel-filter {
+            padding: 8px 10px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            gap: 6px;
+        }
+        .list-panel-filter select {
+            flex: 1;
+            font-size: 0.78rem;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 5px 8px;
+            background: #f8fafc;
+            color: #374151;
+        }
+
+        .series-list { flex: 1; overflow-y: auto; }
+
+        /* ── 시리즈 그룹 헤더 ── */
+        .series-group-header {
+            padding: 6px 14px;
+            font-size: 0.68rem;
+            font-weight: 800;
+            color: var(--text-sub);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            background: #f8fafc;
+            border-bottom: 1px solid #f0f2f5;
+            position: sticky;
+            top: 0;
+            z-index: 2;
+        }
+
+        /* ── 시리즈 아이템 ── */
+        .series-item {
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--border);
+            cursor: pointer;
+            transition: all 0.15s;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .series-item:hover { background: #f4f7ff; }
+        .series-item.active {
+            background: #eef2ff;
+            border-left: 4px solid var(--primary);
+            padding-left: 11px;
+        }
+
+        .series-item-thumb {
+            width: 44px; height: 44px;
+            border-radius: 8px;
+            object-fit: cover;
+            background: #e2e8f0;
+            border: 1px solid var(--border);
+            flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            color: #94a3b8; font-size: 1.1rem;
+            overflow: hidden;
+        }
+        .series-item-thumb img { width: 100%; height: 100%; object-fit: cover; }
+
+        .series-item-main { flex: 1; min-width: 0; }
+        .series-item-name {
+            font-size: 0.87rem; font-weight: 700;
+            color: #1e293b; line-height: 1.35;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .series-item-meta {
+            display: flex; gap: 6px; align-items: center;
+            margin-top: 4px; flex-wrap: wrap;
+        }
+
+        .badge {
+            display: inline-block;
+            font-size: 0.65rem; font-weight: 700;
+            padding: 2px 7px; border-radius: 6px;
+        }
+        .badge-group { background: #f1f5f9; color: #475569; }
+        .badge-level-beginner     { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+        .badge-level-intermediate { background: #fffbeb; color: #92400e; border: 1px solid #fcd34d; }
+        .badge-level-advanced     { background: #fef2f2; color: #991b1b; border: 1px solid #fca5a5; }
+        .badge-ep-count { background: #e8eeff; color: #4f46e5; }
+        .badge-status-published { background: #dcfce7; color: #166534; }
+        .badge-status-draft { background: #f1f5f9; color: #475569; }
+
+        /* ── 오른쪽: 에디터 ── */
+        .editor-panel {
+            flex: 1; min-width: 0;
+            display: flex; flex-direction: column;
+            overflow: hidden;
+        }
+
+        .editor-placeholder {
+            flex: 1; display: flex;
+            align-items: center; justify-content: center;
+            color: var(--text-sub); font-size: 0.9rem;
+            text-align: center;
+        }
+
+        .editor-topbar {
+            display: flex; align-items: center; gap: 10px;
+            padding: 11px 20px;
+            background: #fff; border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        .editor-topbar h2 {
+            font-size: 0.95rem; font-weight: 700; flex: 1;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+
+        /* ── 아코디언 래퍼 ── */
+        .accordion-wrapper {
+            flex-shrink: 0;
+            border-bottom: 2px solid var(--border);
+            background: #fff;
+        }
+
+        .accordion-card {
+            border-bottom: 1px solid var(--border);
+        }
+        .accordion-card:last-child { border-bottom: none; }
+
+        .accordion-head {
+            display: flex; align-items: center; gap: 10px;
+            padding: 11px 20px;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.12s;
+        }
+        .accordion-head:hover { background: #f8fafc; }
+
+        .accordion-head-icon {
+            font-size: 0.85rem; flex-shrink: 0;
+        }
+        .accordion-head-title {
+            font-size: 0.84rem; font-weight: 700; color: #374151;
+        }
+        .accordion-summary {
+            display: flex; gap: 5px; align-items: center; flex-wrap: wrap;
+            margin-left: 4px;
+        }
+        .accordion-chevron {
+            margin-left: auto; flex-shrink: 0;
+            color: #94a3b8; font-size: 0.75rem;
+            transition: transform 0.2s cubic-bezier(0.165,0.84,0.44,1);
+        }
+        .accordion-card.open .accordion-chevron { transform: rotate(180deg); }
+
+        .accordion-body {
+            display: none;
+            padding: 16px 20px 20px;
+            border-top: 1px solid #f0f2f5;
+            background: #fafbff;
+        }
+        .accordion-card.open .accordion-body { display: block; }
+
+        /* ── 카드 (에피소드 영역용) ── */
+        .card {
+            background: #fff; border: 1px solid var(--border);
+            border-radius: 10px; margin-bottom: 16px;
+        }
+        .card-head {
+            padding: 12px 16px 10px;
+            border-bottom: 1px solid #f0f2f5;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .card-head h3 { font-size: 0.88rem; font-weight: 700; flex: 1; }
+        .card-body { padding: 16px; }
+
+        /* ── 소속 에피소드 영역 (항상 열림, 남은 공간 채움) ── */
+        .ep-section {
+            flex: 1; min-height: 0;
+            display: flex; flex-direction: column;
+            overflow: hidden;
+        }
+        .ep-section-head {
+            display: flex; align-items: center; gap: 10px;
+            padding: 12px 20px;
+            border-bottom: 1px solid var(--border);
+            background: #fff;
+            flex-shrink: 0;
+        }
+        .ep-section-head h3 {
+            font-size: 0.88rem; font-weight: 700; flex: 1; color: #1e293b;
+        }
+        .ep-section-body {
+            flex: 1; min-height: 0;
+            overflow-y: auto;
+            padding: 14px 20px;
+        }
+
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .form-full  { grid-column: 1 / -1; }
+        .form-group { display: flex; flex-direction: column; gap: 5px; }
+        .form-label {
+            font-size: 0.78rem; font-weight: 600;
+            color: var(--text-sub); text-transform: uppercase; letter-spacing: 0.3px;
+        }
+        .form-control {
+            border: 1.5px solid var(--border); border-radius: 7px;
+            padding: 8px 11px; font-size: 0.87rem;
+            width: 100%; box-sizing: border-box;
+            font-family: inherit; transition: border-color 0.15s;
+        }
+        .form-control:focus { outline: none; border-color: var(--primary); }
+        .form-hint { font-size: 0.72rem; color: var(--text-sub); }
+
+        /* ── 이미지 업로드 카드 ── */
+        .image-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+        .img-upload-box {
+            border: 2px dashed var(--border);
+            border-radius: 10px;
+            padding: 12px;
+            background: #fafafa;
+            display: flex; flex-direction: column; gap: 8px;
+        }
+        .img-upload-box.has-image { border-color: #a5b4fc; background: #f5f7ff; }
+        .img-upload-box label.img-label {
+            font-size: 0.72rem; font-weight: 700;
+            color: var(--text-sub); text-transform: uppercase; letter-spacing: 0.3px;
+            display: flex; align-items: center; gap: 5px;
+        }
+        .img-preview-wrap {
+            position: relative; display: none;
+        }
+        .img-preview-wrap.show { display: block; }
+        .img-preview {
+            width: 100%; max-height: 140px;
+            object-fit: cover; border-radius: 6px;
+            border: 1px solid var(--border); background: #e2e8f0;
+        }
+        .img-clear-btn {
+            position: absolute; top: 4px; right: 4px;
+            background: rgba(0,0,0,0.55); color: #fff;
+            border: none; border-radius: 50%;
+            width: 22px; height: 22px;
+            font-size: 0.75rem; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .img-upload-hint {
+            font-size: 0.7rem; color: var(--text-sub);
+            text-align: center; line-height: 1.5;
+        }
+        .img-badge {
+            display: inline-block; font-size: 0.62rem; font-weight: 700;
+            padding: 2px 8px; border-radius: 10px;
+            background: #e8eeff; color: var(--primary);
+        }
+        .img-upload-box.drag-over { border-color: #6366f1; background: #eef2ff; }
+        .img-file-btn {
+            font-size: 0.72rem; color: var(--primary); background: none;
+            border: 1px dashed #a5b4fc; border-radius: 6px;
+            padding: 5px 10px; cursor: pointer; align-self: flex-start;
+            display: flex; align-items: center; gap: 5px;
+        }
+        .img-file-btn:hover { background: #eef2ff; }
+
+        /* ── 에피소드 목록 ── */
+        .ep-list { display: flex; flex-direction: column; gap: 6px; }
+        .ep-row {
+            display: flex; align-items: center; gap: 10px;
+            padding: 9px 12px;
+            border: 1px solid var(--border); border-radius: 8px;
+            background: #fff; font-size: 0.84rem;
+        }
+        .ep-order {
+            width: 22px; height: 22px; border-radius: 50%;
+            background: #eef2ff; color: var(--primary);
+            border: 1.5px solid var(--primary);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.68rem; font-weight: 800; flex-shrink: 0;
+        }
+        .ep-title { flex: 1; font-weight: 600; color: #1e293b; }
+        .ep-status-dot {
+            width: 6px; height: 6px; border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .ep-status-dot.published { background: #22c55e; }
+        .ep-status-dot.upcoming  { background: #3b82f6; }
+        .ep-status-dot.draft     { background: #9ca3af; }
+        .ep-goto {
+            font-size: 0.72rem; color: var(--primary);
+            text-decoration: none; font-weight: 700;
+            padding: 2px 7px; border: 1px solid #c7d2fe;
+            border-radius: 5px; background: #eef2ff;
+        }
+        .ep-goto:hover { background: #e0e7ff; }
+        .ep-empty {
+            text-align: center; padding: 24px 16px;
+            color: var(--text-sub); font-size: 0.85rem;
+        }
+
+        /* ── 상품 피커 ── */
+        .product-picker { display: flex; flex-direction: column; gap: 8px; }
+        .product-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+        .product-chips:empty { display: none; }
+        .product-chip {
+            display: flex; align-items: center; gap: 6px;
+            padding: 4px 6px 4px 10px;
+            background: #ecfdf5; color: #065f46;
+            border: 1px solid #a7f3d0; border-radius: 14px;
+            font-size: 0.78rem; font-weight: 600;
+        }
+        .product-chip button {
+            background: none; border: none; cursor: pointer; color: #059669;
+            padding: 0 2px; font-size: 0.85rem; line-height: 1; display: flex; align-items: center;
+        }
+        .product-chip button:hover { color: #dc2626; }
+        .product-search-wrap { position: relative; }
+        .product-results {
+            display: none;
+            position: absolute; left: 0; right: 0; top: calc(100% + 4px);
+            background: #fff; border: 1px solid var(--border); border-radius: 8px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+            max-height: 240px; overflow-y: auto; z-index: 50;
+        }
+        .product-results.open { display: block; }
+        .product-result-item {
+            display: flex; align-items: center; gap: 10px;
+            padding: 9px 12px; cursor: pointer; border-bottom: 1px solid #f0f2f5;
+        }
+        .product-result-item:last-child { border-bottom: none; }
+        .product-result-item:hover { background: #f0f4ff; }
+        .product-result-icon {
+            width: 28px; height: 28px; border-radius: 6px; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            background: #f1f5f9; font-size: 0.9rem; overflow: hidden;
+        }
+        .product-result-icon img { width: 100%; height: 100%; object-fit: cover; }
+        .product-result-title { font-size: 0.84rem; font-weight: 600; color: #1e293b; }
+        .product-result-meta  { font-size: 0.68rem; color: var(--text-sub); font-family: monospace; }
+        .product-result-empty { padding: 14px; text-align: center; color: var(--text-sub); font-size: 0.8rem; }
+
+        /* ── 에피소드 잠금 배지 ── */
+        .ep-lock { font-size: 0.78rem; flex-shrink: 0; line-height: 1; }
+
+        /* ── 버튼 ── */
+        .btn {
+            display: inline-flex; align-items: center; gap: 5px;
+            padding: 7px 14px; border-radius: 7px;
+            font-size: 0.82rem; font-weight: 600;
+            border: none; cursor: pointer; transition: all 0.15s;
+        }
+        .btn-primary  { background: var(--primary); color: #fff; }
+        .btn-primary:hover { opacity: 0.85; }
+        .btn-ghost    { background: #f1f5f9; color: #374151; border: 1px solid var(--border); }
+        .btn-ghost:hover { background: #e8eeff; color: var(--primary); }
+        .btn-danger   { background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; }
+        .btn-danger:hover { background: #fee2e2; }
+        .btn-sm { padding: 5px 10px; font-size: 0.78rem; }
+        .btn-new {
+            display: flex; align-items: center; gap: 4px;
+            padding: 5px 10px; border-radius: 6px;
+            background: var(--primary); color: #fff;
+            font-size: 0.78rem; font-weight: 700; border: none; cursor: pointer;
+        }
+
+        /* ── 모달 ── */
+        .modal-overlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.5); z-index: 999;
+            align-items: center; justify-content: center;
+        }
+        .modal-overlay.open { display: flex; }
+        .modal-card {
+            background: #fff; border-radius: 14px; padding: 26px;
+            max-width: 400px; width: 90%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+        }
+        .modal-card h3 { font-size: 1rem; font-weight: 800; margin-bottom: 8px; }
+        .modal-card p  { font-size: 0.85rem; color: var(--text-sub); line-height: 1.6; margin-bottom: 20px; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+        /* ── 미저장 dot ── */
+        .save-dot {
+            display: none; width: 7px; height: 7px; border-radius: 50%;
+            background: #f59e0b; flex-shrink: 0;
+        }
+        body.dirty .save-dot { display: inline-block; }
+
+        /* ── toast ── */
+        #toast {
+            position: fixed; bottom: 28px; right: 28px;
+            background: #1e293b; color: #fff;
+            padding: 10px 20px; border-radius: 8px;
+            font-size: 0.85rem; font-weight: 600;
+            opacity: 0; transition: opacity 0.25s;
+            z-index: 9999; pointer-events: none;
+        }
+        #toast.show { opacity: 1; }
+
+        /* ── 스크롤바 ── */
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+
+        /* ── 빈 상태 ── */
+        .empty-state {
+            padding: 32px 20px; text-align: center;
+            color: var(--text-sub); font-size: 0.85rem;
+        }
+
+        /* ── 마이그레이션 모달 ── */
+        .migrate-row {
+            display: flex; align-items: flex-start; gap: 12px;
+            padding: 12px 14px;
+            border: 1.5px solid var(--border);
+            border-radius: 10px;
+            margin-bottom: 8px;
+            transition: border-color 0.12s, background 0.12s;
+            cursor: pointer;
+        }
+        .migrate-row:hover { border-color: #a78bfa; background: #faf5ff; }
+        .migrate-row.selected { border-color: #7c3aed; background: #f5f3ff; }
+        .migrate-row.already-exists { opacity: 0.45; cursor: not-allowed; }
+        .migrate-row.already-exists:hover { border-color: var(--border); background: #fff; }
+
+        .migrate-check {
+            width: 18px; height: 18px; flex-shrink: 0;
+            accent-color: #7c3aed; cursor: pointer; margin-top: 2px;
+        }
+        .migrate-row-main { flex: 1; min-width: 0; }
+        .migrate-row-name { font-size: 0.88rem; font-weight: 700; color: #1e293b; }
+        .migrate-row-meta { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 5px; }
+        .migrate-row-id   { font-size: 0.7rem; font-family: monospace; color: #94a3b8; margin-top: 3px; }
+        .migrate-exists-label {
+            font-size: 0.7rem; font-weight: 700;
+            background: #fef3c7; color: #92400e;
+            padding: 1px 7px; border-radius: 6px;
+            border: 1px solid #fcd34d; margin-left: auto; flex-shrink: 0;
+        }
+
+        /* ── 모바일 전용 요소 (데스크탑에서 숨김) ── */
+        .mobile-back-btn { display: none; }
+
+        /* ── 모바일 ── */
+        @media (max-width: 680px) {
+            /* 상단 바 컴팩트 */
+            .page-topbar { padding: 10px 12px; gap: 6px; }
+            .page-topbar h1 { font-size: 0.88rem; }
+            .btn-label { display: none; }
+            .page-topbar .btn-sm { padding: 6px 9px; }
+
+            /* 2패널: 슬라이드 전환 방식 */
+            .two-panel { position: relative; overflow: hidden; }
+
+            .series-list-panel {
+                width: 100%;
+                border-right: none;
+                position: absolute; inset: 0;
+                transform: translateX(0);
+                transition: transform 0.28s cubic-bezier(0.4,0,0.2,1);
+                z-index: 2;
+            }
+            .editor-panel {
+                width: 100%;
+                position: absolute; inset: 0;
+                transform: translateX(106%);
+                transition: transform 0.28s cubic-bezier(0.4,0,0.2,1);
+                z-index: 3;
+                background: #f8fafc;
+            }
+
+            /* 에디터 뷰가 활성화되면 슬라이드 */
+            .two-panel.mobile-editor-active .series-list-panel { transform: translateX(-100%); }
+            .two-panel.mobile-editor-active .editor-panel      { transform: translateX(0); }
+
+            /* 에디터 내 뒤로가기 버튼 표시 */
+            .mobile-back-btn {
+                display: inline-flex !important;
+                padding: 6px 10px; border-radius: 7px;
+                background: #f1f5f9; border: 1px solid var(--border);
+                color: #374151; font-size: 0.82rem; font-weight: 600;
+                cursor: pointer; align-items: center; gap: 5px;
+                white-space: nowrap; flex-shrink: 0;
+            }
+
+            /* 에디터 topbar */
+            .editor-topbar { padding: 10px 12px; gap: 8px; }
+            .editor-topbar h2 { font-size: 0.88rem; }
+            #btn-delete .del-label { display: none; }
+
+            /* 저장 버튼 모바일에서 강조 */
+            #btn-save { padding: 8px 16px; font-size: 0.88rem; }
+
+            /* 목록 아이템 */
+            .series-item { padding: 10px 12px; }
+            .series-item-thumb { width: 36px; height: 36px; }
+
+            /* 폼 단일 컬럼 */
+            .form-grid  { grid-template-columns: 1fr; }
+            .image-pair { grid-template-columns: 1fr; }
+
+            /* 아코디언 여백 */
+            .accordion-head { padding: 12px 14px; min-height: 48px; }
+            .accordion-body { padding: 12px 14px 16px; }
+
+            /* 에피소드 섹션 */
+            .ep-section-head { padding: 10px 14px; }
+            .ep-section-body { padding: 10px 14px; }
+
+            /* 토스트 위치 */
+            #toast { bottom: 72px; right: 14px; left: 14px; text-align: center; }
+        }
+    </style>
+</head>
+<body>
+
+<script src="../admin-common.js"></script>
+
+<div class="admin-shell">
+    <div id="admin-header-slot"></div>
+    <div class="admin-main">
+        <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+
+        <main>
+            <!-- 상단 바 -->
+            <div class="page-topbar">
+                <h1><i class="fas fa-bookmark" style="color:var(--primary);"></i>&nbsp; 시리즈 관리</h1>
+                <button class="btn btn-ghost btn-sm" onclick="window.location.href='learn_manage.html'">
+                    <i class="fas fa-arrow-left"></i><span class="btn-label"> 학습 관리로</span>
+                </button>
+                <button class="btn btn-primary btn-sm" onclick="openNewSeriesForm()">
+                    <i class="fas fa-plus"></i><span class="btn-label"> 새 시리즈</span>
+                </button>
+                <button class="btn btn-ghost btn-sm" onclick="openMigrateModal()" title="기존 학습에서 시리즈 일괄 가져오기" style="border-color:#a78bfa; color:#7c3aed; background:#f5f3ff;">
+                    <i class="fas fa-magic"></i><span class="btn-label"> 기존 시리즈 가져오기</span>
+                </button>
+                <button class="btn btn-ghost btn-sm" onclick="loadAll()" title="새로고침">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+
+            <!-- 2패널 -->
+            <div class="two-panel">
+
+                <!-- ── 왼쪽: 시리즈 목록 ── -->
+                <div class="series-list-panel">
+                    <div class="list-panel-head">
+                        <span><i class="fas fa-bookmark" style="margin-right:4px; color:var(--primary);"></i>시리즈 목록</span>
+                        <button class="btn-new" onclick="openNewSeriesForm()">
+                            <i class="fas fa-plus"></i> 신규
+                        </button>
+                    </div>
+                    <div class="list-panel-filter">
+                        <select id="filter-group-left" onchange="renderSeriesList()">
+                            <option value="">전체 그룹</option>
+                        </select>
+                        <select id="filter-status-left" onchange="renderSeriesList()">
+                            <option value="">전체 상태</option>
+                            <option value="published">공개</option>
+                            <option value="draft">초안</option>
+                        </select>
+                    </div>
+                    <div class="series-list" id="series-list">
+                        <div class="empty-state">불러오는 중...</div>
+                    </div>
+                </div>
+
+                <!-- ── 오른쪽: 에디터 ── -->
+                <div class="editor-panel">
+                    <!-- 선택 전 안내 -->
+                    <div class="editor-placeholder" id="editor-placeholder">
+                        <div style="text-align:center; max-width:380px; padding:40px 20px;">
+                            <i class="fas fa-bookmark" style="font-size:3rem; color:var(--primary); opacity:0.2; margin-bottom:18px; display:block;"></i>
+                            <div style="font-size:1.05rem; font-weight:800; color:#1e293b; margin-bottom:8px;">시리즈를 선택하세요</div>
+                            <div style="font-size:0.85rem; color:#64748b; line-height:1.6; margin-bottom:22px;">왼쪽 목록에서 시리즈를 선택하거나,<br>새 시리즈 버튼을 눌러 시작하세요.</div>
+                            <button class="btn btn-primary" onclick="openNewSeriesForm()">
+                                <i class="fas fa-plus"></i> 새 시리즈 만들기
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 에디터 본체 -->
+                    <div id="editor-area" style="display:none; flex-direction:column; flex:1; min-height:0; overflow:hidden;">
+
+                        <!-- 상단 바: 시리즈명 + 저장 -->
+                        <div class="editor-topbar">
+                            <button class="mobile-back-btn" onclick="goBackToList()">
+                                <i class="fas fa-chevron-left"></i> 목록
+                            </button>
+                            <h2 id="editor-title-text">시리즈 편집</h2>
+                            <button class="btn btn-danger btn-sm" id="btn-delete" onclick="promptDelete()" style="display:none;">
+                                <i class="fas fa-trash-alt"></i><span class="del-label"> 삭제</span>
+                            </button>
+                            <button class="btn btn-primary btn-sm" onclick="saveSeries()" id="btn-save">
+                                <span class="save-dot"></span><i class="fas fa-save"></i> 저장
+                            </button>
+                        </div>
+
+                        <!-- ── 아코디언 섹션 (기본정보 / 이미지설정) ── -->
+                        <div class="accordion-wrapper">
+
+                            <!-- ① 기본 정보 (기본 닫힘) -->
+                            <div class="accordion-card" id="card-info">
+                                <div class="accordion-head" onclick="toggleAccordion('card-info')">
+                                    <i class="accordion-head-icon fas fa-info-circle" style="color:var(--primary);"></i>
+                                    <span class="accordion-head-title">기본 정보</span>
+                                    <div class="accordion-summary" id="info-summary"></div>
+                                    <i class="fas fa-chevron-down accordion-chevron"></i>
+                                </div>
+                                <div class="accordion-body">
+                                    <div class="form-grid">
+
+                                        <div class="form-group form-full">
+                                            <label class="form-label">시리즈 이름</label>
+                                            <input type="text" class="form-control" id="s-name"
+                                                   placeholder="예: 조선의 왕 시리즈" oninput="onNameInput()">
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label class="form-label">고유 ID (slug)</label>
+                                            <div style="display:flex; gap:6px;">
+                                                <input type="text" class="form-control" id="s-id"
+                                                       placeholder="예: joseon-kings" style="flex:1;" oninput="markDirty()">
+                                                <button type="button" class="btn btn-ghost btn-sm" onclick="generateSeriesId()" title="자동 생성">
+                                                    <i class="fas fa-sync-alt"></i>
+                                                </button>
+                                            </div>
+                                            <span class="form-hint">영문 소문자·숫자·하이픈. 저장 후 변경 불가.</span>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label class="form-label">게시 상태</label>
+                                            <select class="form-control" id="s-status" onchange="updateInfoSummary(); markDirty()">
+                                                <option value="draft">초안 (비공개)</option>
+                                                <option value="published">공개</option>
+                                            </select>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label class="form-label">그룹 (시대·유형)</label>
+                                            <select class="form-control" id="s-group" onchange="updateInfoSummary(); markDirty()">
+                                                <option value="">미분류</option>
+                                            </select>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label class="form-label">난이도</label>
+                                            <select class="form-control" id="s-level" onchange="updateInfoSummary(); markDirty()">
+                                                <option value="beginner">입문</option>
+                                                <option value="intermediate" selected>중급</option>
+                                                <option value="advanced">심화</option>
+                                            </select>
+                                        </div>
+
+                                        <div class="form-group form-full">
+                                            <label class="form-label">시리즈 소개</label>
+                                            <input type="text" class="form-control" id="s-description"
+                                                   placeholder="예: 조선 역대 왕의 주요 업적과 사건 흐름 정리"
+                                                   oninput="markDirty()">
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label class="form-label">표시 순서</label>
+                                            <input type="number" class="form-control" id="s-sort-order"
+                                                   placeholder="1" min="1" style="max-width:120px;"
+                                                   oninput="markDirty()">
+                                        </div>
+
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- ② 이미지 설정 (기본 닫힘) -->
+                            <div class="accordion-card" id="card-images">
+                                <div class="accordion-head" onclick="toggleAccordion('card-images')">
+                                    <i class="accordion-head-icon fas fa-images" style="color:#0284c7;"></i>
+                                    <span class="accordion-head-title">이미지 설정</span>
+                                    <div class="accordion-summary" id="img-summary"></div>
+                                    <i class="fas fa-chevron-down accordion-chevron"></i>
+                                </div>
+                                <div class="accordion-body">
+                                    <div class="image-pair">
+
+                                        <!-- 대표 이미지 -->
+                                        <div class="img-upload-box" id="thumb-box"
+                                             ondragover="event.preventDefault(); this.classList.add('drag-over')"
+                                             ondragleave="this.classList.remove('drag-over')"
+                                             ondrop="handleImgDrop(event,'thumb')">
+                                            <label class="img-label">
+                                                <i class="fas fa-th-large" style="color:#4f46e5;"></i>
+                                                대표 이미지
+                                                <span class="img-badge">index 카드</span>
+                                            </label>
+                                            <div class="img-preview-wrap" id="thumb-preview-wrap">
+                                                <img src="" alt="대표이미지" class="img-preview" id="thumb-preview">
+                                                <button class="img-clear-btn" onclick="clearImg('thumb')" title="이미지 제거">&times;</button>
+                                            </div>
+                                            <input type="text" class="form-control" id="s-thumbnail"
+                                                   placeholder="Drive URL 또는 이미지 URL"
+                                                   oninput="onImgInput('thumb')" onpaste="handleImgPaste(event,'thumb')">
+                                            <button class="img-file-btn" type="button" onclick="document.getElementById('thumb-file-input').click()">
+                                                <i class="fas fa-upload"></i> 파일 선택 또는 드래그
+                                            </button>
+                                            <input type="file" accept="image/*" id="thumb-file-input" style="display:none" onchange="onImgFileSelected(event,'thumb')">
+                                            <div class="img-upload-hint">
+                                                <i class="fas fa-info-circle"></i>
+                                                /korean/index 시리즈 카드에 표시됩니다<br>
+                                                Drive: thumbnail?id={ID}&amp;sz=w800
+                                            </div>
+                                        </div>
+
+                                        <!-- 헤더 이미지 -->
+                                        <div class="img-upload-box" id="header-box"
+                                             ondragover="event.preventDefault(); this.classList.add('drag-over')"
+                                             ondragleave="this.classList.remove('drag-over')"
+                                             ondrop="handleImgDrop(event,'header')">
+                                            <label class="img-label">
+                                                <i class="fas fa-image" style="color:#0284c7;"></i>
+                                                헤더 이미지
+                                                <span class="img-badge" style="background:#e0f2fe; color:#0284c7;">series.html 상단</span>
+                                            </label>
+                                            <div class="img-preview-wrap" id="header-preview-wrap">
+                                                <img src="" alt="헤더이미지" class="img-preview" id="header-preview">
+                                                <button class="img-clear-btn" onclick="clearImg('header')" title="이미지 제거">&times;</button>
+                                            </div>
+                                            <input type="text" class="form-control" id="s-header-image"
+                                                   placeholder="Drive URL 또는 이미지 URL"
+                                                   oninput="onImgInput('header')" onpaste="handleImgPaste(event,'header')">
+                                            <button class="img-file-btn" type="button" onclick="document.getElementById('header-file-input').click()">
+                                                <i class="fas fa-upload"></i> 파일 선택 또는 드래그
+                                            </button>
+                                            <input type="file" accept="image/*" id="header-file-input" style="display:none" onchange="onImgFileSelected(event,'header')">
+                                            <div class="img-upload-hint">
+                                                <i class="fas fa-info-circle"></i>
+                                                korean/series.html 헤더 배경에 표시됩니다<br>
+                                                가로로 넓은 이미지 권장 (16:5 비율)
+                                            </div>
+                                        </div>
+
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- ③ 접근 제어 & 연계 상품 (기본 닫힘) -->
+                            <div class="accordion-card" id="card-access">
+                                <div class="accordion-head" onclick="toggleAccordion('card-access')">
+                                    <i class="accordion-head-icon fas fa-lock" style="color:#dc2626;"></i>
+                                    <span class="accordion-head-title">접근 제어 & 연계 상품</span>
+                                    <div class="accordion-summary" id="access-summary"></div>
+                                    <i class="fas fa-chevron-down accordion-chevron"></i>
+                                </div>
+                                <div class="accordion-body">
+                                    <div class="form-grid">
+
+                                        <div class="form-group">
+                                            <label class="form-label">유료 잠금</label>
+                                            <select class="form-control" id="s-locked" onchange="onSeriesLockedChange(); markDirty()">
+                                                <option value="false">무료 (전체 공개)</option>
+                                                <option value="true">유료 잠금</option>
+                                            </select>
+                                        </div>
+
+                                        <div class="form-group" id="s-free-count-wrap" style="display:none;">
+                                            <label class="form-label">앞 N편 무료 <span style="font-size:0.7rem; font-weight:400; color:var(--text-sub);">(0 = 전체 유료)</span></label>
+                                            <input type="number" class="form-control" id="s-free-episode-count"
+                                                   placeholder="0" min="0" style="max-width:120px;"
+                                                   oninput="onFreeCountInput(); markDirty()">
+                                            <span class="form-hint">입력한 편수까지는 무료로 공개됩니다.</span>
+                                        </div>
+
+                                        <div class="form-group" id="s-free-ratio-wrap" style="display:none;">
+                                            <label class="form-label">유료편 미리보기</label>
+                                            <select class="form-control" id="s-free-chunk-ratio" onchange="markDirty()">
+                                                <option value="0">미리보기 없음 (0%)</option>
+                                                <option value="0.25">앞 1/4</option>
+                                                <option value="0.3333" selected>앞 1/3</option>
+                                                <option value="0.5">앞 1/2</option>
+                                            </select>
+                                            <span class="form-hint">유료 에피소드에서 미리볼 수 있는 청크 비율입니다.</span>
+                                        </div>
+
+                                        <div class="form-group form-full" id="s-product-wrap" style="display:none;">
+                                            <label class="form-label">연계 상품 <span style="font-size:0.7rem; font-weight:400; color:var(--text-sub);">(구매 시 유료 에피소드 전체 열람)</span></label>
+                                            <div class="product-picker">
+                                                <div class="product-chips" id="s-product-chips"></div>
+                                                <div class="product-search-wrap">
+                                                    <input type="text" class="form-control" id="s-product-search"
+                                                           placeholder="상품명으로 검색하여 선택…" autocomplete="off"
+                                                           oninput="onSeriesProductSearch()" onfocus="onSeriesProductSearch()">
+                                                    <div class="product-results" id="s-product-results"></div>
+                                                </div>
+                                            </div>
+                                            <span class="form-hint">여러 버전을 선택하면 어느 버전 구매자에게도 열립니다.</span>
+                                            <input type="hidden" id="s-product-ids">
+                                        </div>
+
+                                    </div>
+                                </div>
+                            </div><!-- /card-access -->
+
+                        </div><!-- /accordion-wrapper -->
+
+                        <!-- ── 소속 에피소드 (항상 표시 · 남은 공간 채움) ── -->
+                        <div class="ep-section">
+                            <div class="ep-section-head">
+                                <h3><i class="fas fa-list-ol" style="color:#0284c7; margin-right:6px;"></i>소속 에피소드</h3>
+                                <span id="ep-count-label" style="font-size:0.75rem; color:var(--text-sub); font-weight:600;"></span>
+                                <a href="learn_manage.html" class="btn btn-ghost btn-sm" style="margin-left:auto;">
+                                    <i class="fas fa-external-link-alt"></i> 학습 관리에서 편집
+                                </a>
+                            </div>
+                            <div class="ep-section-body">
+                                <p style="font-size:0.78rem; color:var(--text-sub); margin-bottom:12px; line-height:1.5;">
+                                    에피소드 순서·내용은 <b>학습 관리</b>에서 각 학습의 '시리즈 순서' 필드로 조정합니다.
+                                </p>
+                                <div class="ep-list" id="ep-list">
+                                    <div class="ep-empty">시리즈를 선택하면 에피소드가 표시됩니다.</div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div><!-- /editor-area -->
+                </div><!-- /editor-panel -->
+
+            </div><!-- /two-panel -->
+        </main>
+    </div>
+</div>
+
+<!-- ── 마이그레이션 모달 ── -->
+<div class="modal-overlay" id="migrate-modal" onclick="if(event.target===this) closeMigrateModal()">
+    <div class="modal-card" style="max-width:640px; width:95%; max-height:86vh; display:flex; flex-direction:column; padding:0; overflow:hidden;">
+        <!-- 헤더 -->
+        <div style="padding:20px 24px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px; flex-shrink:0;">
+            <i class="fas fa-magic" style="color:#7c3aed; font-size:1.1rem;"></i>
+            <div style="flex:1;">
+                <h3 style="margin:0; font-size:1rem; font-weight:800;">기존 시리즈 일괄 가져오기</h3>
+                <p style="margin:4px 0 0; font-size:0.78rem; color:var(--text-sub); line-height:1.4;">
+                    기존 학습(learn_sequences)에서 시리즈 정보를 읽어 learn_series DB를 자동 생성합니다.<br>
+                    이미 존재하는 시리즈 ID는 <b>건너뜁니다</b>.
+                </p>
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="closeMigrateModal()"><i class="fas fa-times"></i></button>
+        </div>
+
+        <!-- 스캔 결과 목록 -->
+        <div id="migrate-body" style="flex:1; overflow-y:auto; padding:16px 24px;">
+            <div style="text-align:center; color:var(--text-sub); padding:24px; font-size:0.85rem;">
+                <i class="fas fa-spinner fa-spin" style="font-size:1.5rem; margin-bottom:10px; display:block;"></i>
+                학습 목록을 분석하는 중...
+            </div>
+        </div>
+
+        <!-- 하단 액션 -->
+        <div style="padding:14px 24px; border-top:1px solid var(--border); display:flex; align-items:center; gap:10px; flex-shrink:0; background:#f8fafc;">
+            <span id="migrate-summary-text" style="font-size:0.82rem; color:var(--text-sub); flex:1;"></span>
+            <button class="btn btn-ghost" onclick="closeMigrateModal()">취소</button>
+            <button class="btn btn-primary" id="btn-migrate-run" onclick="runMigration()" disabled
+                    style="background:#7c3aed; border-color:#7c3aed;">
+                <i class="fas fa-magic"></i> 선택 항목 가져오기
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- 삭제 확인 모달 -->
+<div class="modal-overlay" id="delete-modal">
+    <div class="modal-card">
+        <h3>시리즈 삭제</h3>
+        <p>이 시리즈를 삭제하면 소속 학습들의 시리즈 연결이 끊어집니다.<br>실제 학습 데이터는 삭제되지 않습니다.</p>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closeDeleteModal()">취소</button>
+            <button class="btn btn-danger" onclick="confirmDelete()">삭제</button>
+        </div>
+    </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="../admin-common.js" onerror="void 0"></script>
+<script>
+/* ═══════════════════════════════════════════
+   learn_series.js
+   Firestore: learn_series/{id}
+   연동: learn_sequences (시리즈별 에피소드 목록 로드)
+   ═══════════════════════════════════════════ */
+
+// ── API 헬퍼 ──────────────────────────────
+async function safeFetchDB(payload) {
+    if (!window.CHEESE_ADMIN_DB_API) throw new Error('CHEESE_ADMIN_DB_API 주소가 설정되지 않았습니다.');
+    const res = await fetch(window.CHEESE_ADMIN_DB_API, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Admin-Token': window.CHEESE_ADMIN_TOKEN || ''
+        },
+        body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || '서버 통신 오류');
+    return data;
+}
+
+// ── Toast ──────────────────────────────────
+function toast(msg, isErr = false) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.style.background = isErr ? '#dc2626' : '#1e293b';
+    el.classList.add('show');
+    setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+// ── Dirty 추적 ──────────────────────────────
+function markDirty()  { document.body.classList.add('dirty'); }
+function clearDirty() { document.body.classList.remove('dirty'); }
+
+// ── 아코디언 토글 ──────────────────────────
+function toggleAccordion(cardId) {
+    document.getElementById(cardId).classList.toggle('open');
+}
+
+// ── 아코디언 요약 뱃지 업데이트 ───────────
+function updateInfoSummary() {
+    const el = document.getElementById('info-summary');
+    if (!el) return;
+
+    const group  = document.getElementById('s-group')?.value;
+    const level  = document.getElementById('s-level')?.value;
+    const status = document.getElementById('s-status')?.value;
+
+    const lvLabel = level === 'beginner' ? '입문' : level === 'advanced' ? '심화' : '중급';
+    const lvClass = level === 'beginner' ? 'badge-level-beginner' :
+                    level === 'advanced' ? 'badge-level-advanced' : 'badge-level-intermediate';
+    const grpLabel = group ? (GROUP_LABEL[group] || group) : '';
+    const stLabel  = status === 'published' ? '공개' : '초안';
+    const stClass  = status === 'published' ? 'badge-status-published' : 'badge-status-draft';
+
+    el.innerHTML = [
+        grpLabel ? `<span class="badge badge-group">${escHtml(grpLabel)}</span>` : '',
+        `<span class="badge ${lvClass}">${lvLabel}</span>`,
+        `<span class="badge ${stClass}">${stLabel}</span>`,
+    ].join('');
+}
+
+function updateImgSummary() {
+    const el = document.getElementById('img-summary');
+    if (!el) return;
+    const hasThumb  = !!document.getElementById('s-thumbnail')?.value.trim();
+    const hasHeader = !!document.getElementById('s-header-image')?.value.trim();
+    const parts = [];
+    if (hasThumb)  parts.push('<span class="badge" style="background:#e8eeff;color:#4f46e5;"><i class="fas fa-th-large"></i> 대표</span>');
+    if (hasHeader) parts.push('<span class="badge" style="background:#e0f2fe;color:#0284c7;"><i class="fas fa-image"></i> 헤더</span>');
+    el.innerHTML = parts.join('') || '<span style="font-size:0.72rem;color:#94a3b8;">미설정</span>';
+}
+
+function onNameInput() {
+    const name = document.getElementById('s-name')?.value || '';
+    const titleEl = document.getElementById('editor-title-text');
+    if (titleEl) titleEl.textContent = name || '새 시리즈';
+    markDirty();
+}
+
+// ── 접근 제어 핸들러 ─────────────────────────
+function onSeriesLockedChange() {
+    const locked = document.getElementById('s-locked').value === 'true';
+    const show = el => { const e = document.getElementById(el); if (e) e.style.display = ''; };
+    const hide = el => { const e = document.getElementById(el); if (e) e.style.display = 'none'; };
+    if (locked) {
+        show('s-free-count-wrap');
+        show('s-free-ratio-wrap');
+        show('s-product-wrap');
+    } else {
+        hide('s-free-count-wrap');
+        hide('s-free-ratio-wrap');
+        hide('s-product-wrap');
+    }
+    updateAccessSummary();
+    if (currentSeriesId) renderEpisodes(currentSeriesId);
+}
+
+function onFreeCountInput() {
+    updateAccessSummary();
+    if (currentSeriesId) renderEpisodes(currentSeriesId);
+}
+
+function updateAccessSummary() {
+    const el = document.getElementById('access-summary');
+    if (!el) return;
+    const locked = document.getElementById('s-locked')?.value === 'true';
+    if (!locked) {
+        el.innerHTML = '<span class="badge badge-status-published">전체 무료</span>';
+        return;
+    }
+    const cnt = parseInt(document.getElementById('s-free-episode-count')?.value) || 0;
+    const label = cnt > 0 ? `앞 ${cnt}편 무료 · 나머지 유료` : '전체 유료';
+    el.innerHTML = `<span class="badge badge-status-draft" style="background:#fee2e2;color:#b91c1c;">${label}</span>`;
+}
+
+// ── 시리즈 상품 피커 ─────────────────────────
+let seriesAllProducts = [];
+let seriesProductMap  = new Map();
+let seriesSelectedIds = [];
+
+async function loadSeriesProductsCache() {
+    try {
+        const res = await safeFetchDB({ collection: 'products' });
+        seriesAllProducts = res.data || res.dataList || [];
+    } catch (e) { seriesAllProducts = []; }
+    seriesProductMap = new Map(seriesAllProducts.map(p => [p.id, p]));
+    renderSeriesProductChips();
+}
+
+function seriesGroupsByTitle() {
+    const groups = new Map();
+    seriesAllProducts.forEach(p => {
+        const t = p.title || '(제목 없음)';
+        if (!groups.has(t)) groups.set(t, { rep: p, ids: [] });
+        groups.get(t).ids.push(p.id);
+    });
+    return groups;
+}
+
+function setSeriesSelectedProducts(ids) {
+    seriesSelectedIds = ids || [];
+    const el = document.getElementById('s-product-ids');
+    if (el) el.value = seriesSelectedIds.join(',');
+    renderSeriesProductChips();
+}
+
+function renderSeriesProductChips() {
+    const container = document.getElementById('s-product-chips');
+    if (!container) return;
+    const groups = seriesGroupsByTitle();
+    const selectedTitles = new Set(
+        seriesSelectedIds.map(id => seriesProductMap.get(id)?.title).filter(Boolean)
+    );
+    container.innerHTML = [...selectedTitles].map(title => {
+        const rep = groups.get(title)?.rep;
+        const icon = rep?.image_url
+            ? `<img src="${escHtml(rep.image_url)}" style="width:16px;height:16px;border-radius:3px;object-fit:cover;">`
+            : '<i class="fas fa-box" style="font-size:0.7rem;"></i>';
+        return `<span class="product-chip">${icon} ${escHtml(title)}
+            <button type="button" onclick="removeSeriesProduct('${escHtml(title)}')" title="제거">×</button>
+        </span>`;
+    }).join('');
+}
+
+function removeSeriesProduct(title) {
+    const ids = seriesGroupsByTitle().get(title)?.ids ?? [];
+    seriesSelectedIds = seriesSelectedIds.filter(id => !ids.includes(id));
+    const el = document.getElementById('s-product-ids');
+    if (el) el.value = seriesSelectedIds.join(',');
+    renderSeriesProductChips();
+    markDirty();
+}
+
+function onSeriesProductSearch() {
+    const input   = document.getElementById('s-product-search');
+    const results = document.getElementById('s-product-results');
+    if (!input || !results) return;
+    const q = input.value.trim().toLowerCase();
+    const groups = seriesGroupsByTitle();
+    const selectedTitles = new Set(
+        seriesSelectedIds.map(id => seriesProductMap.get(id)?.title).filter(Boolean)
+    );
+    const matching = [...groups.entries()]
+        .filter(([t]) => !q || t.toLowerCase().includes(q));
+
+    if (!matching.length) {
+        results.innerHTML = `<div class="product-result-empty">${seriesAllProducts.length ? '검색 결과 없음' : '상품 불러오는 중…'}</div>`;
+        results.classList.add('open');
+        return;
+    }
+    results.innerHTML = matching.map(([title, g]) => {
+        const rep = g.rep;
+        const isSelected = selectedTitles.has(title);
+        const icon = rep?.image_url
+            ? `<div class="product-result-icon"><img src="${escHtml(rep.image_url)}"></div>`
+            : `<div class="product-result-icon"><i class="fas fa-box"></i></div>`;
+        const check = isSelected ? ' ✓' : '';
+        return `<div class="product-result-item${isSelected ? ' is-selected' : ''}"
+                     onclick="${isSelected ? '' : `selectSeriesProduct('${escHtml(title)}')`}">
+            ${icon}
+            <div>
+                <div class="product-result-title">${escHtml(title)}${check}</div>
+                <div class="product-result-meta">${g.ids.length}개 버전</div>
+            </div>
+        </div>`;
+    }).join('');
+    results.classList.add('open');
+
+    // 바깥 클릭 시 닫기
+    setTimeout(() => {
+        document.addEventListener('click', function closeSearch(e) {
+            if (!results.contains(e.target) && e.target !== input) {
+                results.classList.remove('open');
+                document.removeEventListener('click', closeSearch);
+            }
+        });
+    }, 0);
+}
+
+function selectSeriesProduct(title) {
+    const ids = seriesGroupsByTitle().get(title)?.ids ?? [];
+    ids.forEach(id => { if (!seriesSelectedIds.includes(id)) seriesSelectedIds.push(id); });
+    const el = document.getElementById('s-product-ids');
+    if (el) el.value = seriesSelectedIds.join(',');
+    const input = document.getElementById('s-product-search');
+    if (input) input.value = '';
+    document.getElementById('s-product-results')?.classList.remove('open');
+    renderSeriesProductChips();
+    markDirty();
+}
+
+// ── 상태 ────────────────────────────────────
+let allSeries    = [];   // learn_series 전체 목록
+let allSequences = [];   // learn_sequences 전체 목록 (에피소드 표시용)
+let groupList    = [];   // learn_groups 목록
+let GROUP_LABEL  = {};   // { joseon: '조선', ... }
+let currentSeriesId = null;
+let isNewSeries  = false;
+
+const DEFAULT_GROUPS = [
+    { id: 'prehistoric',    name: '선사·고조선',   category: 'korean_era',  sort_order: 1 },
+    { id: 'three_kingdoms', name: '삼국시대',       category: 'korean_era',  sort_order: 2 },
+    { id: 'nambukguk',      name: '남북국시대',     category: 'korean_era',  sort_order: 3 },
+    { id: 'goryeo',         name: '고려',           category: 'korean_era',  sort_order: 4 },
+    { id: 'joseon',         name: '조선',           category: 'korean_era',  sort_order: 5 },
+    { id: 'colonial',       name: '일제강점기',     category: 'korean_era',  sort_order: 6 },
+    { id: 'modern',         name: '현대사',         category: 'korean_era',  sort_order: 7 },
+    { id: 'hanneunggeom',   name: '한능검',         category: 'other_theme', sort_order: 8 },
+    { id: 'theme',          name: '한국사 테마',    category: 'other_theme', sort_order: 9 },
+    { id: 'japanese_hist',  name: '일본사 테마',    category: 'other_theme', sort_order: 10 },
+    { id: 'chinese_hist',   name: '중국사 테마',    category: 'other_theme', sort_order: 11 },
+    { id: 'world_hist',     name: '세계사 테마',    category: 'other_theme', sort_order: 12 }
+];
+
+// ── 초기 로드 ──────────────────────────────
+async function loadAll() {
+    await Promise.all([loadGroups(), loadSeriesList(), loadSequences(), loadSeriesProductsCache()]);
+}
+
+async function loadGroups() {
+    try {
+        const res = await safeFetchDB({ collection: 'learn_groups' });
+        if (res && res.data && res.data.length > 0) {
+            groupList = res.data.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+        } else {
+            groupList = [...DEFAULT_GROUPS];
+        }
+    } catch (e) {
+        groupList = [...DEFAULT_GROUPS];
+    }
+    GROUP_LABEL = {};
+    groupList.forEach(g => { GROUP_LABEL[g.id] = g.name; });
+    renderGroupSelects();
+}
+
+function renderGroupSelects() {
+    const baseCats = ['korean_era', 'other_theme'];
+    const activeCats = [...new Set(groupList.map(g => g.category).filter(Boolean))];
+    const categories = [...new Set([...baseCats, ...activeCats])];
+
+    const getCatLabel = cat =>
+        cat === 'korean_era' ? '한국사 시대' :
+        cat === 'other_theme' ? '유형 및 타국사' : cat;
+
+    let filterHtml = '<option value="">전체 그룹</option>';
+    let editorHtml = '<option value="">미분류</option>';
+
+    categories.forEach(cat => {
+        const gs = groupList.filter(g => g.category === cat);
+        if (!gs.length) return;
+        filterHtml += `<optgroup label="── ${getCatLabel(cat)} ──">`;
+        editorHtml += `<optgroup label="── ${getCatLabel(cat)} ──">`;
+        gs.forEach(g => {
+            filterHtml += `<option value="${g.id}">${g.name}</option>`;
+            editorHtml += `<option value="${g.id}">${g.name}</option>`;
+        });
+        filterHtml += '</optgroup>';
+        editorHtml += '</optgroup>';
+    });
+
+    const filterEl = document.getElementById('filter-group-left');
+    const editorEl = document.getElementById('s-group');
+    if (filterEl) { const v = filterEl.value; filterEl.innerHTML = filterHtml; filterEl.value = v; }
+    if (editorEl) { const v = editorEl.value; editorEl.innerHTML = editorHtml; editorEl.value = v; }
+    updateInfoSummary();
+}
+
+async function loadSeriesList() {
+    const listEl = document.getElementById('series-list');
+    listEl.innerHTML = '<div class="empty-state">불러오는 중...</div>';
+    try {
+        const res = await safeFetchDB({ collection: 'learn_series' });
+        allSeries = (res.data || []).sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999));
+    } catch (e) {
+        allSeries = [];
+        toast('시리즈 목록 로드 실패: ' + e.message, true);
+    }
+    renderSeriesList();
+}
+
+async function loadSequences() {
+    try {
+        const res = await safeFetchDB({ collection: 'learn_sequences' });
+        allSequences = res.data || [];
+    } catch (e) {
+        allSequences = [];
+    }
+}
+
+// ── 목록 렌더 ──────────────────────────────
+function renderSeriesList() {
+    const listEl = document.getElementById('series-list');
+    const groupFilter  = document.getElementById('filter-group-left')?.value || '';
+    const statusFilter = document.getElementById('filter-status-left')?.value || '';
+
+    let docs = [...allSeries];
+    if (groupFilter)  docs = docs.filter(s => s.group === groupFilter);
+    if (statusFilter) docs = docs.filter(s => (s.status ?? 'draft') === statusFilter);
+
+    if (!docs.length) {
+        listEl.innerHTML = '<div class="empty-state">시리즈가 없습니다.<br>새 시리즈를 만들어보세요.</div>';
+        return;
+    }
+
+    // 그룹별로 묶어서 표시
+    const groups = {};
+    docs.forEach(s => {
+        const gKey = s.group || '_none_';
+        if (!groups[gKey]) groups[gKey] = [];
+        groups[gKey].push(s);
+    });
+
+    const getEpCount = sid => allSequences.filter(s => s.series_id === sid).length;
+    const getLvlClass = lv =>
+        lv === 'beginner' ? 'badge-level-beginner' :
+        lv === 'advanced' ? 'badge-level-advanced' : 'badge-level-intermediate';
+    const getLvlLabel = lv =>
+        lv === 'beginner' ? '입문' : lv === 'advanced' ? '심화' : '중급';
+
+    let html = '';
+    Object.entries(groups).forEach(([gKey, items]) => {
+        const gLabel = gKey === '_none_' ? '미분류' : (GROUP_LABEL[gKey] || gKey);
+        html += `<div class="series-group-header">${gLabel}</div>`;
+        items.forEach(s => {
+            const epCount = getEpCount(s.id);
+            const isActive = s.id === currentSeriesId ? 'active' : '';
+            const thumbHtml = s.thumbnail_url
+                ? `<div class="series-item-thumb"><img src="${escHtml(s.thumbnail_url)}" alt="" onerror="this.parentElement.innerHTML='<i class=\\'fas fa-bookmark\\'></i>'"></div>`
+                : `<div class="series-item-thumb"><i class="fas fa-bookmark"></i></div>`;
+            html += `
+            <div class="series-item ${isActive}" data-id="${escHtml(s.id)}" onclick="selectSeries('${escHtml(s.id)}')">
+                ${thumbHtml}
+                <div class="series-item-main">
+                    <div class="series-item-name">${escHtml(s.name || '(이름 없음)')}</div>
+                    <div class="series-item-meta">
+                        <span class="badge ${getLvlClass(s.level)}">${getLvlLabel(s.level)}</span>
+                        <span class="badge badge-ep-count">${epCount}화</span>
+                        <span class="badge ${s.status === 'published' ? 'badge-status-published' : 'badge-status-draft'}">
+                            ${s.status === 'published' ? '공개' : '초안'}
+                        </span>
+                    </div>
+                </div>
+            </div>`;
+        });
+    });
+
+    listEl.innerHTML = html;
+}
+
+// ── 선택 ────────────────────────────────────
+function selectSeries(id) {
+    const s = allSeries.find(x => x.id === id);
+    if (!s) return;
+    currentSeriesId = id;
+    isNewSeries = false;
+    clearDirty();
+    showEditorArea();
+    // 기존 시리즈 선택 시 아코디언 닫힘으로 초기화 (에피소드가 메인)
+    document.getElementById('card-info').classList.remove('open');
+    document.getElementById('card-images').classList.remove('open');
+    document.getElementById('card-access').classList.remove('open');
+    populateForm(s);
+    renderEpisodes(id);
+    renderSeriesList(); // active 상태 업데이트
+}
+
+function showEditorArea() {
+    document.getElementById('editor-placeholder').style.display = 'none';
+    const area = document.getElementById('editor-area');
+    area.style.display = 'flex';
+    document.getElementById('btn-delete').style.display = isNewSeries ? 'none' : '';
+    // 모바일: 에디터 뷰로 전환
+    document.querySelector('.two-panel')?.classList.add('mobile-editor-active');
+}
+
+function goBackToList() {
+    document.querySelector('.two-panel')?.classList.remove('mobile-editor-active');
+}
+
+function populateForm(s) {
+    document.getElementById('s-id').value           = s.id           ?? '';
+    document.getElementById('s-name').value         = s.name         ?? '';
+    document.getElementById('s-status').value       = s.status       ?? 'draft';
+    document.getElementById('s-group').value        = s.group        ?? '';
+    document.getElementById('s-level').value        = s.level        ?? 'intermediate';
+    document.getElementById('s-description').value  = s.description  ?? '';
+    document.getElementById('s-sort-order').value   = s.sort_order   != null ? String(s.sort_order) : '';
+    document.getElementById('s-thumbnail').value    = s.thumbnail_url ?? '';
+    document.getElementById('s-header-image').value = s.header_image_url ?? '';
+    document.getElementById('editor-title-text').textContent = s.name || '시리즈 편집';
+
+    // 접근 제어
+    document.getElementById('s-locked').value = s.is_locked ? 'true' : 'false';
+    document.getElementById('s-free-episode-count').value = s.free_episode_count != null ? String(s.free_episode_count) : '0';
+    document.getElementById('s-free-chunk-ratio').value   = s.free_chunk_ratio   != null ? String(s.free_chunk_ratio)   : '0.3333';
+    setSeriesSelectedProducts(s.related_product_ids ?? []);
+    onSeriesLockedChange();
+
+    onImgInput('thumb');
+    onImgInput('header');
+    updateInfoSummary();
+    updateImgSummary();
+
+    // ID 필드: 기존 시리즈는 읽기 전용
+    document.getElementById('s-id').readOnly = !isNewSeries;
+    document.getElementById('s-id').style.background = isNewSeries ? '' : '#f8fafc';
+}
+
+// ── 에피소드 렌더 ────────────────────────────
+function renderEpisodes(seriesId) {
+    const el = document.getElementById('ep-list');
+    const countEl = document.getElementById('ep-count-label');
+
+    const eps = allSequences
+        .filter(s => s.series_id === seriesId)
+        .sort((a, b) => (a.series_order ?? 999) - (b.series_order ?? 999));
+
+    countEl.textContent = eps.length ? `총 ${eps.length}화` : '';
+
+    if (!eps.length) {
+        el.innerHTML = '<div class="ep-empty">아직 소속된 에피소드가 없습니다.<br>학습 관리에서 시리즈 ID를 지정하세요.</div>';
+        return;
+    }
+
+    const dotClass = st =>
+        st === 'published' ? 'published' : st === 'upcoming' ? 'upcoming' : 'draft';
+
+    const seriesLocked = document.getElementById('s-locked')?.value === 'true';
+    const freeCount    = parseInt(document.getElementById('s-free-episode-count')?.value) || 0;
+
+    el.innerHTML = eps.map((ep, i) => {
+        const order  = ep.series_order ?? (i + 1);
+        const isFree = !seriesLocked || order <= freeCount;
+        const lockEl = isFree
+            ? `<span class="ep-lock" title="무료 공개" style="color:#16a34a;">🔓</span>`
+            : `<span class="ep-lock" title="유료 잠금" style="color:#dc2626;">🔒</span>`;
+        return `
+        <div class="ep-row">
+            <div class="ep-order">${order}</div>
+            ${lockEl}
+            <div class="ep-title">${escHtml(ep.title || '(제목 없음)')}</div>
+            <div class="ep-status-dot ${dotClass(ep.status)}" title="${ep.status ?? 'draft'}"></div>
+            <a class="ep-goto" href="learn_manage.html?id=${encodeURIComponent(ep.id)}&from=series">편집</a>
+        </div>`;
+    }).join('');
+}
+
+// ── 신규 ─────────────────────────────────────
+function openNewSeriesForm() {
+    currentSeriesId = null;
+    isNewSeries = true;
+    clearDirty();
+    showEditorArea();
+    populateForm({});
+    // 신규일 때는 기본정보 아코디언 열기
+    document.getElementById('card-info').classList.add('open');
+    document.getElementById('card-images').classList.remove('open');
+    document.getElementById('card-access').classList.remove('open');
+    document.getElementById('ep-list').innerHTML = '<div class="ep-empty">저장 후 에피소드를 연결하세요.</div>';
+    document.getElementById('ep-count-label').textContent = '';
+    document.getElementById('editor-title-text').textContent = '새 시리즈';
+    renderSeriesList();
+}
+
+// ── 저장 ─────────────────────────────────────
+async function saveSeries() {
+    const name = document.getElementById('s-name').value.trim();
+    if (!name) { toast('시리즈 이름을 입력하세요.', true); return; }
+
+    let id = document.getElementById('s-id').value.trim();
+    if (!id) {
+        id = slugify(name);
+        if (!id) { toast('유효한 ID를 입력하세요.', true); return; }
+        document.getElementById('s-id').value = id;
+    }
+
+    if (isNewSeries && allSeries.some(s => s.id === id)) {
+        toast(`이미 사용 중인 ID입니다: ${id}`, true); return;
+    }
+
+    const payload = {
+        id,
+        name,
+        status:           document.getElementById('s-status').value,
+        group:            document.getElementById('s-group').value || null,
+        level:            document.getElementById('s-level').value,
+        description:      document.getElementById('s-description').value.trim() || null,
+        sort_order:       document.getElementById('s-sort-order').value !== ''
+                            ? Number(document.getElementById('s-sort-order').value) : null,
+        thumbnail_url:    document.getElementById('s-thumbnail').value.trim() || null,
+        header_image_url: document.getElementById('s-header-image').value.trim() || null,
+        is_locked:           document.getElementById('s-locked').value === 'true',
+        free_episode_count:  parseInt(document.getElementById('s-free-episode-count').value) || 0,
+        free_chunk_ratio:    parseFloat(document.getElementById('s-free-chunk-ratio').value) || 0,
+        related_product_ids: document.getElementById('s-product-ids').value.split(',').map(t => t.trim()).filter(Boolean),
+        updated_at:       new Date().toISOString(),
+    };
+    if (isNewSeries) payload.created_at = new Date().toISOString();
+
+    const btnSave = document.getElementById('btn-save');
+    btnSave.disabled = true;
+    btnSave.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 저장 중...';
+
+    try {
+        await safeFetchDB({ action: 'set', collection: 'learn_series', id, data: payload });
+
+        // 로컬 캐시 업데이트
+        const idx = allSeries.findIndex(s => s.id === id);
+        if (idx >= 0) allSeries[idx] = payload;
+        else allSeries.push(payload);
+        allSeries.sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999));
+
+        currentSeriesId = id;
+        isNewSeries = false;
+        clearDirty();
+        document.getElementById('editor-title-text').textContent = name;
+        document.getElementById('btn-delete').style.display = '';
+        document.getElementById('s-id').readOnly = true;
+        document.getElementById('s-id').style.background = '#f8fafc';
+
+        renderSeriesList();
+        toast('저장되었습니다.');
+    } catch (e) {
+        toast('저장 실패: ' + e.message, true);
+    } finally {
+        btnSave.disabled = false;
+        btnSave.innerHTML = '<span class="save-dot"></span><i class="fas fa-save"></i> 저장';
+    }
+}
+
+// ── 삭제 ─────────────────────────────────────
+function promptDelete() {
+    document.getElementById('delete-modal').classList.add('open');
+}
+function closeDeleteModal() {
+    document.getElementById('delete-modal').classList.remove('open');
+}
+async function confirmDelete() {
+    closeDeleteModal();
+    if (!currentSeriesId) return;
+    try {
+        await safeFetchDB({ action: 'delete', collection: 'learn_series', id: currentSeriesId });
+        allSeries = allSeries.filter(s => s.id !== currentSeriesId);
+        currentSeriesId = null;
+        clearDirty();
+        document.getElementById('editor-placeholder').style.display = '';
+        document.getElementById('editor-area').style.display = 'none';
+        renderSeriesList();
+        toast('삭제되었습니다.');
+    } catch (e) {
+        toast('삭제 실패: ' + e.message, true);
+    }
+}
+
+// ── 이미지 ────────────────────────────────────
+function onImgInput(type) {
+    const urlId  = type === 'thumb' ? 's-thumbnail' : 's-header-image';
+    const prevId = type === 'thumb' ? 'thumb-preview' : 'header-preview';
+    const wrapId = type === 'thumb' ? 'thumb-preview-wrap' : 'header-preview-wrap';
+    const boxId  = type === 'thumb' ? 'thumb-box' : 'header-box';
+
+    const url = document.getElementById(urlId).value.trim();
+    const prev = document.getElementById(prevId);
+    const wrap = document.getElementById(wrapId);
+    const box  = document.getElementById(boxId);
+
+    if (url) {
+        prev.src = url;
+        wrap.classList.add('show');
+        box.classList.add('has-image');
+    } else {
+        prev.src = '';
+        wrap.classList.remove('show');
+        box.classList.remove('has-image');
+    }
+    updateImgSummary();
+    markDirty();
+}
+
+function clearImg(type) {
+    const urlId = type === 'thumb' ? 's-thumbnail' : 's-header-image';
+    document.getElementById(urlId).value = '';
+    onImgInput(type);
+}
+
+async function uploadSeriesImage(file, type) {
+    const urlId = type === 'thumb' ? 's-thumbnail' : 's-header-image';
+    const boxId = type === 'thumb' ? 'thumb-box' : 'header-box';
+    const input = document.getElementById(urlId);
+    const box   = document.getElementById(boxId);
+    const oldVal = input.value;
+    input.value = '업로드 중...';
+    input.disabled = true;
+    box?.classList.add('drag-over');
+    try {
+        const reader = new FileReader();
+        const base64 = await new Promise((resolve, reject) => {
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+        const ext = (file.name || '').split('.').pop() || 'png';
+        const response = await fetch(window.CHEESE_STORE_API_BASE, {
+            method: 'POST',
+            body: JSON.stringify({
+                mode: 'uploadStoreFile',
+                fileName: 'series_img_' + Date.now() + '.' + ext,
+                mimeType: file.type,
+                base64Data: base64
+            })
+        });
+        const result = await response.json();
+        if (!result.ok) throw new Error(result.error || '업로드 실패');
+        input.value = `https://drive.google.com/thumbnail?id=${result.fileId}&sz=w1000`;
+        onImgInput(type);
+        toast('이미지가 업로드되었습니다.');
+    } catch (err) {
+        toast('이미지 업로드 실패: ' + err.message, true);
+        input.value = oldVal;
+    } finally {
+        input.disabled = false;
+        box?.classList.remove('drag-over');
+    }
+}
+
+function handleImgDrop(e, type) {
+    e.preventDefault();
+    const boxId = type === 'thumb' ? 'thumb-box' : 'header-box';
+    document.getElementById(boxId)?.classList.remove('drag-over');
+    const file = e.dataTransfer?.files?.[0];
+    if (!file) return;
+    if (file.type.startsWith('image/')) uploadSeriesImage(file, type);
+    else toast('이미지 파일만 업로드할 수 있습니다.', true);
+}
+
+function onImgFileSelected(e, type) {
+    const file = e.target.files?.[0];
+    if (file) uploadSeriesImage(file, type);
+    e.target.value = '';
+}
+
+function handleImgPaste(e, type) {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+        if (item.type.startsWith('image/')) {
+            e.preventDefault();
+            uploadSeriesImage(item.getAsFile(), type);
+            return;
+        }
+    }
+    setTimeout(() => onImgInput(type), 10);
+}
+
+// ── ID 자동 생성 ──────────────────────────────
+function generateSeriesId() {
+    const name = document.getElementById('s-name').value.trim();
+    document.getElementById('s-id').value = slugify(name || 'series-' + Date.now());
+    markDirty();
+}
+
+function slugify(str) {
+    return str.toLowerCase()
+        .replace(/[가-힣ぁ-んァ-ン一-龥]/g, '') // 한자·한글·일본어 제거 후 나머지로
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        || 'series-' + Date.now();
+}
+
+function escHtml(str) {
+    return String(str ?? '')
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ═══════════════════════════════════════════════
+//   마이그레이션: learn_sequences → learn_series
+// ═══════════════════════════════════════════════
+
+let migrateItems = []; // 스캔된 후보 시리즈 목록
+
+async function openMigrateModal() {
+    document.getElementById('migrate-modal').classList.add('open');
+    document.getElementById('migrate-body').innerHTML = `
+        <div style="text-align:center; color:var(--text-sub); padding:24px; font-size:0.85rem;">
+            <i class="fas fa-spinner fa-spin" style="font-size:1.5rem; margin-bottom:10px; display:block;"></i>
+            학습 목록을 분석하는 중...
+        </div>`;
+    document.getElementById('migrate-summary-text').textContent = '';
+    document.getElementById('btn-migrate-run').disabled = true;
+
+    try {
+        // 시퀀스 최신 로드
+        if (!allSequences.length) await loadSequences();
+
+        // series_id 기준으로 그룹화
+        const seriesMap = new Map();
+        allSequences.forEach(seq => {
+            if (!seq.series_id) return;
+            if (!seriesMap.has(seq.series_id)) {
+                seriesMap.set(seq.series_id, {
+                    id:    seq.series_id,
+                    name:  seq.series_name || seq.series_id,
+                    group: seq.group  || null,
+                    level: seq.level  || 'intermediate',
+                    episodes: [],
+                });
+            }
+            seriesMap.get(seq.series_id).episodes.push(seq);
+        });
+
+        // 이미 learn_series에 존재하는 ID 파악
+        const existingIds = new Set(allSeries.map(s => s.id));
+
+        migrateItems = [...seriesMap.values()].sort((a, b) => a.name.localeCompare(b.name));
+
+        if (!migrateItems.length) {
+            document.getElementById('migrate-body').innerHTML =
+                '<div class="ep-empty">시리즈가 연결된 학습이 없습니다.<br>각 학습의 시리즈 ID 필드를 먼저 채워주세요.</div>';
+            return;
+        }
+
+        renderMigrateList(existingIds);
+    } catch (e) {
+        document.getElementById('migrate-body').innerHTML =
+            `<div class="ep-empty" style="color:#dc2626;">오류: ${e.message}</div>`;
+    }
+}
+
+function renderMigrateList(existingIds) {
+    const getLvLabel = lv => lv === 'beginner' ? '입문' : lv === 'advanced' ? '심화' : '중급';
+    const getLvClass = lv =>
+        lv === 'beginner' ? 'badge-level-beginner' :
+        lv === 'advanced' ? 'badge-level-advanced' : 'badge-level-intermediate';
+
+    let html = '';
+    migrateItems.forEach((s, i) => {
+        const exists = existingIds.has(s.id);
+        const grpLabel = s.group ? (GROUP_LABEL[s.group] || s.group) : '미분류';
+        html += `
+        <div class="migrate-row${exists ? ' already-exists' : ' selected'}" id="mrow-${i}"
+             onclick="${exists ? '' : `toggleMigrateRow(${i})`}">
+            <input type="checkbox" class="migrate-check" id="mchk-${i}"
+                   ${exists ? 'disabled' : 'checked'}
+                   onclick="event.stopPropagation(); toggleMigrateRow(${i})">
+            <div class="migrate-row-main">
+                <div class="migrate-row-name">${escHtml(s.name)}</div>
+                <div class="migrate-row-meta">
+                    <span class="badge badge-group">${escHtml(grpLabel)}</span>
+                    <span class="badge ${getLvClass(s.level)}">${getLvLabel(s.level)}</span>
+                    <span class="badge badge-ep-count">${s.episodes.length}화</span>
+                </div>
+                <div class="migrate-row-id">ID: ${escHtml(s.id)}</div>
+            </div>
+            ${exists ? '<span class="migrate-exists-label">이미 존재</span>' : ''}
+        </div>`;
+    });
+
+    document.getElementById('migrate-body').innerHTML = html;
+    updateMigrateSummary();
+}
+
+function toggleMigrateRow(i) {
+    const row = document.getElementById(`mrow-${i}`);
+    const chk = document.getElementById(`mchk-${i}`);
+    if (!chk || chk.disabled) return;
+    chk.checked = !chk.checked;
+    row.classList.toggle('selected', chk.checked);
+    updateMigrateSummary();
+}
+
+function updateMigrateSummary() {
+    const checked = migrateItems.filter((_, i) => {
+        const chk = document.getElementById(`mchk-${i}`);
+        return chk && !chk.disabled && chk.checked;
+    });
+    const btn = document.getElementById('btn-migrate-run');
+    const txt = document.getElementById('migrate-summary-text');
+    btn.disabled = checked.length === 0;
+    txt.textContent = checked.length
+        ? `${checked.length}개 시리즈를 생성합니다`
+        : '가져올 항목을 선택하세요';
+}
+
+function closeMigrateModal() {
+    document.getElementById('migrate-modal').classList.remove('open');
+}
+
+async function runMigration() {
+    const toCreate = migrateItems.filter((_, i) => {
+        const chk = document.getElementById(`mchk-${i}`);
+        return chk && !chk.disabled && chk.checked;
+    });
+    if (!toCreate.length) return;
+
+    const btn = document.getElementById('btn-migrate-run');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 처리 중...';
+
+    let successCount = 0;
+    let failCount = 0;
+    const errors = [];
+
+    for (const s of toCreate) {
+        const payload = {
+            id:               s.id,
+            name:             s.name,
+            group:            s.group || null,
+            level:            s.level || 'intermediate',
+            status:           'draft',
+            description:      null,
+            thumbnail_url:    null,
+            header_image_url: null,
+            sort_order:       null,
+            created_at:       new Date().toISOString(),
+            updated_at:       new Date().toISOString(),
+            migrated:         true,
+        };
+        try {
+            await safeFetchDB({ action: 'set', collection: 'learn_series', id: s.id, data: payload });
+            allSeries.push(payload);
+            successCount++;
+        } catch (e) {
+            failCount++;
+            errors.push(`${s.name}: ${e.message}`);
+        }
+    }
+
+    allSeries.sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999));
+    renderSeriesList();
+    closeMigrateModal();
+
+    if (failCount === 0) {
+        toast(`✓ ${successCount}개 시리즈를 가져왔습니다.`);
+    } else {
+        toast(`${successCount}개 성공, ${failCount}개 실패. 콘솔 확인.`, true);
+        console.error('마이그레이션 오류:', errors);
+    }
+
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-magic"></i> 선택 항목 가져오기';
+}
+
+// ── DOMContentLoaded ──────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+    loadAll();
+
+    // 페이지 이탈 경고
+    window.addEventListener('beforeunload', e => {
+        if (document.body.classList.contains('dirty')) {
+            e.preventDefault();
+            e.returnValue = '';
+        }
+    });
+});
+</script>
+
+</body>
+</html>
