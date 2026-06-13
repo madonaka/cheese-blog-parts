@@ -848,6 +848,30 @@
                                 </div>
                             </div><!-- /card-access -->
 
+                            <!-- ④ 생몰 연표 사건 지정 -->
+                            <div class="accordion-card" id="card-lifespan">
+                                <div class="accordion-head" onclick="toggleAccordion('card-lifespan')">
+                                    <i class="accordion-head-icon fas fa-chart-bar" style="color:#0891b2;"></i>
+                                    <span class="accordion-head-title">생몰 연표 사건 지정</span>
+                                    <div class="accordion-summary" id="lifespan-summary"></div>
+                                    <i class="fas fa-chevron-down accordion-chevron"></i>
+                                </div>
+                                <div class="accordion-body">
+                                    <div class="form-group form-full">
+                                        <label class="form-label">연표에 표시할 주요 사건</label>
+                                        <div id="lifespan-event-chips" class="product-chips" style="flex-wrap:wrap; gap:6px; margin-bottom:8px;"></div>
+                                        <div class="product-search-wrap">
+                                            <input type="text" class="form-control" id="s-lifespan-event-search"
+                                                   placeholder="사건 이름으로 검색 (예: 혁명, 전쟁…)" autocomplete="off"
+                                                   oninput="onLifespanEventSearch()" onfocus="loadLifespanEvents()">
+                                            <div class="product-results" id="s-lifespan-event-results"></div>
+                                        </div>
+                                        <span class="form-hint">비워두면 연계 인물 많은 순으로 자동 선택됩니다. 최대 15개.</span>
+                                        <input type="hidden" id="s-lifespan-events">
+                                    </div>
+                                </div>
+                            </div><!-- /card-lifespan -->
+
                         </div><!-- /accordion-wrapper -->
 
                         <!-- ── 소속 에피소드 (항상 표시 · 남은 공간 채움) ── -->
@@ -1162,6 +1186,78 @@ function selectSeriesProduct(title) {
     markDirty();
 }
 
+// ── 생몰 연표 사건 선택 ──────────────────────
+let lifespanSelectedNames = [];
+let lifespanAllEvents = [];  // 현재 시리즈 사건 캐시
+
+async function loadLifespanEvents() {
+    if (lifespanAllEvents.length > 0) return;  // 이미 로드됨
+    if (!currentSeriesId) return;
+    try {
+        const seqRes = await safeFetchDB({ collection: 'learn_sequences' });
+        const seqs = (seqRes.data || seqRes.dataList || []).filter(s => s.series_id === currentSeriesId);
+        const epIds = new Set(seqs.map(s => s.id));
+        const charRes = await safeFetchDB({ collection: 'learn_characters' });
+        const allChars = charRes.data || charRes.dataList || [];
+        lifespanAllEvents = allChars
+            .filter(c => (c.type === 'event' || c.type === '사건') && c.birth_year)
+            .filter(c => (c.appearances || []).some(a => epIds.has(a.sequence_id)))
+            .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'));
+    } catch(e) { console.error('사건 로드 실패', e); }
+}
+
+function onLifespanEventSearch() {
+    const q = (document.getElementById('s-lifespan-event-search')?.value || '').trim().toLowerCase();
+    const resultsEl = document.getElementById('s-lifespan-event-results');
+    if (!resultsEl) return;
+    if (!q) { resultsEl.innerHTML = ''; resultsEl.classList.remove('open'); return; }
+    const filtered = lifespanAllEvents
+        .filter(e => (e.name || '').toLowerCase().includes(q) && !lifespanSelectedNames.includes(e.name))
+        .slice(0, 12);
+    if (!filtered.length) { resultsEl.innerHTML = '<div class="product-result-item" style="color:#94a3b8;">검색 결과 없음</div>'; resultsEl.classList.add('open'); return; }
+    resultsEl.innerHTML = filtered.map(e =>
+        `<div class="product-result-item" onclick="addLifespanEvent('${escHtml(e.name)}')">
+            <div><div class="product-result-title">${escHtml(e.name)}</div>
+            <div style="font-size:0.75rem;color:#94a3b8;">${e.birth_year || ''}</div></div>
+        </div>`
+    ).join('');
+    resultsEl.classList.add('open');
+}
+
+function addLifespanEvent(name) {
+    if (lifespanSelectedNames.includes(name) || lifespanSelectedNames.length >= 15) return;
+    lifespanSelectedNames.push(name);
+    renderLifespanChips();
+    updateLifespanSummary();
+    const input = document.getElementById('s-lifespan-event-search');
+    if (input) input.value = '';
+    document.getElementById('s-lifespan-event-results')?.classList.remove('open');
+    markDirty();
+}
+
+function removeLifespanEvent(name) {
+    lifespanSelectedNames = lifespanSelectedNames.filter(n => n !== name);
+    renderLifespanChips();
+    updateLifespanSummary();
+    markDirty();
+}
+
+function renderLifespanChips() {
+    const el = document.getElementById('lifespan-event-chips');
+    if (!el) return;
+    el.innerHTML = lifespanSelectedNames.map(name =>
+        `<span class="product-chip">${escHtml(name)}<button onclick="removeLifespanEvent('${escHtml(name)}')" title="제거">&times;</button></span>`
+    ).join('');
+}
+
+function updateLifespanSummary() {
+    const el = document.getElementById('lifespan-summary');
+    if (!el) return;
+    el.textContent = lifespanSelectedNames.length > 0
+        ? `${lifespanSelectedNames.length}개 지정됨`
+        : '자동 선택';
+}
+
 // ── 상태 ────────────────────────────────────
 let allSeries    = [];   // learn_series 전체 목록
 let allSequences = [];   // learn_sequences 전체 목록 (에피소드 표시용)
@@ -1374,6 +1470,12 @@ function populateForm(s) {
     updateInfoSummary();
     updateImgSummary();
 
+    // 생몰 연표 사건 복원
+    lifespanSelectedNames = Array.isArray(s.lifespan_event_names) ? [...s.lifespan_event_names] : [];
+    lifespanAllEvents = [];  // 시리즈 변경 시 캐시 초기화
+    renderLifespanChips();
+    updateLifespanSummary();
+
     // ID 필드: 기존 시리즈는 읽기 전용
     document.getElementById('s-id').readOnly = !isNewSeries;
     document.getElementById('s-id').style.background = isNewSeries ? '' : '#f8fafc';
@@ -1466,6 +1568,7 @@ async function saveSeries() {
         free_episode_count:  parseInt(document.getElementById('s-free-episode-count').value) || 0,
         free_chunk_ratio:    parseFloat(document.getElementById('s-free-chunk-ratio').value) || 0,
         related_product_ids: document.getElementById('s-product-ids').value.split(',').map(t => t.trim()).filter(Boolean),
+        lifespan_event_names: lifespanSelectedNames.length > 0 ? [...lifespanSelectedNames] : [],
         updated_at:       new Date().toISOString(),
     };
     if (isNewSeries) payload.created_at = new Date().toISOString();
