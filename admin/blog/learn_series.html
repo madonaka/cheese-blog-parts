@@ -872,6 +872,26 @@
                                 </div>
                             </div><!-- /card-lifespan -->
 
+                            <!-- ⑤ 사건 연표 메인 나라 -->
+                            <div class="accordion-card" id="card-timeline">
+                                <div class="accordion-head" onclick="toggleAccordion('card-timeline')">
+                                    <i class="accordion-head-icon fas fa-flag" style="color:#b45309;"></i>
+                                    <span class="accordion-head-title">사건 연표 메인 나라</span>
+                                    <div class="accordion-summary" id="timeline-summary"></div>
+                                    <i class="fas fa-chevron-down accordion-chevron"></i>
+                                </div>
+                                <div class="accordion-body">
+                                    <div class="form-group form-full">
+                                        <label class="form-label">처음에 메인으로 보여줄 나라</label>
+                                        <select class="form-control" id="s-timeline-main-nation"
+                                                onchange="onTimelineNationChange()" onfocus="populateNationSelect()">
+                                            <option value="">(지정 안 함 — 전체 표시)</option>
+                                        </select>
+                                        <span class="form-hint">연표형을 처음 열면 이 나라만 표시됩니다(나머지는 ‘나라별 보기’에서 체크). 나라(국가) 항목으로 등록된 이름만 선택할 수 있어요.</span>
+                                    </div>
+                                </div>
+                            </div><!-- /card-timeline -->
+
                         </div><!-- /accordion-wrapper -->
 
                         <!-- ── 소속 에피소드 (항상 표시 · 남은 공간 채움) ── -->
@@ -1186,6 +1206,50 @@ function selectSeriesProduct(title) {
     markDirty();
 }
 
+// ── 사건 연표 메인 나라 선택 ──────────────────
+let timelineMainNation = '';     // 저장될 메인 나라명
+let _nationsLoaded = false;
+let _nationList = [];            // [{name, lineage}] (나라 항목, 전역 캐시)
+
+async function loadNationList() {
+    if (_nationsLoaded) return;
+    try {
+        const res = await safeFetchDB({ collection: 'learn_characters' });
+        const all = res.data || res.dataList || [];
+        _nationList = all
+            .filter(c => c.type === 'nation' && (c.name || '').trim())
+            .map(c => ({ name: String(c.name).trim(), lineage: String(c.lineage || '').trim() }))
+            .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+        _nationsLoaded = true;
+    } catch (e) {
+        console.warn('나라 목록 로드 실패:', e);
+    }
+}
+
+async function populateNationSelect() {
+    const sel = document.getElementById('s-timeline-main-nation');
+    if (!sel) return;
+    await loadNationList();
+    sel.innerHTML = '<option value="">(지정 안 함 — 전체 표시)</option>' +
+        _nationList.map(n =>
+            `<option value="${escHtml(n.name)}">${escHtml(n.name)}${n.lineage ? ` · ${escHtml(n.lineage)}` : ''}</option>`
+        ).join('');
+    sel.value = timelineMainNation || '';
+    updateTimelineSummary();
+}
+
+function onTimelineNationChange() {
+    const sel = document.getElementById('s-timeline-main-nation');
+    timelineMainNation = sel ? sel.value : '';
+    updateTimelineSummary();
+    markDirty();
+}
+
+function updateTimelineSummary() {
+    const el = document.getElementById('timeline-summary');
+    if (el) el.textContent = timelineMainNation ? timelineMainNation : '전체 표시';
+}
+
 // ── 생몰 연표 사건 선택 ──────────────────────
 let lifespanSelectedNames = [];
 let lifespanAllEvents = [];  // 현재 시리즈 사건 캐시
@@ -1476,6 +1540,11 @@ function populateForm(s) {
     renderLifespanChips();
     updateLifespanSummary();
 
+    // 사건 연표 메인 나라 복원
+    timelineMainNation = s.timeline_main_nation || '';
+    updateTimelineSummary();
+    populateNationSelect();  // 나라 목록 로드 + 현재값 선택(비동기)
+
     // ID 필드: 기존 시리즈는 읽기 전용
     document.getElementById('s-id').readOnly = !isNewSeries;
     document.getElementById('s-id').style.background = isNewSeries ? '' : '#f8fafc';
@@ -1569,6 +1638,7 @@ async function saveSeries() {
         free_chunk_ratio:    parseFloat(document.getElementById('s-free-chunk-ratio').value) || 0,
         related_product_ids: document.getElementById('s-product-ids').value.split(',').map(t => t.trim()).filter(Boolean),
         lifespan_event_names: lifespanSelectedNames.length > 0 ? [...lifespanSelectedNames] : [],
+        timeline_main_nation: timelineMainNation || null,
         updated_at:       new Date().toISOString(),
     };
     if (isNewSeries) payload.created_at = new Date().toISOString();
