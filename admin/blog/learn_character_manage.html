@@ -2500,8 +2500,22 @@
           const relatedEvents = has("related_events")
             ? (Array.isArray(item.related_events) ? item.related_events.map(e => String(e).trim()).filter(Boolean) : [])
             : (ex.related_events || []);
-          // appearances는 위에서 이미 내부 포맷으로 변환됨. 입력에 키가 있으면 교체, 없으면 기존 유지
-          const appearances = has("appearances") ? (Array.isArray(item.appearances) ? item.appearances : []) : (ex.appearances || []);
+          // appearances: 입력에 있으면 sequence_id 기준 스마트 병합 (입력된 편만 교체, 나머지 기존 편 유지)
+          // 통째로 교체하면 입력하지 않은 편이 모두 삭제되는 사고가 발생하므로 병합 방식 사용
+          const appearances = (() => {
+            if (!has("appearances")) return ex.appearances || [];
+            const incomingApps = Array.isArray(item.appearances) ? item.appearances : [];
+            const base = [...(ex.appearances || [])];
+            incomingApps.forEach(na => {
+              const idx = base.findIndex(ea => ea.sequence_id === na.sequence_id);
+              if (idx >= 0) {
+                base[idx] = na; // 같은 편 → 교체
+              } else {
+                base.push(na); // 새 편 → 추가
+              }
+            });
+            return base;
+          })();
 
           // 인물 faction(단일): 입력에 있으면 교체, 없으면 기존
           const singleFaction = has("faction") ? String(item.faction || "").trim() : (ex.faction || "");
