@@ -379,7 +379,10 @@
         <!-- 일괄 삭제 액션 바 -->
         <div id="batch-action-bar" style="display: none; align-items: center; justify-content: space-between; background: #fffbeb; border: 1.5px solid #fef3c7; border-radius: 12px; padding: 12px 18px; margin-bottom: 16px; box-shadow: var(--shadow);">
           <span style="font-size: 13px; font-weight: 700; color: #b45309;"><i class="fa-solid fa-circle-info"></i> <span id="selected-count">0</span>개 항목이 선택되었습니다.</span>
-          <button class="action-btn del-btn" onclick="deleteSelectedItems()" style="background: #dc2626; color: #fff; border: none; padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;"><i class="fa-solid fa-trash"></i> 선택 삭제</button>
+          <div style="display: flex; gap: 8px;">
+            <button class="action-btn" id="remove-appearance-btn" onclick="removeAppearanceFromSelected()" style="display: none; background: #fff; color: #b45309; border: 1.5px solid #f59e0b; padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; align-items: center; gap: 6px;"><i class="fa-solid fa-link-slash"></i> <span id="remove-appearance-label">이 편 등장 위치만 제거</span></button>
+            <button class="action-btn del-btn" onclick="deleteSelectedItems()" style="background: #dc2626; color: #fff; border: none; padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;"><i class="fa-solid fa-trash"></i> 선택 삭제</button>
+          </div>
         </div>
 
         <div class="cm-table-wrap">
@@ -2794,13 +2797,28 @@
     const checkedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
     const bar = document.getElementById("batch-action-bar");
     const countTxt = document.getElementById("selected-count");
-    
+
     if (bar && countTxt) {
       if (checkedCount > 0) {
         countTxt.textContent = checkedCount;
         bar.style.display = "flex";
       } else {
         bar.style.display = "none";
+      }
+    }
+
+    // '이 편 등장 위치만 제거' 버튼: 편 필터가 선택된 경우에만 노출
+    const removeBtn = document.getElementById("remove-appearance-btn");
+    const removeLabel = document.getElementById("remove-appearance-label");
+    const seqFilter = document.getElementById("cm-seq-filter")?.value || "";
+    if (removeBtn) {
+      if (seqFilter) {
+        const seq = ALL_SEQUENCES.find(s => s.id === seqFilter);
+        const seqTitle = seq ? seq.title : "이 편";
+        if (removeLabel) removeLabel.textContent = `'${seqTitle}' 등장 위치만 제거`;
+        removeBtn.style.display = "inline-flex";
+      } else {
+        removeBtn.style.display = "none";
       }
     }
   }
@@ -2862,6 +2880,67 @@
     } finally {
       delBtn.innerHTML = originalHtml;
       delBtn.disabled = false;
+    }
+  }
+
+  async function removeAppearanceFromSelected() {
+    const seqFilter = document.getElementById("cm-seq-filter")?.value || "";
+    if (!seqFilter) {
+      alert("먼저 상단에서 특정 편을 선택하세요.");
+      return;
+    }
+
+    const checkboxes = document.querySelectorAll(".item-checkbox:checked");
+    const idsSelected = Array.from(checkboxes).map(cb => cb.value);
+    if (idsSelected.length === 0) return;
+
+    const seq = ALL_SEQUENCES.find(s => s.id === seqFilter);
+    const seqTitle = seq ? seq.title : seqFilter;
+
+    // 실제로 해당 편 등장 위치를 가진 선택 항목만 대상
+    const targets = ALL_ITEMS.filter(item =>
+      idsSelected.includes(item.id) &&
+      (item.appearances || []).some(a => a.sequence_id === seqFilter)
+    );
+
+    if (targets.length === 0) {
+      alert(`선택한 항목 중 '${seqTitle}' 등장 위치를 가진 항목이 없습니다.`);
+      return;
+    }
+
+    if (!confirm(`'${seqTitle}' 편의 등장 위치를 ${targets.length}개 항목에서 제거합니다.\n인물/사건 자체와 다른 편 등장 정보는 그대로 유지됩니다.\n계속하시겠습니까?`)) {
+      return;
+    }
+
+    const bar = document.getElementById("batch-action-bar");
+    const removeBtn = document.getElementById("remove-appearance-btn");
+    const originalHtml = removeBtn.innerHTML;
+    removeBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 제거 중...`;
+    removeBtn.disabled = true;
+
+    try {
+      const now = new Date().toISOString();
+      const updatePromises = targets.map(async (item) => {
+        const updatedApps = (item.appearances || []).filter(a => a.sequence_id !== seqFilter);
+        const updatedItemData = { ...item, appearances: updatedApps, updated_at: now };
+        await safeFetchDB({ action: "set", collection: "learn_characters", id: item.id, data: updatedItemData });
+        const idx = ALL_ITEMS.findIndex(x => x.id === item.id);
+        if (idx >= 0) ALL_ITEMS[idx] = updatedItemData;
+      });
+      await Promise.all(updatePromises);
+
+      alert(`${targets.length}개 항목에서 '${seqTitle}' 등장 위치가 제거되었습니다.`);
+
+      const masterCheckbox = document.getElementById("select-all");
+      if (masterCheckbox) masterCheckbox.checked = false;
+
+      updateBatchActionBar();
+      renderList();
+    } catch (e) {
+      alert("등장 위치 제거 중 오류가 발생했습니다: " + e.message);
+    } finally {
+      removeBtn.innerHTML = originalHtml;
+      removeBtn.disabled = false;
     }
   }
 
