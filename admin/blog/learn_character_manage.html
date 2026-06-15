@@ -88,7 +88,8 @@
     .badge-type.event { background: #e0e7ff; color: #4f46e5; }
     .badge-type.concept { background: #ccfbf1; color: #0d9488; }
     .badge-type.nation { background: #fef3c7; color: #b45309; }
-    
+    .badge-type.organization { background: #fae8ff; color: #a21caf; }
+
     .alt-names-cell { color: var(--sub); font-size: 12px; }
     .appearance-chips { display: flex; flex-wrap: wrap; gap: 4px; max-width: 320px; }
     .app-chip {
@@ -249,7 +250,9 @@
     }
     .sel-tag.event { background: #ede9fe; color: #4f46e5; }
     .sel-tag.event button { border: none; background: none; cursor: pointer; font-size: 14px; line-height: 1; padding: 0; color: #4f46e5; }
- 
+    .sel-tag.concept { background: #fae8ff; color: #a21caf; }
+    .sel-tag.concept button { border: none; background: none; cursor: pointer; font-size: 14px; line-height: 1; padding: 0; color: #a21caf; }
+
     .cm-modal-footer { display: flex; gap: 10px; padding: 18px 28px 24px; border-top: 1px solid var(--line); }
     .cm-modal-footer button { flex: 1; padding: 12px; border: none; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; }
     .save-btn { background: var(--accent); color: #fff; }
@@ -363,6 +366,7 @@
             <option value="event">사건</option>
             <option value="concept">사상/개념</option>
             <option value="nation">나라/국가</option>
+            <option value="organization">정당/단체</option>
           </select>
           <select class="cm-select" id="cm-series-filter" onchange="onSeriesFilterChange()">
             <option value="">전체 시리즈/그룹</option>
@@ -431,6 +435,7 @@
             <option value="event">사건</option>
             <option value="concept">사상/개념</option>
             <option value="nation">나라/국가</option>
+            <option value="organization">정당/단체</option>
           </select>
         </div>
         <div class="cm-field">
@@ -482,6 +487,18 @@
         </div>
         <div class="rel-search-results" id="factions-results"></div>
         <div class="selected-tags-wrap" id="selected-factions" style="margin-top:8px;"></div>
+      </div>
+
+      <div class="cm-field" id="organizations-field" style="display:none;">
+        <label>소속 단체 / 정당 (여러 개 추가 가능, 선택)</label>
+        <div class="rel-search-row">
+          <input type="text" id="cm-organizations-input" placeholder="예: 민주진보당, 국민당 (Enter 또는 선택)" autocomplete="off"
+                 oninput="searchOrganizations()" onfocus="searchOrganizations()"
+                 onkeydown="if(event.key==='Enter'){event.preventDefault();addOrganizationFromInput();}"
+                 onblur="setTimeout(function(){ var r=document.getElementById('organizations-results'); if(r) r.classList.remove('visible'); }, 150)">
+        </div>
+        <div class="rel-search-results" id="organizations-results"></div>
+        <div class="selected-tags-wrap" id="selected-organizations" style="margin-top:8px;"></div>
       </div>
 
       <div class="cm-field" id="lineage-field" style="display:none;">
@@ -635,7 +652,7 @@
             <tr>
               <td><strong>type</strong></td>
               <td>String</td>
-              <td>구분 (`"character"` 인물, `"event"` 사건, `"concept"` 사상/개념, `"nation"` 나라/국가)</td>
+              <td>구분 (`"character"` 인물, `"event"` 사건, `"concept"` 사상/개념, `"nation"` 나라/국가, `"organization"` 정당/단체)</td>
               <td><span style="color:#dc2626; font-weight:800;">필수</span></td>
             </tr>
             <tr>
@@ -653,7 +670,7 @@
             <tr>
               <td><strong>death_year</strong></td>
               <td>String</td>
-              <td>사망연도 (인물=몰년, 나라=멸망 연도. 예: `"1927"`, `"1991"`. 현존 시 비움)</td>
+              <td>사망연도 (인물=몰년, 나라=멸망 연도, 정당/단체=해산 연도. 예: `"1927"`, `"1991"`. 현존 시 비움)</td>
               <td>선택</td>
             </tr>
             <tr>
@@ -683,7 +700,13 @@
             <tr>
               <td><strong>lineage</strong></td>
               <td>String</td>
-              <td>계보/역사권 (나라(nation) 전용. 같은 역사로 묶을 나라들을 인접 정렬·그룹화. 예: `"러시아사"` → 러시아제국·소련)</td>
+              <td>계보/역사권 (나라(nation)·정당/단체(organization) 전용. 같은 역사·흐름으로 묶을 항목들을 인접 정렬·그룹화. 예: `"러시아사"` → 러시아제국·소련)</td>
+              <td>선택</td>
+            </tr>
+            <tr>
+              <td><strong>organizations</strong></td>
+              <td>Array</td>
+              <td>소속 단체/정당 배열 (인물·사건·사상 전용 · 여러 개 가능. 정당/단체(organization) 항목명과 일치시키면 연결됨. 예: `["민주진보당", "국민당"]`)</td>
               <td>선택</td>
             </tr>
             <tr>
@@ -747,6 +770,7 @@
   let ALL_SEQUENCES = [];
   let selectedRelEventNames = []; // 연관 사건 명칭 목록
   let selectedFactionNames = []; // 사건의 국가/진영 목록(다중)
+  let selectedOrganizationNames = []; // 소속 단체/정당 목록(다중, 인물·사건·사상)
 
   function getTimestampFromItem(item) {
     if (item.created_at) {
@@ -999,8 +1023,8 @@
     tbody.innerHTML = filtered.map(item => {
       const altNames = (item.alt_names || []).filter(Boolean).join(", ");
       
-      const typeLabel = item.type === "event" ? "사건" : item.type === "concept" ? "사상" : item.type === "nation" ? "나라" : "인물";
-      const typeClass = item.type === "event" ? "event" : item.type === "concept" ? "concept" : item.type === "nation" ? "nation" : "character";
+      const typeLabel = item.type === "event" ? "사건" : item.type === "concept" ? "사상" : item.type === "nation" ? "나라" : item.type === "organization" ? "단체" : "인물";
+      const typeClass = item.type === "event" ? "event" : item.type === "concept" ? "concept" : item.type === "nation" ? "nation" : item.type === "organization" ? "organization" : "character";
 
       let eraPeriod = "-";
       if (item.type !== "character") {
@@ -1037,6 +1061,7 @@
     const factionField = document.getElementById("faction-field");
     const factionLabel = factionField ? factionField.querySelector("label") : null;
     const factionsField = document.getElementById("factions-field");
+    const organizationsField = document.getElementById("organizations-field");
     const lineageField = document.getElementById("lineage-field");
     const isGlobalField = document.getElementById("is-global-field");
     const relEventsField = document.getElementById("related-events-field");
@@ -1048,6 +1073,8 @@
     if (lineageField) lineageField.style.display = "none";
     if (isGlobalField) isGlobalField.style.display = "none";
     if (factionsField) factionsField.style.display = "none";
+    // 소속 단체/정당: 인물·사건·사상에만 노출
+    if (organizationsField) organizationsField.style.display = ["character", "event", "concept"].includes(type) ? "block" : "none";
 
     if (type === "event") {
       lblBirth.textContent = "발생 연도 / 시기";
@@ -1079,8 +1106,30 @@
       if (deathInput) deathInput.placeholder = "예: 1991 (소련 해체)";
       if (termField) termField.style.display = "none";
       if (factionField) factionField.style.display = "none";
-      if (lineageField) lineageField.style.display = "block";
+      if (lineageField) {
+        lineageField.style.display = "block";
+        const lineageLabel = lineageField.querySelector("label");
+        if (lineageLabel) lineageLabel.textContent = "계보 / 역사권 (같은 역사로 묶을 나라들, 선택)";
+      }
       relEventsField.style.display = "none";
+    } else if (type === "organization") {
+      lblBirth.textContent = "창당 / 설립 연도";
+      birthInput.placeholder = "예: 1986 (민주진보당 창당)";
+      deathField.style.display = "block";
+      const deathLabel = deathField.querySelector("label");
+      if (deathLabel) deathLabel.textContent = "해산 연도 (존속 시 비움)";
+      const deathInput = document.getElementById("cm-death-year");
+      if (deathInput) deathInput.placeholder = "예: 2000 (해산)";
+      if (termField) termField.style.display = "none";
+      if (factionField) factionField.style.display = "none";
+      if (lineageField) {
+        lineageField.style.display = "block";
+        const lineageLabel = lineageField.querySelector("label");
+        if (lineageLabel) lineageLabel.textContent = "계보 / 그룹 (같은 흐름으로 묶을 단체들, 선택)";
+      }
+      relEventsField.style.display = "block";
+      if (relLabel) relLabel.innerHTML = "⚡ 연관 인물·사건 (사전 항목에서 검색)";
+      if (relInput) relInput.placeholder = "인물·사건명 검색...";
     } else {
       lblBirth.textContent = "생년";
       birthInput.placeholder = "예: 1889 또는 19xx";
@@ -1325,6 +1374,68 @@
 
   function getSelectedFactions() {
     return selectedFactionNames.map(s => String(s || "").trim()).filter(Boolean);
+  }
+
+  /* ── 소속 단체/정당 다중 선택: 등록된 정당/단체(organization) 항목명 + 기존 입력값 검색(자유 입력도 가능) ── */
+  function searchOrganizations() {
+    const inp = document.getElementById("cm-organizations-input");
+    const res = document.getElementById("organizations-results");
+    if (!inp || !res) return;
+    const q = (inp.value || "").toLowerCase().trim();
+
+    // 정당/단체(organization) 항목명 + 기존에 쓰인 organizations 값(중복 제거)
+    const pool = new Set();
+    ALL_ITEMS.forEach(x => {
+      if (x.type === "organization" && x.name) pool.add(String(x.name).trim());
+      if (Array.isArray(x.organizations)) x.organizations.forEach(o => { if (o) pool.add(String(o).trim()); });
+    });
+    const all = Array.from(pool).filter(Boolean).filter(o => !selectedOrganizationNames.includes(o)).sort();
+
+    const matches = (q ? all.filter(o => o.toLowerCase().includes(q)) : all).slice(0, 8);
+    if (!matches.length) { res.classList.remove("visible"); return; }
+
+    res.innerHTML = matches.map(o => {
+      const isOrg = ALL_ITEMS.some(x => x.type === "organization" && String(x.name || "").trim() === o);
+      const badge = isOrg
+        ? `<span class="badge-type organization" style="margin-left: 6px; font-size: 9px; padding: 1px 4px;">단체</span>`
+        : "";
+      return `<div class="rel-result-item" onclick="selectOrganizationTag('${escAttr_(o)}')">${esc(o)}${badge}</div>`;
+    }).join("");
+    res.classList.add("visible");
+  }
+
+  function addOrganizationFromInput() {
+    const inp = document.getElementById("cm-organizations-input");
+    if (!inp) return;
+    const val = (inp.value || "").trim();
+    if (val) selectOrganizationTag(val);
+  }
+
+  function selectOrganizationTag(name) {
+    const clean = String(name || "").trim();
+    if (clean && !selectedOrganizationNames.includes(clean)) selectedOrganizationNames.push(clean);
+    renderOrganizationTags();
+    const inp = document.getElementById("cm-organizations-input");
+    if (inp) inp.value = "";
+    const res = document.getElementById("organizations-results");
+    if (res) res.classList.remove("visible");
+  }
+
+  function removeOrganizationTag(name) {
+    selectedOrganizationNames = selectedOrganizationNames.filter(x => x !== name);
+    renderOrganizationTags();
+  }
+
+  function renderOrganizationTags() {
+    const el = document.getElementById("selected-organizations");
+    if (!el) return;
+    el.innerHTML = selectedOrganizationNames.map(name =>
+      `<span class="sel-tag concept">${esc(name)} <button onclick="removeOrganizationTag('${escAttr_(name)}')" type="button">&times;</button></span>`
+    ).join("");
+  }
+
+  function getSelectedOrganizations() {
+    return selectedOrganizationNames.map(s => String(s || "").trim()).filter(Boolean);
   }
 
   function removeRelEvent(name) {
@@ -1658,6 +1769,8 @@
     selectedRelEventNames = [];
     selectedFactionNames = [];
     renderFactionTags();
+    selectedOrganizationNames = [];
+    renderOrganizationTags();
     const altList = document.getElementById("alt-names-list");
     if (altList) altList.innerHTML = "";
     const appList = document.getElementById("cm-appearances-list");
@@ -1698,6 +1811,10 @@
           ? item.factions.map(f => String(f || "").trim()).filter(Boolean)
           : (item.faction ? [String(item.faction).trim()] : []);
         renderFactionTags();
+        selectedOrganizationNames = Array.isArray(item.organizations)
+          ? item.organizations.map(o => String(o || "").trim()).filter(Boolean)
+          : [];
+        renderOrganizationTags();
         document.getElementById("cm-lineage").value = item.lineage || "";
         document.getElementById("cm-is-global").checked = item.is_global === true;
         document.getElementById("cm-memo").value = item.memo || "";
@@ -1766,7 +1883,7 @@
     );
 
     if (dupTarget) {
-      const typeText = type === "event" ? "사건" : type === "concept" ? "사상" : "인물";
+      const typeText = type === "event" ? "사건" : type === "concept" ? "사상" : type === "nation" ? "나라" : type === "organization" ? "정당/단체" : "인물";
       const confirmMerge = confirm(
         `"${name}"(은)는 이미 등록되어 있는 ${typeText} 항목입니다.\n` +
         `현재 수정 중인 항목의 데이터를 기존 항목("${dupTarget.name}")에 병합하시겠습니까?\n\n` +
@@ -1793,7 +1910,7 @@
       const mergedRels = Array.from(new Set([...existingRels, ...currentRels])).filter(r => r !== name && r !== oldName && r !== dupTarget.name);
 
       const birth_year = (document.getElementById("cm-birth-year")?.value || "").trim() || dupTarget.birth_year || "";
-      const death_year = (type === "character" || type === "nation") ? ((document.getElementById("cm-death-year")?.value || "").trim() || dupTarget.death_year || "") : "";
+      const death_year = (type === "character" || type === "nation" || type === "organization") ? ((document.getElementById("cm-death-year")?.value || "").trim() || dupTarget.death_year || "") : "";
       // 집권 기간: 현재 입력이 있으면 그것, 없으면 기존 항목 값(신규 terms 우선, 레거시 폴백)
       const curTerms = type === "character" ? getTerms() : [];
       const terms = curTerms.length > 0
@@ -1812,8 +1929,13 @@
       const faction = type === "event"
         ? (factions[0] || "")
         : (type === "character" ? ((document.getElementById("cm-faction")?.value || "").trim() || dupTarget.faction || "") : "");
-      const lineage = type === "nation" ? ((document.getElementById("cm-lineage")?.value || "").trim() || dupTarget.lineage || "") : "";
+      const lineage = (type === "nation" || type === "organization") ? ((document.getElementById("cm-lineage")?.value || "").trim() || dupTarget.lineage || "") : "";
       const is_global = type === "event" ? (document.getElementById("cm-is-global")?.checked === true || dupTarget.is_global === true) : false;
+      // 소속 단체/정당: 인물·사건·사상 전용. 현재 입력값과 기존값 합집합 병합
+      const curOrgs = ["character", "event", "concept"].includes(type) ? getSelectedOrganizations() : [];
+      const mergedOrgs = ["character", "event", "concept"].includes(type)
+        ? Array.from(new Set([...(Array.isArray(dupTarget.organizations) ? dupTarget.organizations : []), ...curOrgs])).filter(Boolean)
+        : [];
 
       const currentMemo = (document.getElementById("cm-memo")?.value || "").trim();
       const existingMemo = dupTarget.memo || "";
@@ -1836,6 +1958,7 @@
         term_end: terms.length ? terms[0].end : "",
         faction,
         factions,
+        organizations: mergedOrgs,
         lineage,
         is_global,
         memo: mergedMemo,
@@ -1939,12 +2062,13 @@
 
     const terms = type === "character" ? getTerms() : [];
     const eventFactions = type === "event" ? getSelectedFactions() : [];
+    const orgs = ["character", "event", "concept"].includes(type) ? getSelectedOrganizations() : [];
     const data = {
       name,
       type,
       alt_names: getAltNames(),
       birth_year: (document.getElementById("cm-birth-year")?.value || "").trim(),
-      death_year: (type === "character" || type === "nation") ? (document.getElementById("cm-death-year")?.value || "").trim() : "",
+      death_year: (type === "character" || type === "nation" || type === "organization") ? (document.getElementById("cm-death-year")?.value || "").trim() : "",
       terms,
       // 레거시 호환: 첫 임기를 term_start/term_end에도 기록
       term_start: terms.length ? terms[0].start : "",
@@ -1952,7 +2076,9 @@
       // 사건은 다중 국가(factions), 인물은 단일 국가(faction). faction엔 대표값(첫 나라)을 레거시 호환으로 기록
       faction: type === "event" ? (eventFactions[0] || "") : (type === "character" ? (document.getElementById("cm-faction")?.value || "").trim() : ""),
       factions: type === "event" ? eventFactions : [],
-      lineage: type === "nation" ? (document.getElementById("cm-lineage")?.value || "").trim() : "",
+      // 소속 단체/정당: 인물·사건·사상 전용
+      organizations: orgs,
+      lineage: (type === "nation" || type === "organization") ? (document.getElementById("cm-lineage")?.value || "").trim() : "",
       is_global: type === "event" ? (document.getElementById("cm-is-global")?.checked === true) : false,
       memo: (document.getElementById("cm-memo")?.value || "").trim(),
       appearances: getAppearances(),
@@ -2091,6 +2217,7 @@
     "birth_year": "1893",
     "death_year": "1976",
     "faction": "중국",
+    "organizations": ["중국공산당"],
     "terms": [
       { "start": "1949", "end": "1976" }
     ],
@@ -2163,6 +2290,16 @@
     "memo": "러시아제국을 계승해 1922년 수립되어 1991년 해체된 사회주의 연방으로, 같은 계보의 나라들과 인접 정렬된다.",
     "related_events": [],
     "appearances": []
+  },
+  {
+    "name": "중국공산당",
+    "type": "organization",
+    "alt_names": ["중국 공산당", "CPC", "中國共産黨"],
+    "birth_year": "1921",
+    "lineage": "중국 정당사",
+    "memo": "1921년 창당되어 1949년 이후 중화인민공화국을 일당 통치하는 정당으로 등장한다.",
+    "related_events": [],
+    "appearances": []
   }
 ]`;
     try {
@@ -2195,7 +2332,7 @@
       if (alt.length) obj.alt_names = alt;
 
       if (item.birth_year) obj.birth_year = String(item.birth_year).trim();
-      if ((item.type === "character" || item.type === "nation") && item.death_year) {
+      if ((item.type === "character" || item.type === "nation" || item.type === "organization") && item.death_year) {
         obj.death_year = String(item.death_year).trim();
       }
 
@@ -2218,7 +2355,12 @@
         if (item.is_global === true) obj.is_global = true;
       }
 
-      if (item.type === "nation" && item.lineage) obj.lineage = String(item.lineage).trim();
+      if ((item.type === "nation" || item.type === "organization") && item.lineage) obj.lineage = String(item.lineage).trim();
+
+      // 소속 단체/정당: 인물·사건·사상 전용 다중 배열
+      if (["character", "event", "concept"].includes(item.type) && Array.isArray(item.organizations) && item.organizations.length) {
+        obj.organizations = item.organizations.map(o => String(o).trim()).filter(Boolean);
+      }
 
       if (item.memo) obj.memo = String(item.memo).trim();
 
@@ -2410,8 +2552,8 @@
           alert(`${i + 1}번째 항목에 'name' 필드가 누락되었거나 비어 있습니다.`);
           return;
         }
-        if (item.type && !['character', 'event', 'concept', 'nation'].includes(item.type)) {
-          alert(`${i + 1}번째 항목의 'type' 필드는 'character', 'event', 'concept', 'nation' 중 하나여야 합니다.`);
+        if (item.type && !['character', 'event', 'concept', 'nation', 'organization'].includes(item.type)) {
+          alert(`${i + 1}번째 항목의 'type' 필드는 'character', 'event', 'concept', 'nation', 'organization' 중 하나여야 합니다.`);
           return;
         }
       }
@@ -2473,18 +2615,23 @@
               ? item.terms.map(t => ({ start: String(t.start || "").trim(), end: String(t.end || "").trim() })).filter(t => t.start || t.end)
               : (item.term_start ? [{ start: String(item.term_start).trim(), end: String(item.term_end || "").trim() }] : []))
           : [];
+        // 소속 단체/정당(organizations): 인물·사건·사상 전용 다중 배열
+        const itemOrgs = ["character", "event", "concept"].includes(item.type) && Array.isArray(item.organizations)
+          ? item.organizations.map(o => String(o).trim()).filter(Boolean)
+          : [];
         const data = {
           name: String(item.name).trim(),
           type: item.type,
           alt_names: Array.isArray(item.alt_names) ? item.alt_names.map(n => String(n).trim()).filter(Boolean) : [],
           birth_year: item.birth_year ? String(item.birth_year).trim() : "",
-          death_year: (item.type === "character" || item.type === "nation") && item.death_year ? String(item.death_year).trim() : "",
+          death_year: (item.type === "character" || item.type === "nation" || item.type === "organization") && item.death_year ? String(item.death_year).trim() : "",
           faction: item.type === "event" ? (evFactions[0] || "") : (item.type === "character" && item.faction ? String(item.faction).trim() : ""),
           factions: evFactions,
+          organizations: itemOrgs,
           terms: itemTerms,
           term_start: itemTerms.length ? itemTerms[0].start : "",
           term_end: itemTerms.length ? itemTerms[0].end : "",
-          lineage: item.type === "nation" && item.lineage ? String(item.lineage).trim() : "",
+          lineage: (item.type === "nation" || item.type === "organization") && item.lineage ? String(item.lineage).trim() : "",
           is_global: item.type === "event" ? (item.is_global === true) : false,
           memo: item.memo ? String(item.memo).trim() : "",
           appearances: Array.isArray(item.appearances) ? item.appearances : [],
@@ -2526,7 +2673,7 @@
 
           // 빈 값 보완 채우기
           const birth_year = (item.birth_year ? String(item.birth_year).trim() : "") || existingItem.birth_year || "";
-          const death_year = ((item.type === "character" || item.type === "nation") && item.death_year ? String(item.death_year).trim() : "") || existingItem.death_year || "";
+          const death_year = ((item.type === "character" || item.type === "nation" || item.type === "organization") && item.death_year ? String(item.death_year).trim() : "") || existingItem.death_year || "";
           // memo: 기존 값이 있으면 보존(덮어쓰지 않음), 비어 있을 때만 신규 값으로 채움
           const memo = (existingItem.memo && String(existingItem.memo).trim())
             ? existingItem.memo
@@ -2554,21 +2701,29 @@
             ? (existingTerms.length > 0 ? existingTerms : incomingTerms)
             : [];
 
+          // 소속 단체/정당: 인물·사건·사상 전용. 기존값과 신규값 합집합
+          const existingOrgs = Array.isArray(existingItem.organizations) ? existingItem.organizations : [];
+          const incomingOrgs = Array.isArray(item.organizations) ? item.organizations.map(o => String(o).trim()).filter(Boolean) : [];
+          const mergedOrgs = ["character", "event", "concept"].includes(existingItem.type)
+            ? Array.from(new Set([...existingOrgs, ...incomingOrgs])).filter(Boolean)
+            : [];
+
           const data = {
             ...existingItem,
             alt_names: mergedAlts,
             birth_year,
-            death_year: (existingItem.type === "character" || existingItem.type === "nation") ? death_year : "",
+            death_year: (existingItem.type === "character" || existingItem.type === "nation" || existingItem.type === "organization") ? death_year : "",
             faction: existingItem.type === "event"
               ? (mergedFactions[0] || "")
               : (existingItem.type === "character"
                   ? (existingItem.faction || (item.faction ? String(item.faction).trim() : "") || "")
                   : ""),
             factions: mergedFactions,
+            organizations: mergedOrgs,
             terms: mergedTerms,
             term_start: mergedTerms.length ? mergedTerms[0].start : "",
             term_end: mergedTerms.length ? mergedTerms[0].end : "",
-            lineage: existingItem.type === "nation"
+            lineage: (existingItem.type === "nation" || existingItem.type === "organization")
               ? (existingItem.lineage || (item.lineage ? String(item.lineage).trim() : "") || "")
               : "",
             is_global: existingItem.type === "event"
@@ -2635,19 +2790,24 @@
             : (Array.isArray(ex.terms) && ex.terms.length ? ex.terms : (ex.term_start ? [{ start: ex.term_start, end: ex.term_end || "" }] : []));
           const lineageVal = has("lineage") ? String(item.lineage || "").trim() : (ex.lineage || "");
           const isGlobalVal = has("is_global") ? (item.is_global === true) : (ex.is_global === true);
+          // 소속 단체/정당(organizations): 입력에 있으면 교체, 없으면 기존 유지
+          const orgsArr = has("organizations")
+            ? (Array.isArray(item.organizations) ? item.organizations.map(o => String(o).trim()).filter(Boolean) : [])
+            : (Array.isArray(ex.organizations) ? ex.organizations : []);
 
           const data = {
             ...ex,
             type: newType,
             alt_names: altNames,
             birth_year: birthYear,
-            death_year: (newType === "character" || newType === "nation") ? deathYearRaw : "",
+            death_year: (newType === "character" || newType === "nation" || newType === "organization") ? deathYearRaw : "",
             faction: newType === "event" ? (factionsArr[0] || "") : (newType === "character" ? singleFaction : ""),
             factions: newType === "event" ? factionsArr : [],
+            organizations: ["character", "event", "concept"].includes(newType) ? orgsArr : [],
             terms: newType === "character" ? termsArr : [],
             term_start: newType === "character" && termsArr.length ? termsArr[0].start : "",
             term_end: newType === "character" && termsArr.length ? termsArr[0].end : "",
-            lineage: newType === "nation" ? lineageVal : "",
+            lineage: (newType === "nation" || newType === "organization") ? lineageVal : "",
             is_global: newType === "event" ? isGlobalVal : false,
             memo: memoVal,
             appearances,
