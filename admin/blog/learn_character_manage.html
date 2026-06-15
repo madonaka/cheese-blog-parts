@@ -187,10 +187,27 @@
     
     /* 등장 위치 카드 */
     .appearance-entry {
-      margin-bottom: 16px; background: #f8fafc; border: 1.5px solid var(--line);
-      border-radius: 12px; padding: 16px; position: relative;
+      margin-bottom: 10px; background: #f8fafc; border: 1.5px solid var(--line);
+      border-radius: 12px; padding: 12px 16px; position: relative;
     }
     .appearance-entry:hover { border-color: var(--accent); }
+    .appearance-entry:not(.collapsed) { border-color: var(--accent); }
+    .app-summary {
+      display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;
+    }
+    .app-toggle-icon {
+      font-size: 10px; color: var(--sub); transition: transform 0.18s; flex-shrink: 0;
+    }
+    .appearance-entry:not(.collapsed) .app-toggle-icon { transform: rotate(90deg); }
+    .app-summary-text {
+      flex: 1; font-size: 12px; font-weight: 700; color: var(--text);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .app-scan-badge { font-size: 10px; font-weight: 800; flex-shrink: 0; }
+    .app-detail {
+      padding-top: 14px; margin-top: 12px; border-top: 1px solid var(--line);
+    }
+    .appearance-entry.collapsed .app-detail { display: none; }
     .app-header { display: flex; gap: 12px; margin-bottom: 12px; align-items: start; }
     .app-seq-select-wrap { flex: 1; }
     .app-header select {
@@ -198,11 +215,10 @@
       font-size: 13px; box-sizing: border-box; width: 100%; background: #fff;
     }
     .remove-row-btn {
-      padding: 8px 12px; border: 1.5px solid #fecaca; border-radius: 8px; color: #dc2626;
-      background: transparent; cursor: pointer; font-size: 12px; align-self: start;
+      padding: 5px 10px; border: 1.5px solid #fecaca; border-radius: 8px; color: #dc2626;
+      background: transparent; cursor: pointer; font-size: 12px; flex-shrink: 0;
     }
     .remove-row-btn:hover { background: #fef2f2; }
-    
     .app-step-select-wrap { margin-bottom: 12px; }
     .app-step-select-wrap select {
       padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 8px;
@@ -499,9 +515,14 @@
 
     <!-- 탭2: 등장 학습 위치 -->
     <div class="cm-tab-panel" id="tab-appearances">
-      <p style="font-size:12px; color:var(--sub); margin:0 0 16px;">
-        학습 시리즈(learn_sequences)와 세부 학습 단계를 연결하여 인물/사건이 활성화되는 위치를 매핑합니다.
-      </p>
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; gap:10px;">
+        <p style="font-size:12px; color:var(--sub); margin:0; flex:1;">
+          학습 시리즈(learn_sequences)와 세부 학습 단계를 연결하여 인물/사건이 활성화되는 위치를 매핑합니다.
+        </p>
+        <button type="button" onclick="sortAppearances()" style="flex-shrink:0; font-size:11px; font-weight:700; padding:5px 10px; border:1.5px solid var(--line); border-radius:7px; background:#fff; color:var(--sub); cursor:pointer; display:flex; align-items:center; gap:5px;">
+          <i class="fa-solid fa-arrow-up-short-wide"></i> 편 순서 정렬
+        </button>
+      </div>
       <div id="cm-appearances-list"></div>
       <button class="add-row-btn" onclick="addAppearanceRow()"><i class="fa-solid fa-plus"></i> 등장 위치 추가</button>
     </div>
@@ -1320,11 +1341,11 @@
   function onAppSeqChange(selectEl) {
     const entry = selectEl.closest(".appearance-entry");
     if (!entry) return;
-    const seriesName = selectEl.value; // 선택된 시리즈/그룹명
+    const seriesName = selectEl.value;
     buildStepUI(entry, seriesName, "", "");
-    
     const badge = entry.querySelector(".app-scan-badge");
-    if (badge) badge.textContent = "";
+    if (badge) { badge.textContent = ""; badge.style.color = ""; }
+    updateAppSummary(entry);
   }
 
   function buildStepUI(entry, seriesName, selectedSeqId, defaultSeqTitle) {
@@ -1365,6 +1386,7 @@
       o.selected = true;
       stepSel.appendChild(o);
     }
+    updateAppSummary(entry);
   }
 
   const SEQUENCE_FULL_CACHE = {};
@@ -1429,6 +1451,7 @@
     const name = document.getElementById("cm-name")?.value || "";
     const altNames = getAltNames();
     updateStepScanCount(entry, seqId, name, altNames);
+    updateAppSummary(entry);
   }
 
   function addAppearanceRow(data) {
@@ -1480,30 +1503,37 @@
     });
 
     const entry = document.createElement("div");
-    entry.className = "appearance-entry";
+    entry.className = "appearance-entry" + (isNewRow ? "" : " collapsed");
     entry.innerHTML = `
-      <div class="app-header">
-        <div class="app-seq-select-wrap">
-          <span class="app-field-label">학습 시리즈</span>
-          <select class="app-seq-id" onchange="onAppSeqChange(this)">
-            <option value="">시리즈 선택</option>
-            ${seqOptions}
+      <div class="app-summary" onclick="toggleAppEntry(this)">
+        <i class="fa-solid fa-chevron-right app-toggle-icon"></i>
+        <span class="app-summary-text" style="color:var(--sub); font-style:italic;">(시리즈 미선택)</span>
+        <span class="app-scan-badge" style="transition:color 0.2s;"></span>
+        <button class="remove-row-btn" onclick="event.stopPropagation(); this.closest('.appearance-entry').remove()" type="button">✕</button>
+      </div>
+      <div class="app-detail">
+        <div class="app-header">
+          <div class="app-seq-select-wrap">
+            <span class="app-field-label">학습 시리즈</span>
+            <select class="app-seq-id" onchange="onAppSeqChange(this)">
+              <option value="">시리즈 선택</option>
+              ${seqOptions}
+            </select>
+          </div>
+        </div>
+        <div class="app-step-select-wrap">
+          <span class="app-field-label">학습 단계(편)</span>
+          <select class="app-step-select" onchange="onAppStepChange(this)">
+            <option value="">학습 단계 선택</option>
           </select>
         </div>
-        <button class="remove-row-btn" onclick="this.closest('.appearance-entry').remove()" type="button" style="margin-top:16px;">✕</button>
-      </div>
-      <div class="app-step-select-wrap">
-        <span class="app-field-label">학습 단계(편) <span class="app-scan-badge" style="font-size:11px; font-weight:800; margin-left:6px; transition:color 0.2s;"></span></span>
-        <select class="app-step-select" onchange="onAppStepChange(this)">
-          <option value="">학습 단계 선택</option>
-        </select>
-      </div>
-      <div>
-        <span class="app-field-label" style="display:flex; justify-content:space-between; align-items:center;">
-          등장 학습 내용과 연결 (설명/메모)
-          <button type="button" class="copy-base-memo-btn" onclick="copyBaseMemoToRow(this)" style="background:none; border:none; color:var(--accent); font-size:10px; font-weight:800; cursor:pointer; padding:0;">[기본 메모 가져오기]</button>
-        </span>
-        <textarea class="app-note-input" placeholder="본문 속 활약이나 설명, 메모 텍스트를 상세히 적어주세요" style="width:100%; font-size:12px; border:1.5px solid var(--line); border-radius:8px; padding:8px; box-sizing:border-box; min-height:60px; font-family:inherit; resize:vertical;">${esc(connVal)}</textarea>
+        <div>
+          <span class="app-field-label" style="display:flex; justify-content:space-between; align-items:center;">
+            등장 학습 내용과 연결 (설명/메모)
+            <button type="button" class="copy-base-memo-btn" onclick="copyBaseMemoToRow(this)" style="background:none; border:none; color:var(--accent); font-size:10px; font-weight:800; cursor:pointer; padding:0;">[기본 메모 가져오기]</button>
+          </span>
+          <textarea class="app-note-input" placeholder="본문 속 활약이나 설명, 메모 텍스트를 상세히 적어주세요" style="width:100%; font-size:12px; border:1.5px solid var(--line); border-radius:8px; padding:8px; box-sizing:border-box; min-height:60px; font-family:inherit; resize:vertical;">${esc(connVal)}</textarea>
+        </div>
       </div>
     `;
     list.appendChild(entry);
@@ -1518,6 +1548,50 @@
         updateStepScanCount(entry, targetSeqId, name, altNames);
       }
     }
+  }
+
+  function updateAppSummary(entry) {
+    const summaryText = entry.querySelector(".app-summary-text");
+    if (!summaryText) return;
+    const seqSel = entry.querySelector(".app-seq-id");
+    const stepSel = entry.querySelector(".app-step-select");
+    const seriesName = seqSel?.value ? (seqSel.options[seqSel.selectedIndex]?.text || "") : "";
+    const stepOpt = stepSel ? stepSel.options[stepSel.selectedIndex] : null;
+    const stepTitle = (stepOpt && stepOpt.value) ? stepOpt.text : "";
+    if (seriesName && stepTitle) {
+      summaryText.textContent = `${seriesName}  ·  ${stepTitle}`;
+      summaryText.style.cssText = "color:var(--text); font-style:normal;";
+    } else if (seriesName) {
+      summaryText.textContent = `${seriesName}  ·  (편 미선택)`;
+      summaryText.style.cssText = "color:var(--sub); font-style:italic;";
+    } else {
+      summaryText.textContent = "(시리즈 미선택)";
+      summaryText.style.cssText = "color:var(--sub); font-style:italic;";
+    }
+  }
+
+  function toggleAppEntry(summaryEl) {
+    const entry = summaryEl.closest(".appearance-entry");
+    if (entry) entry.classList.toggle("collapsed");
+  }
+
+  function sortAppearances() {
+    const list = document.getElementById("cm-appearances-list");
+    if (!list) return;
+    const entries = Array.from(list.querySelectorAll(".appearance-entry"));
+    entries.sort((a, b) => {
+      const aId = a.querySelector(".app-step-select")?.value || "";
+      const bId = b.querySelector(".app-step-select")?.value || "";
+      const aSeq = ALL_SEQUENCES.find(s => s.id === aId);
+      const bSeq = ALL_SEQUENCES.find(s => s.id === bId);
+      const aSeries = aSeq ? (aSeq.series_name || aSeq.group || "") : "";
+      const bSeries = bSeq ? (bSeq.series_name || bSeq.group || "") : "";
+      if (aSeries !== bSeries) return aSeries.localeCompare(bSeries, "ko");
+      const aOrder = aSeq?.series_order ?? 999;
+      const bOrder = bSeq?.series_order ?? 999;
+      return aOrder - bOrder;
+    });
+    entries.forEach(e => list.appendChild(e));
   }
 
   function copyBaseMemoToRow(btn) {
