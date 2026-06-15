@@ -2181,63 +2181,103 @@
       });
 
       // appearances 변환용 헬퍼 함수 정의
-      const convertAppearances = (rawApps) => {
+      // ID와 제목이 서로 다른 편을 가리키는 입력(예: 8편 제목에 6편 ID)을 보정하기 위한 경고 수집
+      const appearanceWarnings = [];
+
+      // 시리즈/편 제목으로 시퀀스 매칭 (1순위 완전 일치, 2순위 부분 일치)
+      const findSeqByTitle = (titleStr) => {
+        const norm = String(titleStr || "").trim().toLowerCase().replace(/\s/g, "");
+        if (!norm) return null;
+        let found = ALL_SEQUENCES.find(s => {
+          const sTitle = String(s.title || "").trim().toLowerCase().replace(/\s/g, "");
+          return sTitle === norm;
+        });
+        if (!found) {
+          found = ALL_SEQUENCES.find(s => {
+            const sTitle = String(s.title || "").trim().toLowerCase().replace(/\s/g, "");
+            return sTitle.includes(norm) || norm.includes(sTitle);
+          });
+        }
+        return found || null;
+      };
+
+      // 매칭된 시퀀스로부터 저장 포맷 객체 생성 (첫 step 정보 채움)
+      const buildFromSeq = (seq, connection) => {
+        let firstStepId = "";
+        let firstStepTitle = "";
+        const steps = SEQUENCE_FULL_CACHE[seq.id] || seq.steps || [];
+        if (steps.length > 0) {
+          firstStepId = steps[0].id || "";
+          firstStepTitle = steps[0].title || steps[0].text?.substring(0, 30) || "";
+        }
+        return {
+          sequence_id: seq.id,
+          sequence_title: seq.title,
+          step_id: firstStepId,
+          step_title: firstStepTitle,
+          content_connection: String(connection || "").trim()
+        };
+      };
+
+      const convertAppearances = (rawApps, itemName) => {
         if (!Array.isArray(rawApps)) return [];
         const processed = [];
-        
+        const who = String(itemName || "").trim();
+
         for (const app of rawApps) {
           if (!app) continue;
-          
-          // 이미 sequence_id가 들어있는 정규 포맷인 경우 그대로 사용
+
+          // sequence_id가 들어있는 정규 포맷
           if (app.sequence_id) {
+            const idStr = String(app.sequence_id).trim();
+            const titleStr = String(app.sequence_title || app.title || "").trim();
+            const foundById = ALL_SEQUENCES.find(s => s.id === idStr);
+
+            if (foundById) {
+              // ID와 제목 불일치 검증: 제목이 다른 편을 가리키면 제목을 신뢰
+              const byTitle = titleStr ? findSeqByTitle(titleStr) : null;
+              if (byTitle && byTitle.id !== idStr) {
+                appearanceWarnings.push(`• ${who}: 입력 ID(${idStr})는 "${foundById.title}"이지만 제목은 "${titleStr}" → 제목 기준 "${byTitle.title}"(으)로 매칭했습니다.`);
+                processed.push(buildFromSeq(byTitle, app.content_connection));
+                continue;
+              }
+              // 일치하거나 제목으로 확인 불가 → ID 기준 사용 (step 정보는 입력값 우선)
+              processed.push({
+                sequence_id: idStr,
+                sequence_title: foundById.title,
+                step_id: String(app.step_id || "").trim(),
+                step_title: String(app.step_title || "").trim(),
+                content_connection: String(app.content_connection || "").trim()
+              });
+              continue;
+            }
+
+            // ID가 현재 시퀀스 목록에 없음 → 제목으로 매칭 시도
+            const byTitle = findSeqByTitle(titleStr);
+            if (byTitle) {
+              appearanceWarnings.push(`• ${who}: 입력 ID(${idStr})를 찾을 수 없어 제목 "${titleStr}" 기준 "${byTitle.title}"(으)로 매칭했습니다.`);
+              processed.push(buildFromSeq(byTitle, app.content_connection));
+              continue;
+            }
+            // 둘 다 실패 → 입력값 그대로 보존 (하위 호환)
             processed.push({
-              sequence_id: String(app.sequence_id).trim(),
-              sequence_title: String(app.sequence_title || app.title || "").trim(),
+              sequence_id: idStr,
+              sequence_title: titleStr,
               step_id: String(app.step_id || "").trim(),
               step_title: String(app.step_title || "").trim(),
               content_connection: String(app.content_connection || "").trim()
             });
             continue;
           }
-          
+
+          // sequence_id 없음 → 제목 매칭 (권장 입력 방식)
           const titleStr = String(app.title || "").trim();
           const seriesNameStr = String(app.series_name || "").trim();
-          
           if (!titleStr) continue;
-          
-          // ALL_SEQUENCES에서 매칭 찾기 (공백 제거, 소문자화하여 비교)
-          const normTitle = titleStr.toLowerCase().replace(/\s/g, "");
-          
-          // 1순위: 타이틀 완전 일치 검색
-          let foundSeq = ALL_SEQUENCES.find(s => {
-            const sTitle = String(s.title || "").trim().toLowerCase().replace(/\s/g, "");
-            return sTitle === normTitle;
-          });
-          
-          // 2순위: 부분 일치 검색
-          if (!foundSeq) {
-            foundSeq = ALL_SEQUENCES.find(s => {
-              const sTitle = String(s.title || "").trim().toLowerCase().replace(/\s/g, "");
-              return sTitle.includes(normTitle) || normTitle.includes(sTitle);
-            });
-          }
-          
+
+          const foundSeq = findSeqByTitle(titleStr);
           if (foundSeq) {
-            let firstStepId = "";
-            let firstStepTitle = "";
-            const steps = SEQUENCE_FULL_CACHE[foundSeq.id] || foundSeq.steps || [];
-            if (steps.length > 0) {
-              firstStepId = steps[0].id || "";
-              firstStepTitle = steps[0].title || steps[0].text?.substring(0, 30) || "";
-            }
-            
-            processed.push({
-              sequence_id: foundSeq.id,
-              sequence_title: foundSeq.title,
-              step_id: firstStepId,
-              step_title: firstStepTitle,
-              content_connection: String(app.content_connection || "").trim()
-            });
+            processed.push(buildFromSeq(foundSeq, app.content_connection));
           } else {
             // 찾지 못한 경우 하위 호환성 포맷으로 sequence_id에 시리즈명을, step_title에 편 제목을 기입하여 백업
             processed.push({
@@ -2254,7 +2294,7 @@
 
       // 입력된 데이터의 appearances 정규화 및 매칭 수행
       items.forEach(item => {
-        item.appearances = convertAppearances(item.appearances);
+        item.appearances = convertAppearances(item.appearances, item.name);
       });
 
       // 유효성 검사 (name만 우선 체크 — type은 신규 항목일 때만 필수)
@@ -2528,6 +2568,9 @@
         }
       } else {
         msg = `${savedItems.length}건의 데이터가 성공적으로 신규 등록되었습니다.`;
+      }
+      if (appearanceWarnings.length > 0) {
+        msg += `\n\n⚠️ 등장 위치 매칭 보정 ${appearanceWarnings.length}건:\n` + appearanceWarnings.join("\n");
       }
       alert(msg);
       closeBulkModal();
