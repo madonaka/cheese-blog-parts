@@ -159,8 +159,13 @@
     }
     .alt-name-row button:hover { background: #fef2f2; }
 
-    .term-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+    .term-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
     .term-row input { flex: 1; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 8px; font-size: 13px; }
+    .term-row .term-ordinal-input { flex: 0 0 90px; }
+    .term-row .term-title-input { flex: 0 0 130px; }
+    .term-row .term-party-input { flex: 0 0 130px; }
+    .term-para-label { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; font-size: 12px; color: #b45309; font-weight: 700; white-space: nowrap; cursor: pointer; }
+    .term-para-label input { flex: 0 0 auto; width: auto; }
     .term-row .term-sep { color: var(--sub); font-size: 13px; flex: 0 0 auto; }
     .term-row button {
       padding: 8px 12px; border: 1.5px solid #fecaca; border-radius: 8px; color: #dc2626;
@@ -462,7 +467,7 @@
       </div>
 
       <div class="cm-field" id="term-field">
-        <label>집권 기간 (지도자일 때, 선택 · 재집권 시 여러 개 추가)</label>
+        <label>집권 기간 (지도자일 때, 선택 · 재집권 시 여러 개 추가 · 대수/직책 입력 시 '미국 제45대 대통령'처럼 표시 · 정당은 그 임기 당시 소속 · 한 인물이 여러 직책 동시면 직책마다 행 추가 · '최고지도자'는 실권자(국가주석≠최고지도자) 표시용)</label>
         <div id="terms-list"></div>
         <button class="add-row-btn" type="button" onclick="addTermRow()"><i class="fa-solid fa-plus"></i> 집권 기간 추가</button>
       </div>
@@ -676,7 +681,7 @@
             <tr>
               <td><strong>terms</strong></td>
               <td>Array</td>
-              <td>집권 기간 배열 `[{start, end}]` (지도자, 생몰 연표에서 빨간 구간으로 표시 · 재집권 시 여러 개, end 비우면 재임 중)</td>
+              <td>집권 기간 배열 `[{start, end, title, ordinal, party, paramount}]` (지도자, 생몰 연표에서 빨간 구간으로 표시 · 재집권/다중 직책 시 여러 개, end 비우면 재임 중 · `ordinal`=대수(예: `"45"`), `title`=직책(예: `"대통령"`) → '미국 제45대 대통령'처럼 표시, `party`=그 임기 당시 소속 정당(예: `"공화당"`), `paramount`=실질 최고지도자 여부(true/false, 국가주석≠최고지도자 구분용), 연도 외 모두 선택)</td>
               <td>선택</td>
             </tr>
             <tr>
@@ -1172,7 +1177,7 @@
   }
 
   /* ── 집권 기간(복수 임기) 입력 ── */
-  function addTermRow(start, end) {
+  function addTermRow(start, end, title, ordinal, party, paramount) {
     const list = document.getElementById("terms-list");
     if (!list) return;
     const row = document.createElement("div");
@@ -1181,6 +1186,10 @@
       <input type="text" class="term-start-input" placeholder="시작 (예: 2017)" value="${esc(start || "")}">
       <span class="term-sep">~</span>
       <input type="text" class="term-end-input" placeholder="종료 (재임 중이면 비움)" value="${esc(end || "")}">
+      <input type="text" class="term-ordinal-input" placeholder="대수 (예: 45)" value="${esc(ordinal || "")}">
+      <input type="text" class="term-title-input" placeholder="직책 (예: 대통령)" value="${esc(title || "")}">
+      <input type="text" class="term-party-input" placeholder="정당 (예: 공화당)" value="${esc(party || "")}">
+      <label class="term-para-label" title="이 직책이 실질 최고지도자였으면 체크 (국가주석이 아니어도 가능)"><input type="checkbox" class="term-para-input" ${paramount ? "checked" : ""}> 최고지도자</label>
       <button onclick="this.closest('.term-row').remove()" type="button">&times;</button>
     `;
     list.appendChild(row);
@@ -1191,6 +1200,10 @@
       .map(row => ({
         start: (row.querySelector(".term-start-input")?.value || "").trim(),
         end: (row.querySelector(".term-end-input")?.value || "").trim(),
+        title: (row.querySelector(".term-title-input")?.value || "").trim(),
+        ordinal: (row.querySelector(".term-ordinal-input")?.value || "").trim(),
+        party: (row.querySelector(".term-party-input")?.value || "").trim(),
+        paramount: row.querySelector(".term-para-input")?.checked === true,
       }))
       .filter(t => t.start);  // 시작 연도가 있는 행만
   }
@@ -1804,7 +1817,7 @@
           const terms = Array.isArray(item.terms) && item.terms.length > 0
             ? item.terms
             : (item.term_start ? [{ start: item.term_start, end: item.term_end || "" }] : []);
-          terms.forEach(t => addTermRow(t.start, t.end));
+          terms.forEach(t => addTermRow(t.start, t.end, t.title, t.ordinal, t.party, t.paramount));
         }
         document.getElementById("cm-faction").value = item.faction || "";
         selectedFactionNames = Array.isArray(item.factions) && item.factions.length
@@ -2342,7 +2355,7 @@
           ? item.terms
           : (item.term_start ? [{ start: item.term_start, end: item.term_end || "" }] : []);
         const cleanTerms = terms
-          .map(t => ({ start: String(t.start || "").trim(), end: String(t.end || "").trim() }))
+          .map(t => ({ start: String(t.start || "").trim(), end: String(t.end || "").trim(), title: String(t.title || "").trim(), ordinal: String(t.ordinal || "").trim(), party: String(t.party || "").trim(), paramount: t.paramount === true }))
           .filter(t => t.start || t.end);
         if (cleanTerms.length) obj.terms = cleanTerms;
       }
@@ -2612,7 +2625,7 @@
         // 집권 기간(terms): 인물(character) 전용. 신규 terms 배열 우선, 없으면 레거시 term_start/term_end 폴백
         const itemTerms = item.type === "character"
           ? (Array.isArray(item.terms) && item.terms.length > 0
-              ? item.terms.map(t => ({ start: String(t.start || "").trim(), end: String(t.end || "").trim() })).filter(t => t.start || t.end)
+              ? item.terms.map(t => ({ start: String(t.start || "").trim(), end: String(t.end || "").trim(), title: String(t.title || "").trim(), ordinal: String(t.ordinal || "").trim(), party: String(t.party || "").trim(), paramount: t.paramount === true })).filter(t => t.start || t.end)
               : (item.term_start ? [{ start: String(item.term_start).trim(), end: String(item.term_end || "").trim() }] : []))
           : [];
         // 소속 단체/정당(organizations): 인물·사건·사상 전용 다중 배열
@@ -2695,7 +2708,7 @@
             ? existingItem.terms
             : (existingItem.term_start ? [{ start: existingItem.term_start, end: existingItem.term_end || "" }] : []);
           const incomingTerms = Array.isArray(item.terms) && item.terms.length > 0
-            ? item.terms.map(t => ({ start: String(t.start || "").trim(), end: String(t.end || "").trim() })).filter(t => t.start || t.end)
+            ? item.terms.map(t => ({ start: String(t.start || "").trim(), end: String(t.end || "").trim(), title: String(t.title || "").trim(), ordinal: String(t.ordinal || "").trim(), party: String(t.party || "").trim(), paramount: t.paramount === true })).filter(t => t.start || t.end)
             : (item.term_start ? [{ start: String(item.term_start).trim(), end: String(item.term_end || "").trim() }] : []);
           const mergedTerms = existingItem.type === "character"
             ? (existingTerms.length > 0 ? existingTerms : incomingTerms)
@@ -2785,7 +2798,7 @@
           // 집권기간 terms: 입력에 terms/term_start 있으면 교체, 없으면 기존(레거시 폴백)
           const termsArr = (has("terms") || has("term_start"))
             ? (Array.isArray(item.terms) && item.terms.length
-                ? item.terms.map(t => ({ start: String(t.start || "").trim(), end: String(t.end || "").trim() })).filter(t => t.start || t.end)
+                ? item.terms.map(t => ({ start: String(t.start || "").trim(), end: String(t.end || "").trim(), title: String(t.title || "").trim(), ordinal: String(t.ordinal || "").trim(), party: String(t.party || "").trim(), paramount: t.paramount === true })).filter(t => t.start || t.end)
                 : (item.term_start ? [{ start: String(item.term_start).trim(), end: String(item.term_end || "").trim() }] : []))
             : (Array.isArray(ex.terms) && ex.terms.length ? ex.terms : (ex.term_start ? [{ start: ex.term_start, end: ex.term_end || "" }] : []));
           const lineageVal = has("lineage") ? String(item.lineage || "").trim() : (ex.lineage || "");
