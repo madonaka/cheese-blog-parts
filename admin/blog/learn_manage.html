@@ -1041,6 +1041,27 @@
             .set-panel-filter { flex-direction: column; }
         }
 
+        /* ── 청크 일괄 추출 모달 ── */
+        .ce-group-title {
+            display: flex; align-items: center; gap: 8px;
+            font-size: 0.78rem; font-weight: 800; color: #334155;
+            padding: 9px 10px; margin-top: 6px;
+            background: #f8fafc; border: 1px solid var(--border); border-radius: 8px;
+            cursor: pointer;
+        }
+        .ce-group-title:hover { background: #eef2f7; }
+        .ce-group-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .ce-group-count {
+            font-size: 0.66rem; font-weight: 700; color: #64748b;
+            background: #e2e8f0; padding: 1px 6px; border-radius: 10px; white-space: nowrap;
+        }
+        .ce-row:hover { background: #f0f4ff; }
+        .ce-order {
+            font-size: 0.64rem; font-weight: 800; color: #d97706;
+            background: #fef3c7; border: 1px solid #fde68a;
+            padding: 1px 5px; border-radius: 4px; white-space: nowrap; flex-shrink: 0;
+        }
+
         /* ── 청크 개요 모달 ── */
         .overview-list { display: flex; flex-direction: column; }
         .overview-row {
@@ -1512,6 +1533,9 @@
                 </button>
                 <button class="btn btn-ghost btn-sm" onclick="openBulkImportModal()">
                     <i class="fas fa-file-import"></i><span class="btn-label"> 일괄 가져오기</span>
+                </button>
+                <button class="btn btn-ghost btn-sm" onclick="openChunkExportModal()">
+                    <i class="fas fa-file-export"></i><span class="btn-label"> 청크 추출</span>
                 </button>
                 <button class="btn btn-ghost btn-sm" onclick="loadSequenceList()">
                     <i class="fas fa-sync-alt"></i><span class="btn-label"> 새로고침</span>
@@ -2541,6 +2565,37 @@
             <button class="btn btn-ghost btn-sm" onclick="closeStepOverviewModal()">닫기</button>
         </div>
         <div class="overview-list" id="overview-list" style="flex:1; overflow-y:auto;"></div>
+    </div>
+</div>
+
+<!-- 청크 일괄 추출(다운로드) 모달 -->
+<div class="modal-overlay" id="chunk-export-modal" onclick="if(event.target === this) closeChunkExportModal()">
+    <div class="modal-card" style="max-width:640px; width:95vw; max-height:88vh; display:flex; flex-direction:column; padding:0; border-radius:14px; overflow:hidden;">
+        <div style="padding:14px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px; flex-shrink:0;">
+            <h3 style="flex:1; margin:0; font-size:1rem; font-weight:800;"><i class="fas fa-file-export" style="color:var(--primary);"></i> 청크 일괄 추출</h3>
+            <span id="chunk-export-count" style="font-size:0.78rem; color:var(--text-sub); font-weight:600;">0 / 0 선택</span>
+            <button class="btn btn-ghost btn-sm" onclick="closeChunkExportModal()">닫기</button>
+        </div>
+
+        <div style="padding:10px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px; flex-wrap:wrap; flex-shrink:0;">
+            <label style="display:flex; align-items:center; gap:6px; font-size:0.8rem; font-weight:700; color:#1e293b; cursor:pointer;">
+                <input type="checkbox" id="ce-select-all" onchange="toggleAllChunkExport(this.checked)"> 전체 선택
+            </label>
+            <input type="text" id="ce-search" oninput="filterChunkExportRows(this.value)" placeholder="제목 검색..."
+                   style="flex:1; min-width:120px; font-size:0.8rem; border:1.5px solid var(--border); border-radius:8px; padding:5px 10px; outline:none;">
+            <div style="display:flex; align-items:center; gap:8px; font-size:0.78rem; color:#475569;">
+                <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="radio" name="ce-format" value="md" checked> .md</label>
+                <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="radio" name="ce-format" value="txt"> .txt</label>
+            </div>
+        </div>
+
+        <div id="chunk-export-list" style="flex:1; overflow-y:auto; padding:8px 12px;"></div>
+
+        <div style="padding:12px 20px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:8px; flex-shrink:0;">
+            <button class="btn btn-primary btn-sm" id="chunk-export-dl-btn" onclick="downloadChunkExport()">
+                <i class="fas fa-file-archive"></i> 선택 ZIP 다운로드
+            </button>
+        </div>
     </div>
 </div>
 
@@ -4728,6 +4783,256 @@ function copyOverviewText() {
         if (btn) { btn.innerHTML = '<i class="fas fa-check"></i> 복사됨'; setTimeout(() => { btn.innerHTML = '<i class="fas fa-copy"></i> 전체 복사'; }, 1800); }
         toast(`${stepsData.length}개 청크 내용이 복사되었습니다.`);
     }).catch(() => toast('복사에 실패했습니다.'));
+}
+
+// ── 청크 일괄 추출(다운로드) ────────────────
+function openChunkExportModal() {
+    if (!allSequences || !allSequences.length) { toast('먼저 학습 목록을 불러오세요.', true); return; }
+    const listEl = document.getElementById('chunk-export-list');
+    if (!listEl) return;
+
+    // 시리즈별 묶음 + 단독 학습 분리 (목록과 동일한 정렬 규칙)
+    const seriesGroup = {};
+    const singleDocs  = [];
+    allSequences.forEach(d => {
+        if (d.series_id) {
+            if (!seriesGroup[d.series_id]) {
+                seriesGroup[d.series_id] = { name: d.series_name || '미분류 시리즈', eps: [] };
+            }
+            seriesGroup[d.series_id].eps.push(d);
+        } else {
+            singleDocs.push(d);
+        }
+    });
+
+    let html = '';
+    Object.entries(seriesGroup).forEach(([sId, s]) => {
+        s.eps.sort((a, b) => (a.series_order ?? 9999) - (b.series_order ?? 9999));
+        const key = 'ser-' + sId;
+        html += ceGroupTitleHtml_(key, s.name, s.eps.length);
+        s.eps.forEach(ep => { html += ceRowHtml_(ep, true, key); });
+    });
+    if (singleDocs.length) {
+        html += ceGroupTitleHtml_('single', '단독 학습', singleDocs.length);
+        singleDocs.forEach(d => { html += ceRowHtml_(d, false, 'single'); });
+    }
+
+    listEl.innerHTML = html || '<div class="overview-empty">학습이 없습니다.</div>';
+    const searchEl = document.getElementById('ce-search');
+    if (searchEl) searchEl.value = '';
+    updateChunkExportCount();
+    document.getElementById('chunk-export-modal').classList.add('open');
+}
+
+function ceGroupTitleHtml_(key, name, count) {
+    return `
+    <label class="ce-group-title" data-group-key="${key}">
+        <input type="checkbox" class="ce-group-check" data-group-key="${key}" onchange="toggleGroupChunkExport('${key}', this.checked)">
+        <span class="ce-group-name">${name}</span>
+        <span class="ce-group-count">${count}편</span>
+    </label>`;
+}
+
+function ceRowHtml_(d, inSeries, groupKey) {
+    const order      = (inSeries && d.series_order != null) ? `<span class="ce-order">${d.series_order}편</span>` : '';
+    const stepCount  = (d.steps?.length ?? 0);
+    const lockBadge  = d.is_locked ? ' 🔒' : '';
+    return `
+    <label class="ce-row" data-group-key="${groupKey}" style="display:flex; align-items:center; gap:8px; padding:7px 10px; padding-left:24px; border-radius:8px; cursor:pointer;">
+        <input type="checkbox" class="ce-check" value="${d.id}" onchange="updateChunkExportCount()">
+        ${order}
+        <span class="ce-row-title" style="flex:1; min-width:0; font-size:0.84rem; color:#1e293b; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${d.title ?? '(제목 없음)'}</span>
+        <span class="ce-row-count" style="font-size:0.7rem; color:#94a3b8; white-space:nowrap;">${stepCount}청크${lockBadge}</span>
+    </label>`;
+}
+
+function closeChunkExportModal() {
+    document.getElementById('chunk-export-modal').classList.remove('open');
+}
+
+function toggleAllChunkExport(checked) {
+    document.querySelectorAll('#chunk-export-list .ce-row').forEach(row => {
+        if (row.style.display === 'none') return; // 검색으로 숨겨진 행은 제외
+        const c = row.querySelector('.ce-check');
+        if (c) c.checked = checked;
+    });
+    updateChunkExportCount();
+}
+
+// 특정 시리즈(그룹) 내 학습 전체 선택/해제
+function toggleGroupChunkExport(key, checked) {
+    document.querySelectorAll(`#chunk-export-list .ce-row[data-group-key="${key}"]`).forEach(row => {
+        if (row.style.display === 'none') return; // 검색으로 숨겨진 행은 제외
+        const c = row.querySelector('.ce-check');
+        if (c) c.checked = checked;
+    });
+    updateChunkExportCount();
+}
+
+function updateChunkExportCount() {
+    const all = [...document.querySelectorAll('#chunk-export-list .ce-check')];
+    const sel = all.filter(c => c.checked).length;
+    const el  = document.getElementById('chunk-export-count');
+    if (el) el.textContent = `${sel} / ${all.length} 선택`;
+    const allBox = document.getElementById('ce-select-all');
+    if (allBox) {
+        allBox.checked       = all.length > 0 && sel === all.length;
+        allBox.indeterminate = sel > 0 && sel < all.length;
+    }
+
+    // 각 시리즈(그룹) 헤더 체크박스 상태 동기화
+    document.querySelectorAll('#chunk-export-list .ce-group-check').forEach(gb => {
+        const key   = gb.dataset.groupKey;
+        const boxes = [...document.querySelectorAll(`#chunk-export-list .ce-row[data-group-key="${key}"] .ce-check`)];
+        const gsel  = boxes.filter(c => c.checked).length;
+        gb.checked       = boxes.length > 0 && gsel === boxes.length;
+        gb.indeterminate = gsel > 0 && gsel < boxes.length;
+    });
+}
+
+function filterChunkExportRows(q) {
+    const kw = (q ?? '').toLowerCase().trim();
+    document.querySelectorAll('#chunk-export-list .ce-row').forEach(row => {
+        const t = (row.querySelector('.ce-row-title')?.textContent ?? '').toLowerCase();
+        row.style.display = (!kw || t.includes(kw)) ? 'flex' : 'none';
+    });
+}
+
+// 학습 하나를 단독 파일 내용으로 변환
+function buildSeqChunkFile_(d, steps, fmt) {
+    const seriesName = (d.series_name ?? '').trim();
+    const title      = (d.title ?? '(제목 없음)').trim();
+    const header     = seriesName ? `${seriesName} / ${title}` : title;
+    const lines = (steps ?? []).map((step, i) => {
+        const textPart = (step.text ?? '').trim();
+        const anns     = step.annotations ?? (step.annotation ? [{ text: step.annotation }] : []);
+        const annText  = anns.filter(a => a.text).map(a => ` [${a.text.trim()}]`).join('');
+        return fmt === 'md' ? `${i + 1}. ${textPart}${annText}` : `${i + 1} : ${textPart}${annText}`;
+    });
+    const body = lines.length ? lines.join('\n') : '(청크 없음)';
+    if (fmt === 'md') return `# ${header}\n\n${body}\n`;
+    const rule = '='.repeat(Math.min(Math.max(header.length, 4), 40));
+    return `${header}\n${rule}\n${body}\n`;
+}
+
+// 파일/폴더명에 쓸 수 없는 문자 정리
+function sanitizeFileName_(s) {
+    return (s ?? '').replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim().slice(0, 80) || 'untitled';
+}
+
+async function downloadChunkExport() {
+    const checks = [...document.querySelectorAll('#chunk-export-list .ce-check')].filter(c => c.checked);
+    if (!checks.length) { toast('선택된 학습이 없습니다.', true); return; }
+
+    const fmt = document.querySelector('input[name="ce-format"]:checked')?.value ?? 'md';
+    const ext = fmt === 'md' ? 'md' : 'txt';
+    const btn = document.getElementById('chunk-export-dl-btn');
+    const orig = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 생성 중...'; }
+
+    try {
+        const files     = [];
+        const usedPaths = new Set();
+        for (const c of checks) {
+            const d = allSequences.find(x => x.id === c.value);
+            if (!d) continue;
+            // 잠금 학습은 공개 문서에 미리보기만 있으므로 보호 컬렉션에서 전체 청크를 가져온다.
+            let steps = d.steps ?? [];
+            if (d.is_locked) {
+                try {
+                    const res = await safeFetchDB({ action: 'getDoc', collection: 'learn_sequences_full', id: d.id });
+                    if (res && res.data && Array.isArray(res.data.steps) && res.data.steps.length) steps = res.data.steps;
+                } catch (_) { /* 미리보기 청크로 폴백 */ }
+            }
+
+            // 시리즈는 폴더로 묶고, 편 순서를 파일명 앞에 붙인다.
+            const folder      = d.series_id ? sanitizeFileName_(d.series_name || '미분류 시리즈') + '/' : '';
+            const orderPrefix = (d.series_id && d.series_order != null) ? String(d.series_order).padStart(2, '0') + '_' : '';
+            const base        = folder + orderPrefix + sanitizeFileName_(d.title ?? '제목 없음');
+            let path = `${base}.${ext}`;
+            let n = 2;
+            while (usedPaths.has(path)) { path = `${base}_${n}.${ext}`; n++; }
+            usedPaths.add(path);
+
+            files.push({ name: path, content: buildSeqChunkFile_(d, steps, fmt) });
+        }
+
+        const today = new Date().toISOString().slice(0, 10);
+        const blob  = buildZipBlob_(files);
+        triggerBlobDownload_(blob, `learn_chunks_${today}.zip`);
+        toast(`${files.length}개 학습을 ZIP으로 다운로드했습니다.`);
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+    }
+}
+
+// ── 순수 JS ZIP 생성 (무압축 store 방식) ──────
+function crc32_(bytes) {
+    let crc = ~0;
+    for (let i = 0; i < bytes.length; i++) {
+        crc ^= bytes[i];
+        for (let j = 0; j < 8; j++) {
+            crc = (crc >>> 1) ^ (0xEDB88320 & -(crc & 1));
+        }
+    }
+    return (~crc) >>> 0;
+}
+
+function buildZipBlob_(files) {
+    const enc = new TextEncoder();
+    const u16 = (n) => [n & 0xff, (n >>> 8) & 0xff];
+    const u32 = (n) => [n & 0xff, (n >>> 8) & 0xff, (n >>> 16) & 0xff, (n >>> 24) & 0xff];
+
+    const localParts   = [];
+    const centralParts = [];
+    let offset = 0;
+
+    files.forEach(f => {
+        const nameBytes = enc.encode(f.name);
+        const dataBytes = enc.encode(f.content);
+        const crc  = crc32_(dataBytes);
+        const size = dataBytes.length;
+
+        // 로컬 파일 헤더 (플래그 0x0800 = 파일명 UTF-8)
+        const local = [].concat(
+            u32(0x04034b50), u16(20), u16(0x0800), u16(0),
+            u16(0), u16(0), u32(crc), u32(size), u32(size),
+            u16(nameBytes.length), u16(0)
+        );
+        localParts.push(Uint8Array.from(local), nameBytes, dataBytes);
+
+        // 중앙 디렉터리 헤더
+        const central = [].concat(
+            u32(0x02014b50), u16(20), u16(20), u16(0x0800), u16(0),
+            u16(0), u16(0), u32(crc), u32(size), u32(size),
+            u16(nameBytes.length), u16(0), u16(0),
+            u16(0), u16(0), u32(0), u32(offset)
+        );
+        centralParts.push(Uint8Array.from(central), nameBytes);
+
+        offset += local.length + nameBytes.length + dataBytes.length;
+    });
+
+    const cdStart = offset;
+    const cdSize  = centralParts.reduce((sum, p) => sum + p.length, 0);
+    const end = [].concat(
+        u32(0x06054b50), u16(0), u16(0),
+        u16(files.length), u16(files.length),
+        u32(cdSize), u32(cdStart), u16(0)
+    );
+
+    return new Blob([...localParts, ...centralParts, Uint8Array.from(end)], { type: 'application/zip' });
+}
+
+function triggerBlobDownload_(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a   = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function jumpToStep(idx) {
