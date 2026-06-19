@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>정당·단체 흐름도 편집 · Cheese Admin</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <link rel="stylesheet" href="../admin.css" />
+  <script src="../admin-common.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script>
+    window.onerror = function(message, source, lineno, colno) {
+      alert(`[JavaScript Runtime Error]\n\nMessage: ${message}\nSource: ${source}\nLine: ${lineno}:${colno}`);
+      return false;
+    };
+    window.CHEESE_ADMIN_ACTIVE_PAGE = "org_flow_manage";
+    window.CHEESE_ADMIN_PAGE_SUBTITLE = "정당·단체 흐름도 편집";
+  </script>
+  <style>
+    :root {
+      --bg: #f8fafc; --card: #ffffff; --text: #0f172a; --sub: #64748b;
+      --line: rgba(15,23,42,0.08); --shadow: 0 10px 25px -5px rgba(15,23,42,0.05);
+      --r: 16px; --accent: #d97706; --accent-light: #fef3c7;
+    }
+    .of-wrap { padding: 24px; max-width: 1480px; margin: 0 auto; }
+    .of-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+    .of-title { font-size: 22px; font-weight: 900; color: var(--text); margin: 0; display: flex; align-items: center; gap: 10px; }
+    .of-title i { color: var(--accent); }
+    .of-toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .of-toolbar select, .of-toolbar button {
+      padding: 9px 14px; border: 1.5px solid var(--line); border-radius: 10px; font-size: 13px;
+      background: #fff; color: var(--text); cursor: pointer; font-weight: 600;
+    }
+    .of-toolbar button:hover { border-color: var(--accent); color: var(--accent); }
+
+    .of-verify { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+    .of-chip {
+      display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700;
+      padding: 6px 12px; border-radius: 9999px; border: 1px solid var(--line); background: #fff; color: var(--sub);
+    }
+    .of-chip b { color: var(--text); }
+    .of-chip.warn { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+    .of-chip.ok { background: #f0fdf4; border-color: #bbf7d0; color: #15803d; }
+
+    .of-board { display: grid; grid-template-columns: 1fr 340px; gap: 16px; align-items: start; }
+    @media (max-width: 1080px) { .of-board { grid-template-columns: 1fr; } }
+
+    .of-chart-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow); overflow: hidden; }
+    .of-legend { display: flex; flex-wrap: wrap; gap: 14px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+    .of-leg { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--sub); }
+    .of-leg-line { width: 22px; border-top: 3px solid var(--sub); display: inline-block; }
+    .of-leg-line.split { border-top: 3px solid #2563eb; }
+    .of-leg-line.merge { border-top: 5px solid #dc2626; }
+    .of-leg-line.succeed { border-top: 3px dotted #16a34a; }
+    .of-leg-line.guess { border-top: 3px dashed #94a3b8; opacity: 0.7; }
+    .of-chart { position: relative; width: 100%; max-height: 70vh; overflow: auto; cursor: grab; user-select: none; background: #fff; }
+    .of-chart:active { cursor: grabbing; }
+    .of-chart svg { display: block; }
+
+    .of-grid-line { stroke: var(--line); stroke-width: 0.8px; stroke-dasharray: 4 4; opacity: 0.5; }
+    .of-grid-line.major { stroke-width: 1.1px; stroke-dasharray: none; opacity: 0.8; }
+    .of-grid-label { font-size: 11px; fill: var(--sub); font-weight: 500; opacity: 0.75; }
+    .of-grid-label.major { font-size: 11.5px; fill: var(--text); font-weight: 700; opacity: 1; }
+    .of-zone-band { opacity: 0.03; }
+    .of-zone-sep { stroke: var(--line); stroke-width: 1px; opacity: 0.45; }
+    .of-zone-head-bg { opacity: 0.08; stroke-width: 0; }
+    .of-zone-head-text { font-size: 12.5px; font-weight: 800; letter-spacing: -0.2px; text-anchor: middle; }
+
+    .of-tube { stroke-linecap: round; opacity: 0.78; cursor: pointer; transition: opacity 0.15s; }
+    .of-tube:hover { opacity: 0.95; }
+    .of-tube.selected { opacity: 1; filter: drop-shadow(0 0 0 3px #fff) drop-shadow(0 0 6px rgba(217,119,6,0.9)); }
+    .of-tube.flash { animation: ofFlash 1.1s ease; }
+    @keyframes ofFlash {
+      0%, 100% { filter: none; opacity: 0.78; }
+      25%, 60% { filter: drop-shadow(0 0 8px rgba(217,119,6,0.95)); opacity: 1; stroke-width: 15px; }
+    }
+    .of-hit { cursor: pointer; }
+    .of-name { font-size: 12px; font-weight: 700; letter-spacing: -0.2px; paint-order: stroke fill; stroke: #fff; stroke-width: 2.5px; stroke-linejoin: round; pointer-events: none; }
+    .of-years { font-size: 9px; font-weight: 600; fill: var(--sub); paint-order: stroke fill; stroke: #fff; stroke-width: 2.5px; stroke-linejoin: round; pointer-events: none; }
+    .of-founded { font-size: 9.5px; font-weight: 700; fill: var(--sub); opacity: 0.85; paint-order: stroke fill; stroke: #fff; stroke-width: 2.5px; stroke-linejoin: round; pointer-events: none; }
+
+    .of-link { fill: none; stroke-linecap: round; }
+    .of-link.split { opacity: 0.78; }
+    .of-link.merge { opacity: 0.68; }
+    .of-link.succeed { stroke-dasharray: 2 6; opacity: 0.8; }
+    .of-link.guess { stroke-dasharray: 5 5; opacity: 0.3; }
+    .of-jhalo { opacity: 0.16; } .of-jring { filter: drop-shadow(0 1px 2px rgba(0,0,0,0.18)); } .of-jcore { opacity: 0.95; }
+
+    /* 사이드 편집 패널 */
+    .of-panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow); padding: 18px; position: sticky; top: 16px; }
+    .of-panel-empty { color: var(--sub); font-size: 13px; line-height: 1.6; text-align: center; padding: 30px 10px; }
+    .of-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+    .of-pn { font-size: 16px; font-weight: 900; color: var(--text); }
+    .of-pt { font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 9999px; background: var(--accent-light); color: var(--accent); white-space: nowrap; }
+    .of-field { margin-bottom: 12px; }
+    .of-field > label { display: block; font-size: 12px; font-weight: 700; color: var(--sub); margin-bottom: 5px; }
+    .of-field input { width: 100%; box-sizing: border-box; padding: 8px 11px; border: 1.5px solid var(--line); border-radius: 8px; font-size: 13px; }
+    .of-field input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-light); }
+    .of-row2 { display: flex; gap: 8px; }
+    .of-pred-row { display: flex; gap: 6px; align-items: center; margin-bottom: 7px; }
+    .of-pred-row input.pn { flex: 1 1 auto; min-width: 0; padding: 7px 9px; border: 1.5px solid var(--line); border-radius: 8px; font-size: 12px; }
+    .of-pred-row input.py { flex: 0 0 64px; padding: 7px 6px; border: 1.5px solid var(--line); border-radius: 8px; font-size: 12px; }
+    .of-pred-row select.pr { flex: 0 0 84px; padding: 7px 4px; border: 1.5px solid var(--line); border-radius: 8px; font-size: 12px; background: #fff; }
+    .of-pred-row button { flex: 0 0 auto; padding: 6px 9px; border: 1.5px solid #fecaca; border-radius: 8px; background: #fff; color: #dc2626; cursor: pointer; }
+    .of-addrow { padding: 7px 12px; border: 1.5px dashed #cbd5e1; border-radius: 8px; background: transparent; color: #475569; font-size: 12px; font-weight: 700; cursor: pointer; }
+    .of-addrow:hover { border-color: var(--accent); color: var(--accent); }
+    .of-panel-actions { display: flex; gap: 8px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+    .of-save { flex: 1; padding: 11px; border: none; border-radius: 10px; background: var(--accent); color: #fff; font-weight: 800; font-size: 14px; cursor: pointer; }
+    .of-save:hover { opacity: 0.92; }
+    .of-loading { text-align: center; color: var(--sub); padding: 60px 20px; font-size: 14px; }
+  </style>
+</head>
+<body>
+<div class="admin-shell">
+  <div id="admin-header-slot"></div>
+  <div class="admin-main">
+    <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+    <main class="admin-content">
+      <div class="of-wrap">
+        <div class="of-title-row">
+          <h2 class="of-title"><i class="fa-solid fa-diagram-project"></i> 정당·단체 흐름도 편집</h2>
+          <div class="of-toolbar">
+            <select id="of-type-filter" onchange="renderFlow()">
+              <option value="all">나라+단체 전체</option>
+              <option value="nation">나라/국가만</option>
+              <option value="organization">정당/단체만</option>
+            </select>
+            <select id="of-lineage-filter" onchange="renderFlow()"><option value="">모든 계보</option></select>
+            <button onclick="loadAll()"><i class="fa-solid fa-rotate"></i> 새로고침</button>
+            <button onclick="ofNew()" style="background:var(--accent); color:#fff; border-color:var(--accent);"><i class="fa-solid fa-plus"></i> 나라·단체 추가</button>
+          </div>
+        </div>
+
+        <div class="of-verify" id="of-verify"></div>
+
+        <div class="of-board">
+          <div class="of-chart-card">
+            <div class="of-legend">
+              <span class="of-leg"><span class="of-leg-line split"></span>분당/분단</span>
+              <span class="of-leg"><span class="of-leg-line merge"></span>합당</span>
+              <span class="of-leg"><span class="of-leg-line succeed"></span>계승</span>
+              <span class="of-leg"><span class="of-leg-line guess"></span>연속(추정)</span>
+            </div>
+            <div class="of-chart" id="of-chart"><div class="of-loading">데이터를 불러오는 중...</div></div>
+          </div>
+
+          <div class="of-panel">
+            <div class="of-panel-empty" id="of-panel-empty">← 흐름도에서 바(나라·단체)를 클릭하면<br>여기서 연도·계보·전신관계를 바로 수정할 수 있어요.</div>
+            <div id="of-panel-body" style="display:none;">
+              <div class="of-panel-head" id="of-edit-head">
+                <span class="of-pn" id="of-pn"></span>
+                <span class="of-pt" id="of-pt"></span>
+              </div>
+              <div id="of-new-fields" style="display:none; margin-bottom:4px;">
+                <div class="of-row2">
+                  <div class="of-field" style="flex:1;"><label>이름 *</label><input id="of-new-name" placeholder="예: 대한민국"></div>
+                  <div class="of-field" style="flex:0 0 120px;"><label>구분</label>
+                    <select id="of-new-type" style="width:100%; box-sizing:border-box; padding:8px 10px; border:1.5px solid var(--line); border-radius:8px; font-size:13px; background:#fff;">
+                      <option value="nation">나라/국가</option>
+                      <option value="organization">정당/단체</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <div class="of-row2">
+                <div class="of-field" style="flex:1;"><label>건국/창당 연도</label><input id="of-birth" placeholder="예: 1948"></div>
+                <div class="of-field" style="flex:1;"><label>멸망/해산 (현존 시 비움)</label><input id="of-death" placeholder="예: 1991"></div>
+              </div>
+              <div class="of-field"><label>계보 / 진영 (좌→우 영역 분류)</label><input id="of-lineage" list="of-lineage-list" placeholder="예: 한국사"></div>
+              <div class="of-field">
+                <label>🔀 전신 / 분기·합당 관계</label>
+                <div id="of-preds"></div>
+                <button class="of-addrow" type="button" onclick="ofAddPredRow()"><i class="fa-solid fa-plus"></i> 전신 관계 추가</button>
+              </div>
+              <div class="of-panel-actions">
+                <button class="of-save" onclick="ofSave()"><i class="fa-solid fa-floppy-disk"></i> 저장</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<datalist id="of-lineage-list"></datalist>
+<datalist id="of-name-list"></datalist>
+
+<script>
+  async function safeFetchDB(payload) {
+    if (!window.CHEESE_ADMIN_DB_API) throw new Error("API 엔드포인트가 정의되지 않았습니다.");
+    const res = await fetch(window.CHEESE_ADMIN_DB_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Admin-Token": window.CHEESE_ADMIN_TOKEN || "" },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "Firebase 오류");
+    return data;
+  }
+
+  const ORG_TYPES = ["organization", "단체", "정당", "nation", "나라", "국가"];
+  let ALL_ITEMS = [];
+  let selectedId = null;
+  let isNewMode = false;
+
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+  function parseYear(v) {
+    if (!v) return null;
+    const n = parseInt(String(v).replace(/[^0-9]/g, "")) || 0;
+    if (/기원전|B\.?C/i.test(String(v))) return -n;
+    return n || null;
+  }
+
+  async function loadAll() {
+    const chart = document.getElementById("of-chart");
+    chart.innerHTML = `<div class="of-loading">데이터를 불러오는 중...</div>`;
+    try {
+      const res = await safeFetchDB({ action: "get", collection: "learn_characters", orderByField: "created_at" });
+      ALL_ITEMS = (res.data || []).filter(c => ORG_TYPES.includes(c.type));
+      buildLineageFilter();
+      buildDatalists();
+      renderFlow();
+    } catch (e) {
+      chart.innerHTML = `<div class="of-loading" style="color:#dc2626;"><i class="fa-solid fa-triangle-exclamation"></i> 불러오기 실패: ${esc(e.message)}</div>`;
+    }
+  }
+
+  function isNation(t) { return t === "nation" || t === "나라" || t === "국가"; }
+
+  function buildLineageFilter() {
+    const sel = document.getElementById("of-lineage-filter");
+    const cur = sel.value;
+    const lins = Array.from(new Set(ALL_ITEMS.map(c => (c.lineage || "").trim()).filter(Boolean))).sort((a,b)=>a.localeCompare(b,'ko'));
+    sel.innerHTML = `<option value="">모든 계보</option>` + lins.map(l => `<option value="${esc(l)}">${esc(l)}</option>`).join("");
+    if (lins.includes(cur)) sel.value = cur;
+  }
+  function buildDatalists() {
+    const lins = Array.from(new Set(ALL_ITEMS.map(c => (c.lineage || "").trim()).filter(Boolean))).sort();
+    document.getElementById("of-lineage-list").innerHTML = lins.map(l => `<option value="${esc(l)}">`).join("");
+    const names = ALL_ITEMS.map(c => c.name).filter(Boolean).sort();
+    document.getElementById("of-name-list").innerHTML = names.map(n => `<option value="${esc(n)}">`).join("");
+  }
+
+  // ── 현재 필터에 맞는 표시 대상 산출 ──
+  function getVisibleItems() {
+    const typeF = document.getElementById("of-type-filter").value;
+    const linF = document.getElementById("of-lineage-filter").value;
+    const currentYear = new Date().getFullYear();
+    return ALL_ITEMS
+      .filter(c => {
+        if (typeF === "nation" && !isNation(c.type)) return false;
+        if (typeF === "organization" && isNation(c.type)) return false;
+        if (linF && (c.lineage || "").trim() !== linF) return false;
+        return true;
+      })
+      .map(c => {
+        const b = parseYear(c.birth_year);
+        const d = parseYear(c.death_year);
+        return {
+          id: c.id, name: c.name || "",
+          birth: b, death: d,
+          rawBirth: c.birth_year || "", rawDeath: c.death_year || "",
+          lineage: (c.lineage || "").trim(),
+          predecessors: Array.isArray(c.predecessors) ? c.predecessors.filter(p => p && p.name) : []
+        };
+      })
+      .filter(c => c.birth !== null);
+  }
+
+  function updateVerify(items) {
+    const box = document.getElementById("of-verify");
+    const noLin = items.filter(i => !i.lineage).length;
+    const noPred = items.filter(i => i.predecessors.length === 0).length;
+    box.innerHTML =
+      `<span class="of-chip"><b>${items.length}</b>개 표시 중</span>`
+      + `<span class="of-chip ${noLin ? 'warn' : 'ok'}">계보 미지정 <b>${noLin}</b></span>`
+      + `<span class="of-chip">전신관계 없음 <b>${noPred}</b> <span style="opacity:.7;">(최초 항목은 정상)</span></span>`;
+  }
+
+  // ── 흐름도 렌더 (storefront series.js 로직 이식, 시리즈 필터 대신 전체) ──
+  function renderFlow() {
+    const container = document.getElementById("of-chart");
+    const items = getVisibleItems();
+    updateVerify(items);
+
+    if (!items.length) {
+      container.innerHTML = `<div class="of-loading">표시할 나라·단체가 없습니다. 학습 사전에서 nation/organization 항목을 등록하세요.</div>`;
+      return;
+    }
+
+    const byName = new Map();
+    items.forEach(it => { if (it.name && !byName.has(it.name)) byName.set(it.name, it); });
+
+    const lineageGroups = new Map();
+    items.forEach(it => { const k = it.lineage || "기타"; if (!lineageGroups.has(k)) lineageGroups.set(k, []); lineageGroups.get(k).push(it); });
+    const lineages = Array.from(lineageGroups.keys()).sort((a,b)=> a==="기타"?1 : b==="기타"?-1 : a.localeCompare(b,'ko'));
+
+    const currentYear = new Date().getFullYear();
+    const allYears = items.flatMap(i => [i.birth, i.death === null ? currentYear : i.death]).filter(y => y !== null);
+    const minYear = Math.min(...allYears) - 5;
+    const maxYear = Math.max(...allYears) + 5;
+    const yearDiff = (maxYear - minYear) || 1;
+
+    const paddingLeft = 70, paddingRight = 50, headerHeight = 60, chartHeight = 600;
+    const totalHeight = chartHeight + headerHeight + 40;
+    const laneSpacing = 92, zoneGap = 36, minZoneWidth = 150;
+    const getY = (yr) => {
+      if (yr === null) return headerHeight + chartHeight - 20;
+      const v = headerHeight + 22 + ((yr - minYear) / yearDiff) * (chartHeight - 44);
+      return Math.max(headerHeight + 22, Math.min(headerHeight + chartHeight - 22, v));
+    };
+
+    // 분당/분단 포크 관계
+    const forkChildIds = new Set(), parentOfChild = new Map();
+    items.forEach(child => child.predecessors.forEach(p => {
+      const rel = String(p.rel || "분당").trim();
+      if (rel !== "분당" && rel !== "분단") return;
+      const par = byName.get(String(p.name||"").trim());
+      if (!par || par.id === child.id) return;
+      forkChildIds.add(child.id);
+      if (!parentOfChild.has(child.id)) parentOfChild.set(child.id, par.id);
+    }));
+
+    const packLanes = (g) => {
+      g.sort((a,b)=>a.birth-b.birth);
+      const ends = [];
+      g.forEach(it => {
+        const s = it.birth, e = it.death === null ? currentYear : it.death;
+        let lane = -1;
+        if (!forkChildIds.has(it.id)) for (let t=0;t<ends.length;t++){ if (s>=ends[t]){lane=t;ends[t]=e;break;} }
+        if (lane===-1){lane=ends.length;ends.push(e);}
+        it.laneIdx = lane;
+      });
+      return ends.length || 1;
+    };
+
+    const LINEAGE_COLORS = ['#2563eb','#dc2626','#16a34a','#d97706','#7c3aed','#db2777','#0891b2','#65a30d'];
+    let cursorX = paddingLeft;
+    const zones = lineages.map((lin, idx) => {
+      const g = lineageGroups.get(lin);
+      packLanes(g);
+      const localX = new Map();
+      g.forEach(it => localX.set(it.id, it.laneIdx * laneSpacing));
+      const kidsByParent = new Map();
+      g.forEach(it => { const pid = parentOfChild.get(it.id); if (pid != null && localX.has(pid)) { if (!kidsByParent.has(pid)) kidsByParent.set(pid, []); kidsByParent.get(pid).push(it.id); } });
+      kidsByParent.forEach((kids, pid) => { if (kids.length < 2) return; localX.set(pid, kids.reduce((a,k)=>a+localX.get(k),0)/kids.length); });
+      let lo=Infinity, hi=-Infinity;
+      g.forEach(it => { const v=localX.get(it.id); if (v<lo) lo=v; if (v>hi) hi=v; });
+      if (!isFinite(lo)) { lo=0; hi=0; }
+      const span = hi-lo, width = Math.max(minZoneWidth, span + laneSpacing);
+      const zone = { lineage: lin, x0: cursorX, width, span, lo, localX, color: lin==="기타" ? "#64748b" : LINEAGE_COLORS[idx % LINEAGE_COLORS.length], groupItems: g };
+      cursorX += width + zoneGap;
+      return zone;
+    });
+    const totalWidth = (cursorX - zoneGap) + paddingRight;
+    const nodeXIn = (zone, id) => zone.x0 + (zone.width - zone.span)/2 + (zone.localX.get(id) - zone.lo);
+
+    const nodeCoords = new Map();
+    zones.forEach(zone => zone.groupItems.forEach(it => nodeCoords.set(it.id, {
+      x: nodeXIn(zone, it.id), yStart: getY(it.birth), yEnd: getY(it.death === null ? currentYear : it.death), color: zone.color, item: it
+    })));
+
+    let svg = `<svg width="${totalWidth}" height="${totalHeight}" viewBox="0 0 ${totalWidth} ${totalHeight}" xmlns="http://www.w3.org/2000/svg" style="min-width:${totalWidth}px;">`;
+
+    // 영역 배경 + 경계 구분선
+    zones.forEach((z, zi) => {
+      svg += `<rect class="of-zone-band" x="${z.x0 - zoneGap/2}" y="${headerHeight}" width="${z.width + zoneGap}" height="${chartHeight}" fill="${z.color}" />`;
+      if (zi > 0) svg += `<line class="of-zone-sep" x1="${z.x0 - zoneGap/2}" y1="${headerHeight}" x2="${z.x0 - zoneGap/2}" y2="${headerHeight + chartHeight}" />`;
+    });
+
+    // 연도축 (5년 단위, 촘촘하면 완화)
+    const pxPerYear = (chartHeight - 44) / yearDiff;
+    const labelStep = [5,10,25,50,100,200,500].find(s => s * pxPerYear >= 26) || 500;
+    const majorStep = Math.max(10, labelStep);
+    const axisStart = Math.ceil(minYear / labelStep) * labelStep;
+    for (let y = axisStart; y <= maxYear; y += labelStep) {
+      const yy = getY(y), mj = y % majorStep === 0;
+      svg += `<line class="of-grid-line${mj?' major':''}" x1="${paddingLeft-20}" y1="${yy}" x2="${totalWidth-paddingRight+10}" y2="${yy}" />`
+          + `<text class="of-grid-label${mj?' major':''}" x="${paddingLeft-26}" y="${yy+4}" text-anchor="end">${y}</text>`;
+    }
+    // 영역 헤더
+    zones.forEach(z => {
+      const cx = z.x0 + z.width/2;
+      svg += `<rect class="of-zone-head-bg" x="${z.x0 - zoneGap/2 + 6}" y="12" width="${z.width + zoneGap - 12}" height="38" rx="8" fill="${z.color}" stroke="${z.color}" />`
+          + `<text class="of-zone-head-text" x="${cx}" y="36" fill="${z.color}">${esc(z.lineage)}</text>`;
+    });
+
+    // 연결선 + 분기 넥 확보
+    const explicitPairs = new Set(), childHasPred = new Set(), drawnJ = new Set();
+    const MIN_FORK = 34;
+    const plans = [];
+    items.forEach(child => {
+      const pc = nodeCoords.get(child.id); if (!pc) return;
+      child.predecessors.forEach(pred => {
+        const pi = byName.get(String(pred.name||"").trim()); if (!pi || pi.id === child.id) return;
+        const pp = nodeCoords.get(pi.id); if (!pp) return;
+        childHasPred.add(child.id);
+        explicitPairs.add([child.id, pi.id].sort().join("|"));
+        const rel = String(pred.rel || "분당").trim();
+        const isSplit = (rel === "분당" || rel === "분단");
+        const py = parseYear(pred.year), predEnd = pi.death === null ? currentYear : pi.death;
+        let by;
+        if (py !== null) by = Math.max(pi.birth, Math.min(py, predEnd));
+        else by = isSplit ? Math.max(pi.birth, child.birth - 3) : predEnd;
+        const y1 = getY(by);
+        if (isSplit && pc.yStart < y1 + MIN_FORK) pc.yStart = y1 + MIN_FORK;
+        plans.push({ pi, pp, pc, rel, isSplit, y1 });
+      });
+    });
+    plans.forEach(({ pi, pp, pc, rel, y1 }) => {
+      const x1 = pp.x, x2 = pc.x, y2 = pc.yStart;
+      const bow = Math.max(20, Math.min(Math.abs(y2 - y1) * 0.55, 70));
+      const d = `M ${x1} ${y1} C ${x1} ${y1+bow} ${x2} ${y2-bow} ${x2} ${y2}`;
+      let cls = "of-link", stroke = pp.color, sw = 4.5;
+      if (rel === "합당") { cls += " merge"; sw = 5.5; }
+      else if (rel === "계승") { cls += " succeed"; stroke = pc.color; sw = 3.5; }
+      else cls += " split";
+      svg += `<path class="${cls}" d="${d}" stroke="${stroke}" stroke-width="${sw}" />`;
+      const jk = `${pi.id}|${Math.round(y1)}`;
+      if (!drawnJ.has(jk)) { drawnJ.add(jk);
+        svg += `<circle class="of-jhalo" cx="${x1}" cy="${y1}" r="7" fill="${stroke}" />`
+            + `<circle class="of-jring" cx="${x1}" cy="${y1}" r="4" fill="#fff" stroke="${stroke}" stroke-width="2" />`
+            + `<circle class="of-jcore" cx="${x1}" cy="${y1}" r="1.6" fill="${stroke}" />`;
+      }
+    });
+
+    // 추정 연속선 (전신 없는 노드만)
+    zones.forEach(zone => {
+      const list = zone.groupItems;
+      for (let i=0;i<list.length;i++){
+        const later = list[i]; if (childHasPred.has(later.id)) continue;
+        const pL = nodeCoords.get(later.id); if (!pL) continue;
+        let best = null;
+        for (let j=0;j<list.length;j++){ if (j===i) continue; const prev=list[j]; const pe = prev.death===null?currentYear:prev.death;
+          if (prev.birth <= later.birth && pe <= later.birth+1) { if (!best || pe > (best.death===null?currentYear:best.death)) best=prev; } }
+        if (!best) continue;
+        if (explicitPairs.has([later.id, best.id].sort().join("|"))) continue;
+        const pP = nodeCoords.get(best.id); if (!pP) continue;
+        const x1=pP.x, y1=pP.yEnd, x2=pL.x, y2=pL.yStart; if (y2 < y1-2) continue;
+        const dy = Math.max(18, (y2-y1)*0.45);
+        svg += `<path class="of-link guess" d="M ${x1} ${y1} C ${x1} ${y1+dy} ${x2} ${y2-dy} ${x2} ${y2}" stroke="${pP.color}" stroke-width="3" />`;
+      }
+    });
+
+    // 노드 바
+    nodeCoords.forEach(coord => {
+      const { x, yStart, yEnd, color, item } = coord;
+      const barH = Math.max(16, yEnd - yStart), yMid = yStart + barH/2;
+      const left = item.laneIdx % 2 === 1;
+      const tx = x + (left ? -16 : 16), anchor = left ? "end" : "start";
+      const predYr = (item.predecessors.find(p => p && p.year) || {}).year;
+      const founded = String(predYr || item.rawBirth || "").trim();
+      const fx = x + (left ? 13 : -13), fAnchor = left ? "start" : "end";
+      const sel = item.id === selectedId ? " selected" : "";
+      svg += `<g class="of-node" data-id="${esc(item.id)}">`
+        + `<line class="of-tube${sel} of-hit" x1="${x}" y1="${yStart}" x2="${x}" y2="${yEnd}" stroke="${color}" stroke-width="10" />`
+        + (founded ? `<text class="of-founded" x="${fx}" y="${yStart+3}" text-anchor="${fAnchor}">${esc(founded)}</text>` : "")
+        + `<text class="of-name" x="${tx}" y="${yMid}" text-anchor="${anchor}" fill="${color}">${esc(item.name)}</text>`
+        + `<text class="of-years" x="${tx}" y="${yMid+13}" text-anchor="${anchor}">${esc(item.rawBirth)} ~ ${esc(item.rawDeath || "현재")}</text>`
+        + `</g>`;
+    });
+
+    svg += `</svg>`;
+    // 재렌더 시 보던 위치가 위로 튀지 않도록 스크롤 위치 보존
+    const prevL = container.scrollLeft, prevT = container.scrollTop;
+    container.innerHTML = svg;
+    container.scrollLeft = prevL;
+    container.scrollTop = prevT;
+    initDragScroll(container);
+  }
+
+  // 차트 클릭 → 노드 선택
+  document.getElementById("of-chart").addEventListener("click", (e) => {
+    const g = e.target.closest(".of-node");
+    if (!g) return;
+    selectNode(g.getAttribute("data-id"));
+  });
+
+  function initDragScroll(el) {
+    let down=false, sx=0, sl=0, moved=false;
+    el.onmousedown = (e) => { down=true; moved=false; sx=e.pageX; sl=el.scrollLeft; };
+    el.onmouseleave = () => { down=false; };
+    el.onmouseup = () => { down=false; };
+    el.onmousemove = (e) => { if (!down) return; const w=(e.pageX-sx); if (Math.abs(w)>3) moved=true; el.scrollLeft = sl - w*1.2; };
+  }
+
+  // 저장 직후 해당 바를 잠깐 깜빡여 "반영됨"을 명확히 표시
+  function flashSavedBar(id) {
+    let g = null;
+    document.querySelectorAll(".of-node").forEach(n => { if (n.getAttribute("data-id") === id) g = n; });
+    if (!g) return;
+    const tube = g.querySelector(".of-tube");
+    if (!tube) return;
+    tube.classList.add("flash");
+    setTimeout(() => tube.classList.remove("flash"), 1100);
+  }
+
+  // ── 사이드 패널 ──
+  function ofShowPanel() {
+    document.getElementById("of-panel-empty").style.display = "none";
+    document.getElementById("of-panel-body").style.display = "block";
+  }
+  function ofSetMode(isNew) {
+    isNewMode = isNew;
+    document.getElementById("of-edit-head").style.display = isNew ? "none" : "flex";
+    document.getElementById("of-new-fields").style.display = isNew ? "block" : "none";
+  }
+
+  // 새 나라·단체 추가 모드로 패널 열기
+  function ofNew() {
+    selectedId = null;
+    ofShowPanel();
+    ofSetMode(true);
+    document.getElementById("of-new-name").value = "";
+    document.getElementById("of-new-type").value = "nation";
+    document.getElementById("of-birth").value = "";
+    document.getElementById("of-death").value = "";
+    document.getElementById("of-lineage").value = "";
+    document.getElementById("of-preds").innerHTML = "";
+    renderFlow(); // 기존 선택 강조 해제
+    document.getElementById("of-new-name").focus();
+  }
+
+  function selectNode(id) {
+    const item = ALL_ITEMS.find(x => x.id === id);
+    if (!item) return;
+    selectedId = id;
+    ofShowPanel();
+    ofSetMode(false);
+    document.getElementById("of-pn").textContent = item.name || "(이름 없음)";
+    document.getElementById("of-pt").textContent = isNation(item.type) ? "나라/국가" : "정당/단체";
+    document.getElementById("of-birth").value = item.birth_year || "";
+    document.getElementById("of-death").value = item.death_year || "";
+    document.getElementById("of-lineage").value = item.lineage || "";
+    const wrap = document.getElementById("of-preds");
+    wrap.innerHTML = "";
+    (Array.isArray(item.predecessors) ? item.predecessors : []).forEach(p => ofAddPredRow(p.name, p.year, p.rel));
+    renderFlow(); // 선택 하이라이트 갱신
+  }
+
+  function ofAddPredRow(name, year, rel) {
+    const wrap = document.getElementById("of-preds");
+    const row = document.createElement("div");
+    row.className = "of-pred-row";
+    row.innerHTML =
+      `<input class="pn" list="of-name-list" placeholder="전신명" value="${esc(name||"")}">`
+      + `<input class="py" placeholder="연도" value="${esc(year||"")}">`
+      + `<select class="pr">`
+        + `<option value="분당" ${rel==="분당"?"selected":""}>분당</option>`
+        + `<option value="분단" ${rel==="분단"?"selected":""}>분단</option>`
+        + `<option value="합당" ${rel==="합당"?"selected":""}>합당</option>`
+        + `<option value="계승" ${rel==="계승"?"selected":""}>계승</option>`
+      + `</select>`
+      + `<button type="button" onclick="this.closest('.of-pred-row').remove()">&times;</button>`;
+    wrap.appendChild(row);
+  }
+
+  async function ofSave() {
+    const preds = Array.from(document.querySelectorAll("#of-preds .of-pred-row")).map(r => ({
+      name: (r.querySelector(".pn").value || "").trim(),
+      year: (r.querySelector(".py").value || "").trim(),
+      rel: (r.querySelector(".pr").value || "분당").trim()
+    })).filter(p => p.name);
+
+    const birth = (document.getElementById("of-birth").value || "").trim();
+    const death = (document.getElementById("of-death").value || "").trim();
+    const lineage = (document.getElementById("of-lineage").value || "").trim();
+    const now = new Date().toISOString();
+
+    let id, data;
+    if (isNewMode) {
+      const name = (document.getElementById("of-new-name").value || "").trim();
+      if (!name) { alert("이름을 입력하세요."); return; }
+      if (!birth) { alert("건국/창당 연도를 입력해야 흐름도에 표시됩니다."); return; }
+      const type = document.getElementById("of-new-type").value || "nation";
+      id = "dict_" + Date.now();
+      data = {
+        name, type, korean_reading: "", alt_names: [],
+        birth_year: birth, death_year: death,
+        faction: "", factions: [], terms: [], term_start: "", term_end: "",
+        organizations: [], lineage, predecessors: preds,
+        is_global: false, memo: "", appearances: [], related_events: [],
+        created_at: now, updated_at: now
+      };
+    } else {
+      if (!selectedId) return;
+      const item = ALL_ITEMS.find(x => x.id === selectedId);
+      if (!item) return;
+      id = selectedId;
+      data = { ...item, birth_year: birth, death_year: death, lineage, predecessors: preds, updated_at: now };
+      delete data.id;
+    }
+
+    const btn = document.querySelector(".of-save");
+    const orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 저장 중...`;
+    try {
+      await safeFetchDB({ action: "set", collection: "learn_characters", id, data });
+      const idx = ALL_ITEMS.findIndex(x => x.id === id);
+      if (idx >= 0) ALL_ITEMS[idx] = { ...data, id };
+      else ALL_ITEMS.unshift({ ...data, id });
+      buildLineageFilter(); buildDatalists();
+      selectNode(id);           // 저장된 항목을 편집 모드로 다시 로드 (재렌더 포함)
+      flashSavedBar(id);
+      if (window.showNotification) window.showNotification("저장 완료", `${data.name} 흐름 정보가 저장되었습니다.`, "success");
+    } catch (e) {
+      alert("저장 실패: " + e.message);
+    } finally {
+      btn.disabled = false; btn.innerHTML = orig;
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", loadAll);
+</script>
+</body>
+</html>
