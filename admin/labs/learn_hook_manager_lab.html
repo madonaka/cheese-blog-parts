@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>후크 관리 (목업) - Cheese Lab</title>
+<style>
+  :root{
+    --teal:#0d9488; --teal-d:#0f766e; --teal-l:#ccfbf1;
+    --orange:#d97706; --orange-l:#fef3c7;
+    --line:#e2e8f0; --ink:#1e293b; --sub:#64748b; --bg:#f8fafc;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:"Pretendard","Malgun Gothic",sans-serif;background:var(--bg);color:var(--ink);}
+  .wrap{max-width:1080px;margin:0 auto;padding:24px 18px 80px;}
+  .proto-tag{display:inline-block;background:#fee2e2;color:#b91c1c;font-size:.7rem;font-weight:800;padding:3px 9px;border-radius:999px;margin-bottom:10px;}
+  h1{font-size:1.3rem;margin:0 0 4px;}
+  .lead{color:var(--sub);font-size:.9rem;margin:0 0 20px;}
+  .errbox{display:none;background:#fee2e2;color:#991b1b;border:1px solid #fecaca;border-radius:10px;padding:12px 14px;font-size:.82rem;margin-bottom:14px;white-space:pre-wrap;}
+
+  .mgr{display:grid;grid-template-columns:300px 1fr;gap:18px;align-items:start;}
+  .panel{background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 6px 24px -14px rgba(15,23,42,.15);}
+  .panel-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line);}
+  .panel-head h2{font-size:.95rem;margin:0;font-weight:800;}
+  .panel-body{padding:14px 16px;}
+
+  .addbtn{background:var(--orange);color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:.78rem;font-weight:800;cursor:pointer;}
+  .addbtn:hover{filter:brightness(.95);}
+
+  .hook-item{display:flex;align-items:center;gap:10px;padding:11px 12px;border:1.5px solid var(--line);border-radius:10px;margin-bottom:8px;cursor:pointer;transition:.15s;}
+  .hook-item:hover{border-color:var(--orange);background:#fffdf7;}
+  .hook-item.sel{border-color:var(--orange);background:var(--orange-l);}
+  .hook-item .dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+  .hook-item .dot.live{background:#16a34a;} .hook-item .dot.draft{background:#cbd5e1;}
+  .hook-item .hi-title{font-size:.85rem;font-weight:700;flex:1;line-height:1.3;}
+  .hook-item .hi-state{font-size:.66rem;font-weight:800;color:var(--sub);}
+
+  .field{margin-bottom:14px;}
+  .field label{display:block;font-size:.76rem;font-weight:800;color:var(--sub);margin-bottom:5px;}
+  .field input,.field select{width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:9px;font-size:.9rem;font-family:inherit;outline:none;}
+  .field input:focus,.field select:focus{border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-l);}
+
+  .auto{background:#f8fafc;border:1px dashed #cbd5e1;border-radius:12px;padding:14px;margin-bottom:16px;}
+  .auto .auto-h{font-size:.74rem;font-weight:800;color:var(--teal-d);margin-bottom:10px;display:flex;align-items:center;gap:6px;}
+  .auto .row{margin-bottom:10px;}
+  .auto .rl{font-size:.7rem;font-weight:800;color:var(--sub);margin-bottom:4px;}
+  .chip{display:inline-block;background:#eef2ff;color:#4338ca;border:1px solid #e0e7ff;border-radius:999px;padding:3px 10px;font-size:.74rem;font-weight:700;margin:0 5px 5px 0;}
+  .lv-pill{font-size:.66rem;font-weight:800;padding:2px 8px;border-radius:999px;}
+  .lv-b{background:#dbeafe;color:#1d4ed8;} .lv-i{background:#fef3c7;color:#b45309;} .lv-a{background:#fee2e2;color:#b91c1c;}
+  .ed{display:flex;gap:8px;align-items:center;padding:6px 0;font-size:.82rem;}
+  .ed .edn{width:22px;height:22px;border-radius:6px;background:var(--teal-l);color:var(--teal-d);font-weight:800;display:flex;align-items:center;justify-content:center;font-size:.7rem;flex-shrink:0;}
+  .goal{font-size:.8rem;padding:3px 0 3px 20px;position:relative;}
+  .goal::before{content:"✔";position:absolute;left:0;color:var(--teal);font-weight:800;}
+
+  .actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px;}
+  .btn{border:none;border-radius:9px;padding:10px 18px;font-size:.85rem;font-weight:800;cursor:pointer;}
+  .btn.save{background:var(--teal);color:#fff;} .btn.save:hover{background:var(--teal-d);}
+  .btn.ghost{background:#fff;border:1.5px solid var(--line);color:var(--sub);} .btn.ghost:hover{border-color:var(--teal);color:var(--teal);}
+  .toggle{display:flex;align-items:center;gap:8px;font-size:.82rem;font-weight:800;cursor:pointer;}
+  .sw{width:42px;height:24px;border-radius:999px;background:#cbd5e1;position:relative;transition:.2s;}
+  .sw::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.2s;}
+  .sw.on{background:#16a34a;} .sw.on::after{left:21px;}
+  .flash{font-size:.78rem;font-weight:800;color:#16a34a;}
+
+  /* 미리보기 (학습자 카드) */
+  .preview-wrap{margin-top:18px;border-top:1px dashed var(--line);padding-top:16px;}
+  .pv-label{font-size:.74rem;font-weight:800;color:var(--sub);margin-bottom:10px;}
+  .pv-card{border:1.5px solid var(--orange);border-radius:14px;padding:18px;background:#fffdf7;}
+  .pv-trigger{font-size:.74rem;font-weight:800;color:var(--orange);}
+  .pv-title{font-weight:800;font-size:1.05rem;margin:4px 0 10px;}
+  .pv-meta .chip{background:#f1f5f9;color:var(--ink);border-color:var(--line);}
+  .pv-sec{font-size:.76rem;font-weight:800;color:var(--sub);margin:12px 0 6px;}
+  .pv-card .chip.person{background:#eef2ff;color:#4338ca;border-color:#e0e7ff;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <span class="proto-tag">🧪 PROTOTYPE · 더미 데이터</span>
+  <h1>🔥 후크 관리</h1>
+  <p class="lead">사전 항목(닻)만 고르면 — 등장 편·인물·학습목표·난이도는 <b>appearances에서 자동</b>으로 채워져요. 당신은 제목·트리거만 쓰면 돼요.</p>
+  <div class="errbox" id="errbox"></div>
+
+  <div class="mgr">
+    <div class="panel">
+      <div class="panel-head"><h2>후크 목록</h2><button class="addbtn" data-act="new">+ 새 후크</button></div>
+      <div class="panel-body" id="hooklist"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h2 id="editor-title">편집</h2><span class="flash" id="flash"></span></div>
+      <div class="panel-body" id="editor"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ===== 더미 데이터 (실제로는 learn_sequences / 인물사건 사전에서 옴) =====
+  // 편(학습 단계) — learn_sequences의 step
+  var EDITIONS = {
+    'cn-6':{series:'중국현대사 시리즈', n:6, title:'대약진운동', level:'i', goals:['대약진의 목표와 방식을 안다','왜 대기근이 일어났는지 이해한다']},
+    'cn-7':{series:'중국현대사 시리즈', n:7, title:'대약진의 실패와 권력 위기', level:'i', goals:['대약진 실패의 결과를 안다','마오의 권력 위기를 이해한다']},
+    'cn-8':{series:'중국현대사 시리즈', n:8, title:'문화대혁명 — 왜, 누가, 무엇을', level:'a', goals:['문화대혁명의 전개를 설명할 수 있다','홍위병의 역할을 안다']},
+    'cn-9':{series:'중국현대사 시리즈', n:9, title:'그 후폭풍, 그리고 덩샤오핑', level:'a', goals:['문혁의 종결 과정을 안다','개혁개방으로의 전환을 이해한다']},
+    'tw-1':{series:'대만 시리즈', n:1, title:'국공내전과 국부천대', level:'i', goals:['국공내전의 승패를 안다','국민정부의 대만 이전을 이해한다']},
+    'tw-2':{series:'대만 시리즈', n:2, title:'두 개의 중국', level:'i', goals:['"하나의 중국" 원칙의 의미를 안다','두 정부의 정통성 주장을 이해한다']},
+    'tw-3':{series:'대만 시리즈', n:3, title:'양안관계의 오늘', level:'b', goals:['현재 양안 긴장의 배경을 안다']},
+    'ccp-10':{series:'중국 공산당 시리즈', n:10, title:'집단지도체제의 성립', level:'i', goals:['집단지도체제가 무엇인지 안다']},
+    'ccp-11':{series:'중국 공산당 시리즈', n:11, title:'파벌 — 상하이방과 공청단', level:'a', goals:['주요 파벌을 구분할 수 있다']},
+    'ccp-12':{series:'중국 공산당 시리즈', n:12, title:'시진핑의 권력 집중', level:'a', goals:['권력 집중 과정을 안다']},
+    'ccp-13':{series:'중국 공산당 시리즈', n:13, title:'3연임, 그 의미', level:'a', goals:['3연임의 정치적 의미를 이해한다']}
+  };
+  // 사전 항목(사건·개념·나라) — 닻 후보. appearances = 등장 편
+  var ENTITIES = [
+    {id:'cultrev',    type:'사건', name:'문화대혁명',     appearances:['cn-7','cn-8','cn-9']},
+    {id:'greatleap',  type:'사건', name:'대약진운동',     appearances:['cn-6','cn-7']},
+    {id:'taiwan_rel', type:'개념', name:'양안관계',       appearances:['tw-1','tw-2','tw-3']},
+    {id:'xi_power',   type:'개념', name:'중국 권력구조',   appearances:['ccp-10','ccp-11','ccp-12','ccp-13']}
+  ];
+  // 인물 사전 — 각 인물도 appearances 보유 → 등장인물 칩 자동 계산
+  var PEOPLE = [
+    {name:'마오쩌둥', appearances:['cn-6','cn-7','cn-8','cn-9']},
+    {name:'덩샤오핑', appearances:['cn-9']},
+    {name:'홍위병',   appearances:['cn-8']},
+    {name:'장제스',   appearances:['tw-1','tw-2']},
+    {name:'시진핑',   appearances:['ccp-12','ccp-13']},
+    {name:'후진타오', appearances:['ccp-10','ccp-11']}
+  ];
+  var LV = { b:{cls:'lv-b',label:'입문'}, i:{cls:'lv-i',label:'중급'}, a:{cls:'lv-a',label:'심화'} };
+  var LVIDX = { b:0, i:1, a:2 };
+
+  // 저장된 후크
+  var HOOKS = [
+    {id:1, anchor:'cultrev',    trigger:'🎬 영화 삼체에서 본 그 장면', title:"영화 삼체의 '문화대혁명', 대체 뭐였나?", live:true},
+    {id:2, anchor:'xi_power',   trigger:'🏛 뉴스 — 시진핑 3연임',     title:'시진핑은 어떻게 3연임을 했나?',           live:true},
+    {id:3, anchor:'taiwan_rel', trigger:'🌊 양안 갈등 뉴스',          title:'대만은 왜 중국과 따로일까?',              live:false}
+  ];
+  var seq = 4;
+
+  var editing = null;        // {id|null, anchor, title, trigger, live}
+  var previewOpen = false;
+  var flash = '';
+
+  function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+  function getEntity(id){ for(var i=0;i<ENTITIES.length;i++) if(ENTITIES[i].id===id) return ENTITIES[i]; return null; }
+  function getHook(id){ for(var i=0;i<HOOKS.length;i++) if(HOOKS[i].id===id) return HOOKS[i]; return null; }
+  function intersect(a,b){ var n=0; for(var i=0;i<a.length;i++) if(b.indexOf(a[i])>=0) n++; return n; }
+
+  // ===== 자동 조립 (appearances → 편/난이도/payoff/인물) =====
+  function autoFor(anchorId){
+    var e=getEntity(anchorId);
+    if(!e) return {eds:[],level:'b',goals:[],people:[],series:''};
+    var eds=[];
+    for(var i=0;i<e.appearances.length;i++){ var ed=EDITIONS[e.appearances[i]]; if(ed) eds.push(ed); }
+    eds.sort(function(a,b){ return a.n-b.n; });
+    var max=0, goals=[], seen={};
+    for(var j=0;j<eds.length;j++){
+      if(LVIDX[eds[j].level]>max) max=LVIDX[eds[j].level];
+      for(var g=0;g<eds[j].goals.length;g++){ var gl=eds[j].goals[g]; if(!seen[gl]){ seen[gl]=1; goals.push(gl); } }
+    }
+    var level=['b','i','a'][max];
+    var ppl=[];
+    for(var p=0;p<PEOPLE.length;p++){ var c=intersect(PEOPLE[p].appearances, e.appearances); if(c>0) ppl.push({name:PEOPLE[p].name,c:c}); }
+    ppl.sort(function(a,b){ return b.c-a.c; });
+    var series = eds.length? eds[0].series : '';
+    return {entity:e, eds:eds, level:level, goals:goals, people:ppl, series:series, minutes:eds.length*8};
+  }
+
+  // ===== 목록 =====
+  function renderList(){
+    var h='';
+    for(var i=0;i<HOOKS.length;i++){ var k=HOOKS[i];
+      var sel=(editing && editing.id===k.id)?'sel':'';
+      h+='<div class="hook-item '+sel+'" data-act="select" data-id="'+k.id+'">'+
+         '<span class="dot '+(k.live?'live':'draft')+'"></span>'+
+         '<span class="hi-title">'+esc(k.title)+'</span>'+
+         '<span class="hi-state">'+(k.live?'공개':'초안')+'</span></div>';
+    }
+    if(!HOOKS.length) h='<p style="color:var(--sub);font-size:.85rem;">후크가 없어요. [+ 새 후크]를 눌러보세요.</p>';
+    document.getElementById('hooklist').innerHTML=h;
+  }
+
+  // ===== 편집기 =====
+  function renderEditor(){
+    var ed=document.getElementById('editor');
+    if(!editing){ ed.innerHTML='<p style="color:var(--sub);font-size:.9rem;">왼쪽에서 후크를 고르거나, [+ 새 후크]를 눌러 만들어보세요.</p>';
+      document.getElementById('editor-title').textContent='편집'; return; }
+    document.getElementById('editor-title').textContent = editing.id? '후크 편집' : '새 후크';
+
+    var opts='';
+    for(var i=0;i<ENTITIES.length;i++){ var e=ENTITIES[i];
+      opts+='<option value="'+e.id+'" '+(e.id===editing.anchor?'selected':'')+'>'+esc(e.name)+' ('+e.type+')</option>';
+    }
+
+    ed.innerHTML=
+      '<div class="field"><label>닻 — 사전 항목 (이것만 고르면 됨)</label>'+
+        '<select id="anchor">'+opts+'</select></div>'+
+      '<div id="autoblock"></div>'+
+      '<div class="field"><label>✍ 제목 (사람이 쓰는 것)</label>'+
+        '<input id="f-title" value="'+esc(editing.title)+'" placeholder="예: 대만은 왜 중국과 따로일까?"></div>'+
+      '<div class="field"><label>✍ 트리거 — 현재 연결 (사람이 쓰는 것)</label>'+
+        '<input id="f-trigger" value="'+esc(editing.trigger)+'" placeholder="예: 🌊 양안 갈등 뉴스"></div>'+
+      '<div class="actions">'+
+        '<button class="btn save" data-act="save">저장</button>'+
+        '<div class="toggle" data-act="toggle-live"><span>공개</span><span class="sw '+(editing.live?'on':'')+'"></span></div>'+
+        '<button class="btn ghost" data-act="preview">'+(previewOpen?'미리보기 닫기':'미리보기')+'</button>'+
+      '</div>'+
+      '<div class="preview-wrap" id="preview" style="display:'+(previewOpen?'block':'none')+';"></div>';
+
+    renderAuto();
+    if(previewOpen) renderPreview();
+  }
+
+  function renderAuto(){
+    var box=document.getElementById('autoblock'); if(!box) return;
+    var a=autoFor(editing.anchor);
+    var eds='';
+    for(var i=0;i<a.eds.length;i++) eds+='<div class="ed"><span class="edn">'+a.eds[i].n+'</span><span>'+esc(a.eds[i].title)+'</span></div>';
+    var ppl='';
+    for(var p=0;p<a.people.length;p++) ppl+='<span class="chip">'+esc(a.people[p].name)+'</span>';
+    var goals='';
+    for(var g=0;g<a.goals.length;g++) goals+='<div class="goal">'+esc(a.goals[g])+'</div>';
+    box.innerHTML=
+      '<div class="auto"><div class="auto-h">⚙ 사전(appearances)에서 자동 — 손 안 댐</div>'+
+        '<div class="row"><div class="rl">난이도 · 시리즈</div>'+
+          '<span class="lv-pill '+LV[a.level].cls+'">'+LV[a.level].label+'</span> '+
+          '<span style="font-size:.8rem;font-weight:700;color:var(--sub);">'+esc(a.series)+' · '+a.eds.length+'편 · 약 '+a.minutes+'분</span></div>'+
+        '<div class="row"><div class="rl">등장 편 (appearances)</div>'+(eds||'<span style="font-size:.8rem;color:var(--sub);">없음</span>')+'</div>'+
+        '<div class="row"><div class="rl">등장인물 (편 공유로 자동)</div>'+(ppl||'<span style="font-size:.8rem;color:var(--sub);">없음</span>')+'</div>'+
+        '<div class="row"><div class="rl">보고 나면 알게 돼요 (편 학습목표)</div>'+(goals||'<span style="font-size:.8rem;color:var(--sub);">없음</span>')+'</div>'+
+      '</div>';
+  }
+
+  function renderPreview(){
+    var box=document.getElementById('preview'); if(!box) return;
+    var a=autoFor(editing.anchor);
+    var title=(document.getElementById('f-title')||{}).value || editing.title || '(제목을 입력하세요)';
+    var trig=(document.getElementById('f-trigger')||{}).value || editing.trigger || '(트리거를 입력하세요)';
+    var ppl='';
+    for(var p=0;p<a.people.length;p++) ppl+='<span class="chip person">'+esc(a.people[p].name)+'</span>';
+    var goals='';
+    for(var g=0;g<a.goals.length;g++) goals+='<div class="goal">'+esc(a.goals[g])+'</div>';
+    var eds='';
+    for(var i=0;i<a.eds.length;i++) eds+='<div class="ed"><span class="edn">'+a.eds[i].n+'</span><span>'+esc(a.eds[i].title)+'</span></div>';
+    box.innerHTML=
+      '<div class="pv-label">👀 학습자에게 이렇게 보여요</div>'+
+      '<div class="pv-card">'+
+        '<div class="pv-trigger">'+esc(trig)+'</div>'+
+        '<div class="pv-title">'+esc(title)+'</div>'+
+        '<div class="pv-meta"><span class="chip">난이도 <span class="lv-pill '+LV[a.level].cls+'" style="margin-left:3px;">'+LV[a.level].label+'</span></span>'+
+          '<span class="chip">⏱ 약 '+a.minutes+'분</span><span class="chip">📺 '+esc(a.series)+'</span></div>'+
+        '<div class="pv-sec">혹시 이 사람들, 어디서 보셨죠?</div>'+ppl+
+        '<div class="pv-sec">보고 나면 알게 돼요</div>'+goals+
+        '<div class="pv-sec">📺 이 '+a.eds.length+'편이면 돼요</div>'+eds+
+      '</div>';
+  }
+
+  function syncInputs(){
+    if(!editing) return;
+    var t=document.getElementById('f-title'), g=document.getElementById('f-trigger'), a=document.getElementById('anchor');
+    if(t) editing.title=t.value;
+    if(g) editing.trigger=g.value;
+    if(a) editing.anchor=a.value;
+  }
+
+  function renderAll(){ renderList(); renderEditor(); document.getElementById('flash').textContent=flash; }
+
+  // ===== 이벤트 =====
+  document.addEventListener('click', function(ev){
+    var el=ev.target.closest('[data-act]'); if(!el) return;
+    var act=el.getAttribute('data-act');
+    flash='';
+    if(act==='select'){
+      var k=getHook(parseInt(el.getAttribute('data-id'),10));
+      editing={id:k.id, anchor:k.anchor, title:k.title, trigger:k.trigger, live:k.live};
+      previewOpen=false; renderAll();
+    } else if(act==='new'){
+      editing={id:null, anchor:ENTITIES[0].id, title:'', trigger:'', live:false};
+      previewOpen=false; renderAll();
+    } else if(act==='toggle-live'){
+      syncInputs(); editing.live=!editing.live; renderEditor();
+    } else if(act==='preview'){
+      syncInputs(); previewOpen=!previewOpen; renderEditor();
+    } else if(act==='save'){
+      syncInputs();
+      if(!editing.title){ flash=''; var fl=document.getElementById('flash'); fl.style.color='#dc2626'; fl.textContent='제목을 입력하세요'; return; }
+      if(editing.id){ var k=getHook(editing.id); k.anchor=editing.anchor; k.title=editing.title; k.trigger=editing.trigger; k.live=editing.live; }
+      else { editing.id=seq++; HOOKS.push({id:editing.id, anchor:editing.anchor, title:editing.title, trigger:editing.trigger, live:editing.live}); }
+      flash='✓ 저장됨'; document.getElementById('flash').style.color='#16a34a';
+      renderAll();
+    }
+  });
+  document.addEventListener('change', function(ev){
+    if(ev.target && ev.target.id==='anchor' && editing){ syncInputs(); renderEditor(); }
+  });
+  document.addEventListener('input', function(ev){
+    if(!editing) return;
+    if(ev.target && (ev.target.id==='f-title'||ev.target.id==='f-trigger')){
+      if(ev.target.id==='f-title') editing.title=ev.target.value;
+      if(ev.target.id==='f-trigger') editing.trigger=ev.target.value;
+      if(previewOpen) renderPreview();
+    }
+  });
+
+  // 첫 화면: 첫 후크 선택
+  try{ editing={id:HOOKS[0].id, anchor:HOOKS[0].anchor, title:HOOKS[0].title, trigger:HOOKS[0].trigger, live:HOOKS[0].live}; renderAll(); }
+  catch(e){ var box=document.getElementById('errbox'); box.style.display='block'; box.textContent='오류: '+(e&&e.message)+'\n'+(e&&e.stack||''); }
+})();
+</script>
+</body>
+</html>

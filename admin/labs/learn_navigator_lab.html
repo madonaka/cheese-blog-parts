@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>학습 길잡이 (깔때기 목업) - Cheese Lab</title>
+<style>
+  :root{
+    --teal:#0d9488; --teal-d:#0f766e; --teal-l:#ccfbf1;
+    --orange:#d97706; --orange-l:#fef3c7;
+    --line:#e2e8f0; --ink:#1e293b; --sub:#64748b; --bg:#f8fafc;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:"Pretendard","Malgun Gothic",sans-serif;background:var(--bg);color:var(--ink);}
+  .wrap{max-width:880px;margin:0 auto;padding:24px 18px 80px;}
+  .proto-tag{display:inline-block;background:#fee2e2;color:#b91c1c;font-size:.7rem;font-weight:800;
+    padding:3px 9px;border-radius:999px;letter-spacing:.02em;margin-bottom:10px;}
+  h1{font-size:1.3rem;margin:0 0 4px;}
+  .lead{color:var(--sub);font-size:.9rem;margin:0 0 22px;}
+  .errbox{display:none;background:#fee2e2;color:#991b1b;border:1px solid #fecaca;border-radius:10px;
+    padding:12px 14px;font-size:.82rem;margin-bottom:14px;white-space:pre-wrap;}
+
+  /* ── 진행 레일 ── */
+  .rail{position:relative;display:flex;justify-content:space-between;margin:0 6px 28px;}
+  .rail:empty{display:none;}
+  .rail::before{content:"";position:absolute;top:13px;left:14px;right:14px;height:3px;background:var(--line);border-radius:3px;}
+  .rail-fill{position:absolute;top:13px;left:14px;height:3px;background:var(--teal);border-radius:3px;transition:width .35s ease;z-index:1;}
+  .node{position:relative;z-index:2;text-align:center;flex:1;}
+  .dot{width:28px;height:28px;border-radius:50%;background:#fff;border:3px solid var(--line);margin:0 auto 5px;
+    display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:800;color:var(--sub);transition:.25s;}
+  .node.done .dot{background:var(--teal);border-color:var(--teal);color:#fff;}
+  .node.active .dot{border-color:var(--teal);color:var(--teal);box-shadow:0 0 0 4px var(--teal-l);}
+  .node .lbl{font-size:.7rem;color:var(--sub);font-weight:700;}
+  .node.active .lbl,.node.done .lbl{color:var(--ink);}
+  .node .pick{font-size:.66rem;color:var(--teal-d);font-weight:800;margin-top:2px;height:14px;overflow:hidden;}
+
+  /* ── 스테이지 ── */
+  .stage{background:#fff;border:1px solid var(--line);border-radius:16px;padding:24px;min-height:300px;
+    box-shadow:0 6px 24px -12px rgba(15,23,42,.12);}
+  .q{font-size:1.05rem;font-weight:800;margin:0 0 4px;}
+  .q-sub{color:var(--sub);font-size:.82rem;margin:0 0 18px;}
+
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+  .card{border:1.5px solid var(--line);border-radius:12px;padding:16px 14px;cursor:pointer;background:#fff;transition:.18s;text-align:left;}
+  .card:hover{border-color:var(--teal);transform:translateY(-2px);box-shadow:0 8px 18px -10px rgba(13,148,136,.4);}
+  .card .ic{font-size:1.4rem;}
+  .card .t{font-weight:800;margin-top:6px;font-size:.95rem;}
+  .card .d{color:var(--sub);font-size:.76rem;margin-top:3px;line-height:1.4;}
+  .card.soft{background:var(--orange-l);border-color:#fde68a;}
+  .card.muted{opacity:.5;cursor:not-allowed;}
+  .card.muted:hover{transform:none;border-color:var(--line);box-shadow:none;}
+  .escape{grid-column:1/-1;border-style:dashed;background:#f1f5f9;}
+
+  /* ── 후크 ── */
+  .hook-card{border:1.5px solid var(--line);border-radius:14px;padding:16px;cursor:pointer;background:#fff;transition:.18s;
+    display:flex;flex-direction:column;gap:6px;}
+  .hook-card:hover{border-color:var(--orange);transform:translateY(-2px);box-shadow:0 10px 22px -12px rgba(217,119,6,.45);}
+  .hook-trigger{font-size:.72rem;font-weight:800;color:var(--orange);}
+  .hook-title{font-weight:800;font-size:1rem;line-height:1.35;}
+  .hook-meta{font-size:.72rem;color:var(--sub);font-weight:700;margin-top:auto;}
+  .section-label{font-size:.74rem;font-weight:800;color:var(--sub);margin:22px 0 8px;letter-spacing:.02em;}
+
+  .chip{display:inline-block;background:#f1f5f9;border:1px solid var(--line);border-radius:999px;padding:3px 10px;
+    font-size:.76rem;font-weight:700;margin:0 5px 5px 0;color:var(--ink);}
+  .chip.person{background:#eef2ff;color:#4338ca;border-color:#e0e7ff;}
+  .banner{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:11px 14px;font-size:.82rem;color:#92400e;margin-bottom:14px;line-height:1.5;}
+  .soon{display:inline-block;background:#fee2e2;color:#b91c1c;font-size:.64rem;font-weight:800;padding:2px 8px;border-radius:999px;margin-left:6px;}
+  .payoff{margin:0 0 14px;padding:0;list-style:none;}
+  .payoff li{padding:5px 0 5px 24px;position:relative;font-size:.88rem;font-weight:600;}
+  .payoff li::before{content:"✔";position:absolute;left:0;color:var(--teal);font-weight:800;}
+  .ep{display:flex;gap:10px;align-items:center;border:1px solid var(--line);border-radius:9px;padding:9px 12px;margin-bottom:7px;}
+  .ep .epn{width:24px;height:24px;border-radius:6px;background:var(--teal-l);color:var(--teal-d);font-weight:800;
+    display:flex;align-items:center;justify-content:center;font-size:.74rem;flex-shrink:0;}
+  .ep .ept{font-size:.86rem;font-weight:700;}
+
+  .back{background:none;border:none;color:var(--sub);font-size:.82rem;font-weight:700;cursor:pointer;margin-bottom:14px;padding:4px 0;}
+  .back:hover{color:var(--ink);}
+
+  /* ── 비교 타임라인 ── */
+  .tl-wrap{display:flex;gap:0;position:relative;margin-top:8px;border-top:1px dashed var(--line);padding-top:10px;}
+  .tl-axis{width:56px;position:relative;flex-shrink:0;}
+  .tl-axis .yr{position:absolute;right:6px;font-size:.68rem;color:var(--sub);font-weight:700;transform:translateY(-50%);}
+  .tl-axis .tick{position:absolute;right:0;width:6px;height:1px;background:var(--line);}
+  .tl-col{flex:1;position:relative;border-left:1px dashed var(--line);}
+  .tl-col-head{text-align:center;font-weight:800;font-size:.82rem;padding:6px 0;}
+  .tl-col.kr .tl-col-head{color:var(--orange);}
+  .tl-col.cn .tl-col-head{color:var(--teal-d);}
+  .tl-band{position:absolute;left:8px;right:8px;border-radius:8px;padding:6px 9px;font-size:.74rem;font-weight:700;
+    display:flex;flex-direction:column;justify-content:center;overflow:hidden;border:1.5px solid transparent;}
+  .tl-band.kr{background:var(--orange-l);color:#92400e;border-color:#fde68a;}
+  .tl-band.cn{background:var(--teal-l);color:var(--teal-d);cursor:pointer;transition:.16s;}
+  .tl-band.cn:hover{border-color:var(--teal);box-shadow:0 4px 12px -4px rgba(13,148,136,.5);left:5px;right:5px;}
+  .tl-band .yrs{font-weight:600;font-size:.66rem;opacity:.8;}
+  .tl-band .note{font-weight:600;font-size:.66rem;opacity:.85;margin-top:1px;}
+  .tl-hint{font-size:.74rem;color:var(--sub);margin:10px 0 0;text-align:center;}
+
+  /* ── 개념 체크 ── */
+  .concept{display:flex;align-items:center;gap:11px;padding:11px 13px;border:1.5px solid var(--line);border-radius:10px;
+    margin-bottom:8px;cursor:pointer;transition:.15s;}
+  .concept:hover{border-color:var(--teal);background:#f0fdfa;}
+  .concept.on{border-color:var(--teal);background:var(--teal-l);}
+  .concept .chk{width:20px;height:20px;border-radius:6px;border:2px solid #cbd5e1;flex-shrink:0;display:flex;
+    align-items:center;justify-content:center;color:#fff;font-size:.7rem;}
+  .concept.on .chk{background:var(--teal);border-color:var(--teal);}
+  .concept .cname{font-weight:700;font-size:.9rem;flex:1;}
+  .lv-pill{font-size:.66rem;font-weight:800;padding:2px 8px;border-radius:999px;}
+  .lv-b{background:#dbeafe;color:#1d4ed8;}
+  .lv-i{background:#fef3c7;color:#b45309;}
+  .lv-a{background:#fee2e2;color:#b91c1c;}
+
+  .meter{margin-top:18px;background:#f1f5f9;border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:14px;}
+  .meter .steps{display:flex;gap:6px;flex:1;}
+  .meter .seg{flex:1;height:8px;border-radius:4px;background:#e2e8f0;transition:.3s;}
+  .meter .seg.on{background:var(--teal);}
+  .meter .verdict{font-weight:800;font-size:.9rem;white-space:nowrap;}
+
+  .primary{background:var(--teal);color:#fff;border:none;padding:11px 22px;border-radius:10px;font-weight:800;font-size:.9rem;cursor:pointer;margin-top:18px;float:right;}
+  .primary:hover{background:var(--teal-d);}
+
+  /* ── 결과 ── */
+  .res-head{display:flex;align-items:center;gap:10px;margin-bottom:16px;}
+  .res-head .lv-pill{font-size:.74rem;padding:4px 11px;}
+  .chunk{display:flex;align-items:center;gap:12px;border:1.5px solid var(--line);border-radius:11px;padding:13px 15px;margin-bottom:10px;}
+  .chunk .num{width:26px;height:26px;border-radius:50%;background:var(--teal-l);color:var(--teal-d);font-weight:800;
+    display:flex;align-items:center;justify-content:center;font-size:.8rem;flex-shrink:0;}
+  .chunk .ctitle{font-weight:700;flex:1;font-size:.9rem;}
+  .chunk .why{color:var(--sub);font-size:.72rem;margin-top:2px;}
+  .chunk .start{color:var(--teal);font-weight:800;font-size:.82rem;white-space:nowrap;}
+  .chunk.review{background:#fffbeb;border-color:#fde68a;}
+  .res-actions{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap;}
+  .ghost{background:#fff;border:1.5px solid var(--line);padding:9px 16px;border-radius:9px;font-weight:700;font-size:.82rem;cursor:pointer;color:var(--sub);}
+  .ghost:hover{border-color:var(--teal);color:var(--teal);}
+  .clear{clear:both;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <span class="proto-tag">🧪 PROTOTYPE · 더미 데이터</span>
+  <h1>🧭 학습 길잡이</h1>
+  <p class="lead">뭐가 궁금한지 어렴풋해도 괜찮아요. 단계별로 좁혀서 딱 맞는 학습을 찾아드려요.</p>
+
+  <div class="errbox" id="errbox"></div>
+  <div class="rail" id="rail"></div>
+  <div class="stage" id="stage"></div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ===== 더미 데이터 =====
+  var REGIONS = [
+    {id:'kr', ic:'🇰🇷', t:'한국사', d:'곧 추가될 예정', muted:true},
+    {id:'cn', ic:'🇨🇳', t:'중국사', d:'춘추전국 ~ 현대'},
+    {id:'ru', ic:'🇷🇺', t:'러시아사', d:'곧 추가될 예정', muted:true}
+  ];
+  var LENSES = [
+    {id:'era',     ic:'⏳', t:'시대별',        d:'진 · 한 · 당 · 송 …'},
+    {id:'person',  ic:'👤', t:'인물별',        d:'진시황 · 항우 · 유방 …'},
+    {id:'event',   ic:'⚔️', t:'사건별',        d:'적벽대전 · 분서갱유 …'},
+    {id:'saga',    ic:'📖', t:'이야기·작품으로', d:'초한지 · 삼국지 …'},
+    {id:'compare', ic:'🔗', t:'한국사와 비교',  d:'아는 시대에 걸어두기'}
+  ];
+  var ERAS = ['춘추전국','진(秦)','한(漢)','삼국','당(唐)','송(宋)','원(元)','명(明)','청(淸)'];
+  var SAGAS = [
+    {id:'chohan', t:'초한지', d:'항우 vs 유방', era:'진말한초'},
+    {id:'sanguk', t:'삼국지', d:'위 · 촉 · 오',  era:'후한말~삼국'},
+    {id:'yeolguk',t:'열국지', d:'춘추전국 군상', era:'춘추전국'}
+  ];
+  var COMPARE = {
+    '삼국': { win:[300,700], kr:{name:'삼국시대', s:300, e:668},
+      cn:[ {name:'위진남북조', s:300, e:589, key:'default'},
+           {name:'수(隋)',     s:581, e:618, key:'default', note:'대운하'},
+           {name:'당(唐) 초',  s:618, e:700, key:'tang', note:'율령체제'} ] },
+    '고려': { win:[900,1400], kr:{name:'고려', s:918, e:1392},
+      cn:[ {name:'송(宋)',    s:960,  e:1279, key:'song'},
+           {name:'요(遼)',    s:916,  e:1125, key:'default'},
+           {name:'금(金)',    s:1115, e:1234, key:'default'},
+           {name:'원(元)',    s:1271, e:1368, key:'yuan', note:'고려=부마국'},
+           {name:'명(明) 초', s:1368, e:1400, key:'default'} ] },
+    '조선': { win:[1380,1920], kr:{name:'조선', s:1392, e:1897},
+      cn:[ {name:'명(明)',    s:1368, e:1644, key:'default', note:'임진왜란 원군'},
+           {name:'청(淸)',    s:1636, e:1912, key:'default', note:'병자호란'} ] }
+  };
+
+  // 🔥 후크(미끼) — 현재의 궁금증 → 시리즈 몇 편
+  var HOOKS = [
+    {id:'samche', trigger:'🎬 영화 삼체에서 본 그 장면', subject:'문화대혁명',
+     title:"영화 삼체의 '문화대혁명', 대체 뭐였나?", level:'a', minutes:25, series:'중국현대사 시리즈',
+     people:['마오쩌둥','홍위병','덩샤오핑'],
+     payoff:['왜 지식인을 농촌으로 내려보냈는지','삼체의 그 장면이 왜 그렇게 흘렀는지','이게 지금 시진핑 시대로 어떻게 이어지는지'],
+     eps:[{n:7,t:'대약진의 실패와 권력 위기'},{n:8,t:'문화대혁명 — 왜, 누가, 무엇을'},{n:9,t:'그 후폭풍, 그리고 덩샤오핑'}],
+     conceptKey:'cultrev'},
+    {id:'xi', trigger:'🏛 뉴스 — 시진핑 3연임', subject:'중국 권력구조',
+     title:'시진핑은 어떻게 3연임을 했나?', level:'a', minutes:30, series:'중국 공산당 시리즈',
+     people:['시진핑','후진타오','상무위원'],
+     payoff:['공산당이 권력을 어떻게 나눠 갖는지','왜 3연임이 이례적인 일인지','파벌 싸움이 지금 어떻게 작동하는지'],
+     eps:[{n:10,t:'집단지도체제의 성립'},{n:11,t:'파벌 — 상하이방과 공청단'},{n:12,t:'시진핑의 권력 집중'},{n:13,t:'3연임, 그 의미'}],
+     conceptKey:'xijinping'},
+    {id:'taiwan', trigger:'🌊 양안 갈등 뉴스', subject:'양안관계',
+     title:'대만은 왜 중국과 따로일까?', level:'i', minutes:22, series:'대만 시리즈',
+     people:['장제스','마오쩌둥'],
+     payoff:['왜 두 개의 중국이 생겼는지','"하나의 중국"이 무슨 뜻인지','오늘날 양안 긴장의 뿌리'],
+     eps:[{n:1,t:'국공내전과 국부천대'},{n:2,t:'두 개의 중국'},{n:3,t:'양안관계의 오늘'}],
+     conceptKey:'taiwan'}
+  ];
+
+  var CONCEPTS = {
+    'qin':   [['진시황 · 시황제','b'],['분서갱유','b'],['군현제 vs 봉건제','i'],['법가(法家) 사상','i'],['여불위 · 이사의 권력다툼','a']],
+    'song':  [['송 태조 조광윤','b'],['문치주의','b'],['왕안석 변법','i'],['성리학의 성립','i'],['전연의 맹','a']],
+    'yuan':  [['칭기즈칸','b'],['쿠빌라이 칸','b'],['색목인 · 신분제','i'],['역참(站赤) 제도','i'],['교초(交鈔) 지폐','a']],
+    'tang':  [['당 태종 · 정관의 치','b'],['측천무후','b'],['율령체제','i'],['균전제 · 조용조','i'],['안사의 난','a']],
+    'sanguk':[['유비 · 조조 · 손권','b'],['적벽대전','b'],['황건적의 난','i'],['둔전제','i'],['구품중정제','a']],
+    'chohan':[['항우와 유방','b'],['홍문연','b'],['초한 군현 vs 봉건 논쟁','i'],['한신의 배수진','i'],['논공행상과 토사구팽','a']],
+    'cultrev':[['마오쩌둥','b'],['홍위병','b'],['대약진운동','i'],['수정주의 · 주자파','i'],['린뱌오 사건','a']],
+    'xijinping':[['시진핑','b'],['공산당 총서기','b'],['집단지도체제','i'],['상무위원회','i'],['파벌(상하이방·공청단)','a']],
+    'taiwan':[['장제스','b'],['국공내전','b'],['국부천대','i'],['하나의 중국 원칙','i'],['양안 92공식','a']],
+    'default':[['이 시대의 대표 인물','b'],['핵심 사건 한 가지','b'],['주요 제도','i'],['사상적 배경','i'],['심화 쟁점','a']]
+  };
+  var LV = { b:{cls:'lv-b', label:'입문'}, i:{cls:'lv-i', label:'중급'}, a:{cls:'lv-a', label:'심화'} };
+  var LVIDX = { b:0, i:1, a:2 };
+
+  // ===== 상태 / 네비게이션 =====
+  var state, history;
+  function reset(){
+    state = { step:'home', mode:null, region:null, lens:null, narrow:null, anchor:null,
+              target:null, conceptKey:'default', contentLevel:null, hook:null, checked:{} };
+    history = [];
+  }
+  reset();
+  function go(patch){ history.push(JSON.stringify(state)); for(var k in patch) state[k]=patch[k]; render(); }
+  function back(){ if(history.length){ state = JSON.parse(history.pop()); render(); } }
+  function restart(){ reset(); render(); }
+
+  function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
+  function regionName(id){ for(var i=0;i<REGIONS.length;i++) if(REGIONS[i].id===id) return REGIONS[i].t; return ''; }
+  function lensName(id){ for(var i=0;i<LENSES.length;i++) if(LENSES[i].id===id) return LENSES[i].t; return ''; }
+  function getHook(){ for(var i=0;i<HOOKS.length;i++) if(HOOKS[i].id===state.hook) return HOOKS[i]; return null; }
+
+  // ===== 레일 =====
+  function railInfo(){
+    if(state.mode==='funnel') return {
+      labels:['권역','렌즈','좁히기','레벨','추천'],
+      idx:{region:0,lens:1,narrow:2,level:3,result:4}[state.step],
+      picks:[regionName(state.region), lensName(state.lens), state.narrow||'', state.step==='result'?verdict().label:'', '']
+    };
+    if(state.mode==='hook'){ var h=getHook(); return {
+      labels:['궁금증','미리보기','레벨','추천'],
+      idx:{hookdetail:1,level:2,result:3}[state.step],
+      picks:[h?h.subject:'', '', state.step==='result'?verdict().label:'', '']
+    }; }
+    return null;
+  }
+  function renderRail(){
+    var info=railInfo(), rail=document.getElementById('rail');
+    if(!info){ rail.innerHTML=''; return; }
+    var fill=info.idx/(info.labels.length-1)*100;
+    var h='<div class="rail-fill" style="width:'+fill+'%"></div>';
+    for(var i=0;i<info.labels.length;i++){
+      var cls=i<info.idx?'done':(i===info.idx?'active':'');
+      h+='<div class="node '+cls+'"><div class="dot">'+(i<info.idx?'✓':(i+1))+'</div>'+
+         '<div class="lbl">'+info.labels[i]+'</div><div class="pick">'+(info.picks[i]||'')+'</div></div>';
+    }
+    rail.innerHTML=h;
+  }
+
+  // ===== 스테이지 =====
+  function backBtn(){ return history.length ? '<button class="back" data-act="back">← 이전</button>' : ''; }
+  function render(){
+    try{
+      renderRail();
+      var s=document.getElementById('stage'), v;
+      if(state.step==='home') v=viewHome();
+      else if(state.step==='hookdetail') v=viewHookDetail();
+      else if(state.step==='region') v=viewRegion();
+      else if(state.step==='lens') v=viewLens();
+      else if(state.step==='narrow') v=viewNarrow();
+      else if(state.step==='level') v=viewLevel();
+      else v=viewResult();
+      s.innerHTML=v;
+    }catch(e){
+      var box=document.getElementById('errbox');
+      box.style.display='block';
+      box.textContent='렌더 오류: '+(e&&e.message)+'\n'+(e&&e.stack||'');
+    }
+  }
+
+  // ── 홈(두 입구) ──
+  function viewHome(){
+    var hooks='';
+    for(var i=0;i<HOOKS.length;i++){ var h=HOOKS[i];
+      hooks+='<div class="hook-card" data-act="hook" data-id="'+h.id+'">'+
+        '<div class="hook-trigger">'+h.trigger+'</div>'+
+        '<div class="hook-title">'+h.title+'</div>'+
+        '<div class="hook-meta">'+h.series+' · '+h.eps.length+'편 · 약 '+h.minutes+'분 '+
+        '<span class="lv-pill '+LV[h.level].cls+'">'+LV[h.level].label+'</span></div></div>';
+    }
+    return '<p class="q">🔥 요즘 이거, 궁금하지 않으셨어요?</p>'+
+      '<p class="q-sub">뉴스·영화엔 나오는데 아무도 안 알려준 그것. 몇 편이면 이해돼요.</p>'+
+      '<div class="grid">'+hooks+'</div>'+
+      '<div class="section-label">아니면, 직접 찾아볼게요</div>'+
+      '<div class="card escape" data-act="funnel"><div class="ic">🧭</div>'+
+      '<div class="t">차근차근 찾기 (권역부터)</div>'+
+      '<div class="d">뭐가 궁금한지 어렴풋하면, 권역 → 시대/인물/비교 순으로 좁혀드려요.</div></div>';
+  }
+
+  // ── 후크 상세(미리보기): 등장인물 + 난이도로 "그거구나" 인식 ──
+  function viewHookDetail(){
+    var h=getHook(); if(!h) return '<p class="q">후크를 찾을 수 없어요.</p>';
+    var people='';
+    for(var i=0;i<h.people.length;i++) people+='<span class="chip person">'+h.people[i]+'</span>';
+    var eps='';
+    for(var j=0;j<h.eps.length;j++) eps+='<div class="ep"><div class="epn">'+h.eps[j].n+'</div><div class="ept">'+h.eps[j].t+'</div></div>';
+    return backBtn()+
+      '<p class="q">'+h.title+'</p>'+
+      '<p class="q-sub">'+h.trigger+' — 이 학습 안에 그게 있어요.</p>'+
+      '<div style="margin-bottom:14px;">'+
+        '<span class="chip">난이도 <span class="lv-pill '+LV[h.level].cls+'" style="margin-left:4px;">'+LV[h.level].label+'</span></span>'+
+        '<span class="chip">⏱ 약 '+h.minutes+'분</span>'+
+        '<span class="chip">📺 '+h.series+'</span>'+
+      '</div>'+
+      '<div style="font-size:.78rem;font-weight:800;color:var(--sub);margin-bottom:6px;">혹시 이 사람들, 어디서 보셨죠?</div>'+
+      '<div style="margin-bottom:16px;">'+people+'</div>'+
+      '<div style="font-size:.78rem;font-weight:800;color:var(--sub);margin-bottom:6px;">보고 나면 알게 돼요</div>'+
+      '<ul class="payoff">'+payoffList(h)+'</ul>'+
+      '<div style="font-size:.78rem;font-weight:800;color:var(--sub);margin-bottom:6px;">📺 이 '+h.eps.length+'편이면 돼요</div>'+
+      eps+
+      '<button class="primary" data-act="hooklevel">내 수준 확인하고 시작 ▶</button><div class="clear"></div>';
+  }
+  function payoffList(h){ var s=''; for(var i=0;i<h.payoff.length;i++) s+='<li>'+h.payoff[i]+'</li>'; return s; }
+
+  function viewRegion(){
+    var c='';
+    for(var i=0;i<REGIONS.length;i++){ var r=REGIONS[i];
+      c+='<div class="card '+(r.muted?'muted':'')+'" '+(r.muted?'':'data-act="region" data-id="'+r.id+'"')+'>'+
+         '<div class="ic">'+r.ic+'</div><div class="t">'+r.t+'</div><div class="d">'+r.d+'</div></div>';
+    }
+    return backBtn()+'<p class="q">어느 역사가 궁금하세요?</p><p class="q-sub">우선 큰 권역부터 골라주세요.</p>'+
+           '<div class="grid">'+c+'</div>';
+  }
+  function viewLens(){
+    var c='';
+    for(var i=0;i<LENSES.length;i++){ var l=LENSES[i];
+      c+='<div class="card" data-act="lens" data-id="'+l.id+'"><div class="ic">'+l.ic+'</div><div class="t">'+l.t+'</div><div class="d">'+l.d+'</div></div>';
+    }
+    c+='<div class="card soft escape" data-act="unsure"><div class="ic">🤷</div>'+
+       '<div class="t">잘 모르겠어요 — 그냥 흐름부터</div><div class="d">전체 큰 그림을 잡아주는 입문 트랙으로 바로 갈게요.</div></div>';
+    return backBtn()+'<p class="q">'+regionName(state.region)+', 어떤 쪽으로 찾아볼까요?</p>'+
+           '<p class="q-sub">편한 입구를 고르세요. 결국 같은 자료를 각도만 달리 보는 거예요.</p><div class="grid">'+c+'</div>';
+  }
+  function viewNarrow(){
+    if(state.lens==='era') return narrowEra();
+    if(state.lens==='saga') return narrowSaga();
+    if(state.lens==='compare') return narrowCompare();
+    return narrowGeneric();
+  }
+  function targetCard(name,key,extra){
+    return '<div class="card" data-act="target" data-name="'+esc(name)+'" data-key="'+key+'">'+extra+'</div>';
+  }
+  function narrowEra(){
+    var c='';
+    for(var i=0;i<ERAS.length;i++){
+      var k=ERAS[i].indexOf('진')===0?'qin':ERAS[i].indexOf('송')===0?'song':ERAS[i].indexOf('당')===0?'tang':'default';
+      c+=targetCard(ERAS[i],k,'<div class="t">'+ERAS[i]+'</div>');
+    }
+    return backBtn()+'<p class="q">어느 시대가 궁금하세요?</p>'+
+           '<p class="q-sub">시대를 고르면 핵심 개념으로 레벨을 가볍게 확인할게요.</p><div class="grid">'+c+'</div>';
+  }
+  function narrowSaga(){
+    var c='';
+    for(var i=0;i<SAGAS.length;i++){ var s=SAGAS[i];
+      c+=targetCard(s.t,s.id,'<div class="ic">📖</div><div class="t">'+s.t+'</div><div class="d">'+s.d+'<br>('+s.era+')</div>');
+    }
+    return backBtn()+'<p class="q">어떤 이야기로 접하셨어요?</p>'+
+           '<p class="q-sub">드라마·소설·게임으로 본 그 이야기가 곧 시대·인물·사건 묶음이에요.</p><div class="grid">'+c+'</div>';
+  }
+  function narrowGeneric(){
+    var label=state.lens==='person'?'인물':'사건';
+    var items=state.lens==='person'?['진시황','항우','유방','조조','유비','한신']:['분서갱유','적벽대전','황건적의 난','홍문연','안사의 난','정관의 치'];
+    var km={'진시황':'qin','항우':'chohan','유방':'chohan','조조':'sanguk','유비':'sanguk','한신':'chohan',
+      '분서갱유':'qin','적벽대전':'sanguk','황건적의 난':'sanguk','홍문연':'chohan','안사의 난':'tang','정관의 치':'tang'};
+    var c='';
+    for(var i=0;i<items.length;i++) c+=targetCard(items[i],km[items[i]]||'default','<div class="t">'+items[i]+'</div>');
+    return backBtn()+'<p class="q">어떤 '+label+'이 궁금하세요?</p><div class="grid">'+c+'</div>';
+  }
+  function narrowCompare(){
+    if(!state.anchor){
+      var anchors=['삼국','고려','조선'], c='';
+      for(var i=0;i<anchors.length;i++)
+        c+='<div class="card" data-act="anchor" data-id="'+anchors[i]+'"><div class="ic">🇰🇷</div>'+
+           '<div class="t">'+anchors[i]+'</div><div class="d">이 시기 중국과 나란히 보기</div></div>';
+      return backBtn()+'<p class="q">한국사 어느 시대를 기준으로 맞춰볼까요?</p>'+
+             '<p class="q-sub">내가 아는 시대 옆에 같은 시기 중국을 세워드려요.</p><div class="grid">'+c+'</div>';
+    }
+    return backBtn()+timelineView(state.anchor);
+  }
+  function timelineView(anchorKey){
+    var c=COMPARE[anchorKey], min=c.win[0], max=c.win[1], span=max-min, H=420;
+    function top(y){ return (y-min)/span*100; }
+    function bs(s,e){ return 'top:'+top(s)+'%;height:'+(top(e)-top(s))+'%;'; }
+    var axis='';
+    for(var y=Math.ceil(min/100)*100;y<=max;y+=100)
+      axis+='<div class="tick" style="top:'+top(y)+'%"></div><div class="yr" style="top:'+top(y)+'%">'+y+'</div>';
+    var kr='<div class="tl-band kr" style="'+bs(c.kr.s,c.kr.e)+'">'+c.kr.name+'<span class="yrs">'+c.kr.s+'~'+c.kr.e+'</span></div>';
+    var cn='';
+    for(var i=0;i<c.cn.length;i++){ var b=c.cn[i];
+      cn+='<div class="tl-band cn" style="'+bs(b.s,b.e)+'" data-act="target" data-name="'+esc(b.name)+'" data-key="'+b.key+'">'+
+          b.name+'<span class="yrs">'+b.s+'~'+b.e+'</span>'+(b.note?'<span class="note">↪ '+b.note+'</span>':'')+'</div>';
+    }
+    return '<p class="q">'+c.kr.name+' 무렵, 중국은?</p>'+
+      '<p class="q-sub">같은 높이 = 같은 시대. 오른쪽 중국 막대를 누르면 그 시대로 들어가요.</p>'+
+      '<div class="tl-wrap" style="height:'+H+'px"><div class="tl-axis">'+axis+'</div>'+
+      '<div class="tl-col kr"><div class="tl-col-head">🇰🇷 한국사</div>'+kr+'</div>'+
+      '<div class="tl-col cn"><div class="tl-col-head">🇨🇳 중국사</div>'+cn+'</div></div>'+
+      '<p class="tl-hint">💡 막대 길이 = 그 나라가 존속한 기간. 연도만 있으면 자동으로 그려지는 화면이에요.</p>';
+  }
+
+  // ── 레벨(개념 체크) — 깔때기/후크 공용 ──
+  function viewLevel(){
+    var set=CONCEPTS[state.conceptKey]||CONCEPTS['default'], rows='';
+    for(var i=0;i<set.length;i++){ var on=state.checked[i]?'on':'', lv=LV[set[i][1]];
+      rows+='<div class="concept '+on+'" data-act="toggle" data-i="'+i+'"><div class="chk">'+(state.checked[i]?'✓':'')+'</div>'+
+            '<div class="cname">'+set[i][0]+'</div><div class="lv-pill '+lv.cls+'">'+lv.label+'</div></div>';
+    }
+    var v=verdict(), segs='';
+    for(var k=0;k<3;k++) segs+='<div class="seg '+(k<v.idx+1?'on':'')+'"></div>';
+    var head = state.mode==='hook'
+      ? '<p class="q">시작하기 전에 — "'+state.target+'", 들어본 걸 골라주세요</p>'
+      : '<p class="q">"'+state.target+'", 들어본 적 있는 걸 골라주세요</p>';
+    return backBtn()+head+
+      '<p class="q-sub">모르는 건 그냥 두세요. 레벨은 자동으로 추정돼요 — 직접 안 정하셔도 돼요.</p>'+rows+
+      '<div class="meter"><span style="font-size:.78rem;color:var(--sub);font-weight:700;">추정 레벨</span>'+
+      '<div class="steps">'+segs+'</div><span class="verdict">'+v.label+'부터 시작</span></div>'+
+      '<button class="primary" data-act="goresult">결과 보기 ▶</button><div class="clear"></div>';
+  }
+  function verdict(){
+    var set=CONCEPTS[state.conceptKey]||CONCEPTS['default'], max=-1;
+    for(var i in state.checked){ var lv=LVIDX[set[i][1]]; if(lv>max) max=lv; }
+    var idx=max<0?0:max;
+    return {idx:idx, label:['입문','중급','심화'][idx], cls:['lv-b','lv-i','lv-a'][idx]};
+  }
+
+  // ── 결과 ──
+  function viewResult(){
+    if(state.mode==='hook') return resultHook();
+    return resultFunnel();
+  }
+  function resultFunnel(){
+    var v=state.lens==='unsure'?{idx:0,label:'입문',cls:'lv-b'}:verdict();
+    var t=state.target, chunks=buildFunnelChunks(t,v.idx), list='';
+    for(var i=0;i<chunks.length;i++){ var c=chunks[i];
+      list+=chunkRow(i+1,c);
+    }
+    return backBtn()+'<div class="res-head"><span style="font-size:1.5rem">📦</span><div>'+
+      '<div class="q" style="margin:0">"'+t+'" 학습, 여기서 시작하면 좋아요</div>'+
+      '<div class="q-sub" style="margin:2px 0 0">추정 레벨 <span class="lv-pill '+v.cls+'">'+v.label+'</span> 기준으로 골랐어요.</div></div></div>'+
+      list+'<div class="res-actions"><button class="ghost" data-act="golevel">↩ 너무 쉬워요 (레벨 다시)</button>'+
+      '<button class="ghost" data-act="restart">↩ 처음부터 다시</button></div>';
+  }
+  function resultHook(){
+    var h=getHook(), v=verdict(), clIdx=LVIDX[h.level];
+    var banner='';
+    if(v.idx<clIdx){
+      banner='<div class="banner">이 시리즈는 <b>'+LV[h.level].label+'</b> 난이도예요. 모른다고 하신 개념부터 짚고 들어가면 충분히 따라갈 수 있어요.'+
+        '<span class="soon">쉬운 입문 버전 준비 중</span></div>';
+    }
+    var list='', n=1;
+    // 모르는 하위 개념 → 복습 먼저
+    var set=CONCEPTS[state.conceptKey]||CONCEPTS['default'];
+    if(v.idx<clIdx){
+      for(var i=0;i<set.length;i++){
+        if(!state.checked[i] && LVIDX[set[i][1]]<clIdx){
+          list+=chunkRow(n++,{lvl:'입문',title:'(먼저) '+set[i][0]+' 이해하기',review:true,why:'"'+set[i][0]+'"를 모른다고 하셔서 깔아드려요'});
+          break;
+        }
+      }
+    }
+    for(var j=0;j<h.eps.length;j++){
+      list+=chunkRow(n++,{lvl:LV[h.level].label,title:h.eps[j].n+'편. '+h.eps[j].t});
+    }
+    return backBtn()+banner+
+      '<div class="res-head"><span style="font-size:1.5rem">🎯</span><div>'+
+      '<div class="q" style="margin:0">이 학습으로 "'+h.subject+'"을(를) 알게 돼요</div>'+
+      '<div class="q-sub" style="margin:2px 0 0">'+h.series+' · 추정 레벨 <span class="lv-pill '+v.cls+'">'+v.label+'</span></div></div></div>'+
+      list+
+      '<div class="res-actions"><button class="ghost" data-act="golevel">↩ 레벨 다시 확인</button>'+
+      '<button class="ghost" data-act="restart">↩ 다른 궁금증 보기</button></div>';
+  }
+  function chunkRow(n,c){
+    return '<div class="chunk '+(c.review?'review':'')+'"><div class="num">'+n+'</div>'+
+      '<div style="flex:1"><div class="ctitle">['+c.lvl+'] '+c.title+'</div>'+(c.why?'<div class="why">'+c.why+'</div>':'')+'</div>'+
+      '<div class="start">▶ 시작</div></div>';
+  }
+  function buildFunnelChunks(t,lvIdx){
+    var L=['입문','중급','심화'];
+    var out=[{lvl:L[lvIdx],title:t+', 핵심만 빠르게'},{lvl:L[lvIdx],title:t+'의 흐름과 주요 인물'}];
+    var set=CONCEPTS[state.conceptKey]||CONCEPTS['default'];
+    for(var i=0;i<set.length;i++){
+      if(!state.checked[i] && LVIDX[set[i][1]]<lvIdx){
+        out.push({lvl:'입문',title:'(복습) '+set[i][0]+' 이해하기',review:true,why:'"'+set[i][0]+'"를 모른다고 하셔서 먼저 깔아드려요'});
+        break;
+      }
+    }
+    if(out.length<3) out.push({lvl:L[Math.min(lvIdx+1,2)],title:t+', 한 걸음 더 (심화)'});
+    return out;
+  }
+
+  // ===== 이벤트 위임 =====
+  document.addEventListener('click', function(ev){
+    var el=ev.target.closest('[data-act]');
+    if(!el) return;
+    var act=el.getAttribute('data-act');
+    if(act==='hook')        go({step:'hookdetail', mode:'hook', hook:el.getAttribute('data-id')});
+    else if(act==='funnel') go({step:'region', mode:'funnel'});
+    else if(act==='hooklevel'){ var h=getHook(); go({step:'level', target:h.subject, conceptKey:CONCEPTS[h.conceptKey]?h.conceptKey:'default', contentLevel:h.level, checked:{}}); }
+    else if(act==='region') go({step:'lens', region:el.getAttribute('data-id'), lens:null, anchor:null});
+    else if(act==='lens')   go({step:'narrow', lens:el.getAttribute('data-id'), anchor:null});
+    else if(act==='unsure') go({step:'result', narrow:'총괄 흐름', target:'중국사 큰 흐름', conceptKey:'default', checked:{}});
+    else if(act==='anchor') go({step:'narrow', anchor:el.getAttribute('data-id')});
+    else if(act==='target'){
+      var name=el.getAttribute('data-name'), key=el.getAttribute('data-key');
+      if(!CONCEPTS[key]) key='default';
+      var label=state.lens==='compare'?(state.anchor+' ↔ '+name):name;
+      go({step:'level', narrow:label, target:name, conceptKey:key, checked:{}});
+    }
+    else if(act==='toggle'){
+      var i=el.getAttribute('data-i');
+      if(state.checked[i]) delete state.checked[i]; else state.checked[i]=true;
+      render();
+    }
+    else if(act==='goresult') go({step:'result'});
+    else if(act==='golevel')  go({step:'level'});
+    else if(act==='restart')  restart();
+    else if(act==='back')     back();
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
