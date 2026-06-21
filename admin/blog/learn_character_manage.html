@@ -790,6 +790,12 @@
               <td>등장 학습 위치 배열. 하위 객체 필드:<br>- <code>series_name</code>: 시리즈명 (선택)<br>- <code>title</code>: 학습단계(편) 제목 (필수)<br>- <code>content_connection</code>: 연결 설명/메모 (선택)</td>
               <td>선택</td>
             </tr>
+            <tr>
+              <td><strong>appearances_add</strong></td>
+              <td>Object<br>또는 Array</td>
+              <td><strong>이미 등록된 항목에 등장 위치만 추가</strong>할 때 사용 (다른 편에서 이미 만든 인물/사건을 새 편에 또 등장시킬 때). 하위 필드는 <code>appearances</code>와 동일(<code>series_name</code>·<code>title</code>·<code>content_connection</code>). 입력 시 기존 등장 위치에 <strong>병합</strong>되며 같은 편은 중복 추가되지 않음. (name만 있고 type 없는 항목도 기존 항목이면 정상 병합)</td>
+              <td>선택</td>
+            </tr>
           </tbody>
         </table>
         
@@ -2639,24 +2645,61 @@
         }
       });
 
+      // appearances_add: 이미 등록된 항목에 '등장 위치만 추가'하는 입력 필드(단일 객체 또는 배열).
+      // 표준 appearances 배열에 흡수시켜 동일한 매칭·병합 파이프라인을 그대로 타게 한다.
+      items.forEach(item => {
+        if (!item || typeof item !== "object" || item.appearances_add == null) return;
+        const adds = Array.isArray(item.appearances_add) ? item.appearances_add : [item.appearances_add];
+        const base = Array.isArray(item.appearances) ? item.appearances : [];
+        item.appearances = [...base, ...adds.filter(Boolean)];
+        // 덮어쓰기 모드에서도 등장 위치가 반영되도록 제공 키로 표시
+        if (item.__providedKeys) item.__providedKeys.add("appearances");
+      });
+
       // appearances 변환용 헬퍼 함수 정의
       // ID와 제목이 서로 다른 편을 가리키는 입력(예: 8편 제목에 6편 ID)을 보정하기 위한 경고 수집
       const appearanceWarnings = [];
 
-      // 시리즈/편 제목으로 시퀀스 매칭 (1순위 완전 일치, 2순위 부분 일치)
-      const findSeqByTitle = (titleStr) => {
-        const norm = String(titleStr || "").trim().toLowerCase().replace(/\s/g, "");
+      // 제목 정규화: 공백·대소문자뿐 아니라 편차가 큰 장식 문자(따옴표·대시류)까지 통일.
+      // (따옴표 차이는 여기서 흡수하고, 그래도 안 맞으면 아래 '시리즈명+편 번호' 매칭이 잡는다)
+      const normTitle = (s) => String(s || "")
+        .normalize("NFC")
+        .toLowerCase()
+        .replace(/['`´‘’ʼ′"“”″«»]/g, "") // 따옴표류 제거
+        .replace(/[‐‑‒–—―−]/g, "-")                                  // 대시류를 하이픈으로 통일
+        .replace(/\s/g, "");
+
+      // 제목 앞머리에서 편 번호 추출: "6편 - …", "16편(완결)…", "번외 6편 …" → { extra, num }
+      const parseEp = (t) => {
+        const m = String(t || "").trim().match(/^(번외\s*)?제?\s*(\d+)\s*편/);
+        return m ? { extra: !!m[1], num: parseInt(m[2], 10) } : null;
+      };
+
+      // 시리즈/편 제목으로 시퀀스 매칭.
+      // 1순위 제목 완전 일치 → 2순위 (시리즈명 + 편 번호) 일치 → 3순위 제목 부분 일치.
+      // 2순위 덕분에 AI가 편 제목 문구/따옴표를 조금 다르게 적어도 편 번호만 맞으면 정확히 잡힌다.
+      const findSeqByTitle = (titleStr, seriesName) => {
+        const norm = normTitle(titleStr);
         if (!norm) return null;
-        let found = ALL_SEQUENCES.find(s => {
-          const sTitle = String(s.title || "").trim().toLowerCase().replace(/\s/g, "");
-          return sTitle === norm;
-        });
-        if (!found) {
+        // 1) 제목 완전 일치
+        let found = ALL_SEQUENCES.find(s => normTitle(s.title) === norm);
+        if (found) return found;
+        // 2) 시리즈명 + 편 번호 일치 (문구 차이에 강함)
+        const ep = parseEp(titleStr);
+        const snameNorm = normTitle(seriesName);
+        if (ep && snameNorm) {
           found = ALL_SEQUENCES.find(s => {
-            const sTitle = String(s.title || "").trim().toLowerCase().replace(/\s/g, "");
-            return sTitle.includes(norm) || norm.includes(sTitle);
+            if (normTitle(s.series_name || s.group || "") !== snameNorm) return false;
+            const sep = parseEp(s.title);
+            return sep && sep.num === ep.num && sep.extra === ep.extra;
           });
+          if (found) return found;
         }
+        // 3) 제목 부분 일치 (최후)
+        found = ALL_SEQUENCES.find(s => {
+          const sTitle = normTitle(s.title);
+          return sTitle && (sTitle.includes(norm) || norm.includes(sTitle));
+        });
         return found || null;
       };
 
@@ -2694,7 +2737,7 @@
 
             if (foundById) {
               // ID와 제목 불일치 검증: 제목이 다른 편을 가리키면 제목을 신뢰
-              const byTitle = titleStr ? findSeqByTitle(titleStr) : null;
+              const byTitle = titleStr ? findSeqByTitle(titleStr, app.series_name) : null;
               if (byTitle && byTitle.id !== idStr) {
                 appearanceWarnings.push(`• ${who}: 입력 ID(${idStr})는 "${foundById.title}"이지만 제목은 "${titleStr}" → 제목 기준 "${byTitle.title}"(으)로 매칭했습니다.`);
                 processed.push(buildFromSeq(byTitle, app.content_connection));
@@ -2712,7 +2755,7 @@
             }
 
             // ID가 현재 시퀀스 목록에 없음 → 제목으로 매칭 시도
-            const byTitle = findSeqByTitle(titleStr);
+            const byTitle = findSeqByTitle(titleStr, app.series_name);
             if (byTitle) {
               appearanceWarnings.push(`• ${who}: 입력 ID(${idStr})를 찾을 수 없어 제목 "${titleStr}" 기준 "${byTitle.title}"(으)로 매칭했습니다.`);
               processed.push(buildFromSeq(byTitle, app.content_connection));
@@ -2734,7 +2777,7 @@
           const seriesNameStr = String(app.series_name || "").trim();
           if (!titleStr) continue;
 
-          const foundSeq = findSeqByTitle(titleStr);
+          const foundSeq = findSeqByTitle(titleStr, seriesNameStr);
           if (foundSeq) {
             processed.push(buildFromSeq(foundSeq, app.content_connection));
           } else {
@@ -2874,7 +2917,13 @@
           const newApps = Array.isArray(item.appearances) ? item.appearances : [];
           const mergedApps = [...existingApps];
           newApps.forEach(na => {
-            const exists = mergedApps.some(ea => ea.sequence_id === na.sequence_id && ea.step_id === na.step_id);
+            // 매칭 실패한 백업 포맷은 sequence_id가 '시리즈명'으로 동일하므로(step_id="")
+            // 편 제목(step_title)까지 비교해야 같은 시리즈의 서로 다른 편이 1개로 뭉치지 않음
+            const exists = mergedApps.some(ea =>
+              ea.sequence_id === na.sequence_id &&
+              ea.step_id === na.step_id &&
+              (ea.step_title || "") === (na.step_title || "")
+            );
             if (!exists) mergedApps.push(na);
           });
 
@@ -2987,7 +3036,12 @@
             const incomingApps = Array.isArray(item.appearances) ? item.appearances : [];
             const base = [...(ex.appearances || [])];
             incomingApps.forEach(na => {
-              const idx = base.findIndex(ea => ea.sequence_id === na.sequence_id);
+              // 백업 포맷(sequence_id=시리즈명)은 편 제목(step_title)까지 같아야 동일 편으로 보고 교체.
+              // 그렇지 않으면 같은 시리즈의 다른 편들이 1개로 덮어써지며 사라짐
+              const idx = base.findIndex(ea =>
+                ea.sequence_id === na.sequence_id &&
+                (ea.step_title || "") === (na.step_title || "")
+              );
               if (idx >= 0) {
                 base[idx] = na; // 같은 편 → 교체
               } else {
