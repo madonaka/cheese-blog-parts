@@ -1650,6 +1650,25 @@ async function saveSeries() {
     try {
         await safeFetchDB({ action: 'set', collection: 'learn_series', id, data: payload });
 
+        // 시리즈 group을 하위 시퀀스(에피소드)에 전파.
+        // 시퀀스의 group이 허브(/korean)·학습목록 분류의 기준이므로, 시리즈에서 group을 바꾸면
+        // 기존 시퀀스에도 동기화해야 화면에 반영된다. (set 액션은 merge라 다른 필드는 보존됨)
+        const newGroup = payload.group || null;
+        if (!allSequences.length) await loadSequences();
+        const childSeqs = allSequences.filter(s => s.series_id === id && (s.group || null) !== newGroup);
+        if (childSeqs.length > 0) {
+            await Promise.all(childSeqs.map(seq =>
+                safeFetchDB({
+                    action: 'set',
+                    collection: 'learn_sequences',
+                    id: seq.id,
+                    data: { group: newGroup, updated_at: new Date().toISOString() }
+                })
+            ));
+            childSeqs.forEach(seq => { seq.group = newGroup; });
+            toast(`하위 시퀀스 ${childSeqs.length}개에 그룹을 반영했습니다.`);
+        }
+
         // 로컬 캐시 업데이트
         const idx = allSeries.findIndex(s => s.id === id);
         if (idx >= 0) allSeries[idx] = payload;
