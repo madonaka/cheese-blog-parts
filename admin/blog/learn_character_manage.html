@@ -557,6 +557,10 @@
           <input type="checkbox" id="cm-is-global" style="width:auto;">
           <span>🌍 세계 공통 사건 (특정 나라가 아닌 전 세계적 사건 — 세로 연표에서 전체 폭 가로 점선으로 표시)</span>
         </label>
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; margin-top:8px;">
+          <input type="checkbox" id="cm-is-important" style="width:auto;">
+          <span>🔴 중요 사건 (세로 연표에서 나라색 대신 빨강으로 강조 표시)</span>
+        </label>
       </div>
 
       <div class="cm-field" id="related-events-field">
@@ -770,6 +774,12 @@
               <td><strong>is_global</strong></td>
               <td>Boolean</td>
               <td>세계 공통 사건 여부 (사건(event) 전용. `true`면 세로 연표에서 전체 폭 가로 점선으로 표시. 예: 세계대전)</td>
+              <td>선택</td>
+            </tr>
+            <tr>
+              <td><strong>important</strong></td>
+              <td>Boolean</td>
+              <td>중요 사건 여부 (사건(event) 전용. `true`면 세로 연표에서 나라색 대신 빨강으로 강조 표시)</td>
               <td>선택</td>
             </tr>
             <tr>
@@ -1976,6 +1986,7 @@
           (Array.isArray(item.predecessors) ? item.predecessors : []).forEach(p => addPredecessorRow(p.name, p.year, p.rel));
         }
         document.getElementById("cm-is-global").checked = item.is_global === true;
+        document.getElementById("cm-is-important").checked = item.important === true;
         document.getElementById("cm-memo").value = item.memo || "";
 
         altList.innerHTML = "";
@@ -2004,6 +2015,7 @@
       document.getElementById("cm-faction").value = "";
       document.getElementById("cm-lineage").value = "";
       document.getElementById("cm-is-global").checked = false;
+      document.getElementById("cm-is-important").checked = false;
       document.getElementById("cm-memo").value = "";
       renderRelEvents();
       modal.classList.add("open");
@@ -2093,6 +2105,7 @@
         : (type === "character" ? ((document.getElementById("cm-faction")?.value || "").trim() || dupTarget.faction || "") : "");
       const lineage = (type === "nation" || type === "organization") ? ((document.getElementById("cm-lineage")?.value || "").trim() || dupTarget.lineage || "") : "";
       const is_global = type === "event" ? (document.getElementById("cm-is-global")?.checked === true || dupTarget.is_global === true) : false;
+      const important = type === "event" ? (document.getElementById("cm-is-important")?.checked === true || dupTarget.important === true) : false;
       // 소속 단체/정당: 인물·사건·사상 전용. 현재 입력값과 기존값 합집합 병합
       const curOrgs = ["character", "event", "concept"].includes(type) ? getSelectedOrganizations() : [];
       const mergedOrgs = ["character", "event", "concept"].includes(type)
@@ -2127,6 +2140,7 @@
           ? (getPredecessors().length ? getPredecessors() : (Array.isArray(dupTarget.predecessors) ? dupTarget.predecessors : []))
           : (Array.isArray(dupTarget.predecessors) ? dupTarget.predecessors : []),
         is_global,
+        important,
         memo: mergedMemo,
         appearances: mergedApps,
         related_events: mergedRels,
@@ -2249,6 +2263,7 @@
       // 전신/분기·합당 관계: 나라·정당/단체 전용 (흐름도 연결용)
       predecessors: (type === "nation" || type === "organization") ? getPredecessors() : [],
       is_global: type === "event" ? (document.getElementById("cm-is-global")?.checked === true) : false,
+      important: type === "event" ? (document.getElementById("cm-is-important")?.checked === true) : false,
       memo: (document.getElementById("cm-memo")?.value || "").trim(),
       appearances: getAppearances(),
       related_events: [...selectedRelEventNames],
@@ -2562,6 +2577,7 @@
           : (item.faction ? [String(item.faction).trim()] : []);
         if (factions.length) obj.factions = factions;
         if (item.is_global === true) obj.is_global = true;
+        if (item.important === true) obj.important = true;
       }
 
       if ((item.type === "nation" || item.type === "organization") && item.lineage) obj.lineage = String(item.lineage).trim();
@@ -2893,6 +2909,7 @@
           lineage: (item.type === "nation" || item.type === "organization") && item.lineage ? String(item.lineage).trim() : "",
           predecessors: itemPreds,
           is_global: item.type === "event" ? (item.is_global === true) : false,
+          important: item.type === "event" ? (item.important === true) : false,
           memo: item.memo ? String(item.memo).trim() : "",
           appearances: Array.isArray(item.appearances) ? item.appearances : [],
           related_events: Array.isArray(item.related_events) ? item.related_events.map(e => String(e).trim()).filter(Boolean) : [],
@@ -3001,6 +3018,9 @@
             is_global: existingItem.type === "event"
               ? (existingItem.is_global === true || item.is_global === true)
               : false,
+            important: existingItem.type === "event"
+              ? (existingItem.important === true || item.important === true)
+              : false,
             memo,
             appearances: mergedApps,
             related_events: mergedRels,
@@ -3067,6 +3087,7 @@
             : (Array.isArray(ex.terms) && ex.terms.length ? ex.terms : (ex.term_start ? [{ start: ex.term_start, end: ex.term_end || "" }] : []));
           const lineageVal = has("lineage") ? String(item.lineage || "").trim() : (ex.lineage || "");
           const isGlobalVal = has("is_global") ? (item.is_global === true) : (ex.is_global === true);
+          const importantVal = has("important") ? (item.important === true) : (ex.important === true);
           // 소속 단체/정당(organizations): 입력에 있으면 교체, 없으면 기존 유지
           const orgsArr = has("organizations")
             ? (Array.isArray(item.organizations) ? item.organizations.map(o => String(o).trim()).filter(Boolean) : [])
@@ -3092,6 +3113,7 @@
             lineage: (newType === "nation" || newType === "organization") ? lineageVal : "",
             predecessors: (newType === "nation" || newType === "organization") ? predsArr : [],
             is_global: newType === "event" ? isGlobalVal : false,
+            important: newType === "event" ? importantVal : false,
             memo: memoVal,
             appearances,
             related_events: relatedEvents,
