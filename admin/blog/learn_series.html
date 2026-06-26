@@ -844,6 +844,15 @@
                                             <input type="hidden" id="s-product-ids">
                                         </div>
 
+                                        <div class="form-group form-full" id="s-comp-wrap" style="display:none;">
+                                            <label class="form-label">무상 접근 계정 <span style="font-size:0.7rem; font-weight:400; color:var(--text-sub);">(구매 없이 전체 열람 허용)</span></label>
+                                            <textarea class="form-control" id="s-comp-accounts" rows="3"
+                                                      placeholder="이메일 또는 uid를 한 줄에 하나씩&#10;예) reviewer@example.com&#10;예) aBc123Uid..."
+                                                      style="resize:vertical; font-family:inherit;"
+                                                      oninput="markDirty()"></textarea>
+                                            <span class="form-hint">이메일 또는 Firebase uid를 줄바꿈/쉼표로 구분해 입력하세요. 해당 계정은 구매자와 동일하게 전체 열람됩니다.</span>
+                                        </div>
+
                                     </div>
                                 </div>
                             </div><!-- /card-access -->
@@ -1063,10 +1072,12 @@ function onSeriesLockedChange() {
         show('s-free-count-wrap');
         show('s-free-ratio-wrap');
         show('s-product-wrap');
+        show('s-comp-wrap');
     } else {
         hide('s-free-count-wrap');
         hide('s-free-ratio-wrap');
         hide('s-product-wrap');
+        hide('s-comp-wrap');
     }
     updateAccessSummary();
     if (currentSeriesId) renderEpisodes(currentSeriesId);
@@ -1527,6 +1538,11 @@ function populateForm(s) {
     document.getElementById('s-free-episode-count').value = s.free_episode_count != null ? String(s.free_episode_count) : '0';
     document.getElementById('s-free-chunk-ratio').value   = s.free_chunk_ratio   != null ? String(s.free_chunk_ratio)   : '0.3333';
     setSeriesSelectedProducts(s.related_product_ids ?? []);
+    const compEl = document.getElementById('s-comp-accounts');
+    if (compEl) {
+        const comps = [...(s.comp_emails ?? []), ...(s.comp_uids ?? [])];
+        compEl.value = comps.join('\n');
+    }
     onSeriesLockedChange();
 
     onImgInput('thumb');
@@ -1637,6 +1653,14 @@ async function saveSeries() {
         free_episode_count:  parseInt(document.getElementById('s-free-episode-count').value) || 0,
         free_chunk_ratio:    parseFloat(document.getElementById('s-free-chunk-ratio').value) || 0,
         related_product_ids: document.getElementById('s-product-ids').value.split(',').map(t => t.trim()).filter(Boolean),
+        ...(() => {
+            const tokens = (document.getElementById('s-comp-accounts')?.value || '')
+                .split(/[\n,]/).map(t => t.trim()).filter(Boolean);
+            return {
+                comp_emails: tokens.filter(t => t.includes('@')).map(t => t.toLowerCase()),
+                comp_uids:   tokens.filter(t => !t.includes('@')),
+            };
+        })(),
         lifespan_event_names: lifespanSelectedNames.length > 0 ? [...lifespanSelectedNames] : [],
         timeline_main_nation: timelineMainNation || null,
         updated_at:       new Date().toISOString(),
