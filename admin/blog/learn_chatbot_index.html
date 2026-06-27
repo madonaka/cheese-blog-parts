@@ -73,8 +73,8 @@
         <main>
             <div class="page-topbar">
                 <h1><i class="fas fa-robot" style="color:var(--primary);"></i>&nbsp; 챗봇 색인 관리<br><small>학습 콘텐츠를 임베딩 색인으로 만들어 역사 챗봇이 답할 수 있게 합니다.</small></h1>
-                <button class="btn btn-primary btn-sm" id="btn-reindex-all">
-                    <i class="fas fa-bolt"></i><span class="btn-label"> 전체 재색인</span>
+                <button class="btn btn-primary btn-sm" id="btn-reindex-all" title="미색인 + '갱신 필요'만 색인합니다. 이미 최신인 항목은 건너뜁니다. (한도에 걸리면 자동 대기 후 이어서 진행)">
+                    <i class="fas fa-bolt"></i><span class="btn-label"> 남은 항목 색인</span>
                 </button>
                 <span id="reindex-progress"></span>
                 <button class="btn btn-ghost btn-sm" id="btn-refresh" title="새로고침">
@@ -231,28 +231,60 @@ async function clearOne(seriesId) {
     }
 }
 
-async function reindexAll() {
+// 한도(429) 대기용 카운트다운
+function countdownWait(progEl, seconds, label) {
+    return new Promise(resolve => {
+        let left = seconds;
+        if (progEl) progEl.textContent = `${label} ${left}s`;
+        const iv = setInterval(() => {
+            left--;
+            if (left <= 0) { clearInterval(iv); resolve(); }
+            else if (progEl) progEl.textContent = `${label} ${left}s`;
+        }, 1000);
+    });
+}
+
+function isRateLimit(msg) {
+    return /429|too many requests|quota|rate limit|resource[- ]?exhausted/i.test(String(msg || ''));
+}
+
+// 미색인 + '갱신 필요'만 색인. 이미 최신인 항목은 건너뜀. 429 시 자동 대기 후 재시도.
+async function indexPending() {
     const btn = document.getElementById('btn-reindex-all');
     const prog = document.getElementById('reindex-progress');
-    if (!__list.length) { notify('안내', '색인할 시리즈가 없습니다.', 'warning'); return; }
-    if (!confirm(`전체 ${__list.length}개 시리즈를 재색인할까요? (시리즈당 몇 초씩 걸립니다)`)) return;
+
+    const targets = __list.filter(x => !x.indexed || x.stale);
+    if (!targets.length) { notify('안내', '색인할 항목이 없습니다. 모두 최신입니다. ✅', 'info'); return; }
+    if (!confirm(`색인이 필요한 ${targets.length}개를 색인합니다.\n(이미 최신인 ${__list.length - targets.length}개는 건너뜁니다. 한도에 걸리면 자동으로 기다렸다 이어가요.)`)) return;
 
     if (btn) btn.disabled = true;
-    const ids = __list.map(x => x.series_id);
     let done = 0, failed = 0;
-    for (const sid of ids) {
-        if (prog) prog.textContent = `진행 ${done + 1}/${ids.length}…`;
-        try {
-            await safeFetchDB({ action: 'reindex_learn_series', series_id: sid });
-        } catch (e) {
-            failed++;
-            console.error('reindex 실패', sid, e);
+    for (let i = 0; i < targets.length; i++) {
+        const t = targets[i];
+        let attempts = 0;
+        while (true) {
+            if (prog) prog.textContent = `진행 ${done + 1}/${targets.length} · ${t.series_name || t.series_id}`;
+            try {
+                await safeFetchDB({ action: 'reindex_learn_series', series_id: t.series_id });
+                break; // 성공 → 다음 시리즈
+            } catch (e) {
+                if (isRateLimit(e.message) && attempts < 6) {
+                    attempts++;
+                    await countdownWait(prog, 60, '⏳ 무료 한도 대기 중…'); // 1분 쉬고 같은 시리즈 재시도
+                    continue;
+                }
+                failed++;
+                console.error('reindex 실패', t.series_id, e);
+                break;
+            }
         }
         done++;
+        // 한도 버스트 방지용 약간의 간격
+        await new Promise(r => setTimeout(r, 400));
     }
     if (prog) prog.textContent = '';
     if (btn) btn.disabled = false;
-    notify('전체 재색인 완료', `성공 ${ids.length - failed} / 실패 ${failed}`, failed ? 'warning' : 'success');
+    notify('일괄 색인 완료', `성공 ${targets.length - failed} / 실패 ${failed}`, failed ? 'warning' : 'success');
     await loadList();
 }
 
@@ -298,7 +330,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (refresh) refresh.addEventListener('click', loadList);
 
     const allBtn = document.getElementById('btn-reindex-all');
-    if (allBtn) allBtn.addEventListener('click', reindexAll);
+    if (allBtn) allBtn.addEventListener('click', indexPending);
 
     const testBtn = document.getElementById('btn-test');
     if (testBtn) testBtn.addEventListener('click', runTest);
