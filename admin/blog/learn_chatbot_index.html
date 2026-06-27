@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8" />
+    <title>챗봇 색인 관리 · Cheese Admin</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="stylesheet" href="../admin.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        main { padding: 18px 20px; }
+
+        .page-topbar {
+            display: flex; align-items: center; gap: 12px;
+            padding: 0 0 14px 0; margin-bottom: 14px;
+            border-bottom: 1px solid var(--border);
+        }
+        .page-topbar h1 { font-size: 1.1rem; font-weight: 800; flex: 1; }
+        .page-topbar h1 small { font-weight: 600; color: var(--text-sub); font-size: .8rem; }
+
+        /* 통계 카드 */
+        .stat-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+        .stat-card {
+            flex: 1; min-width: 140px; background: #fff; border: 1px solid var(--border);
+            border-radius: 12px; padding: 14px 16px;
+        }
+        .stat-card .label { font-size: .76rem; color: var(--text-sub); font-weight: 700; }
+        .stat-card .value { font-size: 1.5rem; font-weight: 800; margin-top: 4px; }
+
+        /* 색인 표 */
+        .idx-table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+        .idx-table th, .idx-table td { padding: 10px 12px; text-align: left; font-size: .84rem; border-bottom: 1px solid #f0f2f5; vertical-align: middle; }
+        .idx-table th { background: #f8fafc; font-size: .74rem; text-transform: uppercase; letter-spacing: .4px; color: var(--text-sub); }
+        .idx-table tr:last-child td { border-bottom: none; }
+        .idx-table .col-actions { text-align: right; white-space: nowrap; }
+
+        .badge { display: inline-block; font-size: .72rem; font-weight: 700; padding: 2px 9px; border-radius: 9999px; }
+        .badge-ok { background: #dcfce7; color: #15803d; }
+        .badge-none { background: #f1f5f9; color: #64748b; }
+        .badge-stale { background: #fef3c7; color: #b45309; }
+
+        .btn-sm { font-size: .76rem; padding: 5px 10px; }
+        .btn-mini { font-size: .74rem; padding: 4px 9px; border-radius: 7px; border: 1px solid var(--border); background: #fff; cursor: pointer; color: #374151; }
+        .btn-mini:hover { background: #f8fafc; }
+        .btn-mini.danger { color: #b91c1c; border-color: #fecaca; }
+        .btn-mini:disabled { opacity: .5; cursor: default; }
+
+        /* 진행 표시 */
+        #reindex-progress { font-size: .82rem; color: var(--text-sub); margin-left: 8px; }
+
+        /* 테스트 패널 */
+        .test-panel { margin-top: 26px; background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
+        .test-panel h2 { font-size: .95rem; font-weight: 800; margin-bottom: 4px; }
+        .test-panel p.desc { font-size: .8rem; color: var(--text-sub); margin-bottom: 12px; }
+        .test-input-row { display: flex; gap: 8px; }
+        .test-input-row input { flex: 1; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: .9rem; }
+        .test-answer { margin-top: 14px; padding: 14px 16px; background: #f8fafc; border-radius: 10px; line-height: 1.65; white-space: pre-wrap; font-size: .9rem; display: none; }
+        .test-sources { margin-top: 10px; display: none; }
+        .test-sources .src-title { font-size: .74rem; font-weight: 700; color: var(--text-sub); text-transform: uppercase; margin-bottom: 6px; }
+        .src-chip { display: inline-block; font-size: .76rem; background: #eef2ff; color: #4338ca; border-radius: 8px; padding: 4px 9px; margin: 0 6px 6px 0; }
+
+        .muted { color: var(--text-sub); }
+    </style>
+</head>
+<body>
+
+<script src="../admin-common.js"></script>
+
+<div class="admin-shell">
+    <div id="admin-header-slot"></div>
+    <div class="admin-main">
+        <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+
+        <main>
+            <div class="page-topbar">
+                <h1><i class="fas fa-robot" style="color:var(--primary);"></i>&nbsp; 챗봇 색인 관리<br><small>학습 콘텐츠를 임베딩 색인으로 만들어 역사 챗봇이 답할 수 있게 합니다.</small></h1>
+                <button class="btn btn-primary btn-sm" id="btn-reindex-all">
+                    <i class="fas fa-bolt"></i><span class="btn-label"> 전체 재색인</span>
+                </button>
+                <span id="reindex-progress"></span>
+                <button class="btn btn-ghost btn-sm" id="btn-refresh" title="새로고침">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+
+            <!-- 통계 -->
+            <div class="stat-row" id="stat-row"></div>
+
+            <!-- 색인 표 -->
+            <table class="idx-table">
+                <thead>
+                    <tr>
+                        <th>시리즈 / 편</th>
+                        <th>스텝</th>
+                        <th>색인 상태</th>
+                        <th>청크</th>
+                        <th>마지막 색인</th>
+                        <th class="col-actions">작업</th>
+                    </tr>
+                </thead>
+                <tbody id="idx-tbody">
+                    <tr><td colspan="6" class="muted" style="text-align:center; padding:24px;">불러오는 중…</td></tr>
+                </tbody>
+            </table>
+
+            <!-- 테스트 질의 -->
+            <div class="test-panel">
+                <h2><i class="fas fa-flask" style="color:var(--primary);"></i> 색인 테스트</h2>
+                <p class="desc">질문을 넣으면 실제 챗봇과 동일하게 답하고, 어떤 청크가 검색됐는지 보여줍니다. 색인 품질을 직접 확인하세요.</p>
+                <div class="test-input-row">
+                    <input type="text" id="test-q" placeholder="예) 중국공산당은 처음에 왜 군벌에게 밀렸어?" />
+                    <button class="btn btn-primary btn-sm" id="btn-test">질문</button>
+                </div>
+                <div class="test-answer" id="test-answer"></div>
+                <div class="test-sources" id="test-sources">
+                    <div class="src-title">검색된 근거 청크</div>
+                    <div id="src-chips"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+
+<script>
+window.CHEESE_ADMIN_ACTIVE_PAGE = "learn_chatbot_index";
+
+// ── API 헬퍼 (X-Admin-Token 헤더) ──
+async function safeFetchDB(payload) {
+    if (!window.CHEESE_ADMIN_DB_API) throw new Error('CHEESE_ADMIN_DB_API 주소가 설정되지 않았습니다.');
+    const res = await fetch(window.CHEESE_ADMIN_DB_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Admin-Token': window.CHEESE_ADMIN_TOKEN || '' },
+        body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || '서버 통신 오류');
+    return data;
+}
+
+function notify(title, msg, type) {
+    if (typeof window.showNotification === 'function') window.showNotification(title, msg, type || 'success');
+}
+
+function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+}
+
+function fmtDate(iso) {
+    if (!iso) return '-';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '-';
+    return (typeof window.getKSTDateTimeString === 'function') ? window.getKSTDateTimeString(d) : d.toLocaleString('ko-KR');
+}
+
+let __list = [];
+
+function renderStats() {
+    const el = document.getElementById('stat-row');
+    if (!el) return;
+    const total = __list.length;
+    const indexed = __list.filter(x => x.indexed).length;
+    const chunks = __list.reduce((s, x) => s + (x.chunk_count || 0), 0);
+    const stale = __list.filter(x => x.stale).length;
+    el.innerHTML = `
+        <div class="stat-card"><div class="label">전체 시리즈</div><div class="value">${total}</div></div>
+        <div class="stat-card"><div class="label">색인됨</div><div class="value">${indexed}</div></div>
+        <div class="stat-card"><div class="label">총 청크</div><div class="value">${chunks}</div></div>
+        <div class="stat-card"><div class="label">갱신 필요</div><div class="value" style="${stale ? 'color:#b45309;' : ''}">${stale}</div></div>
+    `;
+}
+
+function statusBadge(row) {
+    if (!row.indexed) return '<span class="badge badge-none">미색인</span>';
+    if (row.stale) return '<span class="badge badge-stale">갱신 필요</span>';
+    return '<span class="badge badge-ok">색인됨</span>';
+}
+
+function renderTable() {
+    const tbody = document.getElementById('idx-tbody');
+    if (!tbody) return;
+    if (!__list.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="muted" style="text-align:center; padding:24px;">표시할 시리즈가 없습니다.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = __list.map(row => `
+        <tr data-id="${esc(row.series_id)}">
+            <td><b>${esc(row.series_name || '(제목없음)')}</b>${row.title ? ' <span class="muted">/ ' + esc(row.title) + '</span>' : ''}</td>
+            <td>${row.total_steps || 0}</td>
+            <td>${statusBadge(row)}</td>
+            <td>${row.chunk_count || 0}</td>
+            <td class="muted">${fmtDate(row.index_updated_at)}</td>
+            <td class="col-actions">
+                <button class="btn-mini" data-act="reindex">${row.indexed ? '갱신' : '색인'}</button>
+                ${row.indexed ? '<button class="btn-mini danger" data-act="clear">삭제</button>' : ''}
+            </td>
+        </tr>
+    `).join('');
+}
+
+async function loadList() {
+    const tbody = document.getElementById('idx-tbody');
+    try {
+        const r = await safeFetchDB({ action: 'list_learn_index' });
+        __list = Array.isArray(r.data) ? r.data : [];
+        renderStats();
+        renderTable();
+    } catch (e) {
+        if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:24px; color:#b91c1c;">불러오기 실패: ${esc(e.message)}</td></tr>`;
+    }
+}
+
+async function reindexOne(seriesId, btn) {
+    if (btn) { btn.disabled = true; btn.textContent = '색인 중…'; }
+    try {
+        const r = await safeFetchDB({ action: 'reindex_learn_series', series_id: seriesId });
+        notify('색인 완료', `청크 ${r.data && r.data.chunk_count != null ? r.data.chunk_count : 0}개 생성`, 'success');
+        await loadList();
+    } catch (e) {
+        notify('색인 실패', e.message, 'error');
+        if (btn) { btn.disabled = false; btn.textContent = '색인'; }
+    }
+}
+
+async function clearOne(seriesId) {
+    if (!confirm('이 시리즈의 색인을 삭제할까요? (콘텐츠 원본은 그대로입니다)')) return;
+    try {
+        await safeFetchDB({ action: 'clear_learn_index', series_id: seriesId });
+        notify('삭제됨', '색인을 삭제했습니다.', 'info');
+        await loadList();
+    } catch (e) {
+        notify('삭제 실패', e.message, 'error');
+    }
+}
+
+async function reindexAll() {
+    const btn = document.getElementById('btn-reindex-all');
+    const prog = document.getElementById('reindex-progress');
+    if (!__list.length) { notify('안내', '색인할 시리즈가 없습니다.', 'warning'); return; }
+    if (!confirm(`전체 ${__list.length}개 시리즈를 재색인할까요? (시리즈당 몇 초씩 걸립니다)`)) return;
+
+    if (btn) btn.disabled = true;
+    const ids = __list.map(x => x.series_id);
+    let done = 0, failed = 0;
+    for (const sid of ids) {
+        if (prog) prog.textContent = `진행 ${done + 1}/${ids.length}…`;
+        try {
+            await safeFetchDB({ action: 'reindex_learn_series', series_id: sid });
+        } catch (e) {
+            failed++;
+            console.error('reindex 실패', sid, e);
+        }
+        done++;
+    }
+    if (prog) prog.textContent = '';
+    if (btn) btn.disabled = false;
+    notify('전체 재색인 완료', `성공 ${ids.length - failed} / 실패 ${failed}`, failed ? 'warning' : 'success');
+    await loadList();
+}
+
+async function runTest() {
+    const input = document.getElementById('test-q');
+    const ansEl = document.getElementById('test-answer');
+    const srcWrap = document.getElementById('test-sources');
+    const srcChips = document.getElementById('src-chips');
+    const btn = document.getElementById('btn-test');
+    const q = input ? input.value.trim() : '';
+    if (!q) return;
+
+    if (btn) btn.disabled = true;
+    if (ansEl) { ansEl.style.display = 'block'; ansEl.textContent = '답변 생성 중…'; ansEl.classList.add('muted'); }
+    if (srcWrap) srcWrap.style.display = 'none';
+
+    try {
+        const r = await safeFetchDB({ action: 'ask_history', text: q });
+        if (ansEl) { ansEl.classList.remove('muted'); ansEl.textContent = r.data || '(빈 응답)'; }
+        const sources = Array.isArray(r.sources) ? r.sources : [];
+        if (srcWrap && srcChips) {
+            if (sources.length) {
+                srcChips.innerHTML = sources.map(s =>
+                    `<span class="src-chip">${esc([s.series_name, s.title].filter(Boolean).join(' / ') || '(미상)')} · ${s.score != null ? s.score : ''}</span>`
+                ).join('');
+                srcWrap.style.display = 'block';
+            } else {
+                srcWrap.style.display = 'none';
+            }
+        }
+    } catch (e) {
+        if (ansEl) { ansEl.classList.remove('muted'); ansEl.textContent = '오류: ' + e.message; }
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+// ── 이벤트 바인딩 ──
+document.addEventListener('DOMContentLoaded', () => {
+    loadList();
+
+    const refresh = document.getElementById('btn-refresh');
+    if (refresh) refresh.addEventListener('click', loadList);
+
+    const allBtn = document.getElementById('btn-reindex-all');
+    if (allBtn) allBtn.addEventListener('click', reindexAll);
+
+    const testBtn = document.getElementById('btn-test');
+    if (testBtn) testBtn.addEventListener('click', runTest);
+
+    const testInput = document.getElementById('test-q');
+    if (testInput) testInput.addEventListener('keydown', e => { if (e.key === 'Enter') runTest(); });
+
+    // 표 내부 버튼 (이벤트 위임)
+    const tbody = document.getElementById('idx-tbody');
+    if (tbody) tbody.addEventListener('click', e => {
+        const btn = e.target.closest('button[data-act]');
+        if (!btn) return;
+        const tr = btn.closest('tr[data-id]');
+        if (!tr) return;
+        const sid = tr.getAttribute('data-id');
+        const act = btn.getAttribute('data-act');
+        if (act === 'reindex') reindexOne(sid, btn);
+        else if (act === 'clear') clearOne(sid);
+    });
+});
+</script>
+</body>
+</html>
