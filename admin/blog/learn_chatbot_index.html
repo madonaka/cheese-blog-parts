@@ -59,6 +59,19 @@
         .src-chip { display: inline-block; font-size: .76rem; background: #eef2ff; color: #4338ca; border-radius: 8px; padding: 4px 9px; margin: 0 6px 6px 0; }
 
         .muted { color: var(--text-sub); }
+
+        /* 응답 설정 */
+        .cfg-panel { margin-top: 22px; background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
+        .cfg-panel h2 { font-size: .95rem; font-weight: 800; margin-bottom: 4px; }
+        .cfg-panel p.desc { font-size: .8rem; color: var(--text-sub); margin-bottom: 13px; }
+        .cfg-grid { display: flex; flex-direction: column; gap: 10px; }
+        .cfg-row { display: flex; align-items: center; gap: 9px; font-size: .85rem; }
+        .cfg-row > span:first-child { width: 84px; font-weight: 700; color: #374151; flex-shrink: 0; }
+        .cfg-row em { font-style: normal; color: var(--text-sub); font-size: .8rem; }
+        .cfg-row select { padding: 6px 10px; border: 1px solid var(--border); border-radius: 7px; font-size: .85rem; }
+        .cfg-extra { display: block; margin-top: 13px; font-size: .85rem; }
+        .cfg-extra > span { display: block; font-weight: 700; color: #374151; margin-bottom: 5px; }
+        .cfg-extra textarea { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px; font-size: .85rem; resize: vertical; font-family: inherit; box-sizing: border-box; }
     </style>
 </head>
 <body>
@@ -101,6 +114,31 @@
                     <tr><td colspan="6" class="muted" style="text-align:center; padding:24px;">불러오는 중…</td></tr>
                 </tbody>
             </table>
+
+            <!-- 응답 설정 -->
+            <div class="cfg-panel">
+                <h2><i class="fas fa-sliders-h" style="color:var(--primary);"></i> 응답 말투·형식 설정</h2>
+                <p class="desc">챗봇 답변의 길이·말투·형식을 정합니다. 저장 후 아래 테스트 질의로 바로 확인하세요. (실제 챗봇 반영까지 최대 3분)</p>
+                <div class="cfg-grid">
+                    <label class="cfg-row"><span>답변 길이</span>
+                        <select id="cfg-length">
+                            <option value="short">짧고 명확하게</option>
+                            <option value="normal">보통</option>
+                            <option value="detailed">자세히</option>
+                        </select>
+                    </label>
+                    <label class="cfg-row"><span>인사말</span><input type="checkbox" id="cfg-greeting"> <em>매번 인사로 시작</em></label>
+                    <label class="cfg-row"><span>이모지</span><input type="checkbox" id="cfg-emoji"> <em>가볍게 사용</em></label>
+                    <label class="cfg-row"><span>출처 표기</span><input type="checkbox" id="cfg-cite"> <em>어느 시리즈/편인지 밝힘</em></label>
+                    <label class="cfg-row"><span>구매 버튼</span><input type="checkbox" id="cfg-buy"> <em>출처에 '구매하기' 버튼 표시</em></label>
+                </div>
+                <label class="cfg-extra"><span>추가 지침 (선택)</span>
+                    <textarea id="cfg-extra" rows="2" maxlength="600" placeholder="예) 단정 짓지 말고, 사용자가 더 궁금해하도록 마지막에 한 문장 덧붙여라"></textarea>
+                </label>
+                <div style="text-align:right;margin-top:11px;">
+                    <button class="btn btn-primary btn-sm" id="btn-cfg-save"><i class="fas fa-save"></i> 설정 저장</button>
+                </div>
+            </div>
 
             <!-- 테스트 질의 -->
             <div class="test-panel">
@@ -322,9 +360,50 @@ async function runTest() {
     }
 }
 
+// ── 응답 설정 ──
+async function loadConfig() {
+    try {
+        const r = await safeFetchDB({ action: 'get_chatbot_config' });
+        const c = r.data || {};
+        const set = (id, v) => { const el = document.getElementById(id); if (!el) return; if (el.type === 'checkbox') el.checked = !!v; else el.value = v; };
+        set('cfg-length', c.length || 'short');
+        set('cfg-greeting', c.greeting);
+        set('cfg-emoji', c.emoji);
+        set('cfg-cite', c.cite_sources !== false);
+        set('cfg-buy', c.buy_button !== false);
+        set('cfg-extra', c.extra || '');
+    } catch (e) { /* 실패 시 기본값 유지 */ }
+}
+
+async function saveConfig() {
+    const g = id => document.getElementById(id);
+    const config = {
+        length: g('cfg-length') ? g('cfg-length').value : 'short',
+        greeting: g('cfg-greeting') ? g('cfg-greeting').checked : false,
+        emoji: g('cfg-emoji') ? g('cfg-emoji').checked : false,
+        cite_sources: g('cfg-cite') ? g('cfg-cite').checked : true,
+        buy_button: g('cfg-buy') ? g('cfg-buy').checked : true,
+        extra: g('cfg-extra') ? g('cfg-extra').value : ''
+    };
+    const btn = g('btn-cfg-save');
+    if (btn) btn.disabled = true;
+    try {
+        await safeFetchDB({ action: 'save_chatbot_config', config: config });
+        notify('저장됨', '응답 설정을 저장했습니다. (반영까지 최대 3분)', 'success');
+    } catch (e) {
+        notify('저장 실패', e.message, 'error');
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
 // ── 이벤트 바인딩 ──
 document.addEventListener('DOMContentLoaded', () => {
     loadList();
+    loadConfig();
+
+    const cfgSave = document.getElementById('btn-cfg-save');
+    if (cfgSave) cfgSave.addEventListener('click', saveConfig);
 
     const refresh = document.getElementById('btn-refresh');
     if (refresh) refresh.addEventListener('click', loadList);
