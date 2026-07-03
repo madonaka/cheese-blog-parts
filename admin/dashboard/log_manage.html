@@ -296,6 +296,32 @@
     .meeting-body li { color: #475569; font-size: 0.9rem; line-height: 1.6; }
     .meeting-body p { color: #475569; font-size: 0.9rem; line-height: 1.6; margin: 4px 0; }
 
+    /* 제작 현황 */
+    .prod-card { border: 1px solid var(--border-color); border-radius: 12px; background: #fff; margin-bottom: 10px; overflow: hidden; }
+    .prod-head { display: flex; align-items: center; gap: 12px; padding: 14px 18px; cursor: pointer; }
+    .prod-head:hover { background: #fafcff; }
+    .prod-name { font-weight: 800; color: var(--text-main); }
+    .prod-summary { font-size: 0.8rem; color: var(--text-sub); font-weight: 600; }
+    .prod-edit { margin-left: auto; font-size: 0.78rem; color: var(--primary); text-decoration: none; font-weight: 700; }
+    .prod-edit:hover { text-decoration: underline; }
+    .prod-card.open .log-chevron { transform: rotate(90deg); }
+    .prod-bar { height: 8px; background: #eef2f7; }
+    .prod-bar-fill { height: 100%; background: #22c55e; transition: width 0.2s; }
+    .prod-eps { display: none; flex-direction: column; gap: 6px; padding: 10px 18px 14px; }
+    .prod-card.open .prod-eps { display: flex; }
+    .prod-ep { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 0.85rem; }
+    .prod-ep-todo { background: #f8fafc; border-style: dashed; }
+    .prod-ep-order { width: 22px; height: 22px; border-radius: 50%; background: #eef2ff; color: var(--primary); border: 1.5px solid var(--primary); display: flex; align-items: center; justify-content: center; font-size: 0.68rem; font-weight: 800; flex-shrink: 0; }
+    .prod-ep-order.todo { background: #f1f5f9; color: #94a3b8; border-color: #cbd5e1; }
+    .prod-ep-title { flex: 1; font-weight: 600; color: #1e293b; }
+    .prod-ep-title.todo { color: #94a3b8; }
+    .prod-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .prod-dot.pub { background: #22c55e; }
+    .prod-dot.draft { background: #9ca3af; }
+    .prod-dot.upcoming { background: #3b82f6; }
+    .prod-ep-link { font-size: 0.72rem; color: var(--primary); text-decoration: none; font-weight: 700; padding: 2px 7px; border: 1px solid #c7d2fe; border-radius: 5px; background: #eef2ff; flex-shrink: 0; }
+    .prod-ep-link.todo { color: #64748b; background: #f1f5f9; border-color: #e2e8f0; }
+
     /* 사용법 안내 */
     .guide-box {
       background: #f8fafc;
@@ -372,7 +398,7 @@
       <section class="admin-content">
         <div class="log-header">
           <h2>작업 관리</h2>
-          <p>worklog·티켓·회의록을 한곳에서 봅니다. (repo 마크다운을 읽는 뷰)</p>
+          <p>worklog·티켓·회의록·제작 현황을 한곳에서 봅니다.</p>
         </div>
 
         <details class="guide-box">
@@ -395,6 +421,7 @@
           <button class="tab-btn active" data-tab="worklog" onclick="switchTab('worklog')">작업 로그</button>
           <button class="tab-btn" data-tab="tickets" onclick="switchTab('tickets')">티켓</button>
           <button class="tab-btn" data-tab="meetings" onclick="switchTab('meetings')">회의록</button>
+          <button class="tab-btn" data-tab="production" onclick="switchTab('production')">제작 현황</button>
         </div>
 
         <div id="panel-worklog" class="tab-panel active">
@@ -422,6 +449,12 @@
             <div class="empty">불러오는 중...</div>
           </div>
         </div>
+
+        <div id="panel-production" class="tab-panel">
+          <div id="production-root">
+            <div class="empty">제작 현황 탭을 열면 불러옵니다.</div>
+          </div>
+        </div>
       </section>
     </main>
   </div>
@@ -434,6 +467,7 @@
       "스토어프론트": "madonaka/cheese-storefront"
     };
     let g_entries = [], g_tickets = [], g_meetings = [];
+    let g_series = [], g_seqs = [], g_prodLoaded = false;
 
     function repoFor(project) {
       return REPO_BY_PROJECT[project] || ADMIN_REPO;
@@ -449,6 +483,7 @@
     function switchTab(tab) {
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
       document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + tab));
+      if (tab === 'production' && !g_prodLoaded) loadProduction();
     }
 
     function parseFrontmatter(text) {
@@ -660,10 +695,6 @@
         });
         html += `</div>`;
       });
-      if (term && totalShown === 0) {
-        root.innerHTML = '<div class="empty">검색 결과가 없습니다.</div>';
-        return;
-      }
       root.innerHTML = html;
     }
 
@@ -745,6 +776,92 @@
       await loadWorklog();  // g_entries 채운 뒤 티켓 이력 조인
       loadTickets();
       loadMeetings();
+    }
+
+    /* ---------- 제작 현황 (Firestore: learn_series·learn_sequences) ---------- */
+    async function fetchAdminDB(payload) {
+      if (!window.CHEESE_ADMIN_DB_API) throw new Error('CHEESE_ADMIN_DB_API 주소가 설정되지 않았습니다.');
+      const res = await fetch(window.CHEESE_ADMIN_DB_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Admin-Token': window.CHEESE_ADMIN_TOKEN || '' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || '서버 통신 오류');
+      return data.data || [];
+    }
+
+    async function loadProduction() {
+      g_prodLoaded = true;
+      const root = document.getElementById('production-root');
+      root.innerHTML = '<div class="empty">불러오는 중...</div>';
+      try {
+        const [series, seqs] = await Promise.all([
+          fetchAdminDB({ collection: 'learn_series' }),
+          fetchAdminDB({ collection: 'learn_sequences' })
+        ]);
+        g_series = series.sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999));
+        g_seqs = seqs;
+        renderProduction();
+      } catch (e) {
+        console.error(e);
+        g_prodLoaded = false; // 재시도 허용
+        root.innerHTML = '<div class="empty">제작 현황을 불러오지 못했습니다. (로그인/권한 확인)</div>';
+      }
+    }
+
+    function renderProduction() {
+      const root = document.getElementById('production-root');
+      const rows = g_series.filter(s =>
+        g_seqs.some(q => q.series_id === s.id) || (parseInt(s.planned_episode_count) || 0) > 0
+      );
+      if (!rows.length) {
+        root.innerHTML = '<div class="empty">아직 제작 중인 시리즈가 없습니다.<br>시리즈 관리에서 계획 편수를 넣으면 여기에 표시됩니다.</div>';
+        return;
+      }
+      const dotClass = st => st === 'published' ? 'pub' : st === 'upcoming' ? 'upcoming' : 'draft';
+
+      root.innerHTML = rows.map(s => {
+        const eps = g_seqs.filter(q => q.series_id === s.id)
+          .sort((a, b) => (a.series_order ?? 999) - (b.series_order ?? 999));
+        const byOrder = new Map();
+        eps.forEach((ep, i) => byOrder.set(ep.series_order ?? (i + 1), ep));
+
+        const planned  = parseInt(s.planned_episode_count) || 0;
+        const made     = eps.length;
+        const pub      = eps.filter(e => e.status === 'published').length;
+        const maxOrder = byOrder.size ? Math.max(...byOrder.keys()) : 0;
+        const total    = Math.max(planned, maxOrder);
+        const pct      = total ? Math.round((pub / total) * 100) : 0;
+
+        let epRows = '';
+        for (let order = 1; order <= total; order++) {
+          const ep = byOrder.get(order);
+          epRows += ep
+            ? `<div class="prod-ep">
+                 <span class="prod-ep-order">${order}</span>
+                 <span class="prod-ep-title">${escapeHtml(ep.title || '(제목 없음)')}</span>
+                 <span class="prod-dot ${dotClass(ep.status)}"></span>
+                 <a class="prod-ep-link" href="../blog/learn_manage.html?id=${encodeURIComponent(ep.id)}&from=series">편집</a>
+               </div>`
+            : `<div class="prod-ep prod-ep-todo">
+                 <span class="prod-ep-order todo">${order}</span>
+                 <span class="prod-ep-title todo">미착수</span>
+                 <a class="prod-ep-link todo" href="../blog/learn_manage.html?from=series">만들기</a>
+               </div>`;
+        }
+
+        return `<div class="prod-card">
+          <div class="prod-head" onclick="this.parentElement.classList.toggle('open')">
+            <span class="prod-name">${escapeHtml(s.name || s.id)}</span>
+            <span class="prod-summary">발행 ${pub} · 작성 ${made} / 계획 ${planned || made}편</span>
+            <a class="prod-edit" href="../blog/learn_series.html" onclick="event.stopPropagation()">시리즈 편집 ↗</a>
+            <span class="log-chevron">▶</span>
+          </div>
+          <div class="prod-bar"><div class="prod-bar-fill" style="width:${pct}%"></div></div>
+          <div class="prod-eps">${epRows}</div>
+        </div>`;
+      }).join('');
     }
 
     document.addEventListener('DOMContentLoaded', loadAll);
