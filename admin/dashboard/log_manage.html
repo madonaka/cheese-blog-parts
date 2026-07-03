@@ -19,6 +19,7 @@
       --border-color: #e2e8f0;
       --text-main: #1e293b;
       --text-sub: #64748b;
+      --primary: #2563eb;
     }
 
     .log-header {
@@ -45,6 +46,11 @@
       gap: 10px;
     }
 
+    .log-entry {
+      display: flex;
+      flex-direction: column;
+    }
+
     .log-row {
       display: flex;
       align-items: baseline;
@@ -53,6 +59,18 @@
       border: 1px solid var(--border-color);
       border-radius: 12px;
       padding: 14px 18px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+
+    .log-row:hover {
+      border-color: #cbd5e1;
+      background: #fafcff;
+    }
+
+    .log-row.open {
+      border-bottom-left-radius: 0;
+      border-bottom-right-radius: 0;
     }
 
     .log-date {
@@ -79,6 +97,96 @@
       border-radius: 6px;
     }
 
+    .log-chevron {
+      flex-shrink: 0;
+      color: #94a3b8;
+      font-size: 0.75rem;
+      transition: transform 0.2s;
+    }
+
+    .log-row.open .log-chevron {
+      transform: rotate(90deg);
+    }
+
+    /* 펼침 상세 패널 */
+    .log-detail {
+      display: none;
+      border: 1px solid var(--border-color);
+      border-top: none;
+      border-radius: 0 0 12px 12px;
+      padding: 16px 18px;
+      background: #f8fafc;
+    }
+
+    .log-detail.open {
+      display: block;
+    }
+
+    .log-detail-msg {
+      white-space: pre-wrap;
+      color: #334155;
+      font-size: 0.9rem;
+      line-height: 1.6;
+      margin-bottom: 12px;
+      padding-bottom: 12px;
+      border-bottom: 1px dashed var(--border-color);
+    }
+
+    .log-files {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .log-file {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.85rem;
+    }
+
+    .log-file-status {
+      flex-shrink: 0;
+      width: 16px;
+      text-align: center;
+      font-weight: 800;
+      font-family: monospace;
+    }
+
+    .log-file-path {
+      flex: 1;
+      font-family: monospace;
+      color: #334155;
+      word-break: break-all;
+    }
+
+    .log-file-stat {
+      flex-shrink: 0;
+      font-family: monospace;
+      font-size: 0.8rem;
+    }
+
+    .add { color: #16a34a; }
+    .del { color: #dc2626; }
+
+    .log-gh-link {
+      display: inline-block;
+      margin-top: 12px;
+      font-size: 0.85rem;
+      color: var(--primary);
+      text-decoration: none;
+      font-weight: 700;
+    }
+
+    .log-gh-link:hover {
+      text-decoration: underline;
+    }
+
+    .log-muted {
+      color: var(--text-sub);
+      font-size: 0.85rem;
+    }
+
     .log-empty {
       padding: 80px;
       text-align: center;
@@ -100,7 +208,7 @@
       <section class="admin-content">
         <div class="log-header">
           <h2>작업 로그</h2>
-          <p>worklog.md에 쌓인 기록을 최신순으로 표시합니다.</p>
+          <p>worklog.md에 쌓인 기록을 최신순으로 표시합니다. 항목을 누르면 해당 커밋의 변경 내용을 볼 수 있습니다.</p>
         </div>
 
         <div id="log-list" class="log-list">
@@ -112,6 +220,8 @@
 
   <script>
     window.CHEESE_ADMIN_ACTIVE_PAGE = "menu-log";
+    const GITHUB_REPO = "madonaka/cheese-blog-parts";
+    let g_entries = [];
 
     function escapeHtml(s) {
       return String(s)
@@ -127,7 +237,7 @@
         if (!line.startsWith('- ')) return;
         const parts = line.slice(2).split('|').map(s => s.trim());
         if (parts.length < 2) return;
-        entries.push({ date: parts[0], content: parts[1], hash: parts[2] || '' });
+        entries.push({ date: parts[0], content: parts[1], hash: parts[2] || '', loaded: false });
       });
       // 날짜 내림차순 (동일 날짜는 파일 순서 = 최신 우선 유지)
       entries.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
@@ -139,23 +249,88 @@
       try {
         const res = await fetch('../../worklog.md', { cache: 'no-store' });
         const text = await res.text();
-        const entries = parseWorklog(text);
+        g_entries = parseWorklog(text);
 
-        if (entries.length === 0) {
+        if (g_entries.length === 0) {
           root.innerHTML = '<div class="log-empty">아직 쌓인 기록이 없습니다.</div>';
           return;
         }
 
-        root.innerHTML = entries.map(e => `
-          <div class="log-row">
-            <span class="log-date">${escapeHtml(e.date)}</span>
-            <span class="log-content">${escapeHtml(e.content)}</span>
-            ${e.hash ? `<span class="log-hash">${escapeHtml(e.hash)}</span>` : ''}
+        root.innerHTML = g_entries.map((e, i) => `
+          <div class="log-entry">
+            <div class="log-row" id="row-${i}" onclick="toggleDetail(${i})">
+              <span class="log-date">${escapeHtml(e.date)}</span>
+              <span class="log-content">${escapeHtml(e.content)}</span>
+              ${e.hash ? `<span class="log-hash">${escapeHtml(e.hash)}</span>` : ''}
+              <span class="log-chevron">▶</span>
+            </div>
+            <div class="log-detail" id="detail-${i}"></div>
           </div>
         `).join('');
       } catch (e) {
         console.error(e);
         root.innerHTML = '<div class="log-empty">worklog.md를 불러오지 못했습니다.</div>';
+      }
+    }
+
+    function toggleDetail(i) {
+      const row = document.getElementById('row-' + i);
+      const panel = document.getElementById('detail-' + i);
+      if (!row || !panel) return;
+
+      if (panel.classList.contains('open')) {
+        panel.classList.remove('open');
+        row.classList.remove('open');
+        return;
+      }
+      panel.classList.add('open');
+      row.classList.add('open');
+      loadDetail(i);
+    }
+
+    function statusMark(s) {
+      const m = { added: 'A', modified: 'M', removed: 'D', renamed: 'R' };
+      return m[s] || '·';
+    }
+
+    async function loadDetail(i) {
+      const e = g_entries[i];
+      const panel = document.getElementById('detail-' + i);
+      if (!e || !panel || e.loaded) return;
+
+      const ghUrl = e.hash ? `https://github.com/${GITHUB_REPO}/commit/${e.hash}` : '';
+
+      if (!e.hash) {
+        e.loaded = true;
+        panel.innerHTML = '<div class="log-muted">연결된 커밋 해시가 없습니다.</div>';
+        return;
+      }
+
+      panel.innerHTML = '<div class="log-muted">GitHub에서 커밋 정보를 불러오는 중...</div>';
+      try {
+        const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/commits/${e.hash}`);
+        if (!res.ok) throw new Error('status ' + res.status);
+        const c = await res.json();
+
+        const msg = escapeHtml((c.commit && c.commit.message) || '(메시지 없음)');
+        const files = (c.files || []).map(f => `
+          <div class="log-file">
+            <span class="log-file-status">${statusMark(f.status)}</span>
+            <span class="log-file-path">${escapeHtml(f.filename)}</span>
+            <span class="log-file-stat"><span class="add">+${f.additions}</span> <span class="del">-${f.deletions}</span></span>
+          </div>`).join('');
+
+        panel.innerHTML = `
+          <div class="log-detail-msg">${msg}</div>
+          <div class="log-files">${files || '<div class="log-muted">변경 파일 정보가 없습니다.</div>'}</div>
+          <a class="log-gh-link" href="${ghUrl}" target="_blank" rel="noopener">GitHub에서 커밋 보기 ↗</a>`;
+        e.loaded = true;
+      } catch (err) {
+        console.error(err);
+        // loaded=false 로 두어 다시 펼칠 때 재시도
+        panel.innerHTML = `
+          <div class="log-muted">커밋 정보를 불러오지 못했습니다. (아직 push되지 않았거나 접근 제한)</div>
+          <a class="log-gh-link" href="${ghUrl}" target="_blank" rel="noopener">GitHub에서 커밋 보기 ↗</a>`;
       }
     }
 
