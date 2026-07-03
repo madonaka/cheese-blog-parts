@@ -87,6 +87,25 @@
       word-break: break-word;
     }
 
+    .log-project {
+      flex-shrink: 0;
+      font-size: 0.75rem;
+      font-weight: 800;
+      padding: 2px 9px;
+      border-radius: 6px;
+      white-space: nowrap;
+    }
+
+    .log-project.admin {
+      background: #eff6ff;
+      color: #2563eb;
+    }
+
+    .log-project.store {
+      background: #fef3c7;
+      color: #b45309;
+    }
+
     .log-hash {
       flex-shrink: 0;
       font-family: monospace;
@@ -220,8 +239,15 @@
 
   <script>
     window.CHEESE_ADMIN_ACTIVE_PAGE = "menu-log";
-    const GITHUB_REPO = "madonaka/cheese-blog-parts";
+    const REPO_BY_PROJECT = {
+      "관리자": "madonaka/cheese-blog-parts",
+      "스토어프론트": "madonaka/cheese-storefront"
+    };
     let g_entries = [];
+
+    function repoFor(project) {
+      return REPO_BY_PROJECT[project] || "madonaka/cheese-blog-parts";
+    }
 
     function escapeHtml(s) {
       return String(s)
@@ -237,7 +263,15 @@
         if (!line.startsWith('- ')) return;
         const parts = line.slice(2).split('|').map(s => s.trim());
         if (parts.length < 2) return;
-        entries.push({ date: parts[0], content: parts[1], hash: parts[2] || '', loaded: false });
+        let date, project, content, hash;
+        if (parts.length >= 4) {
+          // 날짜 | 프로젝트 | 내용 | 커밋해시
+          [date, project, content, hash] = [parts[0], parts[1], parts[2], parts[3]];
+        } else {
+          // 레거시: 날짜 | 내용 | 커밋해시 (프로젝트 없음)
+          date = parts[0]; project = ''; content = parts[1]; hash = parts[2] || '';
+        }
+        entries.push({ date, project, content, hash, loaded: false });
       });
       // 날짜 내림차순 (동일 날짜는 파일 순서 = 최신 우선 유지)
       entries.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
@@ -260,6 +294,7 @@
           <div class="log-entry">
             <div class="log-row" id="row-${i}" onclick="toggleDetail(${i})">
               <span class="log-date">${escapeHtml(e.date)}</span>
+              ${e.project ? `<span class="log-project ${e.project === '스토어프론트' ? 'store' : 'admin'}">${escapeHtml(e.project)}</span>` : ''}
               <span class="log-content">${escapeHtml(e.content)}</span>
               ${e.hash ? `<span class="log-hash">${escapeHtml(e.hash)}</span>` : ''}
               <span class="log-chevron">▶</span>
@@ -298,7 +333,8 @@
       const panel = document.getElementById('detail-' + i);
       if (!e || !panel || e.loaded) return;
 
-      const ghUrl = e.hash ? `https://github.com/${GITHUB_REPO}/commit/${e.hash}` : '';
+      const repo = repoFor(e.project);
+      const ghUrl = e.hash ? `https://github.com/${repo}/commit/${e.hash}` : '';
 
       if (!e.hash) {
         e.loaded = true;
@@ -308,7 +344,7 @@
 
       panel.innerHTML = '<div class="log-muted">GitHub에서 커밋 정보를 불러오는 중...</div>';
       try {
-        const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/commits/${e.hash}`);
+        const res = await fetch(`https://api.github.com/repos/${repo}/commits/${e.hash}`);
         if (!res.ok) throw new Error('status ' + res.status);
         const c = await res.json();
 
