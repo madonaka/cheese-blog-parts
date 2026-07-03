@@ -344,6 +344,21 @@
             border-radius: 5px; background: #eef2ff;
         }
         .ep-goto:hover { background: #e0e7ff; }
+
+        /* ── 제작 현황 (진행률 + 미착수) ── */
+        .ep-progress { margin-bottom: 12px; }
+        .ep-progress-bar { height: 8px; background: #eef2f7; border-radius: 6px; overflow: hidden; }
+        .ep-progress-fill { height: 100%; background: #22c55e; border-radius: 6px; transition: width 0.2s; }
+        .ep-progress-legend { display: flex; gap: 14px; margin-top: 7px; font-size: 0.75rem; color: var(--text-sub); font-weight: 600; }
+        .ep-progress-legend .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+        .ep-progress-legend .dot.pub { background: #22c55e; }
+        .ep-progress-legend .dot.draft { background: #9ca3af; }
+        .ep-progress-legend .dot.todo { background: #e2e8f0; border: 1px solid #cbd5e1; }
+        .ep-row-todo { background: #f8fafc; border-style: dashed; }
+        .ep-order-todo { background: #f1f5f9; color: #94a3b8; border-color: #cbd5e1; }
+        .ep-title-todo { color: #94a3b8; font-weight: 600; }
+        .ep-goto-todo { color: #64748b; background: #f1f5f9; border-color: #e2e8f0; }
+        .ep-goto-todo:hover { background: #e2e8f0; }
         .ep-empty {
             text-align: center; padding: 24px 16px;
             color: var(--text-sub); font-size: 0.85rem;
@@ -928,13 +943,19 @@
                         <!-- ── 소속 에피소드 (항상 표시 · 남은 공간 채움) ── -->
                         <div class="ep-section">
                             <div class="ep-section-head">
-                                <h3><i class="fas fa-list-ol" style="color:#0284c7; margin-right:6px;"></i>소속 에피소드</h3>
+                                <h3><i class="fas fa-list-ol" style="color:#0284c7; margin-right:6px;"></i>제작 현황</h3>
+                                <label style="font-size:0.75rem; color:var(--text-sub); font-weight:700; display:flex; align-items:center; gap:5px;">
+                                    계획 <input type="number" id="s-planned-count" min="0" placeholder="0"
+                                                style="width:50px; padding:3px 6px; border:1px solid var(--border); border-radius:6px; font-size:0.78rem; text-align:center;"
+                                                oninput="renderEpisodes(currentSeriesId); markDirty()">편
+                                </label>
                                 <span id="ep-count-label" style="font-size:0.75rem; color:var(--text-sub); font-weight:600;"></span>
-                                <a href="learn_manage.html" class="btn btn-ghost btn-sm" style="margin-left:auto;">
+                                <a href="learn_manage.html?from=series" class="btn btn-ghost btn-sm" style="margin-left:auto;">
                                     <i class="fas fa-external-link-alt"></i> 학습 관리에서 편집
                                 </a>
                             </div>
                             <div class="ep-section-body">
+                                <div class="ep-progress" id="ep-progress"></div>
                                 <p style="font-size:0.78rem; color:var(--text-sub); margin-bottom:12px; line-height:1.5;">
                                     에피소드 순서·내용은 <b>학습 관리</b>에서 각 학습의 '시리즈 순서' 필드로 조정합니다.
                                 </p>
@@ -1554,6 +1575,7 @@ function populateForm(s) {
     document.getElementById('s-thumbnail').value    = s.thumbnail_url ?? '';
     document.getElementById('s-header-image').value = s.header_image_url ?? '';
     document.getElementById('s-blueprint').value    = s.blueprint ?? '';
+    document.getElementById('s-planned-count').value = s.planned_episode_count != null ? String(s.planned_episode_count) : '';
     document.getElementById('editor-title-text').textContent = s.name || '시리즈 편집';
 
     // 접근 제어
@@ -1589,43 +1611,80 @@ function populateForm(s) {
     document.getElementById('s-id').style.background = isNewSeries ? '' : '#f8fafc';
 }
 
-// ── 에피소드 렌더 ────────────────────────────
+// ── 제작 현황 렌더 (계획 대비 진행 + 미착수 슬롯) ────────────
 function renderEpisodes(seriesId) {
     const el = document.getElementById('ep-list');
     const countEl = document.getElementById('ep-count-label');
+    const progEl = document.getElementById('ep-progress');
 
     const eps = allSequences
         .filter(s => s.series_id === seriesId)
         .sort((a, b) => (a.series_order ?? 999) - (b.series_order ?? 999));
 
-    countEl.textContent = eps.length ? `총 ${eps.length}화` : '';
+    // 각 에피소드의 순서(비어있으면 나열 순번). 계획 편수와 비교해 미착수 슬롯을 만든다.
+    const byOrder = new Map();
+    eps.forEach((ep, i) => byOrder.set(ep.series_order ?? (i + 1), ep));
 
-    if (!eps.length) {
-        el.innerHTML = '<div class="ep-empty">아직 소속된 에피소드가 없습니다.<br>학습 관리에서 시리즈 ID를 지정하세요.</div>';
+    const planned      = parseInt(document.getElementById('s-planned-count')?.value) || 0;
+    const madeCnt      = eps.length;
+    const publishedCnt = eps.filter(e => e.status === 'published').length;
+    const maxOrder     = byOrder.size ? Math.max(...byOrder.keys()) : 0;
+    const total        = Math.max(planned, maxOrder);  // 계획이 비었으면 실제 편성 기준
+    const missing      = Math.max(0, total - madeCnt);
+
+    // 요약 + 진행률 바
+    countEl.textContent = total ? `발행 ${publishedCnt} · 작성 ${madeCnt} / 계획 ${planned || madeCnt}편` : '';
+    if (progEl) {
+        if (!total) {
+            progEl.innerHTML = '';
+        } else {
+            const pct = Math.round((publishedCnt / total) * 100);
+            progEl.innerHTML = `
+                <div class="ep-progress-bar"><div class="ep-progress-fill" style="width:${pct}%"></div></div>
+                <div class="ep-progress-legend">
+                    <span><i class="dot pub"></i>발행 ${publishedCnt}</span>
+                    <span><i class="dot draft"></i>작성 ${madeCnt - publishedCnt}</span>
+                    <span><i class="dot todo"></i>미착수 ${missing}</span>
+                </div>`;
+        }
+    }
+
+    if (!total) {
+        el.innerHTML = '<div class="ep-empty">아직 편성이 없습니다.<br>위에 <b>계획 편수</b>를 넣거나, 학습 관리에서 시리즈 ID를 지정하세요.</div>';
         return;
     }
 
     const dotClass = st =>
         st === 'published' ? 'published' : st === 'upcoming' ? 'upcoming' : 'draft';
-
     const seriesLocked = document.getElementById('s-locked')?.value === 'true';
     const freeCount    = parseInt(document.getElementById('s-free-episode-count')?.value) || 0;
 
-    el.innerHTML = eps.map((ep, i) => {
-        const order  = ep.series_order ?? (i + 1);
-        const isFree = !seriesLocked || order <= freeCount;
-        const lockEl = isFree
-            ? `<span class="ep-lock" title="무료 공개" style="color:#16a34a;">🔓</span>`
-            : `<span class="ep-lock" title="유료 잠금" style="color:#dc2626;">🔒</span>`;
-        return `
-        <div class="ep-row">
-            <div class="ep-order">${order}</div>
-            ${lockEl}
-            <div class="ep-title">${escHtml(ep.title || '(제목 없음)')}</div>
-            <div class="ep-status-dot ${dotClass(ep.status)}" title="${ep.status ?? 'draft'}"></div>
-            <a class="ep-goto" href="learn_manage.html?id=${encodeURIComponent(ep.id)}&from=series">편집</a>
-        </div>`;
-    }).join('');
+    let rows = '';
+    for (let order = 1; order <= total; order++) {
+        const ep = byOrder.get(order);
+        if (ep) {
+            const isFree = !seriesLocked || order <= freeCount;
+            const lockEl = isFree
+                ? `<span class="ep-lock" title="무료 공개" style="color:#16a34a;">🔓</span>`
+                : `<span class="ep-lock" title="유료 잠금" style="color:#dc2626;">🔒</span>`;
+            rows += `
+            <div class="ep-row">
+                <div class="ep-order">${order}</div>
+                ${lockEl}
+                <div class="ep-title">${escHtml(ep.title || '(제목 없음)')}</div>
+                <div class="ep-status-dot ${dotClass(ep.status)}" title="${ep.status ?? 'draft'}"></div>
+                <a class="ep-goto" href="learn_manage.html?id=${encodeURIComponent(ep.id)}&from=series">편집</a>
+            </div>`;
+        } else {
+            rows += `
+            <div class="ep-row ep-row-todo">
+                <div class="ep-order ep-order-todo">${order}</div>
+                <div class="ep-title ep-title-todo">미착수</div>
+                <a class="ep-goto ep-goto-todo" href="learn_manage.html?from=series">만들기</a>
+            </div>`;
+        }
+    }
+    el.innerHTML = rows;
 }
 
 // ── 신규 ─────────────────────────────────────
@@ -1641,6 +1700,7 @@ function openNewSeriesForm() {
     document.getElementById('card-access').classList.remove('open');
     document.getElementById('ep-list').innerHTML = '<div class="ep-empty">저장 후 에피소드를 연결하세요.</div>';
     document.getElementById('ep-count-label').textContent = '';
+    document.getElementById('ep-progress').innerHTML = '';
     document.getElementById('editor-title-text').textContent = '새 시리즈';
     renderSeriesList();
 }
@@ -1673,6 +1733,8 @@ async function saveSeries() {
         thumbnail_url:    document.getElementById('s-thumbnail').value.trim() || null,
         header_image_url: document.getElementById('s-header-image').value.trim() || null,
         blueprint:        document.getElementById('s-blueprint').value.trim() || null,
+        planned_episode_count: document.getElementById('s-planned-count').value !== ''
+                            ? Number(document.getElementById('s-planned-count').value) : null,
         is_locked:           document.getElementById('s-locked').value === 'true',
         free_episode_count:  parseInt(document.getElementById('s-free-episode-count').value) || 0,
         free_chunk_ratio:    parseFloat(document.getElementById('s-free-chunk-ratio').value) || 0,
