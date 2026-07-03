@@ -24,7 +24,36 @@
 
     .log-header {
       margin-bottom: 20px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
     }
+
+    .log-header-main { min-width: 0; }
+
+    .refresh-btn {
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 9px 16px;
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      background: white;
+      color: var(--text-main);
+      font-size: 0.9rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+
+    .refresh-btn:hover { border-color: var(--primary); color: var(--primary); background: #fafcff; }
+    .refresh-btn:disabled { opacity: 0.6; cursor: default; }
+    .refresh-btn.spinning .refresh-ico { animation: refresh-spin 0.8s linear infinite; }
+
+    @keyframes refresh-spin { to { transform: rotate(360deg); } }
+    .refresh-ico { display: inline-block; line-height: 1; }
 
     .log-header h2 {
       font-size: 2rem;
@@ -425,8 +454,13 @@
 
       <section class="admin-content">
         <div class="log-header">
-          <h2>작업 관리</h2>
-          <p>worklog·티켓·회의록·제작 현황을 한곳에서 봅니다.</p>
+          <div class="log-header-main">
+            <h2>작업 관리</h2>
+            <p>worklog·티켓·회의록·제작 현황을 한곳에서 봅니다.</p>
+          </div>
+          <button type="button" id="refresh-btn" class="refresh-btn" onclick="refreshAll(this)" title="캐시를 비우고 최신 데이터를 다시 불러옵니다">
+            <span class="refresh-ico">🔄</span><span class="refresh-lbl">새로고침</span>
+          </button>
         </div>
 
         <details class="guide-box">
@@ -496,6 +530,11 @@
     };
     let g_entries = [], g_tickets = [], g_meetings = [];
     let g_series = [], g_seqs = [], g_prodLoaded = false;
+    let g_bustStamp = '';   // '새로고침' 시 갱신 — fetch URL에 붙여 브라우저·CDN·GitHub API 캐시를 우회
+
+    function bust(url) {
+      return g_bustStamp ? url + (url.includes('?') ? '&' : '?') + g_bustStamp : url;
+    }
 
     function repoFor(project) {
       return REPO_BY_PROJECT[project] || ADMIN_REPO;
@@ -557,7 +596,7 @@
     async function loadWorklog() {
       const root = document.getElementById('worklog-root');
       try {
-        const res = await fetch('../../worklog.md', { cache: 'no-store' });
+        const res = await fetch(bust('../../worklog.md'), { cache: 'no-store' });
         const text = (await res.text()).replace(/\r\n/g, '\n');
         g_entries = parseWorklog(text);
 
@@ -620,7 +659,7 @@
 
       panel.innerHTML = '<div class="log-muted">GitHub에서 커밋 정보를 불러오는 중...</div>';
       try {
-        const res = await fetch(`https://api.github.com/repos/${repo}/commits/${e.hash}`);
+        const res = await fetch(bust(`https://api.github.com/repos/${repo}/commits/${e.hash}`));
         if (!res.ok) throw new Error('status ' + res.status);
         const c = await res.json();
 
@@ -650,7 +689,7 @@
       const root = document.getElementById('tickets-root');
       let files;
       try {
-        const res = await fetch(`https://api.github.com/repos/${ADMIN_REPO}/contents/tickets?ref=main`);
+        const res = await fetch(bust(`https://api.github.com/repos/${ADMIN_REPO}/contents/tickets?ref=main`));
         if (!res.ok) throw new Error('status ' + res.status);
         files = (await res.json()).filter(f => f.name.endsWith('.md'));
       } catch (e) {
@@ -660,7 +699,7 @@
       }
       g_tickets = (await Promise.all(files.map(async f => {
         try {
-          const r = await fetch('../../tickets/' + f.name, { cache: 'no-store' });
+          const r = await fetch(bust('../../tickets/' + f.name), { cache: 'no-store' });
           const { meta } = parseFrontmatter((await r.text()).replace(/\r\n/g, '\n'));
           return meta.id ? meta : null;
         } catch (e) { return null; }
@@ -753,7 +792,7 @@
       const root = document.getElementById('meetings-root');
       let files;
       try {
-        const res = await fetch(`https://api.github.com/repos/${ADMIN_REPO}/contents/meetings?ref=main`);
+        const res = await fetch(bust(`https://api.github.com/repos/${ADMIN_REPO}/contents/meetings?ref=main`));
         if (!res.ok) throw new Error('status ' + res.status);
         files = (await res.json()).filter(f => f.name.endsWith('.md'));
       } catch (e) {
@@ -763,7 +802,7 @@
       }
       g_meetings = (await Promise.all(files.map(async f => {
         try {
-          const r = await fetch('../../meetings/' + f.name, { cache: 'no-store' });
+          const r = await fetch(bust('../../meetings/' + f.name), { cache: 'no-store' });
           const { meta, body } = parseFrontmatter((await r.text()).replace(/\r\n/g, '\n'));
           return { date: meta.date || '', title: meta.title || f.name, body };
         } catch (e) { return null; }
@@ -804,6 +843,28 @@
       await loadWorklog();  // g_entries 채운 뒤 티켓 이력 조인
       loadTickets();
       loadMeetings();
+    }
+
+    // 캐시(브라우저·Pages CDN·GitHub API)를 우회해 모든 데이터를 다시 불러온다. 탭·스크롤은 유지.
+    async function refreshAll(btn) {
+      if (btn && btn.disabled) return;
+      g_bustStamp = '_=' + Date.now();
+      const lbl = btn ? btn.querySelector('.refresh-lbl') : null;
+      const prevLbl = lbl ? lbl.textContent : '';
+      if (btn) { btn.disabled = true; btn.classList.add('spinning'); }
+      if (lbl) lbl.textContent = '불러오는 중…';
+      try {
+        const prodPanel = document.getElementById('panel-production');
+        const wasProd = prodPanel ? prodPanel.classList.contains('active') : false;
+        g_prodLoaded = false;   // 다음에 제작 현황 탭을 열 때 새로 불러오도록
+        await loadWorklog();    // g_entries 갱신 후 티켓 이력 조인
+        await Promise.all([loadTickets(), loadMeetings(), wasProd ? loadProduction() : Promise.resolve()]);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        if (btn) { btn.disabled = false; btn.classList.remove('spinning'); }
+        if (lbl) lbl.textContent = prevLbl || '새로고침';
+      }
     }
 
     /* ---------- 제작 현황 (Firestore: learn_series·learn_sequences) ---------- */
