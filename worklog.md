@@ -1,6 +1,6 @@
 # 작업 로그
 
-- 2026-07-04 | 관리자 | learn_series 이미지 미리보기 로드 시 markDirty 오탐 수정(silent 인자) | T-007 | 94e25aa
+- 2026-07-04 | 관리자 | learn_series 이미지 미리보기 로드 시 markDirty 오탐 수정(silent 인자) | T-007 | 5a5ec2f
 - 2026-07-04 | 관리자 | 회의록 발행: 티켓 목록 안 뜬 원인(API 한도)·manifest 대안 검토 | - | -
 
 - 2026-07-04 | 관리자 | log_manage GitHub API 호출을 캐시 우회에서 제외(비인증 60/시간 한도 소진 방지)+403 안내 | - | c8cf15a
