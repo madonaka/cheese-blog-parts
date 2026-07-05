@@ -3092,19 +3092,22 @@
     if(!window.cheeseMapCloud){ status("클라우드 모듈이 아직 로드되지 않았습니다"); return; }
     if(!confirm("현재 지도를 발행할까요? 프론트(뷰어)에 바로 반영됩니다.")) return;
     status("발행 중…");
-    Promise.race([
-      window.cheeseMapCloud.save(MAP_ID, { raw:snapshot(), published:buildPublished(), updatedAt:Date.now() }),
-      new Promise(function(_,rej){ setTimeout(function(){ rej(new Error("시간 초과 — Ctrl+F5로 새로고침 후 다시 시도하세요")); }, 20000); })
-    ])
-      .then(function(){ status("☁ 발행 완료 — 프론트에 반영되었습니다"); })
-      .catch(function(err){ status("발행 실패: "+(err&&err.message||err)); });
+    try{
+      // raw는 좌표가 중첩 배열([[lon,lat],...])이라 Firestore가 거부 → JSON 문자열로 직렬화해 저장
+      var payload={ raw: JSON.stringify(snapshot()), published: buildPublished(), updatedAt: Date.now() };
+      Promise.race([
+        window.cheeseMapCloud.save(MAP_ID, payload),
+        new Promise(function(_,rej){ setTimeout(function(){ rej(new Error("시간 초과 — 네트워크를 확인하고 다시 시도하세요")); }, 20000); })
+      ]).then(function(){ status("☁ 발행 완료 — 프론트에 반영되었습니다"); })
+        .catch(function(err){ status("발행 실패: "+(err&&err.message||err)); });
+    }catch(err){ status("발행 실패: "+(err&&err.message||err)); }
   };
   document.getElementById("medCloudLoad").onclick=function(){
     if(!window.cheeseMapCloud){ status("클라우드 모듈이 아직 로드되지 않았습니다"); return; }
     if(!confirm("서버(발행본의 원본)를 불러올까요? 현재 편집 내용을 덮어씁니다.")) return;
     status("서버에서 불러오는 중…");
     window.cheeseMapCloud.load(MAP_ID).then(function(d){
-      if(d&&d.raw){ restore(d.raw); buildYearBar(); buildBar(); buildCityPanel(); render(); status("☁ 서버 데이터 불러옴"); }
+      if(d&&d.raw){ var rawObj=(typeof d.raw==="string")?JSON.parse(d.raw):d.raw; restore(rawObj); buildYearBar(); buildBar(); buildCityPanel(); render(); status("☁ 서버 데이터 불러옴"); }
       else status("서버에 저장된 지도가 없습니다"); })
       .catch(function(err){ status("불러오기 실패: "+(err&&err.message||err)); });
   };
@@ -3114,7 +3117,7 @@
   document.getElementById("zRst").onclick=function(){ vb={x:0,y:0,w:BASE[0],h:BASE[1]}; applyVB(); render(); };
 
   try{ if(localStorage.getItem(STORE_KEY)) loadData(); }catch(e){}
-  status("편집기 v20260705c");
+  status("편집기 v20260705d");
   buildYearBar(); buildBar(); render();
 })();
 </script>
