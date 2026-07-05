@@ -10,9 +10,11 @@
        reliefUrl:"https://cdn.../relief.png" // 지형 PNG (jsDelivr 등)
      });
 
-   인터랙션: 휠 줌(커서 기준) · 드래그 이동 · ＋/－/⟳ 버튼.
+   인터랙션: 휠 줌(커서 기준) · 드래그 이동 · 핀치 줌 · ＋/－/⟳/⛶/📷 버튼.
    줌 대응: 강 굵기 √k 감쇠, 라벨 크기·halo 비례,
             축소(k>0.6)에선 수도★만 표시, 나라 라벨 충돌 회피.
+   모바일: 첫 화면은 콘텐츠 범위로 자동 확대, 최대 줌은 화면폭 비례로 심화,
+           전체화면은 화면 비율에 viewBox를 맞춤(미지원 브라우저는 고정 오버레이 폴백).
    ================================================== */
 (function(){
   var NS="http://www.w3.org/2000/svg";
@@ -88,7 +90,9 @@
 
     // ── 줌/패닝 ──
     function applyVB(){ svg.setAttribute("viewBox",vb.x+" "+vb.y+" "+vb.w+" "+vb.h); }
-    function zoomAt(cx,cy,f){ var nw=Math.min(W,Math.max(W*0.13,vb.w*f)); var s=nw/vb.w;
+    function zoomAt(cx,cy,f){ var maxW=Math.min(W,H*vb.w/vb.h);
+      var minW=W*0.13*Math.min(1,(svg.clientWidth||820)/820); // 작은 화면은 더 깊게 확대 — 화면픽셀 기준 데스크톱과 같은 배율까지
+      var nw=Math.min(maxW,Math.max(minW,vb.w*f)); var s=nw/vb.w;
       vb.x=cx-(cx-vb.x)*s; vb.y=cy-(cy-vb.y)*s; vb.w=nw; vb.h*=s;
       vb.x=Math.max(0,Math.min(W-vb.w,vb.x)); vb.y=Math.max(0,Math.min(H-vb.h,vb.y)); applyVB(); draw(); }
     function svgXY(e){ var pt=svg.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY;
@@ -116,8 +120,17 @@
       if(ptrs.size===1){ var only; ptrs.forEach(function(v){ only=v; }); pan={sx:only.x,sy:only.y,vx:vb.x,vy:vb.y}; }
       else pan=null; }
     svg.addEventListener("pointerup",endPtr); svg.addEventListener("pointercancel",endPtr);
-    document.addEventListener("fullscreenchange",function(){ setTimeout(draw,60); });
-    window.addEventListener("resize",function(){ clearTimeout(render._rz); render._rz=setTimeout(draw,120); });
+    // viewBox 비율을 화면 비율에 맞춤 — 세로 폰 전체화면에서 위아래 바다 여백(지형 잘림처럼 보임) 없이 꽉 차게
+    function refit(){ var fs=document.fullscreenElement===wrap||wrap.classList.contains("cmap-fsfake");
+      var ar=fs?((wrap.clientWidth||1)/(wrap.clientHeight||1)):(W/H);
+      var cx=vb.x+vb.w/2, cy=vb.y+vb.h/2;
+      var nw=Math.min(W,Math.max(vb.w,vb.h*ar)), nh=nw/ar;
+      if(nh>H){ nh=H; nw=nh*ar; }
+      vb.w=nw; vb.h=nh;
+      vb.x=Math.max(0,Math.min(W-nw,cx-nw/2)); vb.y=Math.max(0,Math.min(H-nh,cy-nh/2));
+      applyVB(); draw(); }
+    document.addEventListener("fullscreenchange",function(){ setTimeout(refit,60); });
+    window.addEventListener("resize",function(){ clearTimeout(render._rz); render._rz=setTimeout(refit,120); });
     svg.addEventListener("wheel",function(e){ e.preventDefault(); var xy=svgXY(e); zoomAt(xy[0],xy[1], e.deltaY<0?0.84:1.19); },{passive:false});
     // ── 이미지 저장(현재 뷰 그대로 + 브랜드 헤더/푸터) ──
     var EXPORT_CSS='.cmap-land{fill:#f2f0e8;stroke:#c7b998;stroke-linejoin:round}'
@@ -186,13 +199,14 @@
       else if(b.dataset.z==="out") zoomAt(vb.x+vb.w/2, vb.y+vb.h/2, 1.43);
       else if(b.dataset.z==="shot"){ exportImage(b); }
       else if(b.dataset.z==="fs"){ if(document.fullscreenElement){ document.exitFullscreen&&document.exitFullscreen(); }
-        else if(wrap.requestFullscreen){ wrap.requestFullscreen(); } }
-      else { vb={x:0,y:0,w:W,h:H}; applyVB(); draw(); } }; });
+        else if(wrap.requestFullscreen){ wrap.requestFullscreen(); }
+        else { wrap.classList.toggle("cmap-fsfake"); setTimeout(refit,60); } } // iOS 사파리 등 Fullscreen API 미지원 폴백
+      else { vb={x:0,y:0,w:W,h:H}; refit(); } }; });
 
     // ── 렌더 ──
     function draw(){
       var k=vb.w/W;
-      var ui=Math.min(2.2, Math.max(1, 820/((svg.clientWidth||820)))); // 모바일 확대 배율
+      var ui=Math.min(2.6, Math.max(1, 820/((svg.clientWidth||820)))); // 모바일 확대 배율 — 작은 화면일수록 라벨·기호를 키움
       var ku=k*ui;
       gRiver.style.display=vis.river?"":"none";
       // 강 굵기 줌 감쇠(√k)
@@ -250,6 +264,19 @@
       var act=track.children[yearIdx]; if(act&&act.scrollIntoView) act.scrollIntoView({block:"nearest",inline:"center",behavior:"smooth"});
       draw(); }
     tl.querySelectorAll(".cmap-tl-nav").forEach(function(b){ b.onclick=function(){ setYear(yearIdx+(+b.dataset.d)); }; });
+    // 작은 화면: 첫 화면을 콘텐츠(영토·도시) 범위로 맞춰 라벨이 뭉치지 않게
+    if((svg.clientWidth||820)<560){ (function(){ var b=null;
+      function add(x,y){ if(!b){ b=[x,y,x,y]; return; } if(x<b[0])b[0]=x; if(x>b[2])b[2]=x; if(y<b[1])b[1]=y; if(y>b[3])b[3]=y; }
+      Object.keys(map.territories||{}).forEach(function(yy){ (map.territories[yy]||[]).forEach(function(t){ var bb=pbox(t.d); if(bb){ add(bb[0],bb[1]); add(bb[2],bb[3]); } }); });
+      (map.cities||[]).forEach(function(c){ var p=proj(c.lon,c.lat); add(p[0],p[1]); });
+      if(!b) return;
+      var pad=22, ar=W/H, nw=Math.max(b[2]-b[0]+pad*2,(b[3]-b[1]+pad*2)*ar);
+      if(nw>=W) return;
+      vb.w=nw; vb.h=nw/ar;
+      vb.x=Math.max(0,Math.min(W-vb.w,(b[0]+b[2])/2-vb.w/2));
+      vb.y=Math.max(0,Math.min(H-vb.h,(b[1]+b[3])/2-vb.h/2));
+      applyVB();
+    })(); }
     draw();
   }
 
