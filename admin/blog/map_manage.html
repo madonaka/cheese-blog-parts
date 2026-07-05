@@ -2710,11 +2710,11 @@
 
   function svgXY(e){ var pt=svg.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY; var q=pt.matrixTransform(svg.getScreenCTM().inverse()); return [q.x,q.y]; }
 
-  var drag=null, pan=null;
+  var drag=null, pan=null, dragCity=null;
   svg.addEventListener("pointerdown",function(e){
     if(panMode){ pan={sx:e.clientX,sy:e.clientY,vx:vb.x,vy:vb.y}; svg.setPointerCapture(e.pointerId); return; }
     if(cityMode){ if(locked) return; var ct=e.target;
-      if(ct.classList.contains("med-citymk")){ selCity=+ct.dataset.ci; buildCityPanel(); render(); return; }
+      if(ct.classList.contains("med-citymk")){ selCity=+ct.dataset.ci; dragCity={ci:selCity}; svg.setPointerCapture(e.pointerId); buildCityPanel(); render(); return; }
       var cxy=svgXY(e), cll=unproj(cxy[0],cxy[1]); var nc={name:"새 도시",lon:d2(cll[0]),lat:d2(cll[1]),y:{}};
       nc.y[year]=[active||(nations[0]&&nations[0].id),"fort"]; cities.push(nc); selCity=cities.length-1; buildCityPanel(); render(); status("도시 추가 — 아래에서 이름·연도별 소속 설정"); return; }
     if(locked||!active) return; var t=e.target;
@@ -2727,33 +2727,66 @@
   svg.addEventListener("pointermove",function(e){
     if(pan){ var sc=vb.w/svg.clientWidth; vb.x=pan.vx-(e.clientX-pan.sx)*sc; vb.y=pan.vy-(e.clientY-pan.sy)*sc;
       vb.x=Math.max(0,Math.min(BASE[0]-vb.w,vb.x)); vb.y=Math.max(0,Math.min(BASE[1]-vb.h,vb.y)); applyVB(); return; }
+    if(dragCity){ var cxy=svgXY(e), cll=unproj(cxy[0],cxy[1]); var cc=cities[dragCity.ci];
+      if(cc){ cc.lon=d2(cll[0]); cc.lat=d2(cll[1]); render(); } return; }
     if(drag){ var xy=svgXY(e); var ll=unproj(xy[0],xy[1]); state[year][active][drag.i]=[d2(ll[0]),d2(ll[1])]; render(); } });
-  svg.addEventListener("pointerup",function(){ drag=null; pan=null; });
+  svg.addEventListener("pointerup",function(){ if(dragCity){ dragCity=null; buildCityPanel(); } drag=null; pan=null; });
   svg.addEventListener("wheel",function(e){ e.preventDefault(); var xy=svgXY(e); zoomAt(xy[0],xy[1], e.deltaY<0?0.84:1.19); },{passive:false});
   svg.addEventListener("contextmenu",function(e){ var t=e.target;
-    if(cityMode && t.classList&&t.classList.contains("med-citymk")){ e.preventDefault(); cities.splice(+t.dataset.ci,1); selCity=null; buildCityPanel(); render(); return; }
+    if(cityMode && t.classList&&t.classList.contains("med-citymk")){ e.preventDefault(); var ci=+t.dataset.ci;
+      if(!confirm(cities[ci].name+' 도시를 삭제할까요?')) return;
+      cities.splice(ci,1); if(selCity===ci) selCity=null; else if(selCity>ci) selCity--;
+      buildCityPanel(); render(); return; }
     if(locked||!active) return;
     if(t.classList&&t.classList.contains("med-vtx")){ e.preventDefault(); state[year][active].splice(+t.dataset.i,1); render(); } });
 
-  // ---- city panel ----
+  // ---- city panel: 전체 목록 + 선택 도시 상세 편집 ----
+  function escH(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;"); }
   function buildCityPanel(){ var wrap=document.getElementById("medCPanel");
-    if(!cityMode || selCity==null || !cities[selCity]){ wrap.style.display="none"; wrap.innerHTML=""; return; }
-    var c=cities[selCity];
-    var optHtml=nations.map(function(n){return '<option value="'+n.id+'">'+n.name+'</option>';}).join("");
-    var rows=yearsList.map(function(Y){ var on=!!c.y[Y.y];
-      return '<tr><td><b>'+Y.y+'년</b></td><td><label><input type="checkbox" class="cyOn" data-y="'+Y.y+'" '+(on?"checked":"")+'> 표시</label></td>'
-       +'<td>소속 <select class="cyOwner" data-y="'+Y.y+'" '+(on?"":"disabled")+'>'+optHtml+'</select></td>'
-       +'<td>등급 <select class="cyType" data-y="'+Y.y+'" '+(on?"":"disabled")+'><option value="cap">수도 ★</option><option value="fort">성 ●</option></select></td></tr>'; }).join("");
-    wrap.innerHTML='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>도시</b> <input id="cyName" class="med-new" style="width:130px" value="'+String(c.name).replace(/"/g,"&quot;")+'"><button class="med-act" id="cyDel">🗑 이 도시 삭제</button></div>'
-      +'<table><tr><th>연도</th><th></th><th>소속 나라</th><th>등급</th></tr>'+rows+'</table>';
-    wrap.style.display="block";
-    yearsList.forEach(function(Y){ var inf=c.y[Y.y]; if(inf){ var os=wrap.querySelector('.cyOwner[data-y="'+Y.y+'"]'); var ts=wrap.querySelector('.cyType[data-y="'+Y.y+'"]'); if(os)os.value=inf[0]; if(ts)ts.value=inf[1]; } });
-    wrap.querySelector("#cyName").oninput=function(){ c.name=this.value; render(); };
-    wrap.querySelector("#cyDel").onclick=function(){ cities.splice(selCity,1); selCity=null; buildCityPanel(); render(); };
-    wrap.querySelectorAll(".cyOn").forEach(function(cb){ cb.onchange=function(){ var y=cb.dataset.y;
-      if(cb.checked){ c.y[y]=[active||nations[0].id,"fort"]; } else { delete c.y[y]; } buildCityPanel(); render(); }; });
-    wrap.querySelectorAll(".cyOwner").forEach(function(sel){ sel.onchange=function(){ var y=sel.dataset.y; if(c.y[y]) c.y[y][0]=sel.value; render(); }; });
-    wrap.querySelectorAll(".cyType").forEach(function(sel){ sel.onchange=function(){ var y=sel.dataset.y; if(c.y[y]) c.y[y][1]=sel.value; render(); }; });
+    if(!cityMode){ wrap.style.display="none"; wrap.innerHTML=""; return; }
+    // 1) 도시 목록 (연도별 ★/●/— 요약)
+    var html='<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px"><b>도시 목록 ('+cities.length+')</b>'
+      +'<span style="font-size:.74rem;color:var(--soft)">지도 클릭=새 도시 · 마커 드래그=위치 이동 · ★수도 ●성 —미표시</span></div>';
+    html+='<div style="overflow-x:auto"><table><tr><th>도시</th>'+yearsList.map(function(Y){return '<th>'+Y.y+'</th>';}).join("")+'<th></th></tr>';
+    cities.forEach(function(c,ci){
+      html+='<tr'+(ci===selCity?' style="background:#fff;outline:1px solid var(--line)"':'')+'><td><b>'+escH(c.name)+'</b></td>';
+      yearsList.forEach(function(Y){ var inf=c.y[Y.y];
+        if(inf){ var col=(meta(inf[0])||{}).color||"#888";
+          html+='<td style="text-align:center"><span style="color:'+col+'">'+(inf[1]==="cap"?"★":"●")+'</span></td>'; }
+        else html+='<td style="text-align:center;color:#c9c4b4">—</td>'; });
+      html+='<td><button class="med-act clSel" data-ci="'+ci+'">편집</button> <button class="med-act clDel" data-ci="'+ci+'" title="삭제">🗑</button></td></tr>'; });
+    html+='</table></div>';
+    // 2) 선택 도시 상세 편집
+    var c=(selCity!=null)?cities[selCity]:null;
+    if(c){
+      var optHtml=nations.map(function(n){return '<option value="'+n.id+'">'+n.name+'</option>';}).join("");
+      var rows=yearsList.map(function(Y){ var on=!!c.y[Y.y];
+        return '<tr><td><b>'+Y.y+'년</b></td><td><label><input type="checkbox" class="cyOn" data-y="'+Y.y+'" '+(on?"checked":"")+'> 표시</label></td>'
+         +'<td>소속 <select class="cyOwner" data-y="'+Y.y+'" '+(on?"":"disabled")+'>'+optHtml+'</select></td>'
+         +'<td>등급 <select class="cyType" data-y="'+Y.y+'" '+(on?"":"disabled")+'><option value="cap">수도 ★</option><option value="fort">성 ●</option></select></td></tr>'; }).join("");
+      html+='<hr style="border:none;border-top:1px solid var(--line);margin:10px 0 8px">'
+        +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>✏ 편집:</b> <input id="cyName" class="med-new" style="width:130px" value="'+escH(c.name)+'">'
+        +'<span style="font-size:.74rem;color:var(--soft)">위치 '+c.lon.toFixed(2)+', '+c.lat.toFixed(2)+' (마커 드래그로 이동)</span>'
+        +'<button class="med-act" id="cyDel">🗑 이 도시 삭제</button></div>'
+        +'<table><tr><th>연도</th><th></th><th>소속 나라</th><th>등급</th></tr>'+rows+'</table>';
+    }
+    wrap.innerHTML=html; wrap.style.display="block";
+    // 목록 이벤트
+    wrap.querySelectorAll(".clSel").forEach(function(b){ b.onclick=function(){ selCity=+b.dataset.ci; buildCityPanel(); render(); }; });
+    wrap.querySelectorAll(".clDel").forEach(function(b){ b.onclick=function(){ var ci=+b.dataset.ci;
+      if(!confirm(cities[ci].name+' 도시를 삭제할까요?')) return;
+      cities.splice(ci,1); if(selCity===ci) selCity=null; else if(selCity>ci) selCity--;
+      buildCityPanel(); render(); }; });
+    // 상세 편집 이벤트
+    if(c){
+      yearsList.forEach(function(Y){ var inf=c.y[Y.y]; if(inf){ var os=wrap.querySelector('.cyOwner[data-y="'+Y.y+'"]'); var ts=wrap.querySelector('.cyType[data-y="'+Y.y+'"]'); if(os)os.value=inf[0]; if(ts)ts.value=inf[1]; } });
+      wrap.querySelector("#cyName").oninput=function(){ c.name=this.value; render(); };
+      wrap.querySelector("#cyDel").onclick=function(){ if(!confirm(c.name+' 도시를 삭제할까요?')) return; cities.splice(selCity,1); selCity=null; buildCityPanel(); render(); };
+      wrap.querySelectorAll(".cyOn").forEach(function(cb){ cb.onchange=function(){ var y=cb.dataset.y;
+        if(cb.checked){ c.y[y]=[active||nations[0].id,"fort"]; } else { delete c.y[y]; } buildCityPanel(); render(); }; });
+      wrap.querySelectorAll(".cyOwner").forEach(function(sel){ sel.onchange=function(){ var y=sel.dataset.y; if(c.y[y]){ c.y[y][0]=sel.value; buildCityPanel(); render(); } }; });
+      wrap.querySelectorAll(".cyType").forEach(function(sel){ sel.onchange=function(){ var y=sel.dataset.y; if(c.y[y]){ c.y[y][1]=sel.value; buildCityPanel(); render(); } }; });
+    }
   }
 
   // ---- 연도: 동적 추가/삭제 ----
