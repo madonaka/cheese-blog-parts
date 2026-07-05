@@ -96,7 +96,7 @@ https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/map/assets/rivers.js
 ## 에셋 재생성 (build/)
 
 Node 필요(pngjs). 원본 좌표계 고정: `WIN=[106,26,146,47], SCALE=24, pad=6 → viewBox 0 0 784 516`.
-- `build-relief6.js` — AWS Terrarium 고도타일(z8, 580장) → 음영 지형도 PNG 3072px (bilinear+hypsometric, 바다 투명)
+- `build-relief7.js` — AWS Terrarium 고도타일(z8, 580장) → 음영 지형도 PNG 3072px (bilinear+hypsometric, 바다 투명)
 - `parse-hydro.js` + `convert-rivers5.js` — HydroRIVERS(Asia)에서 하천 추출 → 유량등급별 강 경로
 - `convert-land.js` / `convert-ea.js` — 해안선 / 동아시아 역사 국경(참고용)
 - `build-package.js` — seeds/cities → published 데이터 + 에셋 생성

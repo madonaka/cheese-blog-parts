@@ -22,13 +22,12 @@ const OW=3072, OH=Math.round(OW*VH/VW);
 const E=new Float32Array(OW*OH);
 for(let oy=0;oy<OH;oy++)for(let ox=0;ox<OW;ox++){ const ll=unproj((ox+0.5)/OW*VW,(oy+0.5)/OH*VH); E[oy*OW+ox]=elevBil(ll[0],ll[1]); }
 
-const RAMP=[[1,[247,247,242]],[150,[233,226,201]],[450,[214,191,142]],[900,[184,143,97]],
-            [1500,[143,101,66]],[2050,[112,76,54]],[2450,[196,190,184]],[2750,[248,248,248]]];
+const RAMP=[[1,[249,248,243]],[100,[236,228,202]],[300,[219,190,135]],[600,[192,144,90]],[1000,[158,104,60]],[1500,[122,76,46]],[2000,[95,60,40]],[2250,[170,162,155]],[2500,[252,252,252]]];
 function ramp(e){ if(e<=RAMP[0][0])return RAMP[0][1]; for(let i=1;i<RAMP.length;i++){ if(e<=RAMP[i][0]){
   const a=RAMP[i-1],b=RAMP[i],t=(e-a[0])/(b[0]-a[0]); return [a[1][0]+(b[1][0]-a[1][0])*t,a[1][1]+(b[1][1]-a[1][1])*t,a[1][2]+(b[1][2]-a[1][2])*t]; } } return RAMP[RAMP.length-1][1]; }
 
 const cellx=(CFG.WIN[2]-CFG.WIN[0])*111320*kx/OW, celly=(CFG.WIN[3]-CFG.WIN[1])*110570/OH;
-const ZF=1.5, az=315*Math.PI/180, zen=(90-45)*Math.PI/180, cz=Math.cos(zen), sz=Math.sin(zen);
+const ZF=2.7, az=315*Math.PI/180, zen=(90-45)*Math.PI/180, cz=Math.cos(zen), sz=Math.sin(zen);
 function E_(x,y){x=x<0?0:x>=OW?OW-1:x;y=y<0?0:y>=OH?OH-1:y;return E[y*OW+x];}
 const png=new PNG({width:OW,height:OH});
 for(let y=0;y<OH;y++)for(let x=0;x<OW;x++){ const e=E[y*OW+x],o=(y*OW+x)*4;
@@ -36,11 +35,11 @@ for(let y=0;y<OH;y++)for(let x=0;x<OW;x++){ const e=E[y*OW+x],o=(y*OW+x)*4;
   const dzdx=(E_(x+1,y)-E_(x-1,y))/(2*cellx)*ZF, dzdy=(E_(x,y+1)-E_(x,y-1))/(2*celly)*ZF;
   const slope=Math.atan(Math.sqrt(dzdx*dzdx+dzdy*dzdy)), aspect=Math.atan2(dzdy,-dzdx);
   let hs=cz*Math.cos(slope)+sz*Math.sin(slope)*Math.cos(az-aspect); hs=Math.max(0,hs);
-  const sh=0.5+0.7*hs, c=ramp(e);
+  const sh=0.36+0.88*hs, c=ramp(e);
   png.data[o]=Math.max(0,Math.min(255,c[0]*sh)); png.data[o+1]=Math.max(0,Math.min(255,c[1]*sh)); png.data[o+2]=Math.max(0,Math.min(255,c[2]*sh));
   png.data[o+3]=255;
 }
 const buf=PNG.sync.write(png,{colorType:6});
-fs.writeFileSync("relief6.json", JSON.stringify({ viewBox:`0 0 ${VW} ${VH}`, ocean:"rgb(95,131,137)", dataUri:"data:image/png;base64,"+buf.toString("base64") }));
-fs.writeFileSync("relief6.png", buf);
-console.log("relief6",OW+"x"+OH,"| PNG",Math.round(buf.length/1024)+"KB");
+fs.writeFileSync("relief7.json", JSON.stringify({ viewBox:`0 0 ${VW} ${VH}`, ocean:"rgb(95,131,137)", dataUri:"data:image/png;base64,"+buf.toString("base64") }));
+fs.writeFileSync("relief7.png", buf);
+console.log("relief7",OW+"x"+OH,"| PNG",Math.round(buf.length/1024)+"KB");
