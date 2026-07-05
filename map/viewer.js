@@ -248,14 +248,15 @@
       if(vis.terr){ (map.territories[year]||[]).forEach(function(t){
         var tp=el("path",{class:"cmap-terr",d:t.d,fill:COLOR[t.id]||"#888","fill-rule":"evenodd"}); tp.style.strokeWidth=(1.2*ku)+"px"; gTerr.appendChild(tp);
         var b=pbox(t.d); if(!b) return;
-        var nm=NAME[t.id]||"", fs=16*ku;
-        if(ui>1){ // 좁은 화면: 작은 영토는 라벨 확대(ui)를 깎아 겹침 완화 — 화면상 최소 ~11px는 보장
-          var fit=1.7*Math.max(b[2]-b[0],b[3]-b[1])/(1.24*Math.max(1,nm.length));
-          var minFs=11*vb.w/(svg.clientWidth||820);
-          fs=Math.min(fs, Math.max(fit, minFs, 16*k*us));
-        }
+        var nm=NAME[t.id]||"", bw=b[2]-b[0], bh=b[3]-b[1], mx=Math.max(bw,bh);
+        // 라벨을 영토 크기에 맞춰 축소 — 모든 화면 적용(세계지도의 좁은 유럽 등에서 이름이 과대 표시되지 않게)
+        var fit=1.3*mx/(1.24*Math.max(1,nm.length));
+        var minFs=(ui>1?11:9)*vb.w/(svg.clientWidth||820); // 화면상 최소 픽셀 보장
+        var fs=Math.min(16*ku, Math.max(fit, minFs));
         var lx=(b[0]+b[2])/2, ly=(b[1]+b[3])/2+4*ku;
         var halfW=nm.length*fs*0.62;
+        // 축소해도 영토의 2.6배를 넘는 소국은 이 줌에선 생략 — 확대하면 표시
+        if(halfW*2 > 2.6*mx) return;
         function clash(y){ return cityPts.some(function(p){ return Math.abs(p[0]-lx)<halfW+16*ku && Math.abs(p[1]-y)<fs*0.85; })
           || placedLabs.some(function(q){ return Math.abs(q[0]-lx)<halfW+q[2] && Math.abs(q[1]-y)<fs; }); }
         for(var tr=0; tr<5 && clash(ly); tr++){ ly += (tr%2? -1:1)*(tr+1)*fs*0.95; }
