@@ -84,7 +84,7 @@ YEARS.forEach(Y => {
     const id = wanted[(f.properties.NAME || "").trim()];
     if (!id) return;
     found.add((f.properties.NAME || "").trim());
-    byId[id] = (byId[id] || "") + geom2path(f.geometry, { eps: 1.2, minArea: 4, prec: 1 });
+    byId[id] = (byId[id] || "") + geom2path(f.geometry, { eps: 0.5, minArea: 2, prec: 1 });
   });
   const missing = Object.keys(wanted).filter(n => !found.has(n));
   if (missing.length) console.warn(Y.y + " 미발견:", missing.join(", "));

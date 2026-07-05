@@ -55,6 +55,9 @@
     // 지도 래퍼(+줌 버튼 오버레이)
     var wrap=document.createElement("div"); wrap.className="cmap-mapwrap"; mount.appendChild(wrap);
     var svg=el("svg",{class:"cmap-svg",viewBox:map.viewBox}); svg.style.background=(cfg.ocean||"#5f8389");
+    // 납작한 지도(세계 전도 등)는 표시 비율을 따로 지정해 크게 — 세로로 넘치는 부분은 바다 레터박스
+    var dispAR=+opts.displayAspect||0;
+    if(dispAR) svg.style.aspectRatio=String(dispAR);
     wrap.appendChild(svg);
     var zoomBox=document.createElement("div"); zoomBox.className="cmap-zoom";
     zoomBox.innerHTML='<button data-z="in" aria-label="확대">＋</button><button data-z="out" aria-label="축소">－</button><button data-z="rst" aria-label="원래대로">⟳</button><button data-z="fs" aria-label="전체화면">⛶</button><button data-z="shot" aria-label="이미지 저장">📷</button>';
@@ -97,11 +100,15 @@
 
     // ── 줌/패닝 ──
     function applyVB(){ svg.setAttribute("viewBox",vb.x+" "+vb.y+" "+vb.w+" "+vb.h); }
-    function zoomAt(cx,cy,f){ var maxW=Math.min(W,H*vb.w/vb.h);
+    // 데이터 범위를 넘는 축(전체 축소 레터박스)은 가운데 정렬로 고정
+    function clampVB(){
+      vb.x = vb.w>=W ? (W-vb.w)/2 : Math.max(0,Math.min(W-vb.w,vb.x));
+      vb.y = vb.h>=H ? (H-vb.h)/2 : Math.max(0,Math.min(H-vb.h,vb.y)); }
+    function zoomAt(cx,cy,f){ var maxW=W; // 가로 전체가 보일 때까지 축소 허용(세로는 바다 레터박스)
       var minW=W*0.065*Math.min(1,(svg.clientWidth||820)/820); // 작은 화면은 더 깊게 확대 — 화면픽셀 기준 데스크톱과 같은 배율까지
       var nw=Math.min(maxW,Math.max(minW,vb.w*f)); var s=nw/vb.w;
       vb.x=cx-(cx-vb.x)*s; vb.y=cy-(cy-vb.y)*s; vb.w=nw; vb.h*=s;
-      vb.x=Math.max(0,Math.min(W-vb.w,vb.x)); vb.y=Math.max(0,Math.min(H-vb.h,vb.y)); applyVB(); draw(); }
+      clampVB(); applyVB(); draw(); }
     function svgXY(e){ var pt=svg.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY;
       var q=pt.matrixTransform(svg.getScreenCTM().inverse()); return [q.x,q.y]; }
     // 한 손가락=드래그, 두 손가락=핀치 줌 (모바일)
@@ -122,14 +129,14 @@
           zoomAt(xy[0], xy[1], pinchD/pi.d); }
         pinchD=pi.d; return; }
       if(pan){ var sc=vb.w/svg.clientWidth; vb.x=pan.vx-(e.clientX-pan.sx)*sc; vb.y=pan.vy-(e.clientY-pan.sy)*sc;
-        vb.x=Math.max(0,Math.min(W-vb.w,vb.x)); vb.y=Math.max(0,Math.min(H-vb.h,vb.y)); applyVB(); } });
+        clampVB(); applyVB(); } });
     function endPtr(e){ ptrs.delete(e.pointerId); pinchD=0;
       if(ptrs.size===1){ var only; ptrs.forEach(function(v){ only=v; }); pan={sx:only.x,sy:only.y,vx:vb.x,vy:vb.y}; }
       else pan=null; }
     svg.addEventListener("pointerup",endPtr); svg.addEventListener("pointercancel",endPtr);
     // viewBox 비율을 화면 비율에 맞춤 — 세로 폰 전체화면에서 위아래 바다 여백(지형 잘림처럼 보임) 없이 꽉 차게
     function refit(){ var fs=document.fullscreenElement===wrap||wrap.classList.contains("cmap-fsfake");
-      var ar=fs?((wrap.clientWidth||1)/(wrap.clientHeight||1)):(W/H);
+      var ar=fs?((wrap.clientWidth||1)/(wrap.clientHeight||1)):(dispAR||(W/H));
       var cx=vb.x+vb.w/2, cy=vb.y+vb.h/2;
       var nw=Math.min(W,Math.max(vb.w,vb.h*ar)), nh=nw/ar;
       if(nh>H){ nh=H; nw=nh*ar; }
@@ -208,7 +215,7 @@
       else if(b.dataset.z==="fs"){ if(document.fullscreenElement){ document.exitFullscreen&&document.exitFullscreen(); }
         else if(wrap.requestFullscreen){ wrap.requestFullscreen(); }
         else { wrap.classList.toggle("cmap-fsfake"); setTimeout(refit,60); } } // iOS 사파리 등 Fullscreen API 미지원 폴백
-      else { vb={x:0,y:0,w:W,h:H}; refit(); } }; });
+      else { vb={x:initVB.x,y:initVB.y,w:initVB.w,h:initVB.h}; refit(); } }; });
 
     // ── 렌더 ──
     function draw(){
@@ -280,8 +287,16 @@
       var act=track.children[yearIdx]; if(act&&act.scrollIntoView) act.scrollIntoView({block:"nearest",inline:"center",behavior:"smooth"});
       draw(); }
     tl.querySelectorAll(".cmap-tl-nav").forEach(function(b){ b.onclick=function(){ setYear(yearIdx+(+b.dataset.d)); }; });
-    // 작은 화면: 첫 화면을 콘텐츠(영토·도시) 범위로 맞춰 라벨이 뭉치지 않게
-    if((svg.clientWidth||820)<560){ (function(){ var b=null;
+    // 초기 화면(initFocus: [서경,남위,동경,북위]) — 주 무대 중심으로 시작, 전세계는 축소로
+    var initVB={x:0,y:0,w:W,h:H};
+    if(opts.initFocus){ (function(){ var f=opts.initFocus, p1=proj(f[0],f[3]), p2=proj(f[2],f[1]);
+      var ar0=dispAR||(W/H), bw=p2[0]-p1[0], bh=p2[1]-p1[1];
+      var nw=Math.min(W, Math.max(bw, bh*ar0)), nh=nw/ar0;
+      vb={ x:(p1[0]+p2[0])/2-nw/2, y:(p1[1]+p2[1])/2-nh/2, w:nw, h:nh };
+      clampVB(); initVB={x:vb.x,y:vb.y,w:vb.w,h:vb.h}; applyVB();
+    })(); }
+    // 작은 화면: 첫 화면을 콘텐츠(영토·도시) 범위로 맞춰 라벨이 뭉치지 않게 (initFocus가 있으면 그쪽 우선)
+    if(!opts.initFocus && (svg.clientWidth||820)<560){ (function(){ var b=null;
       function add(x,y){ if(!b){ b=[x,y,x,y]; return; } if(x<b[0])b[0]=x; if(x>b[2])b[2]=x; if(y<b[1])b[1]=y; if(y>b[3])b[3]=y; }
       Object.keys(map.territories||{}).forEach(function(yy){ (map.territories[yy]||[]).forEach(function(t){ var bb=pbox(t.d); if(bb){ add(bb[0],bb[1]); add(bb[2],bb[3]); } }); });
       (map.cities||[]).forEach(function(c){ var p=proj(c.lon,c.lat); add(p[0],p[1]); });

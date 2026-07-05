@@ -24,27 +24,33 @@ function simplifyRing(pts, eps) {
   return rdp(pts.slice(0, far + 1), eps).slice(0, -1).concat(rdp(pts.slice(far).concat([pts[0]]), eps).slice(0, -1));
 }
 
-// 날짜변경선(±180) 걸친 링을 경도 분할 — 러시아 추코트카 등이 지도를 가로지르는 선 방지
+// 날짜변경선(±180) 걸친 링을 경도 분할 — 러시아 추코트카 등이 지도를 가로지르는 선 방지.
+// 교차 지점마다 세그먼트를 절단하고, 각 세그먼트를 ±180 경계선을 따라 닫는다.
+// (반구 부호로 나누면 경도 0°와 180°를 동시에 걸치는 유라시아 대륙 링이 망가진다)
 function splitAntimeridian(ring) {
-  const jumps = [];
+  let crossing = false;
   for (let i = 0; i < ring.length; i++) {
-    const a = ring[i], b = ring[(i + 1) % ring.length];
-    if (Math.abs(b[0] - a[0]) > 180) jumps.push(i);
+    if (Math.abs(ring[(i + 1) % ring.length][0] - ring[i][0]) > 180) { crossing = true; break; }
   }
-  if (!jumps.length) return [ring];
-  // 각 점을 동/서 반구로 나눠 두 링으로 재구성 (경계에 절단점 삽입)
-  const east = [], west = [];
+  if (!crossing) return [ring];
+  const segs = []; let cur = [];
   for (let i = 0; i < ring.length; i++) {
     const a = ring[i], b = ring[(i + 1) % ring.length];
-    (a[0] >= 0 ? east : west).push(a);
+    cur.push(a);
     if (Math.abs(b[0] - a[0]) > 180) {
-      const aE = a[0] >= 0, lonA = aE ? a[0] : a[0] + 360, lonB = aE ? b[0] + 360 : b[0];
-      const t = (180 - (aE ? lonA : lonB)) / Math.abs(lonB - lonA) || 0;
-      const lat = a[1] + (b[1] - a[1]) * (aE ? t : 1 - t);
-      east.push([180, lat]); west.push([-180, lat]);
+      // a쪽 경계는 a와 같은 부호의 180, b쪽은 반대
+      const aBound = a[0] >= 0 ? 180 : -180, bBound = -aBound;
+      const lonA = a[0], lonB = b[0] + (a[0] >= 0 ? 360 : -360); // b를 a쪽 좌표계로 언랩
+      const t = (aBound - lonA) / ((lonB - lonA) || 1e-9);
+      const lat = a[1] + (b[1] - a[1]) * t;
+      cur.push([aBound, lat]);
+      segs.push(cur);
+      cur = [[bBound, lat]];
     }
   }
-  return [east, west].filter(r => r.length > 2);
+  // 링 순회가 절단점에서 시작하지 않았으므로 마지막 세그먼트는 첫 세그먼트의 앞부분
+  if (segs.length) { segs[0] = cur.concat(segs[0]); } else segs.push(cur);
+  return segs.filter(r => r.length > 2); // 각 세그먼트는 경계선을 따라 직선으로 닫힘(Z)
 }
 
 function ringBox(ring) { let b = [999, 999, -999, -999]; ring.forEach(([x, y]) => { if (x < b[0]) b[0] = x; if (x > b[2]) b[2] = x; if (y < b[1]) b[1] = y; if (y > b[3]) b[3] = y; }); return b; }
@@ -72,4 +78,31 @@ function geom2path(geometry, opts) {
   return d;
 }
 
-module.exports = { CFG, kx, W, H, proj, unproj, geom2path, simplifyRing, ringBox };
+// LineString/MultiLineString → SVG path d (강 등 폴리라인 — 닫지 않음)
+function lines2path(geometry, opts) {
+  const eps = opts.eps, prec = opts.prec || 0;
+  const mul = Math.pow(10, prec), r = n => Math.round(n * mul) / mul;
+  const lines = geometry.type === "LineString" ? [geometry.coordinates] : (geometry.type === "MultiLineString" ? geometry.coordinates : []);
+  let d = "";
+  lines.forEach(line => {
+    // 날짜변경선 교차 시 그 지점에서 선을 자른다
+    const parts = []; let cur = [];
+    for (let i = 0; i < line.length; i++) {
+      cur.push(line[i]);
+      const b = line[i + 1];
+      if (b && Math.abs(b[0] - line[i][0]) > 180) { parts.push(cur); cur = []; }
+    }
+    if (cur.length) parts.push(cur);
+    parts.forEach(part => {
+      if (part.length < 2) return;
+      let pts = rdp(part.map(([lon, lat]) => proj(lon, lat)), eps);
+      if (pts.length < 2) return;
+      const out = []; let px = null, py = null;
+      for (const p of pts) { const x = r(p[0]), y = r(p[1]); if (x !== px || y !== py) { out.push(x + "," + y); px = x; py = y; } }
+      if (out.length >= 2) d += "M" + out.join("L");
+    });
+  });
+  return d;
+}
+
+module.exports = { CFG, kx, W, H, proj, unproj, geom2path, lines2path, simplifyRing, ringBox };
