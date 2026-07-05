@@ -66,7 +66,11 @@
   <h2>삼국시대 지도 편집기 <span style="font-weight:400;font-size:.82rem;color:var(--soft)">· 지형 · 영토 · 도시</span></h2>
   <p class="med-sub">고도별 색 지형도(hypsometric) 위에 영토를 반투명으로 편집합니다. 지형이 다 비치고, 도시는 연도별로 소속·등급이 바뀝니다.</p>
 
-  <div class="med-bar" id="medYears"></div>
+  <div class="med-bar"><span class="med-lbl">연도</span><span id="medYears" style="display:contents"></span>
+    <input class="med-new" id="medNewYear" placeholder="연도" style="width:64px">
+    <input class="med-new" id="medNewYearNm" placeholder="설명(선택)" style="width:120px">
+    <button class="med-act" id="medAddYear">＋ 연도 추가</button>
+  </div>
   <div class="med-bar"><span class="med-lbl">나라</span><span id="medKings" style="display:contents"></span></div>
   <div class="med-bar">
     <span class="med-lbl">＋ 추가</span><span id="medPresets" style="display:contents"></span>
@@ -2621,7 +2625,8 @@
 
   var nations, state, cities, year="400", active="koguryo", showCity=true,
       locked=false, panMode=false, delMode=false, cityMode=false, clip=true, selCity=null, nid=100;
-  function initFresh(){ nations=JSON.parse(JSON.stringify(KINGS)); state=JSON.parse(JSON.stringify(SEEDS)); cities=JSON.parse(JSON.stringify(CITYSEED)); active="koguryo"; selCity=null; }
+  var yearsList;
+  function initFresh(){ nations=JSON.parse(JSON.stringify(KINGS)); state=JSON.parse(JSON.stringify(SEEDS)); cities=JSON.parse(JSON.stringify(CITYSEED)); yearsList=JSON.parse(JSON.stringify(YEARS)); year=yearsList[0].y; active="koguryo"; selCity=null; }
   initFresh();
 
   var svg=document.getElementById("medSvg"), NS="http://www.w3.org/2000/svg";
@@ -2629,17 +2634,20 @@
       gNeigh=document.getElementById("medNeigh"), gCity=document.getElementById("medCityG"), kb=document.getElementById("medKings");
 
   /* 데이터 계약: { nations, years:state, cities } — 뷰어는 relief PNG(CDN)만 별도로 로드 */
-  function snapshot(){ return { nations:nations, years:state, cities:cities }; }
-  function restore(o){ if(o&&o.nations&&o.years){ nations=o.nations; state=o.years; cities=o.cities||[]; active=nations[0]?nations[0].id:null; selCity=null; } }
+  function snapshot(){ return { nations:nations, yearsMeta:yearsList, years:state, cities:cities }; }
+  function restore(o){ if(o&&o.nations&&o.years){ nations=o.nations; state=o.years; cities=o.cities||[];
+    yearsList=o.yearsMeta || Object.keys(state).sort(function(a,b){return (+a)-(+b);}).map(function(y){return {y:y,nm:""};});
+    if(!yearsList.some(function(Y){return Y.y===year;})) year=yearsList[0]?yearsList[0].y:year;
+    active=nations[0]?nations[0].id:null; selCity=null; } }
   function saveData(){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(snapshot())); status("저장됨 ✓"); }catch(e){ status("저장 실패"); } }
-  function loadData(){ try{ var s=localStorage.getItem(STORE_KEY); if(s){ restore(JSON.parse(s)); buildBar(); buildCityPanel(); render(); status("불러옴 ✓"); } else status("저장된 데이터 없음"); }catch(e){ status("불러오기 실패"); } }
+  function loadData(){ try{ var s=localStorage.getItem(STORE_KEY); if(s){ restore(JSON.parse(s)); buildYearBar(); buildBar(); buildCityPanel(); render(); status("불러옴 ✓"); } else status("저장된 데이터 없음"); }catch(e){ status("불러오기 실패"); } }
   function status(m){ document.getElementById("medStatus").textContent=m; }
   function meta(id){ return nations.find(function(n){return n.id===id;}); }
 
   function addNation(name,color,seedPts){ var id="n"+(nid++); nations.push({id:id,name:name,color:color});
-    YEARS.forEach(function(Y){ state[Y.y][id]= seedPts? JSON.parse(JSON.stringify(seedPts)) : []; });
+    yearsList.forEach(function(Y){ state[Y.y][id]= seedPts? JSON.parse(JSON.stringify(seedPts)) : []; });
     active=id; document.getElementById("medCur").textContent=name; buildBar(); render(); }
-  function delNation(id){ nations=nations.filter(function(n){return n.id!==id;}); YEARS.forEach(function(Y){ delete state[Y.y][id]; });
+  function delNation(id){ nations=nations.filter(function(n){return n.id!==id;}); yearsList.forEach(function(Y){ delete state[Y.y][id]; });
     if(active===id){ active=nations[0]?nations[0].id:null; document.getElementById("medCur").textContent=active?meta(active).name:"—"; } buildBar(); render(); }
   function move(id,dir){ var i=nations.findIndex(function(n){return n.id===id;}); var j=i+dir; if(j<0||j>=nations.length)return;
     var t=nations[i]; nations[i]=nations[j]; nations[j]=t; buildBar(); render(); }
@@ -2732,14 +2740,14 @@
     if(!cityMode || selCity==null || !cities[selCity]){ wrap.style.display="none"; wrap.innerHTML=""; return; }
     var c=cities[selCity];
     var optHtml=nations.map(function(n){return '<option value="'+n.id+'">'+n.name+'</option>';}).join("");
-    var rows=YEARS.map(function(Y){ var on=!!c.y[Y.y];
+    var rows=yearsList.map(function(Y){ var on=!!c.y[Y.y];
       return '<tr><td><b>'+Y.y+'년</b></td><td><label><input type="checkbox" class="cyOn" data-y="'+Y.y+'" '+(on?"checked":"")+'> 표시</label></td>'
        +'<td>소속 <select class="cyOwner" data-y="'+Y.y+'" '+(on?"":"disabled")+'>'+optHtml+'</select></td>'
        +'<td>등급 <select class="cyType" data-y="'+Y.y+'" '+(on?"":"disabled")+'><option value="cap">수도 ★</option><option value="fort">성 ●</option></select></td></tr>'; }).join("");
     wrap.innerHTML='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>도시</b> <input id="cyName" class="med-new" style="width:130px" value="'+String(c.name).replace(/"/g,"&quot;")+'"><button class="med-act" id="cyDel">🗑 이 도시 삭제</button></div>'
       +'<table><tr><th>연도</th><th></th><th>소속 나라</th><th>등급</th></tr>'+rows+'</table>';
     wrap.style.display="block";
-    YEARS.forEach(function(Y){ var inf=c.y[Y.y]; if(inf){ var os=wrap.querySelector('.cyOwner[data-y="'+Y.y+'"]'); var ts=wrap.querySelector('.cyType[data-y="'+Y.y+'"]'); if(os)os.value=inf[0]; if(ts)ts.value=inf[1]; } });
+    yearsList.forEach(function(Y){ var inf=c.y[Y.y]; if(inf){ var os=wrap.querySelector('.cyOwner[data-y="'+Y.y+'"]'); var ts=wrap.querySelector('.cyType[data-y="'+Y.y+'"]'); if(os)os.value=inf[0]; if(ts)ts.value=inf[1]; } });
     wrap.querySelector("#cyName").oninput=function(){ c.name=this.value; render(); };
     wrap.querySelector("#cyDel").onclick=function(){ cities.splice(selCity,1); selCity=null; buildCityPanel(); render(); };
     wrap.querySelectorAll(".cyOn").forEach(function(cb){ cb.onchange=function(){ var y=cb.dataset.y;
@@ -2748,10 +2756,32 @@
     wrap.querySelectorAll(".cyType").forEach(function(sel){ sel.onchange=function(){ var y=sel.dataset.y; if(c.y[y]) c.y[y][1]=sel.value; render(); }; });
   }
 
+  // ---- 연도: 동적 추가/삭제 ----
   var yb=document.getElementById("medYears");
-  YEARS.forEach(function(Y,i){ var b=document.createElement("button"); b.className="med-act"+(i===0?" on":"");
-    b.innerHTML='<b style="font-family:Georgia,serif">'+Y.y+'년</b> · '+Y.nm;
-    b.onclick=function(){ year=Y.y; yb.querySelectorAll(".med-act").forEach(function(x){x.classList.remove("on");}); b.classList.add("on"); document.getElementById("medCurY").textContent=Y.y; render(); }; yb.appendChild(b); });
+  function buildYearBar(){ yb.innerHTML="";
+    yearsList.forEach(function(Y){ var chip=document.createElement("span"); chip.className="med-chip"+(Y.y===year?" on":"");
+      chip.innerHTML='<button class="csel"><b style="font-family:Georgia,serif">'+Y.y+'년</b>'+(Y.nm?' · '+Y.nm:'')+'</button><button class="cdel" title="연도 삭제">✕</button>';
+      chip.querySelector(".csel").onclick=function(){ year=Y.y; document.getElementById("medCurY").textContent=Y.y; buildYearBar(); buildCityPanel(); render(); };
+      chip.querySelector(".cdel").onclick=function(ev){ ev.stopPropagation();
+        if(yearsList.length<=1){ status("최소 1개 연도는 필요합니다"); return; }
+        if(!confirm(Y.y+"년을 삭제할까요? 이 연도의 영토·도시 설정이 지워집니다.")) return;
+        yearsList=yearsList.filter(function(x){return x.y!==Y.y;}); delete state[Y.y];
+        cities.forEach(function(c){ delete c.y[Y.y]; });
+        if(year===Y.y){ year=yearsList[0].y; document.getElementById("medCurY").textContent=year; }
+        buildYearBar(); buildCityPanel(); render(); status(Y.y+"년 삭제됨"); };
+      yb.appendChild(chip); }); }
+  document.getElementById("medAddYear").onclick=function(){
+    var v=(document.getElementById("medNewYear").value||"").trim();
+    if(!/^-?\d+$/.test(v)){ status("연도는 숫자로 입력하세요 (예: 550)"); return; }
+    if(state[v]){ status(v+"년은 이미 있습니다"); return; }
+    var nm=(document.getElementById("medNewYearNm").value||"").trim();
+    var srcY=year;
+    state[v]=JSON.parse(JSON.stringify(state[srcY]||{}));            // 현재 연도의 영토 복사
+    cities.forEach(function(c){ if(c.y[srcY]) c.y[v]=c.y[srcY].slice(); }); // 도시 소속·등급도 복사
+    yearsList.push({y:v,nm:nm}); yearsList.sort(function(a,b){ return (+a.y)-(+b.y); });
+    year=v; document.getElementById("medCurY").textContent=v;
+    document.getElementById("medNewYear").value=""; document.getElementById("medNewYearNm").value="";
+    buildYearBar(); buildCityPanel(); render(); status(v+"년 추가됨 — "+srcY+"년을 복사해 시작합니다. 바뀐 부분만 수정하세요"); };
 
   function buildBar(){ kb.innerHTML="";
     nations.forEach(function(n){ var chip=document.createElement("span"); chip.className="med-chip"+(n.id===active?" on":"");
@@ -2786,7 +2816,7 @@
   document.getElementById("btnCityVis").onclick=function(){ showCity=!showCity; this.classList.toggle("on",showCity); render(); };
   document.getElementById("medClip").onclick=function(){ clip=!clip; this.classList.toggle("on",clip); render(); };
   document.getElementById("medLock").onclick=function(){ locked=!locked; this.textContent=locked?"✎ 편집 재개":"✓ 잠금"; render(); };
-  document.getElementById("medReset").onclick=function(){ initFresh(); buildBar(); buildCityPanel(); render(); status("전체 초기화"); };
+  document.getElementById("medReset").onclick=function(){ initFresh(); buildYearBar(); buildBar(); buildCityPanel(); render(); status("전체 초기화"); };
   document.getElementById("medSave").onclick=saveData;
   document.getElementById("medLoad").onclick=loadData;
   document.getElementById("zIn").onclick=function(){ zoomAt(vb.x+vb.w/2,vb.y+vb.h/2,0.7); };
@@ -2794,7 +2824,7 @@
   document.getElementById("zRst").onclick=function(){ vb={x:0,y:0,w:BASE[0],h:BASE[1]}; applyVB(); render(); };
 
   try{ if(localStorage.getItem(STORE_KEY)) loadData(); }catch(e){}
-  buildBar(); render();
+  buildYearBar(); buildBar(); render();
 })();
 </script>
       </main>
