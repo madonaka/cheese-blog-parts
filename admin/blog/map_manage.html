@@ -2690,8 +2690,15 @@
     return d+"Z"; }
   function smoothMpPath(mp){ var d=""; mp.forEach(function(poly){ poly.forEach(function(ring){ d+=smoothRing(ring); }); }); return d; } // 영토 경계를 부드러운 곡선으로(데이터는 점 그대로)
   function mpPath(mp){ var d=""; mp.forEach(function(poly){ poly.forEach(function(ring){ d+="M"+ring.map(function(p){return rd(p[0])+","+rd(p[1]);}).join("L")+"Z"; }); }); return d; }
+  function densifyLL(P){ var n=P.length; if(n<3) return P; var out=[]; function pt(i){ return P[((i%n)+n)%n]; }
+    for(var i=0;i<n;i++){ var p0=pt(i-1),p1=pt(i),p2=pt(i+1),p3=pt(i+2);
+      var c1x=p1[0]+(p2[0]-p0[0])/6, c1y=p1[1]+(p2[1]-p0[1])/6, c2x=p2[0]-(p3[0]-p1[0])/6, c2y=p2[1]-(p3[1]-p1[1])/6;
+      out.push([p1[0],p1[1]]);
+      for(var st=1; st<6; st++){ var t=st/6, u=1-t;
+        out.push([ u*u*u*p1[0]+3*u*u*t*c1x+3*u*t*t*c2x+t*t*t*p2[0], u*u*u*p1[1]+3*u*u*t*c1y+3*u*t*t*c2y+t*t*t*p2[1] ]); } }
+    return out; } // 곡선화를 절단 "이전"에 적용 → 겹침 절단이 곡선 모양 그대로 잘라 겹침/틈 없음
   function cleanGeom(){ var order=nations.map(function(n){return n.id;});
-    var polys={}; order.forEach(function(id){ var pts=state[year][id]; polys[id]=(pts&&pts.length>2)?projPoly(pts):null; });
+    var polys={}; order.forEach(function(id){ var pts=state[year][id]; polys[id]=(pts&&pts.length>2)?projPoly(densifyLL(pts)):null; });
     var out={}; order.forEach(function(id,i){ if(!polys[id]){ out[id]=null; return; }
       var cl=[]; for(var j=i+1;j<order.length;j++){ if(polys[order[j]]) cl.push(polys[order[j]]); }
       try{ out[id]= cl.length? PC.difference.apply(PC,[polys[id]].concat(cl)) : [polys[id]]; }catch(e){ out[id]=[polys[id]]; } });
@@ -2724,7 +2731,7 @@
     var cityPts=[]; if(showCity||cityMode){ cities.forEach(function(c){ if(c.y[year]) cityPts.push(proj(c.lon,c.lat)); }); }
     var placedLabs=[]; // 나라 라벨끼리도 회피
     nations.forEach(function(n){ var g=geom[n.id]; if(!g||!g.length) return;
-      var path=document.createElementNS(NS,"path"); path.setAttribute("d",smoothMpPath(g)); path.setAttribute("class","med-terr");
+      var path=document.createElementNS(NS,"path"); path.setAttribute("d",mpPath(g)); path.setAttribute("class","med-terr");
       path.setAttribute("fill",n.color); path.setAttribute("fill-rule","evenodd"); path.setAttribute("stroke-width",1.1*k); gTerr.appendChild(path);
       var big=null,ba=-1; g.forEach(function(poly){var r=poly[0];var b=[9e9,9e9,-9e9,-9e9];r.forEach(function(p){if(p[0]<b[0])b[0]=p[0];if(p[0]>b[2])b[2]=p[0];if(p[1]<b[1])b[1]=p[1];if(p[1]>b[3])b[3]=p[1];});var a=(b[2]-b[0])*(b[3]-b[1]);if(a>ba){ba=a;big=b;}});
       if(big){ var fs=15.5*k, lx=(big[0]+big[2])/2, ly=(big[1]+big[3])/2+4*k;
