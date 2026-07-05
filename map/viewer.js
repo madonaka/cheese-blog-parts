@@ -55,7 +55,7 @@
     var svg=el("svg",{class:"cmap-svg",viewBox:map.viewBox}); svg.style.background=(cfg.ocean||"#5f8389");
     wrap.appendChild(svg);
     var zoomBox=document.createElement("div"); zoomBox.className="cmap-zoom";
-    zoomBox.innerHTML='<button data-z="in" aria-label="확대">＋</button><button data-z="out" aria-label="축소">－</button><button data-z="rst" aria-label="원래대로">⟳</button><button data-z="fs" aria-label="전체화면">⛶</button>';
+    zoomBox.innerHTML='<button data-z="in" aria-label="확대">＋</button><button data-z="out" aria-label="축소">－</button><button data-z="rst" aria-label="원래대로">⟳</button><button data-z="fs" aria-label="전체화면">⛶</button><button data-z="shot" aria-label="이미지 저장">📷</button>';
     wrap.appendChild(zoomBox);
 
     // 해안선 기준 = 벡터 land 하나로 통일: relief(투명 바다)·강·영토를 land 모양으로 클립
@@ -119,9 +119,72 @@
     document.addEventListener("fullscreenchange",function(){ setTimeout(draw,60); });
     window.addEventListener("resize",function(){ clearTimeout(render._rz); render._rz=setTimeout(draw,120); });
     svg.addEventListener("wheel",function(e){ e.preventDefault(); var xy=svgXY(e); zoomAt(xy[0],xy[1], e.deltaY<0?0.84:1.19); },{passive:false});
+    // ── 이미지 저장(현재 뷰 그대로 + 브랜드 헤더/푸터) ──
+    var EXPORT_CSS='.cmap-land{fill:#f2f0e8;stroke:#c7b998;stroke-linejoin:round}'
+      +'.cmap-rivers{opacity:.55}.cmap-river{fill:none;stroke:#3d6f8e;stroke-linejoin:round;stroke-linecap:round}.cmap-lake{fill:#3d6f8e}'
+      +'.cmap-terr{fill-opacity:.4;stroke:#fff;stroke-opacity:.8;stroke-linejoin:round}'
+      +'.cmap-terrlab{fill:#20242a;paint-order:stroke;stroke:#fff;stroke-linejoin:round;text-anchor:middle;font-weight:700}'
+      +'.cmap-citylab{fill:#1c1a12;paint-order:stroke;stroke:#fff;stroke-linejoin:round;font-weight:700}'
+      +'.cmap-region{fill:#514a38;text-anchor:middle;font-style:italic;font-weight:600;paint-order:stroke;stroke:rgba(255,255,255,.85);stroke-linejoin:round}'
+      +'text{font-family:"Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",sans-serif}';
+    var reliefDataUrl=null;
+    function blobToDataURL(b){ return new Promise(function(res){ var fr=new FileReader(); fr.onload=function(){ res(fr.result); }; fr.readAsDataURL(b); }); }
+    function loadImg(src){ return new Promise(function(res,rej){ var im=new Image(); im.crossOrigin="anonymous"; im.onload=function(){ res(im); }; im.onerror=rej; im.src=src; }); }
+    function exportImage(btn){
+      var brand=opts.brand||{};
+      var old=btn.textContent; btn.textContent="⏳"; btn.disabled=true;
+      var done=function(){ btn.textContent=old; btn.disabled=false; };
+      var p = reliefDataUrl ? Promise.resolve(reliefDataUrl)
+        : (reliefUrl ? fetch(reliefUrl).then(function(r){return r.blob();}).then(blobToDataURL).then(function(d){ reliefDataUrl=d; return d; }) : Promise.resolve(null));
+      Promise.all([p, brand.logo? loadImg(brand.logo).catch(function(){return null;}) : Promise.resolve(null),
+                   (document.fonts&&document.fonts.ready)?document.fonts.ready:Promise.resolve()])
+      .then(function(rs){ var reliefD=rs[0], logoImg=rs[1];
+        // 현재 뷰 그대로 SVG 복제 → 지형을 dataURL로 치환 → 스타일 내장
+        var cl=svg.cloneNode(true);
+        var mapW=1600, mapH=Math.round(mapW*vb.h/vb.w);
+        cl.setAttribute("width",mapW); cl.setAttribute("height",mapH);
+        var st=document.createElementNS(NS,"style"); st.textContent=EXPORT_CSS; cl.insertBefore(st, cl.firstChild);
+        var bg=el("rect",{x:vb.x,y:vb.y,width:vb.w,height:vb.h,fill:(cfg.ocean||"#5f8389")}); cl.insertBefore(bg, st.nextSibling);
+        var imEl=cl.querySelector("image");
+        if(imEl){ if(reliefD){ imEl.setAttribute("href",reliefD); imEl.setAttributeNS("http://www.w3.org/1999/xlink","href",reliefD); } else imEl.remove(); }
+        var svgStr=new XMLSerializer().serializeToString(cl);
+        var url=URL.createObjectURL(new Blob([svgStr],{type:"image/svg+xml;charset=utf-8"}));
+        return loadImg(url).then(function(mapImg){ URL.revokeObjectURL(url);
+          var headerH=150, footerH=64, W=mapW, H=headerH+mapH+footerH;
+          var cv=document.createElement("canvas"); cv.width=W; cv.height=H; var g=cv.getContext("2d");
+          g.fillStyle="#f7f4ec"; g.fillRect(0,0,W,H);
+          // 헤더: 로고 + 타이틀 + (우측) 현재 시대
+          var x=44;
+          if(logoImg){ var lh=88, lw=Math.round(logoImg.width*lh/logoImg.height); g.drawImage(logoImg,x,31,lw,lh); x+=lw+26; }
+          g.textBaseline="alphabetic"; g.fillStyle="#b8860b";
+          g.font="700 15px 'Noto Sans KR', sans-serif"; g.fillText((brand.subtitle||"HISTORICAL ATLAS").toUpperCase? (brand.subtitle||"역사 지도") : "역사 지도", x, 62);
+          g.fillStyle="#2a2013"; g.font="900 42px 'Noto Serif KR', Georgia, serif";
+          g.fillText(brand.title||"", x, 108);
+          var Y=years[yearIdx]; g.textAlign="right";
+          g.fillStyle="#2a2013"; g.font="900 44px 'Noto Serif KR', Georgia, serif"; g.fillText(Y.y+"년", W-44, 84);
+          if(Y.nm){ g.fillStyle="#6b6b6b"; g.font="500 18px 'Noto Sans KR', sans-serif"; g.fillText(Y.nm, W-44, 116); }
+          g.textAlign="left";
+          g.strokeStyle="#e3dccb"; g.lineWidth=2; g.beginPath(); g.moveTo(0,headerH-1); g.lineTo(W,headerH-1); g.stroke();
+          // 지도
+          g.drawImage(mapImg,0,headerH,mapW,mapH);
+          // 푸터
+          g.beginPath(); g.moveTo(0,headerH+mapH+1); g.lineTo(W,headerH+mapH+1); g.stroke();
+          g.fillStyle="#6b6b6b"; g.font="600 16px 'Noto Sans KR', sans-serif";
+          g.fillText(brand.footer||"", 44, H-24);
+          g.textAlign="right"; g.font="400 13px 'Noto Sans KR', sans-serif";
+          g.fillText("지형: SRTM 고도 · 하천: HydroRIVERS(HydroSHEDS)", W-44, H-24);
+          g.textAlign="left";
+          cv.toBlob(function(bl){ var a=document.createElement("a");
+            a.href=URL.createObjectURL(bl); a.download=(brand.fileBase||"cheese-history-map")+"-"+Y.y+".png";
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(function(){ URL.revokeObjectURL(a.href); },5000); done(); },"image/png");
+        });
+      }).catch(function(err){ console.error("[cmap export]",err); alert("이미지 저장에 실패했습니다: "+(err&&err.message||err)); done(); });
+    }
     zoomBox.querySelectorAll("button").forEach(function(b){ b.onclick=function(){
       if(b.dataset.z==="in") zoomAt(vb.x+vb.w/2, vb.y+vb.h/2, 0.7);
       else if(b.dataset.z==="out") zoomAt(vb.x+vb.w/2, vb.y+vb.h/2, 1.43);
+      else if(b.dataset.z==="shot"){ exportImage(b); }
       else if(b.dataset.z==="fs"){ if(document.fullscreenElement){ document.exitFullscreen&&document.exitFullscreen(); }
         else if(wrap.requestFullscreen){ wrap.requestFullscreen(); } }
       else { vb={x:0,y:0,w:W,h:H}; applyVB(); draw(); } }; });
