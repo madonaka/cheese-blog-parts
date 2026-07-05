@@ -1,0 +1,110 @@
+# Cheese History Map (역사 지도 부품)
+
+시대별 **영토·도시·강**을 실제 고도 기반 **hypsometric 음영 지형도** 위에 표시하는 지도 부품.
+timeline / era-timeline 부품과 같은 계열이며, **관리자에서 편집 → 공개 뷰어에서 표시**하는 구조다.
+
+## 구조
+
+```
+map/
+  cheese-map.css        공개 뷰어 스타일 (jsDelivr 배포)
+  viewer.js             공개 뷰어 (읽기 전용, 의존성 없음, window.CheeseMap)
+  example.html          뷰어 사용 예제
+  data/
+    samguk-map.json     published 지도 데이터 (겹침 절단 완료 → 뷰어는 라이브러리 불필요)
+  assets/
+    relief.png          음영 지형도 (~710KB, jsDelivr로 서빙)
+    rivers.json         강 경로 (major/minor)
+  admin/
+    editor.html         관리자 편집기 (지형·영토·도시 편집, 저장). polygon-clipping 포함.
+  build/                에셋 재생성 파이프라인 (Node)
+```
+
+## 관리자 ↔ 뷰어 분리
+
+- **편집(쓰기) = 관리자 전용.** `admin/editor.html` 로 편집하고 저장. 저장은 관리자 API(JWT `X-Admin-Token`)를 거치므로 사용자는 쓸 수 없다.
+- **표시(읽기) = 공개.** `viewer.js` 는 편집 기능이 전혀 없고, published 데이터를 받아 그리기만 한다. polygon-clipping(89KB) 같은 편집용 라이브러리 불필요 → 가볍다.
+- 겹침 절단은 **편집기가 저장 시 1회** 수행하고, 결과(정리된 폴리곤)를 published 로 내보낸다.
+
+## 데이터 계약 (published, `data/samguk-map.json`)
+
+```jsonc
+{
+  "viewBox": "0 0 784 516",
+  "cfg": { "WIN":[106,26,146,47], "SCALE":24, "pad":6, "ocean":"rgb(95,131,137)" },
+  "nations":  [ {"id":"koguryo","name":"고구려","color":"#c98a2b"}, ... ],
+  "years":    [ {"y":"400","nm":"삼국·가야 정립"}, ... ],
+  "territories": {                       // 연도별, 겹침 절단 완료된 SVG path (투영 좌표)
+    "400": [ {"id":"koguryo","d":"M..Z.."}, ... ]
+  },
+  "cities": [                            // 도시는 연도별 소속·등급이 바뀜
+    {"name":"한성","lon":127.0,"lat":37.55,
+     "y":{ "400":["baekje","cap"], "500":["koguryo","fort"], "600":["silla","fort"] }}
+  ]
+}
+```
+- 영토 `d` 는 **투영까지 끝난 path** (viewBox 좌표). 도시는 lon/lat 로 두고 뷰어가 `cfg` 로 투영.
+- 등급: `"cap"`=수도(★), `"fort"`=성/거점(●). 색은 소속 나라 색.
+
+## Firestore 저장 (동적)
+
+문서: `historyMaps/{mapId}` (예: `historyMaps/samguk`)
+```jsonc
+{
+  "raw":       { /* 편집기 상태: nations, years(lon/lat 원본), cities */ },  // 재편집용
+  "published": { /* 위 계약 형식 (겹침 절단 완료) */ },                      // 뷰어가 읽음
+  "updatedAt": <timestamp>
+}
+```
+- **관리자 저장:** `raw` 를 편집 → 저장 시 겹침 절단하여 `published` 계산 → 두 필드 함께 write (JWT 필요).
+- **공개 뷰어:** `published` 만 read.
+
+## jsDelivr 배포 (지형 PNG / CSS / JS)
+
+repo(`madonaka/cheese-blog-parts`)에 커밋하면 다음 URL로 서빙된다:
+```
+https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/map/cheese-map.css
+https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/map/viewer.js
+https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/map/assets/relief.png
+https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/map/assets/rivers.json
+```
+> 지형 PNG는 HTML에 인라인하지 말고 위 URL로 로드한다(1회 캐시). 갱신 시 `?v=YYYYMMDD` 쿼리로 캐시 무효화.
+
+## Blogger / 페이지에서 사용
+
+```html
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/map/cheese-map.css">
+<div id="samgukMap"></div>
+<script src="https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/map/viewer.js"></script>
+<script>
+  // map = Firestore published 문서 (또는 CDN JSON)
+  fetch('https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/map/data/samguk-map.json')
+    .then(r=>r.json()).then(function(map){
+      fetch('https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/map/assets/rivers.json')
+        .then(r=>r.json()).then(function(rivers){
+          CheeseMap.render(document.getElementById('samgukMap'), {
+            title:'삼국시대 동아시아', map:map, rivers:rivers,
+            reliefUrl:'https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/map/assets/relief.png'
+          });
+        });
+    });
+</script>
+```
+
+## 에셋 재생성 (build/)
+
+Node 필요(pngjs). 원본 좌표계 고정: `WIN=[106,26,146,47], SCALE=24, pad=6 → viewBox 0 0 784 516`.
+- `build-relief4.js` — AWS Terrarium 고도타일(z7) → 음영 지형도 PNG (bilinear+블러+hypsometric)
+- `convert-rivers3.js` — Natural Earth 10m 하천 → 강 경로(끊긴 조각 stitch)
+- `convert-land.js` / `convert-ea.js` — 해안선 / 동아시아 역사 국경(참고용)
+- `build-package.js` — seeds/cities → published 데이터 + 에셋 생성
+
+## 데이터 출처
+
+- 고도: **AWS Terrarium** elevation tiles (`s3.amazonaws.com/elevation-tiles-prod`)
+- 해안선/하천/역사국경: **Natural Earth**, **aourednik/historical-basemaps** (오픈 데이터)
+
+## 다른 시대로 확장
+
+`seeds-*.json`(연도별 영토 lon/lat) + `cities-*.json` 만 새로 만들고 `build-package.js` 를 돌리면
+같은 지형 위에 다른 시대(예: 후삼국, 고려-거란) 지도를 찍어낼 수 있다. 지형·강 에셋은 재사용.
