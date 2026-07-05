@@ -1,5 +1,5 @@
 const fs=require("fs"); const {PNG}=require("pngjs");
-const RAW=JSON.parse(fs.readFileSync("hydro-raw2.json","utf8"));
+const RAW=JSON.parse(fs.readFileSync("hydro-raw3.json","utf8"));
 const CFG={ WIN:[106,26,146,47], SCALE:24, pad:6 };
 const kx=Math.cos((CFG.WIN[1]+CFG.WIN[3])/2*Math.PI/180);
 function proj(lon,lat){ return [ (lon-CFG.WIN[0])*kx*CFG.SCALE+CFG.pad, (CFG.WIN[3]-lat)*CFG.SCALE+CFG.pad ]; }
@@ -43,7 +43,7 @@ function exitToSea(line,atStart,maxSteps){
     for(let s=1;s<bestDist;s++){ const nx=p0[0]+dx*STEP*s, ny=p0[1]+dy*STEP*s;
       if(!inLandLL(nx,ny)){ bestDist=s; bestDir=[dx,dy]; break; } } }
   if(!bestDir) return false;
-  const q=[p0[0]+bestDir[0]*STEP*(bestDist+4), p0[1]+bestDir[1]*STEP*(bestDist+4)];
+  const q=[p0[0]+bestDir[0]*STEP*(bestDist+2), p0[1]+bestDir[1]*STEP*(bestDist+2)];
   if(atStart) line.unshift(q); else line.push(q);
   return true;
 }
@@ -86,7 +86,7 @@ function extend(r){ const line=r.p, inf=endInfo(line);
 }
 
 // 연속 굵기: 유역면적 → w = 0.5*log10(U)-1.0, [0.32, 2.3], 0.1 단위 양자화
-function widthOf(U){ return Math.max(0.32, Math.min(2.3, 0.5*Math.log10(Math.max(10,U))-1.0)); }
+function widthOf(U,Q){ return Math.max(0.26, Math.min(2.0, 0.30*Math.log10(Math.max(10,U)) + 0.28*Math.log10(Math.max(0.5,Q)) - 1.1)); } // 유역+유량 결합 — 대비 강화
 const q=w=>Math.round(w*10)/10;
 
 function rdp(p,e){ if(p.length<3)return p; let dm=0,idx=0;const a=p[0],b=p[p.length-1];
@@ -104,13 +104,13 @@ function inK(p){ return p[0]>=KBOX[0]&&p[0]<=KBOX[2]&&p[1]>=KBOX[1]&&p[1]<=KBOX[
 const acc={};
 RAW.forEach(r=>{ if(r.u<8000 && !(inK(r.p[0])||inK(r.p[r.p.length-1]))) return;
   extend(r);
-  const w=q(widthOf(r.u));
+  const w=q(widthOf(r.u, r.q||1));
   const eps=w>=1.2?0.05:(w>=0.7?0.07:0.09);
   const d=toPath(r.p,eps); if(!d) return;
   acc[w]=(acc[w]||"")+d; });
 
 const classes=Object.keys(acc).map(k=>({w:+k,d:acc[k]})).sort((a,b)=>a.w-b.w);
-fs.writeFileSync("rivers6.json", JSON.stringify({viewBox:`0 0 ${W} ${H}`, classes}));
+fs.writeFileSync("rivers7.json", JSON.stringify({viewBox:`0 0 ${W} ${H}`, classes}));
 let tot=0; classes.forEach(c=>{ tot+=c.d.length; });
 console.log("classes:",classes.length,"| widths:",classes.map(c=>c.w).join(","));
-console.log("total path:",Math.round(tot/1024)+"KB | rivers6.json",Math.round(fs.statSync("rivers6.json").size/1024)+"KB");
+console.log("total path:",Math.round(tot/1024)+"KB | rivers7.json",Math.round(fs.statSync("rivers6.json").size/1024)+"KB");

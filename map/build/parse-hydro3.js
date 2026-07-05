@@ -28,7 +28,7 @@ while(off+8<=shp.length){
         for(let p=0;p<numParts;p++){
           const line=[];
           for(let k=parts[p];k<parts[p+1];k++) line.push([shp.readDoubleLE(ptsOff+k*16), shp.readDoubleLE(ptsOff+k*16+8)]);
-          if(line.length>1) kept.push({u:U, m:(nd===0&&endo===0)?1:0, p:line});
+          if(line.length>1) kept.push({u:U, q:num(idx,70,10), m:(nd===0&&endo===0)?1:0, p:line});
         }
       }
     }
@@ -36,5 +36,5 @@ while(off+8<=shp.length){
   off=rs+contentLen; idx++;
 }
 console.log("kept:",kept.length,"| mouths:",kept.filter(r=>r.m).length);
-fs.writeFileSync("hydro-raw2.json", JSON.stringify(kept));
-console.log("hydro-raw2.json", Math.round(fs.statSync("hydro-raw2.json").size/1048576)+"MB");
+fs.writeFileSync("hydro-raw3.json", JSON.stringify(kept));
+console.log("hydro-raw3.json", Math.round(fs.statSync("hydro-raw3.json").size/1048576)+"MB");
