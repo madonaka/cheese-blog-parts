@@ -13,8 +13,9 @@ map/
   data/
     samguk-map.json     published 지도 데이터 (겹침 절단 완료 → 뷰어는 라이브러리 불필요)
   assets/
-    relief.png          음영 지형도 (~710KB, jsDelivr로 서빙)
-    rivers.json         강 경로 (major/minor)
+    relief.png          음영 지형도 (바다=투명, jsDelivr로 서빙)
+    rivers.json         강 경로 (major/minor, 하구는 바다쪽으로 연장)
+    land.json           벡터 해안선 — 해안선의 단일 기준. 뷰어가 지형·강·영토를 이 모양으로 클립
   admin/
     editor.html         관리자 편집기 (지형·영토·도시 편집, 저장). polygon-clipping 포함.
   build/                에셋 재생성 파이프라인 (Node)
@@ -78,16 +79,17 @@ https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/map/assets/rivers.js
 <script src="https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/map/viewer.js"></script>
 <script>
   // map = Firestore published 문서 (또는 CDN JSON)
-  fetch('https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/map/data/samguk-map.json')
-    .then(r=>r.json()).then(function(map){
-      fetch('https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/map/assets/rivers.json')
-        .then(r=>r.json()).then(function(rivers){
-          CheeseMap.render(document.getElementById('samgukMap'), {
-            title:'삼국시대 동아시아', map:map, rivers:rivers,
-            reliefUrl:'https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/map/assets/relief.png'
-          });
-        });
+  var CDN='https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/map/';
+  Promise.all([
+    fetch(CDN+'data/samguk-map.json').then(function(r){return r.json();}),
+    fetch(CDN+'assets/rivers.json').then(function(r){return r.json();}),
+    fetch(CDN+'assets/land.json').then(function(r){return r.json();})
+  ]).then(function(res){
+    CheeseMap.render(document.getElementById('samgukMap'), {
+      title:'삼국시대 동아시아', map:res[0], rivers:res[1], land:res[2].land,
+      reliefUrl:CDN+'assets/relief.png'
     });
+  });
 </script>
 ```
 

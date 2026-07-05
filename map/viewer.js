@@ -23,7 +23,7 @@
     for(var i=0;i<m.length-1;i+=2){ var x=+m[i],y=+m[i+1]; if(x<b[0])b[0]=x;if(x>b[2])b[2]=x;if(y<b[1])b[1]=y;if(y>b[3])b[3]=y; } return b; }
 
   function render(mount, opts){
-    var map=opts.map, rivers=opts.rivers||{major:"",minor:""}, reliefUrl=opts.reliefUrl;
+    var map=opts.map, rivers=opts.rivers||{major:"",minor:""}, reliefUrl=opts.reliefUrl, landD=opts.land||"";
     var cfg=map.cfg, kx=Math.cos((cfg.WIN[1]+cfg.WIN[3])/2*Math.PI/180);
     function proj(lon,lat){ return [ (lon-cfg.WIN[0])*kx*cfg.SCALE+cfg.pad, (cfg.WIN[3]-lat)*cfg.SCALE+cfg.pad ]; }
     var COLOR={}; map.nations.forEach(function(n){ COLOR[n.id]=n.color; });
@@ -45,9 +45,17 @@
     mount.appendChild(lb);
 
     var svg=el("svg",{class:"cmap-svg",viewBox:map.viewBox}); svg.style.background=(cfg.ocean||"#5f8389");
-    if(reliefUrl){ var img=el("image",{x:0,y:0,width:map.viewBox.split(" ")[2],height:map.viewBox.split(" ")[3],preserveAspectRatio:"none"}); img.setAttributeNS("http://www.w3.org/1999/xlink","href",reliefUrl); img.setAttribute("href",reliefUrl); svg.appendChild(img); }
-    var gRiver=el("g",{}); gRiver.appendChild(el("path",{class:"cmap-river mn",d:rivers.minor||""})); gRiver.appendChild(el("path",{class:"cmap-river mj",d:rivers.major||""})); svg.appendChild(gRiver);
-    var gTerr=el("g",{}), gTL=el("g",{}), gCity=el("g",{}); svg.appendChild(gTerr); svg.appendChild(gTL); svg.appendChild(gCity);
+    // 해안선 기준 = 벡터 land 하나로 통일: relief(투명 바다)·강·영토를 land 모양으로 클립
+    var clipId=null;
+    if(landD){
+      clipId="cmapClip"+(++render._n||(render._n=1));
+      var defs=el("defs",{}); var cp=el("clipPath",{id:clipId}); cp.appendChild(el("path",{d:landD})); defs.appendChild(cp); svg.appendChild(defs);
+      svg.appendChild(el("path",{class:"cmap-land",d:landD}));
+    }
+    function clipped(g){ if(clipId) g.setAttribute("clip-path","url(#"+clipId+")"); return g; }
+    if(reliefUrl){ var img=el("image",{x:0,y:0,width:map.viewBox.split(" ")[2],height:map.viewBox.split(" ")[3],preserveAspectRatio:"none"}); img.setAttributeNS("http://www.w3.org/1999/xlink","href",reliefUrl); img.setAttribute("href",reliefUrl); if(clipId)img.setAttribute("clip-path","url(#"+clipId+")"); svg.appendChild(img); }
+    var gRiver=clipped(el("g",{})); gRiver.appendChild(el("path",{class:"cmap-river mn",d:rivers.minor||""})); gRiver.appendChild(el("path",{class:"cmap-river mj",d:rivers.major||""})); svg.appendChild(gRiver);
+    var gTerr=clipped(el("g",{})), gTL=el("g",{}), gCity=el("g",{}); svg.appendChild(gTerr); svg.appendChild(gTL); svg.appendChild(gCity);
     mount.appendChild(svg);
 
     // 범례
