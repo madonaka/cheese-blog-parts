@@ -74,7 +74,10 @@
       gTerr.innerHTML=""; gTL.innerHTML=""; gCity.innerHTML="";
       if(vis.terr){ (map.territories[year]||[]).forEach(function(t){
         gTerr.appendChild(el("path",{class:"cmap-terr",d:t.d,fill:COLOR[t.id]||"#888","fill-rule":"evenodd"}));
-        var b=pbox(t.d); if(b){ var tx=el("text",{x:(b[0]+b[2])/2,y:(b[1]+b[3])/2,class:"cmap-terrlab"}); tx.textContent=NAME[t.id]||""; gTL.appendChild(tx); } }); }
+        var b=pbox(t.d); if(b){ var tx=el("text",{x:(b[0]+b[2])/2,y:(b[1]+b[3])/2,class:"cmap-terrlab"});
+          var m=/^#?([0-9a-f]{6})$/i.exec(COLOR[t.id]||""); // 나라색을 어둡게 → 라벨이 영토와 같은 계열
+          if(m){ var v=parseInt(m[1],16); tx.style.fill="rgb("+Math.round(((v>>16)&255)*0.5)+","+Math.round(((v>>8)&255)*0.5)+","+Math.round((v&255)*0.5)+")"; }
+          tx.textContent=NAME[t.id]||""; gTL.appendChild(tx); } }); }
       if(vis.city){ map.cities.forEach(function(c){ var info=c.y[year]; if(!info)return; var p=proj(c.lon,c.lat), col=COLOR[info[0]]||"#555"; var g=el("g",{});
         if(info[1]==="cap"){ var s=el("text",{x:p[0],y:p[1]+5,"text-anchor":"middle","font-size":16,fill:col,style:"paint-order:stroke;stroke:#fff;stroke-width:2.4px"}); s.textContent="★"; g.appendChild(s); }
         else g.appendChild(el("circle",{cx:p[0],cy:p[1],r:4,fill:col,stroke:"#fff","stroke-width":1}));

@@ -2651,6 +2651,8 @@
   function loadData(){ try{ var s=localStorage.getItem(STORE_KEY); if(s){ restore(JSON.parse(s)); buildYearBar(); buildBar(); buildCityPanel(); render(); status("불러옴 ✓"); } else status("저장된 데이터 없음"); }catch(e){ status("불러오기 실패"); } }
   function status(m){ document.getElementById("medStatus").textContent=m; }
   function meta(id){ return nations.find(function(n){return n.id===id;}); }
+  function darken(hex){ var m=/^#?([0-9a-f]{6})$/i.exec(hex||""); if(!m) return "#2a2417";
+    var v=parseInt(m[1],16); return "rgb("+Math.round(((v>>16)&255)*0.5)+","+Math.round(((v>>8)&255)*0.5)+","+Math.round((v&255)*0.5)+")"; }
 
   function addNation(name,color,seedPts){ var id="n"+(nid++); nations.push({id:id,name:name,color:color});
     yearsList.forEach(function(Y){ state[Y.y][id]= seedPts? JSON.parse(JSON.stringify(seedPts)) : []; });
@@ -2682,14 +2684,17 @@
     return out; }
 
   function drawCities(){ gCity.innerHTML=""; if(!showCity && !cityMode) return; var k=vb.w/BASE[0];
+    // 줌 단계별 표시(구글맵식): 축소 상태(k>0.6)에선 수도 ★만(이름 없음), 성은 숨김 → 나라 이름이 주인공
+    var wide = !cityMode && k>0.6;
     cities.forEach(function(c,ci){ var info=c.y[year]; if(!info) return; var col=(meta(info[0])&&meta(info[0]).color)||"#555"; var p=proj(c.lon,c.lat);
+      if(wide && info[1]!=="cap") return;
       if(ci===selCity && cityMode){ var ring=document.createElementNS(NS,"circle"); ring.setAttribute("cx",p[0]);ring.setAttribute("cy",p[1]);ring.setAttribute("r",9*k);ring.setAttribute("class","med-citysel");ring.setAttribute("stroke-width",1.3*k); gCity.appendChild(ring); }
       var mk;
       if(info[1]==="cap"){ mk=document.createElementNS(NS,"text"); mk.setAttribute("x",p[0]); mk.setAttribute("y",p[1]+5.5*k); mk.setAttribute("text-anchor","middle"); mk.setAttribute("font-size",16*k); mk.setAttribute("fill",col); mk.setAttribute("style","paint-order:stroke;stroke:#fff;stroke-width:"+(2.4*k)+"px"); mk.textContent="★"; }
       else { mk=document.createElementNS(NS,"circle"); mk.setAttribute("cx",p[0]); mk.setAttribute("cy",p[1]); mk.setAttribute("r",4.2*k); mk.setAttribute("fill",col); mk.setAttribute("stroke-width",1*k); }
       mk.setAttribute("class","med-citymk"); mk.dataset.ci=ci; mk.style.pointerEvents=cityMode?"auto":"none"; if(cityMode)mk.style.cursor="pointer";
       gCity.appendChild(mk);
-      var lab=document.createElementNS(NS,"text"); lab.setAttribute("x",p[0]+(info[1]==="cap"?9:7)*k); lab.setAttribute("y",p[1]+4*k); lab.setAttribute("class","med-citylab"); lab.setAttribute("font-size",11*k); lab.textContent=(info[2]||c.name); gCity.appendChild(lab);
+      if(!wide){ var lab=document.createElementNS(NS,"text"); lab.setAttribute("x",p[0]+(info[1]==="cap"?9:7)*k); lab.setAttribute("y",p[1]+4*k); lab.setAttribute("class","med-citylab"); lab.setAttribute("font-size",11*k); lab.textContent=(info[2]||c.name); gCity.appendChild(lab); }
     }); }
 
   function render(){
@@ -2705,7 +2710,8 @@
       path.setAttribute("fill",n.color); path.setAttribute("fill-rule","evenodd"); path.setAttribute("stroke-width",1.1*k); gTerr.appendChild(path);
       var big=null,ba=-1; g.forEach(function(poly){var r=poly[0];var b=[9e9,9e9,-9e9,-9e9];r.forEach(function(p){if(p[0]<b[0])b[0]=p[0];if(p[0]>b[2])b[2]=p[0];if(p[1]<b[1])b[1]=p[1];if(p[1]>b[3])b[3]=p[1];});var a=(b[2]-b[0])*(b[3]-b[1]);if(a>ba){ba=a;big=b;}});
       if(big){ var t=document.createElementNS(NS,"text"); t.setAttribute("x",(big[0]+big[2])/2); t.setAttribute("y",(big[1]+big[3])/2+4*k);
-        t.setAttribute("class","med-lab"); t.setAttribute("font-size",12*k); t.textContent=n.name; gLab.appendChild(t); } });
+        t.setAttribute("class","med-lab"); t.setAttribute("font-size",15.5*k); t.style.fill=darken(n.color); t.style.letterSpacing=(0.14*15.5*k)+"px";
+        t.textContent=n.name; gLab.appendChild(t); } });
     drawCities();
     if(locked||panMode||cityMode||!active) return;
     var pts=state[year][active]||(state[year][active]=[]);
