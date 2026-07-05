@@ -48,6 +48,7 @@ function exitToSea(line,atStart,maxSteps){
       var pen=dAng*14; } else var pen=0;
     const dx=Math.cos(ang), dy=Math.sin(ang);
     for(let s=1;s<=maxSteps;s++){ const nx=p0[0]+dx*STEP*s, ny=p0[1]+dy*STEP*s;
+      if(elevAt(nx,ny)>40) break; // 고지 횡단 금지 — 반도·능선 가로지르는 직선 방지(저지대 회랑만 허용)
       if(!inLandLL(nx,ny)){ const sc=s+pen; if(!best||sc<best.score) best={dx:dx,dy:dy,dist:s,score:sc}; break; }
       if(best&&s+pen>=best.score) break; }
   }
@@ -112,8 +113,9 @@ function extend(r){ const line=r.p, inf=endInfo(line);
     exitToSea(line,atStart,120); // 갯벌·간척지 폭까지 커버(최대 2.4°)
     return;
   }
-  if(inf.aDeg===1&&inf.aE<5){ descentTrace(line,true,10); exitToSea(line,true,30); }
-  if(inf.bDeg===1&&inf.bE<5){ descentTrace(line,false,10); exitToSea(line,false,30); }
+  // 일반(비하구) 말단: 해안 바로 앞(고도<3m)일 때만 짧게(0.16°) — 평야 내륙에서 긴 직선 발사 방지
+  if(inf.aDeg===1&&inf.aE<3){ descentTrace(line,true,6); exitToSea(line,true,8); }
+  if(inf.bDeg===1&&inf.bE<3){ descentTrace(line,false,6); exitToSea(line,false,8); }
 }
 
 // 연속 굵기: 유역면적 → w = 0.5*log10(U)-1.0, [0.32, 2.3], 0.1 단위 양자화
@@ -153,7 +155,7 @@ RAW.forEach(r=>{ if(r.u<8000 && !(inK(r.p[0])||inK(r.p[r.p.length-1]))) return;
 const st=statsOf(processed);
 console.log("품질: 긴 직선세그(>0.3°)", st.longSeg, "| 급반전(>150°)", st.sharp);
 const classes=Object.keys(acc).map(k=>({w:+k,d:acc[k]})).sort((a,b)=>a.w-b.w);
-fs.writeFileSync("rivers8.json", JSON.stringify({viewBox:`0 0 ${W} ${H}`, classes}));
+fs.writeFileSync("rivers9.json", JSON.stringify({viewBox:`0 0 ${W} ${H}`, classes}));
 let tot=0; classes.forEach(c=>{ tot+=c.d.length; });
 console.log("classes:",classes.length,"| widths:",classes.map(c=>c.w).join(","));
-console.log("total path:",Math.round(tot/1024)+"KB | rivers8.json",Math.round(fs.statSync("rivers6.json").size/1024)+"KB");
+console.log("total path:",Math.round(tot/1024)+"KB | rivers9.json",Math.round(fs.statSync("rivers6.json").size/1024)+"KB");
