@@ -78,7 +78,7 @@
       if(vis.city){ map.cities.forEach(function(c){ var info=c.y[year]; if(!info)return; var p=proj(c.lon,c.lat), col=COLOR[info[0]]||"#555"; var g=el("g",{});
         if(info[1]==="cap"){ var s=el("text",{x:p[0],y:p[1]+5,"text-anchor":"middle","font-size":16,fill:col,style:"paint-order:stroke;stroke:#fff;stroke-width:2.4px"}); s.textContent="★"; g.appendChild(s); }
         else g.appendChild(el("circle",{cx:p[0],cy:p[1],r:4,fill:col,stroke:"#fff","stroke-width":1}));
-        var lab=el("text",{x:p[0]+(info[1]==="cap"?9:7),y:p[1]+4,class:"cmap-citylab"}); lab.textContent=c.name; g.appendChild(lab); gCity.appendChild(g); }); }
+        var lab=el("text",{x:p[0]+(info[1]==="cap"?9:7),y:p[1]+4,class:"cmap-citylab"}); lab.textContent=(info[2]||c.name); g.appendChild(lab); gCity.appendChild(g); }); } // info[2]=시대별 이름(개칭)
       var Y=null; map.years.forEach(function(y){ if(y.y===year)Y=y; }); sub.textContent=Y?(Y.y+"년 · "+Y.nm):"";
     }
 
