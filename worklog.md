@@ -1,5 +1,7 @@
 # 작업 로그
 
+- 2026-07-05 | 스토어프론트 | 역사 지도 페이지(/history-map.html)+Firestore 연동·규칙·에셋 동기화 | T-009 | 1042446
+- 2026-07-05 | 관리자 | 편집기 Firestore 초기화 initializeFirestore(longPolling) 준수 | T-009 | 07bbb65
 - 2026-07-05 | 관리자 | 지도 편집기 Firestore 발행(☁ 발행/서버 불러오기, published 생성) | T-009 | 7ba5813
 - 2026-07-05 | 관리자 | feature/map-part → main 머지·푸시(jsDelivr 라이브) | T-008 | daadaf2
 - 2026-07-05 | 관리자 | 🏷 지역 모드(지도 직접 추가·이동·이름변경·삭제)·지역명 가독성 강화 | T-008 | ab79c57
