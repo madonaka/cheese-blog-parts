@@ -114,7 +114,7 @@
 
       // 지역 통칭(요동·말갈 등)
       if(map.regions){ map.regions.forEach(function(r){ if(!r.y||!r.y[year]) return; var p=proj(r.lon,r.lat);
-        var t2=el("text",{x:p[0],y:p[1],class:"cmap-region","font-size":12*k});
+        var t2=el("text",{x:p[0],y:p[1],class:"cmap-region"}); t2.style.fontSize=(12*k)+"px";
         t2.style.letterSpacing=(0.1*12*k)+"px"; t2.style.strokeWidth=(2.2*k)+"px";
         t2.textContent=r.name; gTL.appendChild(t2); }); }
 
@@ -128,7 +128,7 @@
           var s=el("text",{x:p[0],y:p[1]+ss*0.34,"text-anchor":"middle","font-size":ss,fill:col,
             style:"paint-order:stroke;stroke:#fff;stroke-width:"+((wide?1.5:2.4)*k)+"px"}); s.textContent="★"; g.appendChild(s); }
         else g.appendChild(el("circle",{cx:p[0],cy:p[1],r:4*k,fill:col,stroke:"#fff","stroke-width":1*k}));
-        if(!wide){ var lab=el("text",{x:p[0]+(info[1]==="cap"?9:7)*k,y:p[1]+4*k,class:"cmap-citylab","font-size":11*k});
+        if(!wide){ var lab=el("text",{x:p[0]+(info[1]==="cap"?9:7)*k,y:p[1]+4*k,class:"cmap-citylab"}); lab.style.fontSize=(11*k)+"px";
           lab.style.strokeWidth=(2.4*k)+"px"; lab.textContent=(info[2]||c.name); g.appendChild(lab); }
         gCity.appendChild(g); }); }
 
@@ -143,7 +143,7 @@
           || placedLabs.some(function(q){ return Math.abs(q[0]-lx)<halfW+q[2] && Math.abs(q[1]-y)<fs; }); }
         for(var tr=0; tr<5 && clash(ly); tr++){ ly += (tr%2? -1:1)*(tr+1)*fs*0.95; }
         placedLabs.push([lx,ly,halfW]);
-        var tx=el("text",{x:lx,y:ly,class:"cmap-terrlab","font-size":fs});
+        var tx=el("text",{x:lx,y:ly,class:"cmap-terrlab"}); tx.style.fontSize=fs+"px";
         tx.style.letterSpacing=(0.14*fs)+"px"; tx.style.strokeWidth=(3*k)+"px"; tx.style.fill=darken(COLOR[t.id]);
         tx.textContent=nm; gTL.appendChild(tx); }); }
 
