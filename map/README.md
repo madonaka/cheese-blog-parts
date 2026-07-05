@@ -14,7 +14,7 @@ map/
     samguk-map.json     published 지도 데이터 (겹침 절단 완료 → 뷰어는 라이브러리 불필요)
   assets/
     relief.png          음영 지형도 (바다=투명, jsDelivr로 서빙)
-    rivers.json         강 경로 (major/minor, 하구는 바다쪽으로 연장)
+    rivers.json         강 경로 (HydroRIVERS 기반, 유량등급별 굵기 classes:[{w,d}], 하구 연장)
     land.json           벡터 해안선 — 해안선의 단일 기준. 뷰어가 지형·강·영토를 이 모양으로 클립
   admin/
     editor.html         관리자 편집기 (지형·영토·도시 편집, 저장). polygon-clipping 포함.
@@ -96,15 +96,16 @@ https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/map/assets/rivers.js
 ## 에셋 재생성 (build/)
 
 Node 필요(pngjs). 원본 좌표계 고정: `WIN=[106,26,146,47], SCALE=24, pad=6 → viewBox 0 0 784 516`.
-- `build-relief4.js` — AWS Terrarium 고도타일(z7) → 음영 지형도 PNG (bilinear+블러+hypsometric)
-- `convert-rivers3.js` — Natural Earth 10m 하천 → 강 경로(끊긴 조각 stitch)
+- `build-relief6.js` — AWS Terrarium 고도타일(z8, 580장) → 음영 지형도 PNG 3072px (bilinear+hypsometric, 바다 투명)
+- `parse-hydro.js` + `convert-rivers5.js` — HydroRIVERS(Asia)에서 하천 추출 → 유량등급별 강 경로
 - `convert-land.js` / `convert-ea.js` — 해안선 / 동아시아 역사 국경(참고용)
 - `build-package.js` — seeds/cities → published 데이터 + 에셋 생성
 
 ## 데이터 출처
 
 - 고도: **AWS Terrarium** elevation tiles (`s3.amazonaws.com/elevation-tiles-prod`)
-- 해안선/하천/역사국경: **Natural Earth**, **aourednik/historical-basemaps** (오픈 데이터)
+- 하천: **HydroRIVERS v1.0** (HydroSHEDS, https://www.hydrosheds.org — 라이선스상 출처 표기 필요)
+- 해안선/역사국경: **Natural Earth**, **aourednik/historical-basemaps** (오픈 데이터)
 
 ## 다른 시대로 확장
 
