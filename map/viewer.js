@@ -52,7 +52,7 @@
     var svg=el("svg",{class:"cmap-svg",viewBox:map.viewBox}); svg.style.background=(cfg.ocean||"#5f8389");
     wrap.appendChild(svg);
     var zoomBox=document.createElement("div"); zoomBox.className="cmap-zoom";
-    zoomBox.innerHTML='<button data-z="in" aria-label="확대">＋</button><button data-z="out" aria-label="축소">－</button><button data-z="rst" aria-label="원래대로">⟳</button>';
+    zoomBox.innerHTML='<button data-z="in" aria-label="확대">＋</button><button data-z="out" aria-label="축소">－</button><button data-z="rst" aria-label="원래대로">⟳</button><button data-z="fs" aria-label="전체화면">⛶</button>';
     wrap.appendChild(zoomBox);
 
     // 해안선 기준 = 벡터 land 하나로 통일: relief(투명 바다)·강·영토를 land 모양으로 클립
@@ -90,33 +90,55 @@
       vb.x=Math.max(0,Math.min(W-vb.w,vb.x)); vb.y=Math.max(0,Math.min(H-vb.h,vb.y)); applyVB(); draw(); }
     function svgXY(e){ var pt=svg.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY;
       var q=pt.matrixTransform(svg.getScreenCTM().inverse()); return [q.x,q.y]; }
-    var pan=null;
+    // 한 손가락=드래그, 두 손가락=핀치 줌 (모바일)
+    var ptrs=new Map(), pan=null, pinchD=0;
+    function pinchInfo(){ var a=[]; ptrs.forEach(function(v){ a.push(v); });
+      var d=Math.hypot(a[0].x-a[1].x, a[0].y-a[1].y);
+      return { d:d, mx:(a[0].x+a[1].x)/2, my:(a[0].y+a[1].y)/2 }; }
     svg.addEventListener("pointerdown",function(e){ e.preventDefault();
-      pan={sx:e.clientX,sy:e.clientY,vx:vb.x,vy:vb.y}; svg.setPointerCapture(e.pointerId); });
-    svg.addEventListener("pointermove",function(e){ if(!pan) return;
-      var sc=vb.w/svg.clientWidth; vb.x=pan.vx-(e.clientX-pan.sx)*sc; vb.y=pan.vy-(e.clientY-pan.sy)*sc;
-      vb.x=Math.max(0,Math.min(W-vb.w,vb.x)); vb.y=Math.max(0,Math.min(H-vb.h,vb.y)); applyVB(); });
-    svg.addEventListener("pointerup",function(){ pan=null; });
+      svg.setPointerCapture(e.pointerId);
+      ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+      if(ptrs.size===2){ pan=null; pinchD=pinchInfo().d; }
+      else if(ptrs.size===1){ pan={sx:e.clientX,sy:e.clientY,vx:vb.x,vy:vb.y}; } });
+    svg.addEventListener("pointermove",function(e){
+      if(!ptrs.has(e.pointerId)) return;
+      ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+      if(ptrs.size===2){ var pi=pinchInfo(); if(pinchD>0 && pi.d>0){
+          var fake={clientX:pi.mx, clientY:pi.my}; var xy=svgXY(fake);
+          zoomAt(xy[0], xy[1], pinchD/pi.d); }
+        pinchD=pi.d; return; }
+      if(pan){ var sc=vb.w/svg.clientWidth; vb.x=pan.vx-(e.clientX-pan.sx)*sc; vb.y=pan.vy-(e.clientY-pan.sy)*sc;
+        vb.x=Math.max(0,Math.min(W-vb.w,vb.x)); vb.y=Math.max(0,Math.min(H-vb.h,vb.y)); applyVB(); } });
+    function endPtr(e){ ptrs.delete(e.pointerId); pinchD=0;
+      if(ptrs.size===1){ var only; ptrs.forEach(function(v){ only=v; }); pan={sx:only.x,sy:only.y,vx:vb.x,vy:vb.y}; }
+      else pan=null; }
+    svg.addEventListener("pointerup",endPtr); svg.addEventListener("pointercancel",endPtr);
+    document.addEventListener("fullscreenchange",function(){ setTimeout(draw,60); });
+    window.addEventListener("resize",function(){ clearTimeout(render._rz); render._rz=setTimeout(draw,120); });
     svg.addEventListener("wheel",function(e){ e.preventDefault(); var xy=svgXY(e); zoomAt(xy[0],xy[1], e.deltaY<0?0.84:1.19); },{passive:false});
     zoomBox.querySelectorAll("button").forEach(function(b){ b.onclick=function(){
       if(b.dataset.z==="in") zoomAt(vb.x+vb.w/2, vb.y+vb.h/2, 0.7);
       else if(b.dataset.z==="out") zoomAt(vb.x+vb.w/2, vb.y+vb.h/2, 1.43);
+      else if(b.dataset.z==="fs"){ if(document.fullscreenElement){ document.exitFullscreen&&document.exitFullscreen(); }
+        else if(wrap.requestFullscreen){ wrap.requestFullscreen(); } }
       else { vb={x:0,y:0,w:W,h:H}; applyVB(); draw(); } }; });
 
     // ── 렌더 ──
     function draw(){
       var k=vb.w/W;
+      var ui=Math.min(2.2, Math.max(1, 820/((svg.clientWidth||820)))); // 모바일 확대 배율
+      var ku=k*ui;
       gRiver.style.display=vis.river?"":"none";
       // 강 굵기 줌 감쇠(√k)
-      var rk=Math.pow(k,0.5);
+      var rk=Math.pow(k,0.5)*Math.sqrt(ui);
       gRiver.querySelectorAll(".cmap-river").forEach(function(p){ if(p.dataset.w) p.setAttribute("stroke-width",(+p.dataset.w)*rk); });
       gTerr.innerHTML=""; gTL.innerHTML=""; gCity.innerHTML="";
-      if(landEl) landEl.style.strokeWidth=(0.7*k)+"px";
+      if(landEl) landEl.style.strokeWidth=(0.7*ku)+"px";
 
       // 지역 통칭(요동·말갈 등)
       if(map.regions){ map.regions.forEach(function(r){ if(!r.y||!r.y[year]) return; var p=proj(r.lon,r.lat);
-        var t2=el("text",{x:p[0],y:p[1],class:"cmap-region"}); t2.style.fontSize=(12*k)+"px";
-        t2.style.letterSpacing=(0.1*12*k)+"px"; t2.style.strokeWidth=(2.2*k)+"px";
+        var t2=el("text",{x:p[0],y:p[1],class:"cmap-region"}); t2.style.fontSize=(12*ku)+"px";
+        t2.style.letterSpacing=(0.1*12*ku)+"px"; t2.style.strokeWidth=(2.2*ku)+"px";
         t2.textContent=r.name; gTL.appendChild(t2); }); }
 
       // 도시(줌 규칙 + 시대별 이름)
@@ -125,27 +147,27 @@
         var p=proj(c.lon,c.lat), col=COLOR[info[0]]||"#555"; cityPts.push(p);
         if(wide && info[1]!=="cap") return;
         var g=el("g",{});
-        if(info[1]==="cap"){ var ss=(wide?9.5:16)*k;
+        if(info[1]==="cap"){ var ss=(wide?9.5:16)*ku;
           var s=el("text",{x:p[0],y:p[1]+ss*0.34,"text-anchor":"middle","font-size":ss,fill:col,
             style:"paint-order:stroke;stroke:#fff;stroke-width:"+((wide?1.5:2.4)*k)+"px"}); s.textContent="★"; g.appendChild(s); }
-        else g.appendChild(el("circle",{cx:p[0],cy:p[1],r:4*k,fill:col,stroke:"#fff","stroke-width":1*k}));
-        if(!wide){ var lab=el("text",{x:p[0]+(info[1]==="cap"?9:7)*k,y:p[1]+4*k,class:"cmap-citylab"}); lab.style.fontSize=(11*k)+"px";
-          lab.style.strokeWidth=(2.4*k)+"px"; lab.textContent=(info[2]||c.name); g.appendChild(lab); }
+        else g.appendChild(el("circle",{cx:p[0],cy:p[1],r:4*ku,fill:col,stroke:"#fff","stroke-width":1*ku}));
+        if(!wide){ var lab=el("text",{x:p[0]+(info[1]==="cap"?9:7)*ku,y:p[1]+4*ku,class:"cmap-citylab"}); lab.style.fontSize=(11*ku)+"px";
+          lab.style.strokeWidth=(2.4*ku)+"px"; lab.textContent=(info[2]||c.name); g.appendChild(lab); }
         gCity.appendChild(g); }); }
 
       // 영토 + 나라 라벨(충돌 회피)
       var placedLabs=[];
       if(vis.terr){ (map.territories[year]||[]).forEach(function(t){
-        var tp=el("path",{class:"cmap-terr",d:t.d,fill:COLOR[t.id]||"#888","fill-rule":"evenodd"}); tp.style.strokeWidth=(1.2*k)+"px"; gTerr.appendChild(tp);
+        var tp=el("path",{class:"cmap-terr",d:t.d,fill:COLOR[t.id]||"#888","fill-rule":"evenodd"}); tp.style.strokeWidth=(1.2*ku)+"px"; gTerr.appendChild(tp);
         var b=pbox(t.d); if(!b) return;
-        var fs=16*k, lx=(b[0]+b[2])/2, ly=(b[1]+b[3])/2+4*k;
+        var fs=16*ku, lx=(b[0]+b[2])/2, ly=(b[1]+b[3])/2+4*ku;
         var nm=NAME[t.id]||"", halfW=nm.length*fs*0.62;
-        function clash(y){ return cityPts.some(function(p){ return Math.abs(p[0]-lx)<halfW+16*k && Math.abs(p[1]-y)<fs*0.85; })
+        function clash(y){ return cityPts.some(function(p){ return Math.abs(p[0]-lx)<halfW+16*ku && Math.abs(p[1]-y)<fs*0.85; })
           || placedLabs.some(function(q){ return Math.abs(q[0]-lx)<halfW+q[2] && Math.abs(q[1]-y)<fs; }); }
         for(var tr=0; tr<5 && clash(ly); tr++){ ly += (tr%2? -1:1)*(tr+1)*fs*0.95; }
         placedLabs.push([lx,ly,halfW]);
         var tx=el("text",{x:lx,y:ly,class:"cmap-terrlab"}); tx.style.fontSize=fs+"px";
-        tx.style.letterSpacing=(0.14*fs)+"px"; tx.style.strokeWidth=(3*k)+"px"; tx.style.fill=darken(COLOR[t.id]);
+        tx.style.letterSpacing=(0.14*fs)+"px"; tx.style.strokeWidth=(3*ku)+"px"; tx.style.fill=darken(COLOR[t.id]);
         tx.textContent=nm; gTL.appendChild(tx); }); }
 
       var Y=null; map.years.forEach(function(y){ if(y.y===year)Y=y; }); sub.textContent=Y?(Y.y+"년"+(Y.nm?" · "+Y.nm:"")):"";
