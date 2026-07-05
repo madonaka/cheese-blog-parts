@@ -72,6 +72,9 @@
     function draw(){
       gRiver.style.display=vis.river?"":"none";
       gTerr.innerHTML=""; gTL.innerHTML=""; gCity.innerHTML="";
+      // 지역 통칭(요동·말갈 등) — 연도별 표시
+      if(map.regions){ map.regions.forEach(function(r){ if(!r.y||!r.y[year]) return; var p=proj(r.lon,r.lat);
+        var t2=el("text",{x:p[0],y:p[1],class:"cmap-region"}); t2.textContent=r.name; gTL.appendChild(t2); }); }
       if(vis.terr){ (map.territories[year]||[]).forEach(function(t){
         gTerr.appendChild(el("path",{class:"cmap-terr",d:t.d,fill:COLOR[t.id]||"#888","fill-rule":"evenodd"}));
         var b=pbox(t.d); if(b){ var tx=el("text",{x:(b[0]+b[2])/2,y:(b[1]+b[3])/2,class:"cmap-terrlab"});
