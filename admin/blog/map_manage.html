@@ -2682,6 +2682,13 @@
   function d2(n){ return Math.round(n*100)/100; } function rd(n){ return Math.round(n*10)/10; }
   function projPoly(pts){ return [ pts.map(function(ll){var p=proj(ll[0],ll[1]);return [p[0],p[1]];}) ]; }
   function rawPath(pts){ if(pts.length<2) return ""; return "M"+pts.map(function(ll){var p=proj(ll[0],ll[1]);return rd(p[0])+","+rd(p[1]);}).join("L")+(pts.length>2?"Z":""); }
+  function smoothRing(P){ var n=P.length; if(n<3) return ""; function pt(i){ return P[((i%n)+n)%n]; }
+    var d="M"+rd(P[0][0])+","+rd(P[0][1]);
+    for(var i=0;i<n;i++){ var p0=pt(i-1),p1=pt(i),p2=pt(i+1),p3=pt(i+2);
+      var c1x=p1[0]+(p2[0]-p0[0])/6, c1y=p1[1]+(p2[1]-p0[1])/6, c2x=p2[0]-(p3[0]-p1[0])/6, c2y=p2[1]-(p3[1]-p1[1])/6;
+      d+="C"+rd(c1x)+","+rd(c1y)+" "+rd(c2x)+","+rd(c2y)+" "+rd(p2[0])+","+rd(p2[1]); }
+    return d+"Z"; }
+  function smoothMpPath(mp){ var d=""; mp.forEach(function(poly){ poly.forEach(function(ring){ d+=smoothRing(ring); }); }); return d; } // 영토 경계를 부드러운 곡선으로(데이터는 점 그대로)
   function mpPath(mp){ var d=""; mp.forEach(function(poly){ poly.forEach(function(ring){ d+="M"+ring.map(function(p){return rd(p[0])+","+rd(p[1]);}).join("L")+"Z"; }); }); return d; }
   function cleanGeom(){ var order=nations.map(function(n){return n.id;});
     var polys={}; order.forEach(function(id){ var pts=state[year][id]; polys[id]=(pts&&pts.length>2)?projPoly(pts):null; });
@@ -2702,7 +2709,7 @@
       else { mk=document.createElementNS(NS,"circle"); mk.setAttribute("cx",p[0]); mk.setAttribute("cy",p[1]); mk.setAttribute("r",4.2*k); mk.setAttribute("fill",col); mk.setAttribute("stroke-width",1*k); }
       mk.setAttribute("class","med-citymk"); mk.dataset.ci=ci; mk.style.pointerEvents=cityMode?"auto":"none"; if(cityMode)mk.style.cursor="pointer";
       gCity.appendChild(mk);
-      if(!wide){ var lab=document.createElementNS(NS,"text"); lab.setAttribute("x",p[0]+(info[1]==="cap"?9:7)*k); lab.setAttribute("y",p[1]+4*k); lab.setAttribute("class","med-citylab"); lab.setAttribute("font-size",11*k); lab.textContent=(info[2]||c.name); gCity.appendChild(lab); }
+      if(!wide){ var lab=document.createElementNS(NS,"text"); lab.setAttribute("x",p[0]+(info[1]==="cap"?9:7)*k); lab.setAttribute("y",p[1]+4*k); lab.setAttribute("class","med-citylab"); lab.setAttribute("font-size",11*k); lab.style.strokeWidth=(2.4*k)+"px"; lab.textContent=(info[2]||c.name); gCity.appendChild(lab); }
     }); }
 
   function render(){
@@ -2717,7 +2724,7 @@
     var cityPts=[]; if(showCity||cityMode){ cities.forEach(function(c){ if(c.y[year]) cityPts.push(proj(c.lon,c.lat)); }); }
     var placedLabs=[]; // 나라 라벨끼리도 회피
     nations.forEach(function(n){ var g=geom[n.id]; if(!g||!g.length) return;
-      var path=document.createElementNS(NS,"path"); path.setAttribute("d",mpPath(g)); path.setAttribute("class","med-terr");
+      var path=document.createElementNS(NS,"path"); path.setAttribute("d",smoothMpPath(g)); path.setAttribute("class","med-terr");
       path.setAttribute("fill",n.color); path.setAttribute("fill-rule","evenodd"); path.setAttribute("stroke-width",1.1*k); gTerr.appendChild(path);
       var big=null,ba=-1; g.forEach(function(poly){var r=poly[0];var b=[9e9,9e9,-9e9,-9e9];r.forEach(function(p){if(p[0]<b[0])b[0]=p[0];if(p[0]>b[2])b[2]=p[0];if(p[1]<b[1])b[1]=p[1];if(p[1]>b[3])b[3]=p[1];});var a=(b[2]-b[0])*(b[3]-b[1]);if(a>ba){ba=a;big=b;}});
       if(big){ var fs=15.5*k, lx=(big[0]+big[2])/2, ly=(big[1]+big[3])/2+4*k;
@@ -2727,7 +2734,7 @@
         for(var tr=0; tr<5 && clash(ly); tr++){ ly += (tr%2? -1:1)*(tr+1)*fs*0.95; } // 아래→위 번갈아 비켜남
         placedLabs.push([lx,ly,halfW]);
         var t=document.createElementNS(NS,"text"); t.setAttribute("x",lx); t.setAttribute("y",ly);
-        t.setAttribute("class","med-lab"); t.setAttribute("font-size",fs); t.style.fill=darken(n.color); t.style.letterSpacing=(0.14*fs)+"px";
+        t.setAttribute("class","med-lab"); t.setAttribute("font-size",fs); t.style.fill=darken(n.color); t.style.letterSpacing=(0.14*fs)+"px"; t.style.strokeWidth=(2.8*k)+"px";
         t.textContent=n.name; gLab.appendChild(t); } });
     drawCities();
     if(locked||panMode||cityMode||!active) return;
@@ -2848,7 +2855,7 @@
       var optHtml=nations.map(function(n){return '<option value="'+n.id+'">'+n.name+'</option>';}).join("");
       detail+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">'
         +'<b>기본 이름</b> <input class="med-new" id="mmCName" style="width:120px" value="'+escH(c.name)+'">'
-        +'<span class="med-lbl">좌표(경도,위도)</span><input class="med-new" id="mmCLon" style="width:72px" value="'+c.lon+'"><input class="med-new" id="mmCLat" style="width:64px" value="'+c.lat+'">'
+        +'<span class="med-lbl">좌표 — 구글지도 "위도, 경도" 통째 붙여넣기 OK</span><input class="med-new" id="mmCLon" style="width:72px" value="'+c.lon+'"><input class="med-new" id="mmCLat" style="width:64px" value="'+c.lat+'">'
         +'<button class="med-act" id="mmCGo">📍 보기</button><button class="med-act" id="mmCDel">🗑 삭제</button></div>'
         +'<div class="med-lbl" style="margin:4px 0">연도별 이력 — <b>시대 이름</b>을 넣으면 그 연도엔 그 이름으로 표시됩니다(비우면 기본 이름). 예: 같은 자리의 개칭 표현</div>'
         +'<table><tr><th>연도</th><th>표시</th><th>소속</th><th>등급</th><th>시대 이름</th></tr>'
@@ -2871,11 +2878,18 @@
       var nc={name:"새 도시",lon:d2(ll[0]),lat:d2(ll[1]),y:{}}; nc.y[year]=[active||nations[0].id,"fort"];
       cities.push(nc); mSel=cities.length-1; buildModal(); render(); };
     var c=cities[mSel]; if(!c) return;
+    function parseLatLon(str){ var m=String(str).match(/-?\d+(?:\.\d+)?/g); if(!m||m.length<2) return null;
+      var a=parseFloat(m[0]), b=parseFloat(m[1]);
+      if(a>=90&&Math.abs(b)<90) return {lon:a,lat:b}; // "경도, 위도" 순서로 들어온 경우
+      return {lon:b,lat:a}; } // 구글지도 기본 "위도, 경도"
+    function applyCoordC(elm,which){ var pr=parseLatLon(elm.value);
+      if(pr){ c.lon=d2(pr.lon); c.lat=d2(pr.lat); buildModal(); buildCityPanel(); render(); return; }
+      var v=parseFloat(elm.value); if(!isNaN(v)){ if(which==="lon") c.lon=v; else c.lat=v; render(); } }
     var nm=document.getElementById("mmCName");
     nm.oninput=function(){ c.name=this.value; render(); };
     nm.onchange=function(){ buildModal(); };
-    document.getElementById("mmCLon").onchange=function(){ var v=parseFloat(this.value); if(!isNaN(v)){ c.lon=v; render(); } };
-    document.getElementById("mmCLat").onchange=function(){ var v=parseFloat(this.value); if(!isNaN(v)){ c.lat=v; render(); } };
+    document.getElementById("mmCLon").onchange=function(){ applyCoordC(this,"lon"); };
+    document.getElementById("mmCLat").onchange=function(){ applyCoordC(this,"lat"); };
     document.getElementById("mmCGo").onclick=function(){ focusCity(mSel); };
     document.getElementById("mmCDel").onclick=function(){ if(!confirm(c.name+" 도시를 삭제할까요?")) return;
       cities.splice(mSel,1); if(selCity===mSel) selCity=null; else if(selCity>mSel) selCity--;
@@ -2924,7 +2938,7 @@
     if(r){
       detail+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">'
         +'<b>이름</b> <input class="med-new" id="mmRName" style="width:130px" value="'+escH(r.name)+'">'
-        +'<span class="med-lbl">좌표(경도,위도)</span><input class="med-new" id="mmRLon" style="width:72px" value="'+r.lon+'"><input class="med-new" id="mmRLat" style="width:64px" value="'+r.lat+'">'
+        +'<span class="med-lbl">좌표 — 구글지도 "위도, 경도" 통째 붙여넣기 OK</span><input class="med-new" id="mmRLon" style="width:72px" value="'+r.lon+'"><input class="med-new" id="mmRLat" style="width:64px" value="'+r.lat+'">'
         +'<button class="med-act" id="mmRGoBtn">📍 보기</button><button class="med-act" id="mmRDel">🗑 삭제</button></div>'
         +'<div class="med-lbl" style="margin:4px 0">연도별 표시 — 시대에 따라 명칭이 바뀌면(예: 말갈→여진) 지역을 따로 만들어 연도를 나눠 켜세요. 위치는 지도(도시 모드)에서 드래그로도 이동됩니다.</div>'
         +'<table><tr><th>연도</th><th>표시</th></tr>'
@@ -2944,8 +2958,13 @@
       regions.push({name:"새 지역",lon:d2(ll[0]),lat:d2(ll[1]),y:allYearsOn()}); mSelR=regions.length-1; buildModal(); render(); };
     var r=regions[mSelR]; if(!r) return;
     var nm=document.getElementById("mmRName"); nm.oninput=function(){ r.name=this.value; render(); }; nm.onchange=function(){ buildModal(); };
-    document.getElementById("mmRLon").onchange=function(){ var v=parseFloat(this.value); if(!isNaN(v)){ r.lon=v; render(); } };
-    document.getElementById("mmRLat").onchange=function(){ var v=parseFloat(this.value); if(!isNaN(v)){ r.lat=v; render(); } };
+    function applyCoordR(elm,which){ var m=String(elm.value).match(/-?\d+(?:\.\d+)?/g);
+      if(m&&m.length>=2){ var a=parseFloat(m[0]), b=parseFloat(m[1]);
+        if(a>=90&&Math.abs(b)<90){ r.lon=d2(a); r.lat=d2(b); } else { r.lon=d2(b); r.lat=d2(a); }
+        buildModal(); render(); return; }
+      var v=parseFloat(elm.value); if(!isNaN(v)){ if(which==="lon") r.lon=v; else r.lat=v; render(); } }
+    document.getElementById("mmRLon").onchange=function(){ applyCoordR(this,"lon"); };
+    document.getElementById("mmRLat").onchange=function(){ applyCoordR(this,"lat"); };
     document.getElementById("mmRGoBtn").onclick=function(){ document.querySelector('.mmRGo[data-ri="'+mSelR+'"]').click(); };
     document.getElementById("mmRDel").onclick=function(){ if(!confirm(r.name+" 지역을 삭제할까요?")) return;
       regions.splice(mSelR,1); mSelR=Math.max(0,mSelR-1); buildModal(); render(); };
