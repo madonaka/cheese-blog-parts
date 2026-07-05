@@ -56,11 +56,11 @@
     wrap.appendChild(zoomBox);
 
     // 해안선 기준 = 벡터 land 하나로 통일: relief(투명 바다)·강·영토를 land 모양으로 클립
-    var clipId=null;
+    var clipId=null, landEl=null;
     if(landD){
       clipId="cmapClip"+(++render._n||(render._n=1));
       var defs=el("defs",{}); var cp=el("clipPath",{id:clipId}); cp.appendChild(el("path",{d:landD})); defs.appendChild(cp); svg.appendChild(defs);
-      svg.appendChild(el("path",{class:"cmap-land",d:landD}));
+      landEl=el("path",{class:"cmap-land",d:landD}); svg.appendChild(landEl);
     }
     function clipped(g){ if(clipId) g.setAttribute("clip-path","url(#"+clipId+")"); return g; }
     if(reliefUrl){ var img=el("image",{x:0,y:0,width:W,height:H,preserveAspectRatio:"none"});
@@ -111,6 +111,7 @@
       var rk=Math.pow(k,0.5);
       gRiver.querySelectorAll(".cmap-river").forEach(function(p){ if(p.dataset.w) p.setAttribute("stroke-width",(+p.dataset.w)*rk); });
       gTerr.innerHTML=""; gTL.innerHTML=""; gCity.innerHTML="";
+      if(landEl) landEl.style.strokeWidth=(0.7*k)+"px";
 
       // 지역 통칭(요동·말갈 등)
       if(map.regions){ map.regions.forEach(function(r){ if(!r.y||!r.y[year]) return; var p=proj(r.lon,r.lat);
@@ -135,7 +136,7 @@
       // 영토 + 나라 라벨(충돌 회피)
       var placedLabs=[];
       if(vis.terr){ (map.territories[year]||[]).forEach(function(t){
-        gTerr.appendChild(el("path",{class:"cmap-terr",d:t.d,fill:COLOR[t.id]||"#888","fill-rule":"evenodd","stroke-width":1.2*k}));
+        var tp=el("path",{class:"cmap-terr",d:t.d,fill:COLOR[t.id]||"#888","fill-rule":"evenodd"}); tp.style.strokeWidth=(1.2*k)+"px"; gTerr.appendChild(tp);
         var b=pbox(t.d); if(!b) return;
         var fs=16*k, lx=(b[0]+b[2])/2, ly=(b[1]+b[3])/2+4*k;
         var nm=NAME[t.id]||"", halfW=nm.length*fs*0.62;
