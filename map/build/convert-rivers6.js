@@ -18,8 +18,37 @@ function elevAt(lon,lat){ const gx=(lon+180)/360*WORLD, gy=(1-Math.asinh(Math.ta
   const ix=Math.floor(gx),iy=Math.floor(gy),xt=ix>>8,yt=iy>>8,t=TILES[xt+"_"+yt]; if(!t)return 9999;
   const px=ix-(xt<<8),py=iy-(yt<<8),i=(py*t.w+px)*4; return (t.d[i]*256+t.d[i+1]+t.d[i+2]/256)-32768; }
 
-// 연장: 직선이 아니라 "고도 하강 추적" — 실제 물길처럼 저지대를 따라 바다(고도≤0)까지 걷는다.
-// 바다에 못 닿으면(내륙 방향이면) 연장을 통째로 취소 → 육지 위 가짜 선 없음.
+// ---- 벡터 육지 마스크 (0.5 viewBox단위 격자, 스캔라인 채움) ----
+// 하구 연장의 종착 기준 = "벡터 해안선 밖" (DEM 바다≠벡터 바다: 갯벌/간척지에서 수십km 차이)
+const LAND=JSON.parse(fs.readFileSync("land.json","utf8")).land;
+const GRID=0.5, GW=Math.ceil(W/GRID), GH=Math.ceil(H/GRID);
+const MASK=new Uint8Array(GW*GH);
+(function(){ const rings=LAND.split("M").filter(Boolean).map(seg=>seg.replace(/Z/g,"").split("L").map(s=>s.split(",").map(Number)).filter(p=>p.length===2&&!isNaN(p[0])));
+  for(let gy=0;gy<GH;gy++){ const y=(gy+0.5)*GRID; const xs=[];
+    rings.forEach(P=>{ for(let i=0,j=P.length-1;i<P.length;j=i++){
+      const yi=P[i][1],yj=P[j][1]; if((yi>y)!==(yj>y)){ xs.push((P[j][0]-P[i][0])*(y-yi)/(yj-yi)+P[i][0]); } } });
+    xs.sort((a,b)=>a-b);
+    for(let k=0;k+1<xs.length;k+=2){ const a=Math.max(0,Math.ceil(xs[k]/GRID-0.5)), b=Math.min(GW-1,Math.floor(xs[k+1]/GRID-0.5));
+      for(let gx=a;gx<=b;gx++) MASK[gy*GW+gx]=1; } }
+})();
+function inLandLL(lon,lat){ const p=proj(lon,lat); const gx=Math.round(p[0]/GRID-0.5), gy=Math.round(p[1]/GRID-0.5);
+  if(gx<0||gy<0||gx>=GW||gy>=GH) return false; return MASK[gy*GW+gx]===1; }
+
+// 벡터 해안 관통: 육지 안이면 32방향 중 가장 빨리 바다로 나가는 방향으로 밀어냄
+function exitToSea(line,atStart,maxSteps){
+  const p0=atStart?line[0]:line[line.length-1];
+  if(!inLandLL(p0[0],p0[1])) return true; // 이미 벡터 바다
+  let bestDir=null,bestDist=maxSteps+1;
+  for(let k=0;k<32;k++){ const ang=k*Math.PI/16, dx=Math.cos(ang), dy=Math.sin(ang);
+    for(let s=1;s<bestDist;s++){ const nx=p0[0]+dx*STEP*s, ny=p0[1]+dy*STEP*s;
+      if(!inLandLL(nx,ny)){ bestDist=s; bestDir=[dx,dy]; break; } } }
+  if(!bestDir) return false;
+  const q=[p0[0]+bestDir[0]*STEP*(bestDist+4), p0[1]+bestDir[1]*STEP*(bestDist+4)];
+  if(atStart) line.unshift(q); else line.push(q);
+  return true;
+}
+
+// 연장 1단계: "고도 하강 추적" — 실제 물길처럼 저지대를 따라 바다(고도≤0)쪽으로 걷는다.
 function endInfo(line){ const a=line[0], b=line[line.length-1];
   return { aDeg:deg[key(a)]||1, bDeg:deg[key(b)]||1, aE:elevAt(a[0],a[1]), bE:elevAt(b[0],b[1]) }; }
 const STEP=0.02;
@@ -44,14 +73,16 @@ function descentTrace(line,atStart,maxSteps){
   // 바다 미도달 → 연장 취소(아무것도 안 붙임)
 }
 function extend(r){ const line=r.p, inf=endInfo(line);
-  if(r.m){ // 하구 reach: 말단(차수1) 쪽에서 바다까지 하강 추적. 둘 다 1이면 저고도 쪽
+  if(r.m){ // 하구 reach: 하강 추적 후, 벡터 해안선 밖까지 확실히 관통
     let atStart;
     if(inf.aDeg===1&&inf.bDeg!==1) atStart=true; else if(inf.bDeg===1&&inf.aDeg!==1) atStart=false;
     else atStart=(inf.aE<=inf.bE);
-    descentTrace(line,atStart,30); return;
+    descentTrace(line,atStart,30);
+    exitToSea(line,atStart,120); // 갯벌·간척지 폭까지 커버(최대 2.4°)
+    return;
   }
-  if(inf.aDeg===1&&inf.aE<5) descentTrace(line,true,10);
-  if(inf.bDeg===1&&inf.bE<5) descentTrace(line,false,10);
+  if(inf.aDeg===1&&inf.aE<5){ descentTrace(line,true,10); exitToSea(line,true,30); }
+  if(inf.bDeg===1&&inf.bE<5){ descentTrace(line,false,10); exitToSea(line,false,30); }
 }
 
 // 연속 굵기: 유역면적 → w = 0.5*log10(U)-1.0, [0.32, 2.3], 0.1 단위 양자화
