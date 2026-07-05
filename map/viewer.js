@@ -91,7 +91,7 @@
     // ── 줌/패닝 ──
     function applyVB(){ svg.setAttribute("viewBox",vb.x+" "+vb.y+" "+vb.w+" "+vb.h); }
     function zoomAt(cx,cy,f){ var maxW=Math.min(W,H*vb.w/vb.h);
-      var minW=W*0.13*Math.min(1,(svg.clientWidth||820)/820); // 작은 화면은 더 깊게 확대 — 화면픽셀 기준 데스크톱과 같은 배율까지
+      var minW=W*0.065*Math.min(1,(svg.clientWidth||820)/820); // 작은 화면은 더 깊게 확대 — 화면픽셀 기준 데스크톱과 같은 배율까지
       var nw=Math.min(maxW,Math.max(minW,vb.w*f)); var s=nw/vb.w;
       vb.x=cx-(cx-vb.x)*s; vb.y=cy-(cy-vb.y)*s; vb.w=nw; vb.h*=s;
       vb.x=Math.max(0,Math.min(W-vb.w,vb.x)); vb.y=Math.max(0,Math.min(H-vb.h,vb.y)); applyVB(); draw(); }
@@ -215,8 +215,8 @@
       gTerr.innerHTML=""; gTL.innerHTML=""; gCity.innerHTML="";
       if(landEl) landEl.style.strokeWidth=(0.7*ku)+"px";
 
-      // 지역 통칭(요동·말갈 등)
-      if(map.regions){ map.regions.forEach(function(r){ if(!r.y||!r.y[year]) return; var p=proj(r.lon,r.lat);
+      // 지역 통칭(요동·말갈 등) — 좁은 화면의 넓은 뷰에서는 숨겨 라벨 밀집 완화
+      if(map.regions && !(ui>1.5 && k>0.45)){ map.regions.forEach(function(r){ if(!r.y||!r.y[year]) return; var p=proj(r.lon,r.lat);
         var t2=el("text",{x:p[0],y:p[1],class:"cmap-region"}); t2.style.fontSize=(12*ku)+"px";
         t2.style.letterSpacing=(0.1*12*ku)+"px"; t2.style.strokeWidth=(2.2*ku)+"px";
         t2.textContent=r.name; gTL.appendChild(t2); }); }
@@ -240,8 +240,14 @@
       if(vis.terr){ (map.territories[year]||[]).forEach(function(t){
         var tp=el("path",{class:"cmap-terr",d:t.d,fill:COLOR[t.id]||"#888","fill-rule":"evenodd"}); tp.style.strokeWidth=(1.2*ku)+"px"; gTerr.appendChild(tp);
         var b=pbox(t.d); if(!b) return;
-        var fs=16*ku, lx=(b[0]+b[2])/2, ly=(b[1]+b[3])/2+4*ku;
-        var nm=NAME[t.id]||"", halfW=nm.length*fs*0.62;
+        var nm=NAME[t.id]||"", fs=16*ku;
+        if(ui>1){ // 좁은 화면: 작은 영토는 라벨 확대(ui)를 깎아 겹침 완화 — 화면상 최소 ~11px는 보장
+          var fit=1.7*Math.max(b[2]-b[0],b[3]-b[1])/(1.24*Math.max(1,nm.length));
+          var minFs=11*vb.w/(svg.clientWidth||820);
+          fs=Math.min(fs, Math.max(fit, minFs, 16*k));
+        }
+        var lx=(b[0]+b[2])/2, ly=(b[1]+b[3])/2+4*ku;
+        var halfW=nm.length*fs*0.62;
         function clash(y){ return cityPts.some(function(p){ return Math.abs(p[0]-lx)<halfW+16*ku && Math.abs(p[1]-y)<fs*0.85; })
           || placedLabs.some(function(q){ return Math.abs(q[0]-lx)<halfW+q[2] && Math.abs(q[1]-y)<fs; }); }
         for(var tr=0; tr<5 && clash(ly); tr++){ ly += (tr%2? -1:1)*(tr+1)*fs*0.95; }
