@@ -114,3 +114,17 @@ Node 필요(pngjs). 원본 좌표계 고정: `WIN=[106,26,146,47], SCALE=24, pad
 
 `seeds-*.json`(연도별 영토 lon/lat) + `cities-*.json` 만 새로 만들고 `build-package.js` 를 돌리면
 같은 지형 위에 다른 시대(예: 후삼국, 고려-거란) 지도를 찍어낼 수 있다. 지형·강 에셋은 재사용.
+
+## 근현대 세계지도 (modern-world)
+
+세계 창 좌표계: `WIN=[-180,-56,180,78], SCALE=8, pad=6 → viewBox 0 0 2839 1084` (`build/world-common.js`).
+스냅샷 7개: 1914·1920·1938·1945·1960·1994·2010. 나라 이름은 `learn_characters` DB의 faction 표기와 일치(연표 자동 결합용, `published.meta` 참조).
+
+빌드 순서 (소스는 로컬 임시 디렉터리에 다운로드):
+1. historical-basemaps `world_<연도>.geojson` ×7 + NE 50m land/lakes + Terrarium z5 타일(x0-31, y4-22)
+2. `node convert-land-world.js <src>` → `assets/land-world.json`, `assets/rivers-world.json`(대형 호수만)
+3. `node build-relief-world.js <src>/tiles5` → `assets/relief-world.png` (4096px)
+4. `node gen-world-map.js <src>` → `data/world-modern-map.json` (발행본/폴백 겸용)
+5. `node publish-world.js` → Firestore `historyMaps/modern-world` 발행
+
+국경 출처: **aourednik/historical-basemaps (GPL-3.0)** — 파생 데이터(`data/world-modern-map.json`)도 본 공개 저장소로 소스 공개, 페이지 note에 출처 표기.
