@@ -38,13 +38,24 @@ function inLandLL(lon,lat){ const p=proj(lon,lat); const gx=Math.round(p[0]/GRID
 function exitToSea(line,atStart,maxSteps){
   const p0=atStart?line[0]:line[line.length-1];
   if(!inLandLL(p0[0],p0[1])) return true; // 이미 벡터 바다
-  let bestDir=null,bestDist=maxSteps+1;
-  for(let k=0;k<32;k++){ const ang=k*Math.PI/16, dx=Math.cos(ang), dy=Math.sin(ang);
-    for(let s=1;s<bestDist;s++){ const nx=p0[0]+dx*STEP*s, ny=p0[1]+dy*STEP*s;
-      if(!inLandLL(nx,ny)){ bestDist=s; bestDir=[dx,dy]; break; } } }
-  if(!bestDir) return false;
-  const q=[p0[0]+bestDir[0]*STEP*(bestDist+2), p0[1]+bestDir[1]*STEP*(bestDist+2)];
-  if(atStart) line.unshift(q); else line.push(q);
+  // 흐름 방향(말단 진행 방향) — 탈출 방향은 흐름과 비슷할수록 우대(급꺾임·해안 평행 사선 방지)
+  const p1=atStart?line[1]:line[line.length-2];
+  let hAng=null; if(p1){ hAng=Math.atan2(p0[1]-p1[1], p0[0]-p1[0]); }
+  let best=null; // {dx,dy,dist,score}
+  for(let k=0;k<32;k++){ const ang=k*Math.PI/16;
+    if(hAng!=null){ let dAng=Math.abs(ang-hAng); if(dAng>Math.PI) dAng=2*Math.PI-dAng;
+      if(dAng>Math.PI*0.67) continue; // 흐름 대비 120° 초과 방향 배제
+      var pen=dAng*14; } else var pen=0;
+    const dx=Math.cos(ang), dy=Math.sin(ang);
+    for(let s=1;s<=maxSteps;s++){ const nx=p0[0]+dx*STEP*s, ny=p0[1]+dy*STEP*s;
+      if(!inLandLL(nx,ny)){ const sc=s+pen; if(!best||sc<best.score) best={dx:dx,dy:dy,dist:s,score:sc}; break; }
+      if(best&&s+pen>=best.score) break; }
+  }
+  if(!best) return false;
+  // 중간점을 3스텝 간격으로 넣어 클립·렌더가 자연스럽게
+  const pts=[]; for(let s=3;s<best.dist+2;s+=3) pts.push([p0[0]+best.dx*STEP*s, p0[1]+best.dy*STEP*s]);
+  pts.push([p0[0]+best.dx*STEP*(best.dist+2), p0[1]+best.dy*STEP*(best.dist+2)]);
+  if(atStart){ for(const q of pts) line.unshift(q); } else { for(const q of pts) line.push(q); }
   return true;
 }
 
@@ -58,12 +69,14 @@ function descentTrace(line,atStart,maxSteps){
   let cur=[p0[0],p0[1]]; const added=[];
   for(let s=0;s<maxSteps;s++){
     let best=null,bestE=1e9,bhx=hx,bhy=hy;
-    for(let k=-3;k<=3;k++){ // 진행방향 ±67.5° 내 7방향 중 최저 고도
+    for(let k=-2;k<=2;k++){ // 진행방향 ±45° 내 5방향 — 급회전 금지(제자리 말림 방지)
       const ang=Math.atan2(hy,hx)+k*(Math.PI/8);
       const nx=cur[0]+Math.cos(ang)*STEP, ny=cur[1]+Math.sin(ang)*STEP;
       const e=elevAt(nx,ny);
       if(e<bestE){ bestE=e; best=[nx,ny]; bhx=Math.cos(ang); bhy=Math.sin(ang); } }
     if(!best) break;
+    // 루프 감지: 이전 추적점 근처로 되돌아오면 연장 전체 취소(꼬임 방지)
+    for(let i=0;i<added.length-2;i++){ if(Math.hypot(best[0]-added[i][0],best[1]-added[i][1])<STEP*0.8) return; }
     added.push(best); cur=best; hx=bhx; hy=bhy;
     if(bestE<=0){ // 바다 도달 → 확정 (여유 한 걸음 더)
       added.push([cur[0]+hx*STEP*2, cur[1]+hy*STEP*2]);
@@ -71,6 +84,24 @@ function descentTrace(line,atStart,maxSteps){
       return; }
   }
   // 바다 미도달 → 연장 취소(아무것도 안 붙임)
+}
+
+// 작은 자기교차 고리 절제(데이터·추적에서 생긴 꼬임 제거) — 큰 곡류는 보존
+function cutLoops(line){
+  var changed=true, guard=0;
+  while(changed && guard++<8){ changed=false;
+    outer:
+    for(var i=0;i<line.length-4;i++){
+      var acc=0;
+      for(var j=i+3;j<line.length;j++){
+        acc+=Math.hypot(line[j][0]-line[j-1][0], line[j][1]-line[j-1][1]);
+        if(acc>0.6) break; // 이 이상 긴 구간은 정상 곡류로 간주
+        var d=Math.hypot(line[j][0]-line[i][0], line[j][1]-line[i][1]);
+        if(d<0.018 && acc>0.05){ line.splice(i+1, j-i-1); changed=true; break outer; }
+      }
+    }
+  }
+  return line;
 }
 function extend(r){ const line=r.p, inf=endInfo(line);
   if(r.m){ // 하구 reach: 하강 추적 후, 벡터 해안선 밖까지 확실히 관통
@@ -101,16 +132,28 @@ function toPath(line,eps){ let p=rdp(line.map(c=>proj(c[0],c[1])),eps); if(p.len
 // 한반도 밖은 굵은 강만(유역 8000km²↑), 한반도는 상세(150km²↑, parse 단계 적용됨)
 const KBOX=[123.3,33,131.8,43.6];
 function inK(p){ return p[0]>=KBOX[0]&&p[0]<=KBOX[2]&&p[1]>=KBOX[1]&&p[1]<=KBOX[3]; }
+// 품질 통계(수정 전후 비교용)
+function statsOf(list){ var longSeg=0, sharp=0;
+  list.forEach(function(line){
+    for(var i=1;i<line.length;i++){ if(Math.hypot(line[i][0]-line[i-1][0],line[i][1]-line[i-1][1])>0.3) longSeg++; }
+    for(var i=2;i<line.length;i++){ var a=Math.atan2(line[i-1][1]-line[i-2][1],line[i-1][0]-line[i-2][0]);
+      var b=Math.atan2(line[i][1]-line[i-1][1],line[i][0]-line[i-1][0]);
+      var d=Math.abs(b-a); if(d>Math.PI)d=2*Math.PI-d; if(d>Math.PI*0.83) sharp++; } });
+  return {longSeg:longSeg, sharp:sharp}; }
+
 const acc={};
+const processed=[];
 RAW.forEach(r=>{ if(r.u<8000 && !(inK(r.p[0])||inK(r.p[r.p.length-1]))) return;
-  extend(r);
+  extend(r); cutLoops(r.p); processed.push(r.p);
   const w=q(widthOf(r.u, r.q||1));
   const eps=w>=1.2?0.05:(w>=0.7?0.07:0.09);
   const d=toPath(r.p,eps); if(!d) return;
   acc[w]=(acc[w]||"")+d; });
 
+const st=statsOf(processed);
+console.log("품질: 긴 직선세그(>0.3°)", st.longSeg, "| 급반전(>150°)", st.sharp);
 const classes=Object.keys(acc).map(k=>({w:+k,d:acc[k]})).sort((a,b)=>a.w-b.w);
-fs.writeFileSync("rivers7.json", JSON.stringify({viewBox:`0 0 ${W} ${H}`, classes}));
+fs.writeFileSync("rivers8.json", JSON.stringify({viewBox:`0 0 ${W} ${H}`, classes}));
 let tot=0; classes.forEach(c=>{ tot+=c.d.length; });
 console.log("classes:",classes.length,"| widths:",classes.map(c=>c.w).join(","));
-console.log("total path:",Math.round(tot/1024)+"KB | rivers7.json",Math.round(fs.statSync("rivers6.json").size/1024)+"KB");
+console.log("total path:",Math.round(tot/1024)+"KB | rivers8.json",Math.round(fs.statSync("rivers6.json").size/1024)+"KB");
