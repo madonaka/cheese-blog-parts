@@ -54,7 +54,7 @@
     }
     function clipped(g){ if(clipId) g.setAttribute("clip-path","url(#"+clipId+")"); return g; }
     if(reliefUrl){ var img=el("image",{x:0,y:0,width:map.viewBox.split(" ")[2],height:map.viewBox.split(" ")[3],preserveAspectRatio:"none"}); img.setAttributeNS("http://www.w3.org/1999/xlink","href",reliefUrl); img.setAttribute("href",reliefUrl); if(clipId)img.setAttribute("clip-path","url(#"+clipId+")"); svg.appendChild(img); }
-    var gRiver=clipped(el("g",{}));
+    var gRiver=clipped(el("g",{class:"cmap-rivers"}));
     if(rivers.classes){ rivers.classes.forEach(function(c){ gRiver.appendChild(el("path",{class:"cmap-river","stroke-width":c.w,d:c.d})); }); } // HydroRIVERS 등급별 굵기
     else { gRiver.appendChild(el("path",{class:"cmap-river mn",d:rivers.minor||""})); gRiver.appendChild(el("path",{class:"cmap-river mj",d:rivers.major||""})); }
     svg.appendChild(gRiver);
