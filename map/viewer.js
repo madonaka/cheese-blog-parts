@@ -28,7 +28,8 @@
     function proj(lon,lat){ return [ (lon-cfg.WIN[0])*kx*cfg.SCALE+cfg.pad, (cfg.WIN[3]-lat)*cfg.SCALE+cfg.pad ]; }
     var COLOR={}, NAME={};
     map.nations.forEach(function(n){ COLOR[n.id]=n.color; NAME[n.id]=n.name; });
-    var year=map.years[0].y, vis={terr:1,river:1,city:1};
+    var years=map.years.slice().sort(function(a,b){ return (+a.y)-(+b.y); });
+    var yearIdx=0, year=years[0].y, vis={terr:1,river:1,city:1};
 
     var W=+map.viewBox.split(" ")[2], H=+map.viewBox.split(" ")[3];
     var vb={x:0,y:0,w:W,h:H};
@@ -37,8 +38,10 @@
     if(opts.title){ var h=document.createElement("h2"); h.className="cmap-title"; h.textContent=opts.title; mount.appendChild(h); }
     var sub=document.createElement("p"); sub.className="cmap-sub"; mount.appendChild(sub);
 
-    // 연도 버튼
-    var yb=document.createElement("div"); yb.className="cmap-bar"; mount.appendChild(yb);
+    // 연대 타임라인 (◀ ▶ + 연대선 점)
+    var tl=document.createElement("div"); tl.className="cmap-timeline";
+    tl.innerHTML='<button class="cmap-tl-nav" data-d="-1" aria-label="이전 시대">◀</button><div class="cmap-tl-track"></div><button class="cmap-tl-nav" data-d="1" aria-label="다음 시대">▶</button>';
+    mount.appendChild(tl);
     // 레이어 토글
     var lb=document.createElement("div"); lb.className="cmap-bar";
     lb.innerHTML='<span class="cmap-lbl">레이어</span>';
@@ -170,13 +173,20 @@
         tx.style.letterSpacing=(0.14*fs)+"px"; tx.style.strokeWidth=(3*ku)+"px"; tx.style.fill=darken(COLOR[t.id]);
         tx.textContent=nm; gTL.appendChild(tx); }); }
 
-      var Y=null; map.years.forEach(function(y){ if(y.y===year)Y=y; }); sub.textContent=Y?(Y.y+"년"+(Y.nm?" · "+Y.nm:"")):"";
+      var Y=years[yearIdx]; sub.innerHTML=Y?('<b class="cmap-sub-year">'+Y.y+'년</b>'+(Y.nm?' <span class="cmap-sub-nm">'+Y.nm+'</span>':'')):"";
     }
 
-    map.years.forEach(function(Y,i){ var b=document.createElement("button"); b.className="cmap-btn"+(i===0?" on":"");
-      b.innerHTML='<b style="font-family:Georgia,serif">'+Y.y+'년</b>'+(Y.nm?' · '+Y.nm:'');
-      b.onclick=function(){ year=Y.y; yb.querySelectorAll(".cmap-btn").forEach(function(x){x.classList.remove("on");}); b.classList.add("on"); draw(); };
-      yb.appendChild(b); });
+    var track=tl.querySelector(".cmap-tl-track");
+    years.forEach(function(Y,i){ var d=document.createElement("button"); d.className="cmap-tl-dot"+(i===0?" on":"");
+      d.innerHTML='<span class="dot"></span><span class="yr">'+Y.y+'</span>';
+      if(Y.nm) d.title=Y.nm;
+      d.onclick=function(){ setYear(i); };
+      track.appendChild(d); });
+    function setYear(i){ yearIdx=Math.max(0,Math.min(years.length-1,i)); year=years[yearIdx].y;
+      track.querySelectorAll(".cmap-tl-dot").forEach(function(x,xi){ x.classList.toggle("on",xi===yearIdx); });
+      var act=track.children[yearIdx]; if(act&&act.scrollIntoView) act.scrollIntoView({block:"nearest",inline:"center",behavior:"smooth"});
+      draw(); }
+    tl.querySelectorAll(".cmap-tl-nav").forEach(function(b){ b.onclick=function(){ setYear(yearIdx+(+b.dataset.d)); }; });
     draw();
   }
 
