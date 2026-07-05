@@ -1,5 +1,5 @@
 const fs=require("fs"); const {PNG}=require("pngjs");
-const RAW=JSON.parse(fs.readFileSync("hydro-raw3.json","utf8"));
+const RAW=JSON.parse(fs.readFileSync("hydro-raw4.json","utf8"));
 const CFG={ WIN:[106,26,146,47], SCALE:24, pad:6 };
 const kx=Math.cos((CFG.WIN[1]+CFG.WIN[3])/2*Math.PI/180);
 function proj(lon,lat){ return [ (lon-CFG.WIN[0])*kx*CFG.SCALE+CFG.pad, (CFG.WIN[3]-lat)*CFG.SCALE+CFG.pad ]; }
@@ -132,8 +132,9 @@ function toPath(line,eps){ let p=rdp(line.map(c=>proj(c[0],c[1])),eps); if(p.len
   return out.length<2?"":"M"+out.join("L"); }
 
 // 한반도 밖은 굵은 강만(유역 8000km²↑), 한반도는 상세(150km²↑, parse 단계 적용됨)
-const KBOX=[123.3,33,131.8,43.6];
-function inK(p){ return p[0]>=KBOX[0]&&p[0]<=KBOX[2]&&p[1]>=KBOX[1]&&p[1]<=KBOX[3]; }
+const KBOX=[123.3,33,131.8,43.6], JBOX=[129.5,30,146,46];
+function inBox(p,B){ return p[0]>=B[0]&&p[0]<=B[2]&&p[1]>=B[1]&&p[1]<=B[3]; }
+function inK(p){ return inBox(p,KBOX)||inBox(p,JBOX); }
 // 품질 통계(수정 전후 비교용)
 function statsOf(list){ var longSeg=0, sharp=0;
   list.forEach(function(line){
@@ -155,7 +156,7 @@ RAW.forEach(r=>{ if(r.u<8000 && !(inK(r.p[0])||inK(r.p[r.p.length-1]))) return;
 const st=statsOf(processed);
 console.log("품질: 긴 직선세그(>0.3°)", st.longSeg, "| 급반전(>150°)", st.sharp);
 const classes=Object.keys(acc).map(k=>({w:+k,d:acc[k]})).sort((a,b)=>a.w-b.w);
-fs.writeFileSync("rivers9.json", JSON.stringify({viewBox:`0 0 ${W} ${H}`, classes}));
+fs.writeFileSync("rivers10.json", JSON.stringify({viewBox:`0 0 ${W} ${H}`, classes}));
 let tot=0; classes.forEach(c=>{ tot+=c.d.length; });
 console.log("classes:",classes.length,"| widths:",classes.map(c=>c.w).join(","));
-console.log("total path:",Math.round(tot/1024)+"KB | rivers9.json",Math.round(fs.statSync("rivers6.json").size/1024)+"KB");
+console.log("total path:",Math.round(tot/1024)+"KB | rivers10.json",Math.round(fs.statSync("rivers10.json").size/1024)+"KB");
