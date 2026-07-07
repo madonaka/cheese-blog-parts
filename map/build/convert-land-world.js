@@ -7,7 +7,8 @@ if (!SRC) { console.error("usage: node convert-land-world.js <world-src dir>"); 
 
 const land = JSON.parse(fs.readFileSync(SRC + "/ne_50m_land.geojson", "utf8"));
 let landD = "";
-land.features.forEach(f => { landD += geom2path(f.geometry, { eps: 0.35, minArea: 1.5, prec: 1 }); });
+// eps는 build-relief-world.js의 마스크와 반드시 동일해야 함(해안선 단일화)
+land.features.forEach(f => { landD += geom2path(f.geometry, { eps: 0.2, minArea: 1.5, prec: 1 }); });
 
 const lakes = JSON.parse(fs.readFileSync(SRC + "/ne_50m_lakes.geojson", "utf8"));
 let lakesD = "";

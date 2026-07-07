@@ -120,11 +120,16 @@ Node 필요(pngjs). 원본 좌표계 고정: `WIN=[106,26,146,47], SCALE=24, pad
 세계 창 좌표계: `WIN=[-180,-56,180,78], SCALE=8, pad=6 → viewBox 0 0 2839 1084` (`build/world-common.js`).
 스냅샷 7개: 1914·1920·1938·1945·1960·1994·2010. 나라 이름은 `learn_characters` DB의 faction 표기와 일치(연표 자동 결합용, `published.meta` 참조).
 
-빌드 순서 (소스는 로컬 임시 디렉터리에 다운로드):
-1. historical-basemaps `world_<연도>.geojson` ×7 + NE 50m land/lakes + Terrarium z5 타일(x0-31, y4-22)
+빌드 순서 (소스는 로컬 임시 디렉터리에 다운로드, sharp·pngjs 필요):
+1. historical-basemaps `world_<연도>.geojson` ×7 + NE 50m land/lakes + Terrarium z6 타일(x0-63, y9-44)
 2. `node convert-land-world.js <src>` → `assets/land-world.json`, `assets/rivers-world.json`(대형 호수만)
-3. `node build-relief-world.js <src>/tiles5` → `assets/relief-world.png` (4096px)
+3. `node build-relief-world.js <tiles6> <src>` → `assets/relief-world.webp` (8192px, WebP)
 4. `node gen-world-map.js <src>` → `data/world-modern-map.json` (발행본/폴백 겸용)
 5. `node publish-world.js` → Firestore `historyMaps/modern-world` 발행
+
+**해안선 단일화(2026-07-07):** 바다/육지 기준은 벡터 land(NE 50m, eps 0.2) 하나다.
+- 지형 래스터의 알파는 DEM(고도≤0)이 아니라 **벡터 land 래스터 마스크**로 결정 (`build-relief-world.js`)
+- 영토는 **팽창(≈0.25°) 후 같은 연도의 다른 모든 나라 원본으로 절단** (`gen-world-map.js`) — 해안은
+  뷰어의 land clipPath가 정확히 자르고, 내륙 국경은 원본 위치 유지. eps 값(land 0.2)은 두 스크립트가 반드시 동일해야 한다.
 
 국경 출처: **aourednik/historical-basemaps (GPL-3.0)** — 파생 데이터(`data/world-modern-map.json`)도 본 공개 저장소로 소스 공개, 페이지 note에 출처 표기.

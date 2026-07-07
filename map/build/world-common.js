@@ -56,25 +56,54 @@ function splitAntimeridian(ring) {
 function ringBox(ring) { let b = [999, 999, -999, -999]; ring.forEach(([x, y]) => { if (x < b[0]) b[0] = x; if (x > b[2]) b[2] = x; if (y < b[1]) b[1] = y; if (y > b[3]) b[3] = y; }); return b; }
 function ringOutWin(ring, m) { const b = ringBox(ring); return b[2] < CFG.WIN[0] - m || b[0] > CFG.WIN[2] + m || b[3] < CFG.WIN[1] - m || b[1] > CFG.WIN[3] + m; }
 
+// lon/lat 링 하나 → 투영·단순화된 링 파트들(날짜변경선 분할·창 밖 제거·최소면적 필터)
+function ring2parts(ring, opts) {
+  const out = [];
+  splitAntimeridian(ring).forEach(part => {
+    if (ringOutWin(part, 3)) return;
+    let pts = simplifyRing(part.map(([lon, lat]) => proj(lon, lat)), opts.eps);
+    if (pts.length < 3) return;
+    const b = ringBox(pts);
+    if ((b[2] - b[0]) * (b[3] - b[1]) < (opts.minArea || 0)) return;
+    out.push(pts);
+  });
+  return out;
+}
+function geomPolys(geometry) { return geometry ? (geometry.type === "Polygon" ? [geometry.coordinates] : (geometry.type === "MultiPolygon" ? geometry.coordinates : [])) : []; }
+
+// GeoJSON geometry → 투영 링 평면 목록 (evenodd 채움용 — 래스터 마스크·path 직렬화 공용)
+function geom2rings(geometry, opts) {
+  const rs = [];
+  geomPolys(geometry).forEach(poly => poly.forEach(ring => { ring2parts(ring, opts).forEach(r => rs.push(r)); }));
+  return rs;
+}
+
+// GeoJSON geometry → polygon-clipping용 멀티폴리곤 [[outer,hole...],...]
+// 외곽 링이 날짜변경선으로 분할되면 구멍 연결이 불가 → 파트별 개별 폴리곤(구멍 소실, 국가 폴리곤엔 구멍이 사실상 없음)
+function geom2polys(geometry, opts) {
+  const out = [];
+  geomPolys(geometry).forEach(poly => {
+    const outer = ring2parts(poly[0], opts);
+    if (!outer.length) return;
+    const holes = [];
+    for (let i = 1; i < poly.length; i++) holes.push(...ring2parts(poly[i], opts));
+    if (outer.length === 1) out.push([outer[0]].concat(holes));
+    else outer.forEach(o => out.push([o]));
+  });
+  return out;
+}
+
 // GeoJSON geometry → SVG path d (링 분할·창 밖 제거·단순화·최소면적 필터)
 // opts: { eps(SVG단위), minArea(SVG단위² — 투영 후 bbox 면적), prec(좌표 반올림 자릿수: 0=정수, 1=0.1) }
 function geom2path(geometry, opts) {
-  const eps = opts.eps, minArea = opts.minArea || 0, prec = opts.prec || 0;
+  const prec = opts.prec || 0;
   const mul = Math.pow(10, prec), r = n => Math.round(n * mul) / mul;
-  const polys = geometry.type === "Polygon" ? [geometry.coordinates] : (geometry.type === "MultiPolygon" ? geometry.coordinates : []);
   let d = "";
-  polys.forEach(poly => poly.forEach(ring => {
-    splitAntimeridian(ring).forEach(part => {
-      if (ringOutWin(part, 3)) return;
-      let pts = simplifyRing(part.map(([lon, lat]) => proj(lon, lat)), eps);
-      if (pts.length < 3) return;
-      const b = ringBox(pts);
-      if ((b[2] - b[0]) * (b[3] - b[1]) < minArea) return;
-      const out = []; let px = null, py = null;
-      for (const p of pts) { const x = r(p[0]), y = r(p[1]); if (x !== px || y !== py) { out.push(x + "," + y); px = x; py = y; } }
-      if (out.length >= 3) d += "M" + out.join("L") + "Z";
-    });
-  }));
+  geom2rings(geometry, opts).forEach(pts => {
+    const out = []; let px = null, py = null;
+    for (const p of pts) { const x = r(p[0]), y = r(p[1]); if (x !== px || y !== py) { out.push(x + "," + y); px = x; py = y; } }
+    if (out.length >= 3) d += "M" + out.join("L") + "Z";
+  });
   return d;
 }
 
@@ -105,4 +134,4 @@ function lines2path(geometry, opts) {
   return d;
 }
 
-module.exports = { CFG, kx, W, H, proj, unproj, geom2path, lines2path, simplifyRing, ringBox };
+module.exports = { CFG, kx, W, H, proj, unproj, geom2path, geom2rings, geom2polys, lines2path, simplifyRing, ringBox };

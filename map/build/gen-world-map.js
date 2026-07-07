@@ -1,7 +1,8 @@
 // 근현대 세계지도 발행 데이터 생성 — historical-basemaps(GPL-3.0) 국경 → data/world-modern-map.json
 // 나라 이름은 learn_characters DB의 faction 표기와 일치시킨다(연표·DB 자동 결합용).
 const fs = require("fs");
-const { CFG, W, H, geom2path } = require("./world-common.js");
+const pc = require("./pc.js");
+const { CFG, W, H, geom2polys, ringBox } = require("./world-common.js");
 const SRC = process.argv[2]; // world-src 디렉터리
 if (!SRC) { console.error("usage: node gen-world-map.js <world-src dir>"); process.exit(1); }
 
@@ -74,21 +75,61 @@ const CITIES = [
   { name: "로마", lon: 12.48, lat: 41.90, y: { "1938": ["italy", "cap"] } },
 ];
 
+// ── 해안선 단일화 ──
+// historical-basemaps 해안선은 벡터 land(NE 50m)보다 안쪽이라 해안에 베이지 띠가 생긴다.
+// 해법: 영토를 D만큼 팽창(8방향 평행이동 합집합)해 해안 밖으로 넘치게 하고 — 바다 부분은
+// 뷰어의 land clipPath가 정확히 잘라줌 — 내륙으로 번진 부분은 같은 연도의 '다른 모든 나라
+// 원본(비채색 포함)'을 빼서 원본 국경으로 되돌린다. 결과: 해안=벡터 land, 내륙=원본 국경.
+const D = 2.0, DK = D * Math.SQRT1_2; // SVG 단위(≈0.25°)
+const DIRS = [[D, 0], [-D, 0], [0, D], [0, -D], [DK, DK], [DK, -DK], [-DK, DK], [-DK, -DK]];
+function translate(mp, dx, dy) { return mp.map(poly => poly.map(ring => ring.map(p => [p[0] + dx, p[1] + dy]))); }
+function dilate(mp) { let u = mp; DIRS.forEach(dv => { u = pc.union(u, translate(mp, dv[0], dv[1])); }); return u; }
+function mpBox(mp) { let b = [9e9, 9e9, -9e9, -9e9]; mp.forEach(poly => poly.forEach(ring => { const rb = ringBox(ring); if (rb[0] < b[0]) b[0] = rb[0]; if (rb[1] < b[1]) b[1] = rb[1]; if (rb[2] > b[2]) b[2] = rb[2]; if (rb[3] > b[3]) b[3] = rb[3]; })); return b; }
+function boxHit(a, b) { return a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3]; }
+function mpPath(mp) { // prec 0.1 · 최소면적 2 (기존 geom2path 출력 규격과 동일)
+  let d = "";
+  mp.forEach(poly => poly.forEach(ring => {
+    const b = ringBox(ring);
+    if ((b[2] - b[0]) * (b[3] - b[1]) < 2) return;
+    const out = []; let px = null, py = null;
+    for (const p of ring) { const x = Math.round(p[0] * 10) / 10, y = Math.round(p[1] * 10) / 10; if (x !== px || y !== py) { out.push(x + "," + y); px = x; py = y; } }
+    if (out.length >= 3) d += "M" + out.join("L") + "Z";
+  }));
+  return d;
+}
+
 const territories = {};
 YEARS.forEach(Y => {
   const g = JSON.parse(fs.readFileSync(SRC + "/world_" + Y.y + ".geojson", "utf8"));
-  const byId = {};
   const wanted = YEAR_MAP[Y.y];
   const found = new Set();
-  g.features.forEach(f => {
-    const id = wanted[(f.properties.NAME || "").trim()];
-    if (!id) return;
-    found.add((f.properties.NAME || "").trim());
-    byId[id] = (byId[id] || "") + geom2path(f.geometry, { eps: 0.5, minArea: 2, prec: 1 });
+  // 연도 내 모든 feature를 투영 폴리곤으로(채색 대상 + 절단용 이웃 원본)
+  const feats = g.features.map(f => {
+    const name = (f.properties.NAME || "").trim();
+    const polys = geom2polys(f.geometry, { eps: 0.5, minArea: 1 });
+    return { name, id: wanted[name] || null, polys, box: polys.length ? mpBox(polys) : null };
   });
+  const byId = {};
+  feats.forEach(ft => { if (ft.id && ft.polys.length) { found.add(ft.name); byId[ft.id] = (byId[ft.id] || []).concat(ft.polys); } });
   const missing = Object.keys(wanted).filter(n => !found.has(n));
   if (missing.length) console.warn(Y.y + " 미발견:", missing.join(", "));
-  territories[Y.y] = Object.keys(byId).filter(id => byId[id]).map(id => ({ id, d: byId[id] }));
+
+  territories[Y.y] = [];
+  NAT.forEach(n => {
+    const mp0 = byId[n.id];
+    if (!mp0 || !mp0.length) return;
+    let cut;
+    try {
+      cut = dilate(mp0);
+      const db = mpBox(cut);
+      const subs = [];
+      feats.forEach(ft => { if (ft.id !== n.id && ft.box && boxHit(db, ft.box)) subs.push(ft.polys); });
+      for (let i = 0; i < subs.length; i += 20) cut = pc.difference.apply(pc, [cut].concat(subs.slice(i, i + 20)));
+    } catch (e) { console.warn(Y.y, n.id, "불리언 실패 — 원본 사용:", e.message); cut = mp0; }
+    const d = mpPath(cut);
+    if (d) territories[Y.y].push({ id: n.id, d });
+  });
+  console.log(" ", Y.y, "완료");
 });
 
 // 연표·DB 자동 결합용 메타 — 이 지도가 커버하는 연도 범위·나라명(별칭 포함)
