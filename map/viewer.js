@@ -264,7 +264,9 @@
         // 라벨을 영토 크기에 맞춰 축소 — 모든 화면 적용(세계지도의 좁은 유럽 등에서 이름이 과대 표시되지 않게)
         var fit=1.3*mx/(1.24*Math.max(1,nm.length));
         var minFs=(ui>1?11:9)*vb.w/(svg.clientWidth||820); // 화면상 최소 픽셀 보장
-        var fs=Math.min(16*ku, Math.max(fit, minFs));
+        // 구글맵식 줌 연동 상한: 축소(k→1)일수록 12px까지 낮추고, 확대하면 16px까지 커짐
+        var capPx=Math.min(16, 12/Math.sqrt(k));
+        var fs=Math.min(capPx*ku, Math.max(fit, minFs));
         var lx=(b[0]+b[2])/2, ly=(b[1]+b[3])/2+4*ku;
         var halfW=nm.length*fs*0.62;
         // 축소해도 영토의 2.6배를 넘는 소국은 이 줌에선 생략 — 확대하면 표시
