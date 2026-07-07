@@ -241,18 +241,29 @@
         t2.style.letterSpacing=(0.1*12*ku)+"px"; t2.style.strokeWidth=(2.2*ku)+"px";
         t2.textContent=r.name; gTL.appendChild(t2); }); }
 
-      // 도시(줌 규칙 + 시대별 이름)
+      // 도시(줌 규칙 + 시대별 이름) — 단계 공개: 수도★는 항상, 이름은 k≤0.6부터, 비수도 도시는 k≤0.3부터
       var wide=k>0.6, cityPts=[];
-      if(vis.city && map.cities){ map.cities.forEach(function(c){ var info=c.y[year]; if(!info) return;
-        var p=proj(c.lon,c.lat), col=COLOR[info[0]]||"#555"; cityPts.push(p);
-        if(wide && info[1]!=="cap") return;
+      if(vis.city && map.cities){
+        var cl=map.cities.filter(function(c){ return c.y[year]; });
+        cl.sort(function(a,b){ return (b.y[year][1]==="cap"?1:0)-(a.y[year][1]==="cap"?1:0); }); // 수도가 이름 자리를 먼저 차지
+        cl.forEach(function(c){ var info=c.y[year];
+        var isCap=info[1]==="cap";
+        if(!isCap && k>0.3) return;
+        var p=proj(c.lon,c.lat), col=COLOR[info[0]]||"#555";
         var g=el("g",{});
-        if(info[1]==="cap"){ var ss=(wide?9.5:16)*ku;
+        if(isCap){ var ss=(wide?9.5:13)*ku;
           var s=el("text",{x:p[0],y:p[1]+ss*0.34,"text-anchor":"middle","font-size":ss,fill:col,
-            style:"paint-order:stroke;stroke:#fff;stroke-width:"+((wide?1.5:2.4)*ku)+"px"}); s.textContent="★"; g.appendChild(s); }
-        else g.appendChild(el("circle",{cx:p[0],cy:p[1],r:4*ku,fill:col,stroke:"#fff","stroke-width":1*ku}));
-        if(!wide){ var lab=el("text",{x:p[0]+(info[1]==="cap"?9:7)*ku,y:p[1]+4*ku,class:"cmap-citylab"}); lab.style.fontSize=(11*ku)+"px";
-          lab.style.strokeWidth=(2.4*ku)+"px"; lab.textContent=(info[2]||c.name); g.appendChild(lab); }
+            style:"paint-order:stroke;stroke:#fff;stroke-width:"+((wide?1.5:2)*ku)+"px"}); s.textContent="★"; g.appendChild(s); }
+        else g.appendChild(el("circle",{cx:p[0],cy:p[1],r:3.5*ku,fill:col,stroke:"#fff","stroke-width":1*ku}));
+        if(!wide){ var cn=(info[2]||c.name), w2=cn.length*11*ku;
+          // 이름 자리 회피: 오른쪽 → 왼쪽 → 생략(기호만)
+          var hit=function(cx2){ return cityPts.some(function(q){ return Math.abs(cx2-q[0])<w2/2+8*ku+q[2] && Math.abs(p[1]-q[1])<11.5*ku; }); };
+          var side= !hit(p[0]+w2/2) ? 1 : (!hit(p[0]-w2/2) ? -1 : 0);
+          if(side){ var lab=el("text",{x:p[0]+side*8*ku,y:p[1]+4*ku,class:"cmap-citylab"}); if(side<0) lab.setAttribute("text-anchor","end");
+            lab.style.fontSize=(11*ku)+"px"; lab.style.strokeWidth=(2.4*ku)+"px"; lab.textContent=cn; g.appendChild(lab);
+            cityPts.push([p[0]+side*w2/2, p[1], w2/2+8*ku]); } // 충돌용 범위: ★부터 이름 끝까지
+          else cityPts.push([p[0],p[1],8*ku]); }
+        else cityPts.push([p[0],p[1],8*ku]);
         gCity.appendChild(g); }); }
 
       // 영토 + 나라 라벨(충돌 회피)
@@ -271,9 +282,13 @@
         var halfW=nm.length*fs*0.62;
         // 축소해도 영토의 2.6배를 넘는 소국은 이 줌에선 생략 — 확대하면 표시
         if(halfW*2 > 2.6*mx) return;
-        function clash(y){ return cityPts.some(function(p){ return Math.abs(p[0]-lx)<halfW+16*ku && Math.abs(p[1]-y)<fs*0.85; })
-          || placedLabs.some(function(q){ return Math.abs(q[0]-lx)<halfW+q[2] && Math.abs(q[1]-y)<fs; }); }
-        for(var tr=0; tr<5 && clash(ly); tr++){ ly += (tr%2? -1:1)*(tr+1)*fs*0.95; }
+        function clash(x,y){ return cityPts.some(function(q){ return Math.abs(q[0]-x)<halfW+q[2] && Math.abs(q[1]-y)<(fs+11*ku)*0.62; })
+          || placedLabs.some(function(q){ return Math.abs(q[0]-x)<halfW+q[2] && Math.abs(q[1]-y)<fs*1.05; }); }
+        // 회피 후보: 세로 이동 우선, 넓은 영토는 가로 이동(영토 bbox 안)도 시도 — 끝내 못 피하면 중심 유지
+        var cand=[[0,0],[0,1],[0,-2],[0.9,0],[-0.9,0],[0,3],[0.9,1],[-0.9,-2],[0,-4],[0,5]];
+        for(var ci=0; ci<cand.length; ci++){ var nx=lx+cand[ci][0]*halfW*1.1, ny=ly+cand[ci][1]*fs*0.95;
+          if(cand[ci][0] && (nx-halfW<b[0]-4*ku || nx+halfW>b[2]+4*ku)) continue;
+          if(!clash(nx,ny)){ lx=nx; ly=ny; break; } }
         placedLabs.push([lx,ly,halfW]);
         var tx=el("text",{x:lx,y:ly,class:"cmap-terrlab"}); tx.style.fontSize=fs+"px";
         tx.style.letterSpacing=(0.14*fs)+"px"; tx.style.strokeWidth=(3*ku)+"px"; tx.style.fill=darken(COLOR[t.id]);
