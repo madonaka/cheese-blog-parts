@@ -21,6 +21,11 @@
   function el(t,a){ var e=document.createElementNS(NS,t); for(var k in a) e.setAttribute(k,a[k]); return e; }
   function pbox(d){ var m=d.match(/-?\d+\.?\d*/g); if(!m)return null; var b=[9e9,9e9,-9e9,-9e9];
     for(var i=0;i<m.length-1;i+=2){ var x=+m[i],y=+m[i+1]; if(x<b[0])b[0]=x;if(x>b[2])b[2]=x;if(y<b[1])b[1]=y;if(y>b[3])b[3]=y; } return b; }
+  // 라벨 기준 bbox: 날짜변경선 분할 파편·원거리 영토가 전체 bbox를 늘리므로 가장 큰 링만 사용
+  function mainRingBox(d){ var rings=d.match(/M[^M]+/g); if(!rings||rings.length<2) return pbox(d);
+    var best=null, bestA=-1;
+    for(var i=0;i<rings.length;i++){ var b=pbox(rings[i]); if(!b) continue;
+      var a=(b[2]-b[0])*(b[3]-b[1]); if(a>bestA){ bestA=a; best=b; } } return best; }
   function darken(hex){ var m=/^#?([0-9a-f]{6})$/i.exec(hex||""); if(!m) return "#2a2417";
     var v=parseInt(m[1],16); return "rgb("+Math.round(((v>>16)&255)*0.5)+","+Math.round(((v>>8)&255)*0.5)+","+Math.round((v&255)*0.5)+")"; }
 
@@ -254,7 +259,7 @@
       var placedLabs=[];
       if(vis.terr){ (map.territories[year]||[]).forEach(function(t){
         var tp=el("path",{class:"cmap-terr",d:t.d,fill:COLOR[t.id]||"#888","fill-rule":"evenodd"}); tp.style.strokeWidth=(1.2*ku)+"px"; gTerr.appendChild(tp);
-        var b=pbox(t.d); if(!b) return;
+        var b=mainRingBox(t.d); if(!b) return;
         var nm=NAME[t.id]||"", bw=b[2]-b[0], bh=b[3]-b[1], mx=Math.max(bw,bh);
         // 라벨을 영토 크기에 맞춰 축소 — 모든 화면 적용(세계지도의 좁은 유럽 등에서 이름이 과대 표시되지 않게)
         var fit=1.3*mx/(1.24*Math.max(1,nm.length));
