@@ -40,6 +40,6 @@ for(let y=0;y<OH;y++)for(let x=0;x<OW;x++){ const e=E[y*OW+x],o=(y*OW+x)*4;
   png.data[o+3]=255;
 }
 const buf=PNG.sync.write(png,{colorType:6});
-fs.writeFileSync("relief7.json", JSON.stringify({ viewBox:`0 0 ${VW} ${VH}`, ocean:"rgb(95,131,137)", dataUri:"data:image/png;base64,"+buf.toString("base64") }));
+fs.writeFileSync("relief7.json", JSON.stringify({ viewBox:`0 0 ${VW} ${VH}`, ocean:"#a9e2f3", dataUri:"data:image/png;base64,"+buf.toString("base64") }));
 fs.writeFileSync("relief7.png", buf);
 console.log("relief7",OW+"x"+OH,"| PNG",Math.round(buf.length/1024)+"KB");

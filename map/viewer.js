@@ -29,6 +29,10 @@
       var a=(b[2]-b[0])*(b[3]-b[1]); if(a>bestA){ bestA=a; best=b; } } return best; }
   function darken(hex){ var m=/^#?([0-9a-f]{6})$/i.exec(hex||""); if(!m) return "#2a2417";
     var v=parseInt(m[1],16); return "rgb("+Math.round(((v>>16)&255)*0.5)+","+Math.round(((v>>8)&255)*0.5)+","+Math.round((v&255)*0.5)+")"; }
+  // 영토 채움 = 나라 색을 흰색 쪽으로 45% 섞은 파스텔 틴트 — 데이터의 나라 색은 그대로 두고 표시만 밝게
+  function tint(hex){ var m=/^#?([0-9a-f]{6})$/i.exec(hex||""); if(!m) return "#cccccc";
+    var v=parseInt(m[1],16), r=(v>>16)&255, g=(v>>8)&255, b=v&255, t=0.45;
+    return "rgb("+Math.round(r+(255-r)*t)+","+Math.round(g+(255-g)*t)+","+Math.round(b+(255-b)*t)+")"; }
 
   function render(mount, opts){
     var map=opts.map, rivers=opts.rivers||{}, reliefUrl=opts.reliefUrl, landD=opts.land||"";
@@ -37,7 +41,7 @@
     var COLOR={}, NAME={};
     map.nations.forEach(function(n){ COLOR[n.id]=n.color; NAME[n.id]=n.name; });
     var years=map.years.slice().sort(function(a,b){ return (+a.y)-(+b.y); });
-    var yearIdx=0, year=years[0].y, vis={terr:1,river:1,city:1};
+    var yearIdx=0, year=years[0].y, vis={terr:1,river:1,city:1,relief:1};
 
     var W=+map.viewBox.split(" ")[2], H=+map.viewBox.split(" ")[3];
     var vb={x:0,y:0,w:W,h:H};
@@ -45,6 +49,7 @@
     mount.classList.add("cmap"); mount.innerHTML="";
     if(opts.title){ var h=document.createElement("h2"); h.className="cmap-title"; h.textContent=opts.title; mount.appendChild(h); }
     var sub=document.createElement("p"); sub.className="cmap-sub"; mount.appendChild(sub);
+    var descEl=document.createElement("p"); descEl.className="cmap-desc"; descEl.style.display="none"; mount.appendChild(descEl);
 
     // 연대 타임라인 (◀ ▶ + 연대선 점)
     var tl=document.createElement("div"); tl.className="cmap-timeline";
@@ -53,14 +58,21 @@
     // 레이어 토글
     var lb=document.createElement("div"); lb.className="cmap-bar";
     lb.innerHTML='<span class="cmap-lbl">레이어</span>';
-    [["terr","영토"],["river","강"],["city","도시"]].forEach(function(t){
+    [["terr","영토"],["river","강"],["city","도시"],["relief","지형"]].forEach(function(t){
       var b=document.createElement("button"); b.className="cmap-btn on"; b.textContent=t[1]; b.dataset.l=t[0];
       b.onclick=function(){ vis[t[0]]=!vis[t[0]]; b.classList.toggle("on",!!vis[t[0]]); draw(); }; lb.appendChild(b); });
+    // 고대 해안선 토글 — 해수면 +8m 비정 해안선으로 land 경로만 교체(클립 기준이라 지형·강·영토가 자동으로 따라옴)
+    if(opts.landPaleo){
+      var pb=document.createElement("button"); pb.className="cmap-btn"; pb.textContent="고대 해안선";
+      pb.title="해수면 +7~9m 상승을 가정한 기원후 고대~중세 초 비정(比定) 해안선";
+      pb.onclick=function(){ paleoOn=!paleoOn; pb.classList.toggle("on",paleoOn); setLand(paleoOn?opts.landPaleo:landD); draw(); };
+      lb.appendChild(pb);
+    }
     mount.appendChild(lb);
 
     // 지도 래퍼(+줌 버튼 오버레이)
     var wrap=document.createElement("div"); wrap.className="cmap-mapwrap"; mount.appendChild(wrap);
-    var svg=el("svg",{class:"cmap-svg",viewBox:map.viewBox}); svg.style.background=(cfg.ocean||"#5f8389");
+    var svg=el("svg",{class:"cmap-svg",viewBox:map.viewBox}); svg.style.background=(cfg.ocean||"#a9e2f3");
     // 납작한 지도(세계 전도 등)는 표시 비율을 따로 지정해 크게 — 세로로 넘치는 부분은 바다 레터박스
     var dispAR=+opts.displayAspect||0;
     if(dispAR) svg.style.aspectRatio=String(dispAR);
@@ -70,14 +82,24 @@
     wrap.appendChild(zoomBox);
 
     // 해안선 기준 = 벡터 land 하나로 통일: relief(투명 바다)·강·영토를 land 모양으로 클립
-    var clipId=null, landEl=null;
+    // 고대 해안선 토글은 이 land 경로(클립·글로우·외곽선)만 통째로 교체한다 — +8m 해안선은 현대 해안선의 부분집합이라 안전
+    var clipId=null, landEl=null, cpPath=null, glowO=null, glowI=null, paleoOn=false;
     if(landD){
       clipId="cmapClip"+(++render._n||(render._n=1));
-      var defs=el("defs",{}); var cp=el("clipPath",{id:clipId}); cp.appendChild(el("path",{d:landD})); defs.appendChild(cp); svg.appendChild(defs);
+      var defs=el("defs",{}); var cp=el("clipPath",{id:clipId}); cpPath=el("path",{d:landD}); cp.appendChild(cpPath); defs.appendChild(cp); svg.appendChild(defs);
+      // 해안 글로우: 바깥쪽 밝은 띠 + 흰 띠 — 육지 실루엣을 바다에서 띄운다 (안쪽은 뒤에 그리는 land가 덮음)
+      glowO=el("path",{class:"cmap-coastglow",d:landD}); svg.appendChild(glowO);
+      glowI=el("path",{class:"cmap-coasthalo",d:landD}); svg.appendChild(glowI);
       landEl=el("path",{class:"cmap-land",d:landD}); svg.appendChild(landEl);
     }
     function clipped(g){ if(clipId) g.setAttribute("clip-path","url(#"+clipId+")"); return g; }
-    if(reliefUrl){ var img=el("image",{x:0,y:0,width:W,height:H,preserveAspectRatio:"none"});
+    function setLand(d){ if(cpPath)cpPath.setAttribute("d",d); if(landEl)landEl.setAttribute("d",d);
+      if(glowO)glowO.setAttribute("d",d); if(glowI)glowI.setAttribute("d",d); }
+
+    var gTerr=clipped(el("g",{})); svg.appendChild(gTerr);
+    // 지형은 영토 '위'에 grayscale multiply 오버레이 — flat 원색을 유지하면서 지형감만 은은하게 남긴다
+    var img=null;
+    if(reliefUrl){ img=el("image",{class:"cmap-relief",x:0,y:0,width:W,height:H,preserveAspectRatio:"none"});
       img.setAttributeNS("http://www.w3.org/1999/xlink","href",reliefUrl); img.setAttribute("href",reliefUrl);
       if(clipId) img.setAttribute("clip-path","url(#"+clipId+")"); svg.appendChild(img); }
 
@@ -86,8 +108,8 @@
     if(rivers.classes){ rivers.classes.forEach(function(c){ var p=el("path",{class:"cmap-river","stroke-width":c.w,d:c.d}); p.dataset.w=c.w; gRiver.appendChild(p); }); }
     else { gRiver.appendChild(el("path",{class:"cmap-river mn",d:rivers.minor||""})); gRiver.appendChild(el("path",{class:"cmap-river mj",d:rivers.major||""})); }
     svg.appendChild(gRiver);
-    var gTerr=clipped(el("g",{})), gTL=el("g",{}), gCity=el("g",{});
-    svg.appendChild(gTerr); svg.appendChild(gTL); svg.appendChild(gCity);
+    var gTL=el("g",{}), gCity=el("g",{});
+    svg.appendChild(gTL); svg.appendChild(gCity);
 
     // 범례 — 현재 연도에 존재하는 나라만 (연도 전환 시 draw()에서 갱신)
     var lg=document.createElement("div"); lg.className="cmap-legend";
@@ -99,7 +121,7 @@
       if(map.cities) map.cities.forEach(function(c){ var i=c.y[year]; if(i) present[i[0]]=1; });
       var html='<span><svg width="14" height="14"><text x="7" y="11" text-anchor="middle" font-size="13" fill="#c0453f">★</text></svg> 수도</span>'
         +'<span><svg width="14" height="14"><circle cx="7" cy="7" r="4" fill="#3f6fb0" stroke="#fff"/></svg> '+cityLbl+'</span>';
-      map.nations.forEach(function(n){ if(present[n.id]) html+='<span><i style="display:inline-block;width:11px;height:11px;border-radius:2px;background:'+n.color+'"></i> '+n.name+'</span>'; });
+      map.nations.forEach(function(n){ if(present[n.id]) html+='<span><i style="display:inline-block;width:11px;height:11px;border-radius:2px;background:'+tint(n.color)+';border:1.5px solid '+darken(n.color)+'"></i> '+n.name+'</span>'; });
       lg.innerHTML=html;
     }
     if(opts.note){ var nt=document.createElement("p"); nt.className="cmap-note"; nt.textContent=opts.note; mount.appendChild(nt); }
@@ -154,11 +176,15 @@
     svg.addEventListener("wheel",function(e){ e.preventDefault(); var xy=svgXY(e); zoomAt(xy[0],xy[1], e.deltaY<0?0.84:1.19); },{passive:false});
     // ── 이미지 저장(현재 뷰 그대로 + 브랜드 헤더/푸터) ──
     var EXPORT_CSS='.cmap-land{fill:#f2f0e8;stroke:#c7b998;stroke-linejoin:round}'
-      +'.cmap-rivers{opacity:.55}.cmap-river{fill:none;stroke:#3d6f8e;stroke-linejoin:round;stroke-linecap:round}.cmap-lake{fill:#3d6f8e}'
-      +'.cmap-terr{fill-opacity:.4;stroke:#fff;stroke-opacity:.8;stroke-linejoin:round}'
+      +'.cmap-coastglow{fill:none;stroke:#dff3fa;stroke-linejoin:round;stroke-linecap:round}'
+      +'.cmap-coasthalo{fill:none;stroke:#fff;stroke-linejoin:round;stroke-linecap:round}'
+      +'.cmap-relief{mix-blend-mode:multiply;opacity:.22;filter:grayscale(1) brightness(1.25)}'
+      +'.cmap-rivers{opacity:.45}.cmap-river{fill:none;stroke:#3d6f8e;stroke-linejoin:round;stroke-linecap:round}.cmap-lake{fill:#3d6f8e}'
+      +'.cmap-terr{fill-opacity:.96;stroke-linejoin:round}'
       +'.cmap-terrlab{fill:#20242a;paint-order:stroke;stroke:#fff;stroke-linejoin:round;text-anchor:middle;font-weight:700}'
+      +'.cmap-ruler{text-anchor:middle;font-weight:600;paint-order:stroke;stroke:#fff;stroke-linejoin:round}'
       +'.cmap-citylab{fill:#1c1a12;paint-order:stroke;stroke:#fff;stroke-linejoin:round;font-weight:700}'
-      +'.cmap-region{fill:#514a38;text-anchor:middle;font-style:italic;font-weight:600;paint-order:stroke;stroke:rgba(255,255,255,.85);stroke-linejoin:round}'
+      +'.cmap-region{fill:#5f6570;opacity:.55;text-anchor:middle;font-weight:700}'
       +'text{font-family:"Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",sans-serif}';
     var reliefDataUrl=null;
     function blobToDataURL(b){ return new Promise(function(res){ var fr=new FileReader(); fr.onload=function(){ res(fr.result); }; fr.readAsDataURL(b); }); }
@@ -177,7 +203,7 @@
         var mapW=1600, mapH=Math.round(mapW*vb.h/vb.w);
         cl.setAttribute("width",mapW); cl.setAttribute("height",mapH);
         var st=document.createElementNS(NS,"style"); st.textContent=EXPORT_CSS; cl.insertBefore(st, cl.firstChild);
-        var bg=el("rect",{x:vb.x,y:vb.y,width:vb.w,height:vb.h,fill:(cfg.ocean||"#5f8389")}); cl.insertBefore(bg, st.nextSibling);
+        var bg=el("rect",{x:vb.x,y:vb.y,width:vb.w,height:vb.h,fill:(cfg.ocean||"#a9e2f3")}); cl.insertBefore(bg, st.nextSibling);
         var imEl=cl.querySelector("image");
         if(imEl){ if(reliefD){ imEl.setAttribute("href",reliefD); imEl.setAttributeNS("http://www.w3.org/1999/xlink","href",reliefD); } else imEl.remove(); }
         var svgStr=new XMLSerializer().serializeToString(cl);
@@ -230,16 +256,19 @@
       var ui=Math.min(2.6, Math.max(1, 820/((svg.clientWidth||820)))); // 모바일 확대 배율 — 작은 화면일수록 라벨·기호를 키움
       var ku=k*ui*us;
       gRiver.style.display=vis.river?"":"none";
+      if(img) img.style.display=vis.relief?"":"none";
       // 강 굵기 줌 감쇠(√k)
       var rk=Math.pow(k,0.5)*Math.sqrt(ui)*us;
       gRiver.querySelectorAll(".cmap-river").forEach(function(p){ if(p.dataset.w) p.setAttribute("stroke-width",(+p.dataset.w)*rk); });
       gTerr.innerHTML=""; gTL.innerHTML=""; gCity.innerHTML="";
       if(landEl) landEl.style.strokeWidth=(0.7*ku)+"px";
+      if(glowO) glowO.style.strokeWidth=(7*ku)+"px";
+      if(glowI) glowI.style.strokeWidth=(2.6*ku)+"px";
 
-      // 지역 통칭(요동·말갈 등) — 좁은 화면의 넓은 뷰에서는 숨겨 라벨 밀집 완화
+      // 지역 통칭(요동·말갈 등) — 저대비 회색 워터마크(크되 시선을 안 뺏는 2순위 라벨). 좁은 화면의 넓은 뷰에서는 숨김
       if(map.regions && !(ui>1.5 && k>0.45)){ map.regions.forEach(function(r){ if(!r.y||!r.y[year]) return; var p=proj(r.lon,r.lat);
-        var t2=el("text",{x:p[0],y:p[1],class:"cmap-region"}); t2.style.fontSize=(12*ku)+"px";
-        t2.style.letterSpacing=(0.1*12*ku)+"px"; t2.style.strokeWidth=(2.2*ku)+"px";
+        var t2=el("text",{x:p[0],y:p[1],class:"cmap-region"}); t2.style.fontSize=(14*ku)+"px";
+        t2.style.letterSpacing=(0.3*14*ku)+"px";
         t2.textContent=r.name; gTL.appendChild(t2); }); }
 
       // 영토 + 나라 라벨 — 앵커 고정(최대 링 bbox 중심, 줌과 무관), 겹치면 이동 대신 작은 영토 쪽을 그 줌에선 숨김
@@ -247,7 +276,9 @@
       if(vis.terr){
         var terrs=(map.territories[year]||[]);
         terrs.forEach(function(t){
-          var tp=el("path",{class:"cmap-terr",d:t.d,fill:COLOR[t.id]||"#888","fill-rule":"evenodd"}); tp.style.strokeWidth=(1.2*ku)+"px"; gTerr.appendChild(tp); });
+          // korsica 방식: 파스텔 틴트 채움 + 자기 색의 진한 테두리 — 인접국이 서로 다른 색의 이중선을 만든다
+          var tp=el("path",{class:"cmap-terr",d:t.d,fill:tint(COLOR[t.id]||"#888"),stroke:darken(COLOR[t.id]),"fill-rule":"evenodd"});
+          tp.style.strokeWidth=(1.1*ku)+"px"; gTerr.appendChild(tp); });
         var boxes=terrs.map(function(t){ var b=mainRingBox(t.d); return b&&{t:t,b:b}; }).filter(Boolean);
         boxes.sort(function(x,y){ return (y.b[2]-y.b[0])*(y.b[3]-y.b[1])-(x.b[2]-x.b[0])*(x.b[3]-x.b[1]); }); // 큰 영토부터 자리 선점
         boxes.forEach(function(o){ var b=o.b, nm=NAME[o.t.id]||"";
@@ -265,7 +296,12 @@
           placedLabs.push([lx,ly,halfW,fs]);
           var tx=el("text",{x:lx,y:ly,class:"cmap-terrlab"}); tx.style.fontSize=fs+"px";
           tx.style.letterSpacing=(0.14*fs)+"px"; tx.style.strokeWidth=(3*ku)+"px"; tx.style.fill=darken(COLOR[o.t.id]);
-          tx.textContent=nm; gTL.appendChild(tx); }); }
+          tx.textContent=nm; gTL.appendChild(tx);
+          // 지도자명(선택) — 나라 이름 위에 작게. 라벨이 충분히 클 때만(작은 영토에선 생략)
+          var rl=map.rulers&&map.rulers[year]&&map.rulers[year][o.t.id];
+          if(rl && fs>=11*ku){ var rt=el("text",{x:lx,y:ly-fs*1.02,class:"cmap-ruler"});
+            rt.style.fontSize=(fs*0.46)+"px"; rt.style.strokeWidth=(2*ku)+"px"; rt.style.fill=darken(COLOR[o.t.id]);
+            rt.textContent=rl; gTL.appendChild(rt); } }); }
 
       // 도시(줌 규칙 + 시대별 이름) — 완전 축소(k>0.6)에선 숨김, k≤0.6부터 수도★+이름, k≤0.3부터 그 외 도시
       var cityPts=[];
@@ -293,6 +329,8 @@
         gCity.appendChild(g); }); }
 
       var Y=years[yearIdx]; sub.innerHTML=Y?('<b class="cmap-sub-year">'+Y.y+'년</b>'+(Y.nm?' <span class="cmap-sub-nm">'+Y.nm+'</span>':'')):"";
+      // 연도별 서사(선택) — korsica 지도처럼 한 장이 슬라이드로 완결되게
+      if(Y&&Y.desc){ descEl.textContent=Y.desc; descEl.style.display=""; } else { descEl.style.display="none"; }
       renderLegend();
     }
 

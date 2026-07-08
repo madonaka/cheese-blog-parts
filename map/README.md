@@ -16,6 +16,7 @@ map/
     relief.png          음영 지형도 (바다=투명, jsDelivr로 서빙)
     rivers.json         강 경로 (HydroRIVERS 기반, 유량등급별 굵기 classes:[{w,d}], 하구 연장)
     land.json           벡터 해안선 — 해안선의 단일 기준. 뷰어가 지형·강·영토를 이 모양으로 클립
+    land-paleo.json     고대 해안선 (해수면 +8m 비정, land.json과 같은 형식) — 뷰어 '고대 해안선' 토글용
   admin/
     editor.html         관리자 편집기 (지형·영토·도시 편집, 저장). polygon-clipping 포함.
   build/                에셋 재생성 파이프라인 (Node)
@@ -34,7 +35,8 @@ map/
   "viewBox": "0 0 784 516",
   "cfg": { "WIN":[106,26,146,47], "SCALE":24, "pad":6, "ocean":"rgb(95,131,137)" },
   "nations":  [ {"id":"koguryo","name":"고구려","color":"#c98a2b"}, ... ],
-  "years":    [ {"y":"400","nm":"삼국·가야 정립"}, ... ],
+  "years":    [ {"y":"400","nm":"삼국·가야 정립","desc":"연도별 서사(선택) — 지도 위 설명문"}, ... ],
+  "rulers":   { "400": {"koguryo":"광개토왕"} },   // 선택 — 나라 라벨 위에 지도자명 작게 표시
   "territories": {                       // 연도별, 겹침 절단 완료된 SVG path (투영 좌표)
     "400": [ {"id":"koguryo","d":"M..Z.."}, ... ]
   },
@@ -86,10 +88,12 @@ https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/map/assets/rivers.js
   Promise.all([
     fetch(CDN+'data/samguk-map.json').then(function(r){return r.json();}),
     fetch(CDN+'assets/rivers.json').then(function(r){return r.json();}),
-    fetch(CDN+'assets/land.json').then(function(r){return r.json();})
+    fetch(CDN+'assets/land.json').then(function(r){return r.json();}),
+    fetch(CDN+'assets/land-paleo.json').then(function(r){return r.json();})   // 선택 — 고대 해안선 토글
   ]).then(function(res){
     CheeseMap.render(document.getElementById('samgukMap'), {
       title:'삼국시대 동아시아', map:res[0], rivers:res[1], land:res[2].land,
+      landPaleo:res[3].land,
       reliefUrl:CDN+'assets/relief.png'
     });
   });
@@ -100,6 +104,8 @@ https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/map/assets/rivers.js
 
 Node 필요(pngjs). 원본 좌표계 고정: `WIN=[106,26,146,47], SCALE=24, pad=6 → viewBox 0 0 784 516`.
 - `build-relief7.js` — AWS Terrarium 고도타일(z8, 580장) → 음영 지형도 PNG 3072px (bilinear+hypsometric, 바다 투명)
+- `build-land-paleo.js [해수면m] [타일dir]` — 고대 해안선 생성: 현대 land 래스터 마스크 ∧ 외해 flood-fill(고도<+8m)
+  → 컨투어 → `assets/land-paleo.json`. +8m 해안선은 현대의 부분집합이라 relief/강 재생성 불필요(뷰어 클립이 처리)
 - `parse-hydro.js` + `convert-rivers5.js` — HydroRIVERS(Asia)에서 하천 추출 → 유량등급별 강 경로
 - `convert-land.js` / `convert-ea.js` — 해안선 / 동아시아 역사 국경(참고용)
 - `build-package.js` — seeds/cities → published 데이터 + 에셋 생성
@@ -126,6 +132,17 @@ Node 필요(pngjs). 원본 좌표계 고정: `WIN=[106,26,146,47], SCALE=24, pad
 3. `node build-relief-world.js <tiles6> <src>` → `assets/relief-world.webp` (8192px, WebP)
 4. `node gen-world-map.js <src>` → `data/world-modern-map.json` (발행본/폴백 겸용)
 5. `node publish-world.js` → Firestore `historyMaps/modern-world` 발행
+
+## 표시 스타일 (2026-07-08, flat 개편)
+
+korsica 계열 역사 지도를 기준으로 한 flat 스타일이 기본이다:
+- **영토 = 파스텔 틴트 채움(나라 색+흰색 45%) + 자기 색 진한 테두리.** 나라 색 데이터는 그대로 두고 표시만 변환(`tint`/`darken`).
+- **지형 = 영토 위 grayscale multiply 오버레이**(`.cmap-relief`, opacity .22) — '지형' 레이어 토글로 끌 수 있다.
+- **바다 #a9e2f3 + 해안 글로우 2겹**(`.cmap-coastglow/-coasthalo`) — 육지 실루엣 강조.
+- **라벨 위계**: 나라(크게, 진한 자기 색) > 지도자명(`rulers`, 나라 위 작게) > 지역 통칭(저대비 회색 워터마크) > 도시.
+- `years[].desc` 가 있으면 연도 전환 시 지도 아래 서사 문단으로 표시.
+- **고대 해안선 토글**: `opts.landPaleo` 전달 시 레이어 바에 '고대 해안선' 버튼 — 해수면 +8m 비정 해안선으로
+  land 경로(클립 기준)만 교체한다. 침수 지형·강·영토 절단은 클립이 자동 처리.
 
 **해안선 단일화(2026-07-07):** 바다/육지 기준은 벡터 land(NE 50m, eps 0.2) 하나다.
 - 지형 래스터의 알파는 DEM(고도≤0)이 아니라 **벡터 land 래스터 마스크**로 결정 (`build-relief-world.js`)
