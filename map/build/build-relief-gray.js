@@ -73,43 +73,54 @@ function lum(e){ if(e<=RAMP[0][0]) return RAMP[0][1];
   for(let i=1;i<RAMP.length;i++){ if(e<=RAMP[i][0]){ const a=RAMP[i-1],b=RAMP[i],t=(e-a[0])/(b[0]-a[0]); return a[1]+(b[1]-a[1])*t; } }
   return RAMP[RAMP.length-1][1]; }
 
+// 분리형 박스 블러(clamp 경계) — 고도 스파이크 제거용. 반복 적용으로 가우시안 근사
+function boxblur(src,w,h,r){ const tmp=new Float32Array(w*h), out=new Float32Array(w*h), n=2*r+1;
+  for(let y=0;y<h;y++){ const row=y*w;
+    for(let x=0;x<w;x++){ let s=0; for(let k=-r;k<=r;k++){ let xx=x+k; if(xx<0)xx=0; else if(xx>=w)xx=w-1; s+=src[row+xx]; } tmp[row+x]=s/n; } }
+  for(let x=0;x<w;x++){
+    for(let y=0;y<h;y++){ let s=0; for(let k=-r;k<=r;k++){ let yy=y+k; if(yy<0)yy=0; else if(yy>=h)yy=h-1; s+=tmp[yy*w+x]; } out[y*w+x]=s/n; } }
+  return out; }
+
 (async function main(){
   await ensureTiles();
   loadTiles();
   console.log(MODE,"고도 그리드",OW+"x"+OH,"...");
   const E=new Float32Array(OW*OH);
   for(let y=0;y<OH;y++)for(let x=0;x<OW;x++){ const ll=unproj(ox0+(x+0.5)/S, oy0+(y+0.5)/S); E[y*OW+x]=elevBil(ll[0],ll[1]); }
+  // 음영·명암 램프 모두 블러 고도를 쓴다 — 원본의 튀는 고점 픽셀이 램프에서 어두운 점(점박이)이 되던 문제 해결.
+  // 블러가 넓은 고지대는 유지하므로 봉우리 어둠은 남고 단일 픽셀 스파이크만 사라진다.
+  // z10(korea)은 해상도가 높아 노이즈가 잘아 더 세게 블러
+  const BR=MODE==="korea"?2:1;
+  let Eg=E; for(let i=0;i<2;i++) Eg=boxblur(Eg,OW,OH,BR);
 
   const cellx=ow/OW*(1/(kx*CFG.SCALE))*111320*kx, celly=oh/OH*(1/CFG.SCALE)*110570;
-  const ZF=6.0, az=315*Math.PI/180, zen=45*Math.PI/180, cz=Math.cos(zen), sz=Math.sin(zen);
-  function E_(x,y){x=x<0?0:x>=OW?OW-1:x;y=y<0?0:y>=OH?OH-1:y;return E[y*OW+x];}
+  const ZF=5.0, az=315*Math.PI/180, zen=45*Math.PI/180, cz=Math.cos(zen), sz=Math.sin(zen);
+  function EG_(x,y){x=x<0?0:x>=OW?OW-1:x;y=y<0?0:y>=OH?OH-1:y;return Eg[y*OW+x];}
 
-  // base 모드: 한반도 박스 안은 알파 구멍(24px 페더) — korea 패치가 대신 그린다
-  let hx0=-1,hy0=-1,hx1=-1,hy1=-1;
-  if(MODE==="base"){ const p1=proj(KOREA_BOX[0],KOREA_BOX[3]), p2=proj(KOREA_BOX[2],KOREA_BOX[1]);
-    hx0=p1[0]*S; hy0=p1[1]*S; hx1=p2[0]*S; hy1=p2[1]*S; }
-  const F=24; // 페더 폭(출력 px)
-  function holeAlpha(x,y){ // 0=완전 구멍, 1=바깥
-    if(MODE!=="base") return 1;
-    const dx=Math.max(hx0-x, x-hx1), dy=Math.max(hy0-y, y-hy1); // 박스 밖이면 양수
-    const d=Math.max(dx,dy);
-    if(d>=0) return Math.min(1,d/F);
-    return 0; }
-  function edgeAlpha(x,y){ // korea 패치 가장자리 페더(박스 경계에서 스르륵)
-    if(MODE!=="korea") return 1;
-    const d=Math.min(x,y,OW-1-x,OH-1-y);
-    return Math.min(1,d/F); }
+  // base↔korea 경계: 지리 좌표(도) 기준 크로스페이드 — 두 이미지 알파의 합이 항상 1이라 이음매 없음
+  // base 는 박스 안으로 갈수록 사라지고, korea 는 박스 안으로 갈수록 나타난다(같은 깊이에서 상보적)
+  const FEATHER=0.6; // 페더 폭(도) ≈ 66km — z8(흐림)→z10(선명) 전환을 넓게 뭉갬
+  const KB={W:KOREA_BOX[0],S:KOREA_BOX[1],E:KOREA_BOX[2],N:KOREA_BOX[3]};
+  function terrAlpha(lon,lat){
+    const inside = lon>KB.W&&lon<KB.E&&lat>KB.S&&lat<KB.N;
+    if(MODE==="base"){ if(!inside) return 1;
+      const depth=Math.min(lon-KB.W,KB.E-lon,lat-KB.S,KB.N-lat);
+      return Math.max(0,Math.min(1,1-depth/FEATHER)); }
+    if(!inside) return 0; // korea
+    const depth=Math.min(lon-KB.W,KB.E-lon,lat-KB.S,KB.N-lat);
+    return Math.max(0,Math.min(1,depth/FEATHER)); }
 
   const png=new PNG({width:OW,height:OH});
   for(let y=0;y<OH;y++)for(let x=0;x<OW;x++){ const e=E[y*OW+x],o=(y*OW+x)*4;
-    const a=MODE==="base"?holeAlpha(x,y):edgeAlpha(x,y);
+    const ll=unproj(ox0+(x+0.5)/S, oy0+(y+0.5)/S);
+    const a=terrAlpha(ll[0],ll[1]);
     if(e<=0.5||a<=0){ png.data[o+3]=0; continue; }
-    const dzdx=(E_(x+1,y)-E_(x-1,y))/(2*cellx)*ZF, dzdy=(E_(x,y+1)-E_(x,y-1))/(2*celly)*ZF;
+    const dzdx=(EG_(x+1,y)-EG_(x-1,y))/(2*cellx)*ZF, dzdy=(EG_(x,y+1)-EG_(x,y-1))/(2*celly)*ZF;
     const slope=Math.atan(Math.sqrt(dzdx*dzdx+dzdy*dzdy)), aspect=Math.atan2(dzdy,-dzdx);
     let hs=cz*Math.cos(slope)+sz*Math.sin(slope)*Math.cos(az-aspect); hs=Math.max(0,hs);
     const sh=0.42+0.75*hs;
     // 4단계 양자화 — multiply 0.5 오버레이에선 실효 2/255라 밴딩이 안 보이고 PNG가 훨씬 작아진다
-    const L=Math.round(Math.max(0,Math.min(255,lum(e)*sh))/4)*4;
+    const L=Math.round(Math.max(0,Math.min(255,lum(EG_(x,y))*sh))/4)*4;
     png.data[o]=L; png.data[o+1]=L; png.data[o+2]=L;
     png.data[o+3]=Math.round(255*a);
   }
