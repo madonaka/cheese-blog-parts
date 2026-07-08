@@ -177,11 +177,11 @@
     window.addEventListener("resize",function(){ clearTimeout(render._rz); render._rz=setTimeout(refit,120); });
     svg.addEventListener("wheel",function(e){ e.preventDefault(); var xy=svgXY(e); zoomAt(xy[0],xy[1], e.deltaY<0?0.84:1.19); },{passive:false});
     // ── 이미지 저장(현재 뷰 그대로 + 브랜드 헤더/푸터) ──
-    var EXPORT_CSS='.cmap-land{fill:#f2f0e8;stroke:#c7b998;stroke-linejoin:round}'
+    var EXPORT_CSS='.cmap-land{fill:#f2f0e8;stroke:#a8c8d8;stroke-linejoin:round}'
       +'.cmap-coastglow{fill:none;stroke:#dff3fa;stroke-linejoin:round;stroke-linecap:round}'
       +'.cmap-coasthalo{fill:none;stroke:#fff;stroke-linejoin:round;stroke-linecap:round}'
       +'.cmap-relief{mix-blend-mode:multiply;opacity:.22;filter:grayscale(1) brightness(1.25)}'
-      +'.cmap-rivers{opacity:.45}.cmap-river{fill:none;stroke:#3d6f8e;stroke-linejoin:round;stroke-linecap:round}.cmap-lake{fill:#3d6f8e}'
+      +'.cmap-rivers{opacity:.8}.cmap-river{fill:none;stroke:#8fc6dc;stroke-linejoin:round;stroke-linecap:round}.cmap-lake{fill:#a9e2f3}'
       +'.cmap-terr{fill-opacity:.96;stroke-linejoin:round}'
       +'.cmap-terrlab{fill:#20242a;paint-order:stroke;stroke:#fff;stroke-linejoin:round;text-anchor:middle;font-weight:700}'
       +'.cmap-ruler{text-anchor:middle;font-weight:600;paint-order:stroke;stroke:#fff;stroke-linejoin:round}'

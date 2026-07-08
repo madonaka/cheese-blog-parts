@@ -58,7 +58,8 @@ function elevBil(lon,lat){ const gx=(lon+180)/360*WORLD, gy=(1-Math.asinh(Math.t
   const a=vv(getE(x0,y0)),b=vv(getE(x0+1,y0)),c=vv(getE(x0,y0+1)),d=vv(getE(x0+1,y0+1));
   return (a*(1-fx)+b*fx)*(1-fy)+(c*(1-fx)+d*fx)*fy; }
 
-const OW=3072, OH=Math.round(OW*VH/VW), S=OW/VW; // S: viewBox px → 그리드 px
+// 6144 = z8 데이터의 실제 해상도(~0.5km)에 맞춘 그리드 — 영산강 하류 같은 폭 1~3km 물길이 2~6셀로 살아남는다
+const OW=6144, OH=Math.round(OW*VH/VW), S=OW/VW; // S: viewBox px → 그리드 px
 
 /* ── 3. 현대 land 벡터 래스터화 (even-odd 스캔라인) ── */
 function rasterizeLand(){
@@ -134,7 +135,9 @@ function chaikin(pts){ const out=[];
   for(let i=0;i<pts.length;i++){ const a=pts[i], b=pts[(i+1)%pts.length];
     out.push([a[0]*0.75+b[0]*0.25, a[1]*0.75+b[1]*0.25],[a[0]*0.25+b[0]*0.75, a[1]*0.25+b[1]*0.75]); }
   return out; }
-const EPS=0.7, r_=n=>Math.round(n);
+// EPS·정밀도는 convert-land(0.7px·정수)보다 훨씬 촘촘하게 — 이 지도의 1px≈4.6km 라
+// 정수 반올림·EPS 0.7이면 좁은 물목이 닫혀 만이 호수처럼 분리돼 보인다
+const EPS=0.2, r_=n=>Math.round(n*10)/10;
 function rdp(pts,eps){ if(pts.length<3)return pts; let dmax=0,idx=0;const a=pts[0],b=pts[pts.length-1];
   for(let i=1;i<pts.length-1;i++){const d=perp(pts[i],a,b);if(d>dmax){dmax=d;idx=i;}}
   if(dmax>eps){return rdp(pts.slice(0,idx+1),eps).slice(0,-1).concat(rdp(pts.slice(idx),eps));} return[a,b]; }
