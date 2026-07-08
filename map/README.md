@@ -140,7 +140,8 @@ Node 필요(pngjs). 원본 좌표계 고정: `WIN=[106,26,146,47], SCALE=24, pad
 
 korsica 계열 역사 지도를 기준으로 한 flat 스타일이 기본이다:
 - **영토 = 파스텔 틴트 채움(나라 색+흰색 45%) + 자기 색 진한 테두리.** 나라 색 데이터는 그대로 두고 표시만 변환(`tint`/`darken`).
-- **지형 = 영토 위 grayscale multiply 오버레이**(`.cmap-relief`, opacity .22) — '지형' 레이어 토글로 끌 수 있다.
+- **지형 = 영토 위 grayscale multiply 오버레이**(`.cmap-reliefg`, opacity .62) — '지형' 레이어 토글로 끌 수 있다.
+  base+고해상 패치(`reliefHi`)를 한 그룹으로 묶어 multiply 는 그룹에 한 번만 건다 — 이미지별로 걸면 패치 페더 구간에 밝은 띠(이음매)가 생긴다.
 - **바다 #a9e2f3 + 해안 글로우 2겹**(`.cmap-coastglow/-coasthalo`) — 육지 실루엣 강조.
 - **라벨 위계**: 나라(크게, 진한 자기 색) > 지도자명(`rulers`, 나라 위 작게) > 지역 통칭(저대비 회색 워터마크) > 도시.
 - `years[].desc` 가 있으면 연도 전환 시 지도 아래 서사 문단으로 표시.

@@ -115,17 +115,19 @@
         var tcp=el("clipPath",{id:cpid}); tcp.appendChild(el("path",{d:t.d,"clip-rule":"evenodd"})); gCoast.appendChild(tcp);
         gCoast.appendChild(el("path",{class:"cmap-terrline",d:landCur,stroke:shade(COLOR[t.id]||"#888"),"clip-path":"url(#"+cpid+")"})); }); }
     // 지형은 영토 '위'에 grayscale multiply 오버레이 — flat 원색을 유지하면서 지형감만 은은하게 남긴다
-    var img=null;
+    // base+고해상 패치를 한 그룹에서 보통 합성한 뒤 그룹째 multiply — 이미지마다 multiply 를 걸면
+    // 패치 페더 구간에서 곱셈이 겹쳐 밝은 띠(이음매)가 생긴다
+    var img=null, imgHi=null, gRelief=null;
+    if(reliefUrl||(opts.reliefHi&&opts.reliefHi.url)){ gRelief=el("g",{class:"cmap-reliefg"}); svg.appendChild(gRelief); }
     if(reliefUrl){ img=el("image",{class:"cmap-relief",x:0,y:0,width:W,height:H,preserveAspectRatio:"none"});
       img.setAttributeNS("http://www.w3.org/1999/xlink","href",reliefUrl); img.setAttribute("href",reliefUrl);
-      if(clipId) img.setAttribute("clip-path","url(#"+clipId+")"); svg.appendChild(img); }
+      if(clipId) img.setAttribute("clip-path","url(#"+clipId+")"); gRelief.appendChild(img); }
     // 고해상 지형 패치(선택): reliefHi={url, box:[서,남,동,북]} — 주 무대(한반도 등)만 z10급으로 또렷하게.
-    // base PNG는 같은 박스에 알파 구멍이 뚫려 있어(빌드 시) 이중 곱셈이 없다.
-    var imgHi=null;
+    // 패치는 박스 안쪽 페더 알파(빌드 시)로 base 위에 얹힌다.
     if(opts.reliefHi&&opts.reliefHi.url){ var hb=opts.reliefHi.box, hp1=proj(hb[0],hb[3]), hp2=proj(hb[2],hb[1]);
       imgHi=el("image",{class:"cmap-relief",x:hp1[0],y:hp1[1],width:hp2[0]-hp1[0],height:hp2[1]-hp1[1],preserveAspectRatio:"none"});
       imgHi.setAttributeNS("http://www.w3.org/1999/xlink","href",opts.reliefHi.url); imgHi.setAttribute("href",opts.reliefHi.url);
-      if(clipId) imgHi.setAttribute("clip-path","url(#"+clipId+")"); svg.appendChild(imgHi); }
+      if(clipId) imgHi.setAttribute("clip-path","url(#"+clipId+")"); gRelief.appendChild(imgHi); }
 
     var gRiver=clipped(el("g",{class:"cmap-rivers"}));
     if(rivers.lakes){ gRiver.appendChild(el("path",{class:"cmap-lake",d:rivers.lakes})); }
@@ -202,7 +204,7 @@
     var EXPORT_CSS='.cmap-land{fill:#f2f0e8;stroke:#a8c8d8;stroke-linejoin:round}'
       +'.cmap-coastglow{fill:none;stroke:#dff3fa;stroke-linejoin:round;stroke-linecap:round}'
       +'.cmap-coasthalo{fill:none;stroke:#fff;stroke-linejoin:round;stroke-linecap:round}'
-      +'.cmap-relief{mix-blend-mode:multiply;opacity:.5}'
+      +'.cmap-reliefg{mix-blend-mode:multiply;opacity:.62}'
       +'.cmap-rivers{opacity:.8}.cmap-river{fill:none;stroke:#8fc6dc;stroke-linejoin:round;stroke-linecap:round}.cmap-lake{fill:#a9e2f3}'
       +'.cmap-terr{fill-opacity:.96;stroke-linejoin:round}'
       +'.cmap-terrline{fill:none;stroke-linejoin:round;stroke-linecap:round}'

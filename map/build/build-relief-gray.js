@@ -5,7 +5,9 @@
    설계:
    - 뷰어가 grayscale multiply 오버레이로 쓰므로 색 대신 명암만 굽는다. 평지≈흰색(영향 없음),
      산지는 고도에 따라 뚜렷하게 어두워져 산맥이 '덩어리'로 읽힌다 (소백·태백 강조 목적).
-   - base 는 KOREA_BOX 안쪽 알파를 0으로 뚫는다(24px 페더) — korea 패치와 이중 곱셈 방지.
+   - base 는 전체 불투명(구멍 없음), korea 패치만 박스 안쪽으로 페더 알파(0→1).
+     뷰어가 두 장을 한 그룹에서 보통(source-over) 합성한 뒤 그룹째 multiply 하므로
+     페더 구간이 두 톤의 선형 크로스페이드가 된다 — 층마다 multiply 하면 겹침 띠가 생긴다.
    - korea 패치는 z10(≈z8의 4배 해상도) 타일로 2048px — 깊은 줌에서도 능선이 또렷.
    - 두 모드가 같은 램프·음영을 쓰므로 경계에서 톤이 이어진다(선명도만 다름). */
 const fs=require("fs"), path=require("path"), https=require("https");
@@ -67,12 +69,6 @@ else { const p1=proj(KOREA_BOX[0],KOREA_BOX[3]), p2=proj(KOREA_BOX[2],KOREA_BOX[
   ox0=p1[0]; oy0=p1[1]; ow=p2[0]-p1[0]; oh=p2[1]-p1[1]; }
 const OW=M.OW, OH=Math.round(OW*oh/ow), S=OW/ow; // 출력px / viewBoxpx
 
-/* ── 명암 램프: 높을수록 어둡다 (수묵) — 평지는 거의 흰색이라 영토색에 영향 없음 ── */
-const RAMP=[[5,253],[100,238],[300,210],[600,172],[1000,132],[1500,98],[2000,78],[2500,62]];
-function lum(e){ if(e<=RAMP[0][0]) return RAMP[0][1];
-  for(let i=1;i<RAMP.length;i++){ if(e<=RAMP[i][0]){ const a=RAMP[i-1],b=RAMP[i],t=(e-a[0])/(b[0]-a[0]); return a[1]+(b[1]-a[1])*t; } }
-  return RAMP[RAMP.length-1][1]; }
-
 // 분리형 박스 블러(clamp 경계) — 고도 스파이크 제거용. 반복 적용으로 가우시안 근사
 function boxblur(src,w,h,r){ const tmp=new Float32Array(w*h), out=new Float32Array(w*h), n=2*r+1;
   for(let y=0;y<h;y++){ const row=y*w;
@@ -87,25 +83,20 @@ function boxblur(src,w,h,r){ const tmp=new Float32Array(w*h), out=new Float32Arr
   console.log(MODE,"고도 그리드",OW+"x"+OH,"...");
   const E=new Float32Array(OW*OH);
   for(let y=0;y<OH;y++)for(let x=0;x<OW;x++){ const ll=unproj(ox0+(x+0.5)/S, oy0+(y+0.5)/S); E[y*OW+x]=elevBil(ll[0],ll[1]); }
-  // 음영·명암 램프 모두 블러 고도를 쓴다 — 원본의 튀는 고점 픽셀이 램프에서 어두운 점(점박이)이 되던 문제 해결.
-  // 블러가 넓은 고지대는 유지하므로 봉우리 어둠은 남고 단일 픽셀 스파이크만 사라진다.
-  // z10(korea)은 해상도가 높아 노이즈가 잘아 더 세게 블러
-  const BR=MODE==="korea"?2:1;
-  let Eg=E; for(let i=0;i<2;i++) Eg=boxblur(Eg,OW,OH,BR);
+  // 고도 그리드 1회 박스블러 — DEM 1m 양자화 노이즈만 완화(해상도 유지 위해 최소한만)
+  const Eg=boxblur(E,OW,OH,1);
 
   const cellx=ow/OW*(1/(kx*CFG.SCALE))*111320*kx, celly=oh/OH*(1/CFG.SCALE)*110570;
-  const ZF=5.0, az=315*Math.PI/180, zen=45*Math.PI/180, cz=Math.cos(zen), sz=Math.sin(zen);
+  const ZF=3.5, az=315*Math.PI/180, zen=45*Math.PI/180, cz=Math.cos(zen), sz=Math.sin(zen);
   function EG_(x,y){x=x<0?0:x>=OW?OW-1:x;y=y<0?0:y>=OH?OH-1:y;return Eg[y*OW+x];}
 
-  // base↔korea 경계: 지리 좌표(도) 기준 크로스페이드 — 두 이미지 알파의 합이 항상 1이라 이음매 없음
-  // base 는 박스 안으로 갈수록 사라지고, korea 는 박스 안으로 갈수록 나타난다(같은 깊이에서 상보적)
+  // base↔korea 경계: base 는 전체 불투명, korea 만 박스 안쪽으로 페더(0→1) — 뷰어의 isolate 그룹에서
+  // korea 가 base 위에 보통 합성되므로 페더 구간 = 두 톤의 선형 크로스페이드(그룹 전체 알파는 항상 1)
   const FEATHER=0.6; // 페더 폭(도) ≈ 66km — z8(흐림)→z10(선명) 전환을 넓게 뭉갬
   const KB={W:KOREA_BOX[0],S:KOREA_BOX[1],E:KOREA_BOX[2],N:KOREA_BOX[3]};
   function terrAlpha(lon,lat){
+    if(MODE==="base") return 1;
     const inside = lon>KB.W&&lon<KB.E&&lat>KB.S&&lat<KB.N;
-    if(MODE==="base"){ if(!inside) return 1;
-      const depth=Math.min(lon-KB.W,KB.E-lon,lat-KB.S,KB.N-lat);
-      return Math.max(0,Math.min(1,1-depth/FEATHER)); }
     if(!inside) return 0; // korea
     const depth=Math.min(lon-KB.W,KB.E-lon,lat-KB.S,KB.N-lat);
     return Math.max(0,Math.min(1,depth/FEATHER)); }
@@ -115,12 +106,22 @@ function boxblur(src,w,h,r){ const tmp=new Float32Array(w*h), out=new Float32Arr
     const ll=unproj(ox0+(x+0.5)/S, oy0+(y+0.5)/S);
     const a=terrAlpha(ll[0],ll[1]);
     if(e<=0.5||a<=0){ png.data[o+3]=0; continue; }
-    const dzdx=(EG_(x+1,y)-EG_(x-1,y))/(2*cellx)*ZF, dzdy=(EG_(x,y+1)-EG_(x,y-1))/(2*celly)*ZF;
-    const slope=Math.atan(Math.sqrt(dzdx*dzdx+dzdy*dzdy)), aspect=Math.atan2(dzdy,-dzdx);
-    let hs=cz*Math.cos(slope)+sz*Math.sin(slope)*Math.cos(az-aspect); hs=Math.max(0,hs);
-    const sh=0.42+0.75*hs;
-    // 4단계 양자화 — multiply 0.5 오버레이에선 실효 2/255라 밴딩이 안 보이고 PNG가 훨씬 작아진다
-    const L=Math.round(Math.max(0,Math.min(255,lum(EG_(x,y))*sh))/4)*4;
+    // 그림자식 음영: '그늘 사면'만 어둡게 — 햇빛 면은 거의 흰색, 평지는 게이트로 완전 흰색.
+    // (전방향 hillshade는 ZF 과장 시 수직 사면까지 어두워져 산 전체가 담요처럼 덮이는 반전 느낌이 난다)
+    const gx=(EG_(x+1,y)-EG_(x-1,y))/(2*cellx), gy=(EG_(x,y+1)-EG_(x,y-1))/(2*celly); // 실제 기울기(m/m)
+    const trueSlope=Math.atan(Math.sqrt(gx*gx+gy*gy));
+    // 경사 게이트: 완경사(평지)는 음영 0 → DEM 노이즈가 만드는 저지대 점박이 제거. 0.9°~3.4° 사이 램프
+    let gate=(trueSlope-0.016)/(0.060-0.016); gate=gate<0?0:gate>1?1:gate;
+    const zx=gx*ZF, zy=gy*ZF;
+    const slope=Math.atan(Math.sqrt(zx*zx+zy*zy)), aspect=Math.atan2(zy,-zx);
+    const cosd=Math.cos(az-aspect), sl=Math.sin(slope);
+    const sd=sl*Math.max(0,-cosd);                       // 해 반대편(그늘) 사면만 0..1
+    const amb=0.18*sl*(1-0.85*Math.max(0,cosd));         // 질감용 약한 전방향 음영 — 햇빛 면은 거의 0
+    let ev=(EG_(x,y)-300)/2200; ev=ev<0?0:ev>1?1:ev; ev=ev*Math.sqrt(ev)*0.38; // 고도 심도 — 높을수록 뚜렷하게 어둡게(수묵 명암), 저지대(≤300m)는 0
+    let dark=gate*(0.62*sd+amb)+ev; if(dark>0.85) dark=0.85;
+    // 4단계 양자화 — multiply 오버레이에선 실효 수 단계라 밴딩이 안 보이고 PNG가 훨씬 작아진다
+    // dark≈0일 때 256으로 넘쳐 0(검정)이 되므로 255로 캡 — 평지는 순백(영향 없음)이어야 한다
+    const L=Math.min(255,Math.round(255*(1-dark)/4)*4);
     png.data[o]=L; png.data[o+1]=L; png.data[o+2]=L;
     png.data[o+3]=Math.round(255*a);
   }
