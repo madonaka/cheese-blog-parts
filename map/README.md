@@ -13,7 +13,8 @@ map/
   data/
     samguk-map.json     published 지도 데이터 (겹침 절단 완료 → 뷰어는 라이브러리 불필요)
   assets/
-    relief.png          음영 지형도 (바다=투명, jsDelivr로 서빙)
+    relief.png          수묵 명암 지형도 z8 (바다=투명, 한반도 영역은 알파 구멍 — relief-korea 가 채움)
+    relief-korea.png    한반도 고해상 지형 패치 z10 (뷰어 opts.reliefHi 로 겹침, box=[122.5,32.8,132.5,44.2])
     rivers.json         강 경로 (HydroRIVERS 기반, 유량등급별 굵기 classes:[{w,d}], 하구 연장)
     land.json           벡터 해안선 — 해안선의 단일 기준. 뷰어가 지형·강·영토를 이 모양으로 클립
     land-paleo.json     고대 해안선 (해수면 +8m 비정, land.json과 같은 형식) — 뷰어 '고대 해안선' 토글용
@@ -103,7 +104,9 @@ https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/map/assets/rivers.js
 ## 에셋 재생성 (build/)
 
 Node 필요(pngjs). 원본 좌표계 고정: `WIN=[106,26,146,47], SCALE=24, pad=6 → viewBox 0 0 784 516`.
-- `build-relief7.js` — AWS Terrarium 고도타일(z8, 580장) → 음영 지형도 PNG 3072px (bilinear+hypsometric, 바다 투명)
+- `build-relief-gray.js base|korea` — 수묵 명암 지형도: 높을수록 어두운 램프 × hillshade(ZF 6), 4단계 양자화.
+  base=z8 전체 창 3072px(한반도 알파 구멍), korea=z10 한반도 2048px 패치. **KOREA_BOX 상수와 뷰어 reliefHi.box 동일 유지**
+- `build-relief7.js` — (구) hypsometric 컬러 지형도 z8 3072px — flat 개편 후 미사용, 파이프라인 참고용
 - `build-land-paleo.js [해수면m] [타일dir]` — 고대 해안선 생성: 현대 land 래스터 마스크 ∧ 외해 flood-fill(고도<+8m)
   → 컨투어 → `assets/land-paleo.json`. +8m 해안선은 현대의 부분집합이라 relief/강 재생성 불필요(뷰어 클립이 처리)
 - `parse-hydro.js` + `convert-rivers5.js` — HydroRIVERS(Asia)에서 하천 추출 → 유량등급별 강 경로

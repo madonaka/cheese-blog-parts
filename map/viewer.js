@@ -119,6 +119,13 @@
     if(reliefUrl){ img=el("image",{class:"cmap-relief",x:0,y:0,width:W,height:H,preserveAspectRatio:"none"});
       img.setAttributeNS("http://www.w3.org/1999/xlink","href",reliefUrl); img.setAttribute("href",reliefUrl);
       if(clipId) img.setAttribute("clip-path","url(#"+clipId+")"); svg.appendChild(img); }
+    // 고해상 지형 패치(선택): reliefHi={url, box:[서,남,동,북]} — 주 무대(한반도 등)만 z10급으로 또렷하게.
+    // base PNG는 같은 박스에 알파 구멍이 뚫려 있어(빌드 시) 이중 곱셈이 없다.
+    var imgHi=null;
+    if(opts.reliefHi&&opts.reliefHi.url){ var hb=opts.reliefHi.box, hp1=proj(hb[0],hb[3]), hp2=proj(hb[2],hb[1]);
+      imgHi=el("image",{class:"cmap-relief",x:hp1[0],y:hp1[1],width:hp2[0]-hp1[0],height:hp2[1]-hp1[1],preserveAspectRatio:"none"});
+      imgHi.setAttributeNS("http://www.w3.org/1999/xlink","href",opts.reliefHi.url); imgHi.setAttribute("href",opts.reliefHi.url);
+      if(clipId) imgHi.setAttribute("clip-path","url(#"+clipId+")"); svg.appendChild(imgHi); }
 
     var gRiver=clipped(el("g",{class:"cmap-rivers"}));
     if(rivers.lakes){ gRiver.appendChild(el("path",{class:"cmap-lake",d:rivers.lakes})); }
@@ -195,7 +202,7 @@
     var EXPORT_CSS='.cmap-land{fill:#f2f0e8;stroke:#a8c8d8;stroke-linejoin:round}'
       +'.cmap-coastglow{fill:none;stroke:#dff3fa;stroke-linejoin:round;stroke-linecap:round}'
       +'.cmap-coasthalo{fill:none;stroke:#fff;stroke-linejoin:round;stroke-linecap:round}'
-      +'.cmap-relief{mix-blend-mode:multiply;opacity:.47;filter:grayscale(1) brightness(1.15) contrast(1.28)}'
+      +'.cmap-relief{mix-blend-mode:multiply;opacity:.5}'
       +'.cmap-rivers{opacity:.8}.cmap-river{fill:none;stroke:#8fc6dc;stroke-linejoin:round;stroke-linecap:round}.cmap-lake{fill:#a9e2f3}'
       +'.cmap-terr{fill-opacity:.96;stroke-linejoin:round}'
       +'.cmap-terrline{fill:none;stroke-linejoin:round;stroke-linecap:round}'
@@ -204,26 +211,30 @@
       +'.cmap-citylab{fill:#1c1a12;paint-order:stroke;stroke:#fff;stroke-linejoin:round;font-weight:700}'
       +'.cmap-region{fill:#5f6570;opacity:.55;text-anchor:middle;font-weight:700}'
       +'text{font-family:"Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",sans-serif}';
-    var reliefDataUrl=null;
+    var reliefCache={};
     function blobToDataURL(b){ return new Promise(function(res){ var fr=new FileReader(); fr.onload=function(){ res(fr.result); }; fr.readAsDataURL(b); }); }
+    function urlData(u){ return reliefCache[u] ? Promise.resolve(reliefCache[u])
+      : fetch(u).then(function(r){return r.blob();}).then(blobToDataURL).then(function(d){ reliefCache[u]=d; return d; }); }
     function loadImg(src){ return new Promise(function(res,rej){ var im=new Image(); im.crossOrigin="anonymous"; im.onload=function(){ res(im); }; im.onerror=rej; im.src=src; }); }
     function exportImage(btn){
       var brand=opts.brand||{};
       var old=btn.textContent; btn.textContent="⏳"; btn.disabled=true;
       var done=function(){ btn.textContent=old; btn.disabled=false; };
-      var p = reliefDataUrl ? Promise.resolve(reliefDataUrl)
-        : (reliefUrl ? fetch(reliefUrl).then(function(r){return r.blob();}).then(blobToDataURL).then(function(d){ reliefDataUrl=d; return d; }) : Promise.resolve(null));
+      // 지형 이미지(베이스 + 고해상 패치) 전부 dataURL로 — 문서 순서와 urls 순서가 같다
+      var urls=[]; if(reliefUrl) urls.push(reliefUrl); if(opts.reliefHi&&opts.reliefHi.url) urls.push(opts.reliefHi.url);
+      var p=Promise.all(urls.map(urlData)).catch(function(){ return []; });
       Promise.all([p, brand.logo? loadImg(brand.logo).catch(function(){return null;}) : Promise.resolve(null),
                    (document.fonts&&document.fonts.ready)?document.fonts.ready:Promise.resolve()])
-      .then(function(rs){ var reliefD=rs[0], logoImg=rs[1];
+      .then(function(rs){ var reliefDs=rs[0]||[], logoImg=rs[1];
         // 현재 뷰 그대로 SVG 복제 → 지형을 dataURL로 치환 → 스타일 내장
         var cl=svg.cloneNode(true);
         var mapW=1600, mapH=Math.round(mapW*vb.h/vb.w);
         cl.setAttribute("width",mapW); cl.setAttribute("height",mapH);
         var st=document.createElementNS(NS,"style"); st.textContent=EXPORT_CSS; cl.insertBefore(st, cl.firstChild);
         var bg=el("rect",{x:vb.x,y:vb.y,width:vb.w,height:vb.h,fill:ocean}); cl.insertBefore(bg, st.nextSibling);
-        var imEl=cl.querySelector("image");
-        if(imEl){ if(reliefD){ imEl.setAttribute("href",reliefD); imEl.setAttributeNS("http://www.w3.org/1999/xlink","href",reliefD); } else imEl.remove(); }
+        cl.querySelectorAll("image").forEach(function(imEl,i){
+          if(reliefDs[i]){ imEl.setAttribute("href",reliefDs[i]); imEl.setAttributeNS("http://www.w3.org/1999/xlink","href",reliefDs[i]); }
+          else imEl.remove(); });
         var svgStr=new XMLSerializer().serializeToString(cl);
         var url=URL.createObjectURL(new Blob([svgStr],{type:"image/svg+xml;charset=utf-8"}));
         return loadImg(url).then(function(mapImg){ URL.revokeObjectURL(url);
@@ -275,6 +286,7 @@
       var ku=k*ui*us;
       gRiver.style.display=vis.river?"":"none";
       if(img) img.style.display=vis.relief?"":"none";
+      if(imgHi) imgHi.style.display=vis.relief?"":"none";
       gCoast.style.display=vis.terr?"":"none";
       gCoast.querySelectorAll("path.cmap-terrline").forEach(function(p){ p.style.strokeWidth=(6.4*ku)+"px"; });
       // 강 굵기 줌 감쇠(√k)
