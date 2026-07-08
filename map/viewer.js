@@ -195,7 +195,7 @@
     var EXPORT_CSS='.cmap-land{fill:#f2f0e8;stroke:#a8c8d8;stroke-linejoin:round}'
       +'.cmap-coastglow{fill:none;stroke:#dff3fa;stroke-linejoin:round;stroke-linecap:round}'
       +'.cmap-coasthalo{fill:none;stroke:#fff;stroke-linejoin:round;stroke-linecap:round}'
-      +'.cmap-relief{mix-blend-mode:multiply;opacity:.22;filter:grayscale(1) brightness(1.25)}'
+      +'.cmap-relief{mix-blend-mode:multiply;opacity:.47;filter:grayscale(1) brightness(1.15) contrast(1.28)}'
       +'.cmap-rivers{opacity:.8}.cmap-river{fill:none;stroke:#8fc6dc;stroke-linejoin:round;stroke-linecap:round}.cmap-lake{fill:#a9e2f3}'
       +'.cmap-terr{fill-opacity:.96;stroke-linejoin:round}'
       +'.cmap-terrline{fill:none;stroke-linejoin:round;stroke-linecap:round}'

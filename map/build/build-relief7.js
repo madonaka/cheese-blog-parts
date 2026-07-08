@@ -5,9 +5,10 @@ const VW=Math.round((CFG.WIN[2]-CFG.WIN[0])*kx*CFG.SCALE+CFG.pad*2), VH=Math.rou
 function unproj(x,y){ return [ (x-CFG.pad)/(kx*CFG.SCALE)+CFG.WIN[0], CFG.WIN[3]-(y-CFG.pad)/CFG.SCALE ]; }
 
 const Z=8,N=1<<Z,WORLD=N*256,TILES={};
+const TDIR=process.argv[2]||"tiles8"; // 타일 디렉터리 (build-land-paleo.js 와 공유 가능)
 function san(b){const i=b.indexOf("IEND");return i<0?b:b.slice(0,i+8);}
 let bad=0;
-for(let x=203;x<=231;x++)for(let y=89;y<=108;y++){const p="tiles8/"+x+"_"+y+".png";
+for(let x=203;x<=231;x++)for(let y=89;y<=108;y++){const p=TDIR+"/"+x+"_"+y+".png";
   if(fs.existsSync(p)){try{const g=PNG.sync.read(san(fs.readFileSync(p)));TILES[x+"_"+y]={d:g.data,w:g.width};}catch(e){bad++;}}}
 console.log("tiles:",Object.keys(TILES).length,"bad:",bad);
 function getE(ix,iy){ if(ix<0||iy<0)return NaN; const xt=ix>>8,yt=iy>>8,t=TILES[xt+"_"+yt]; if(!t)return NaN;
@@ -27,7 +28,8 @@ function ramp(e){ if(e<=RAMP[0][0])return RAMP[0][1]; for(let i=1;i<RAMP.length;
   const a=RAMP[i-1],b=RAMP[i],t=(e-a[0])/(b[0]-a[0]); return [a[1][0]+(b[1][0]-a[1][0])*t,a[1][1]+(b[1][1]-a[1][1])*t,a[1][2]+(b[1][2]-a[1][2])*t]; } } return RAMP[RAMP.length-1][1]; }
 
 const cellx=(CFG.WIN[2]-CFG.WIN[0])*111320*kx/OW, celly=(CFG.WIN[3]-CFG.WIN[1])*110570/OH;
-const ZF=2.7, az=315*Math.PI/180, zen=(90-45)*Math.PI/180, cz=Math.cos(zen), sz=Math.sin(zen);
+// ZF 6.0 (2026-07-08): 산맥이 능선으로 읽히도록 음영 과장 2.2배 — 소백·태백산맥 등 고대 문화권 경계 강조
+const ZF=6.0, az=315*Math.PI/180, zen=(90-45)*Math.PI/180, cz=Math.cos(zen), sz=Math.sin(zen);
 function E_(x,y){x=x<0?0:x>=OW?OW-1:x;y=y<0?0:y>=OH?OH-1:y;return E[y*OW+x];}
 const png=new PNG({width:OW,height:OH});
 for(let y=0;y<OH;y++)for(let x=0;x<OW;x++){ const e=E[y*OW+x],o=(y*OW+x)*4;
