@@ -33,11 +33,15 @@
   function tint(hex){ var m=/^#?([0-9a-f]{6})$/i.exec(hex||""); if(!m) return "#cccccc";
     var v=parseInt(m[1],16), r=(v>>16)&255, g=(v>>8)&255, b=v&255, t=0.45;
     return "rgb("+Math.round(r+(255-r)*t)+","+Math.round(g+(255-g)*t)+","+Math.round(b+(255-b)*t)+")"; }
+  // 영토 테두리 = 채도를 유지한 중간-진한 자기 색 (darken(0.5)은 라벨용 — 테두리에 쓰면 검정에 가깝다)
+  function shade(hex){ var m=/^#?([0-9a-f]{6})$/i.exec(hex||""); if(!m) return "#666";
+    var v=parseInt(m[1],16); return "rgb("+Math.round(((v>>16)&255)*0.75)+","+Math.round(((v>>8)&255)*0.75)+","+Math.round((v&255)*0.75)+")"; }
 
   var OCEAN="#a9e2f3"; // flat 스타일의 바다색 — 스타일이므로 뷰어가 정한다(발행본 cfg.ocean 은 구형식, opts.ocean 으로만 재정의)
   function render(mount, opts){
     var map=opts.map, rivers=opts.rivers||{}, reliefUrl=opts.reliefUrl, landD=opts.land||"";
     var ocean=opts.ocean||OCEAN;
+    var uid=(render._u=(render._u||0)+1); // 한 페이지 다중 지도에서 clipPath id 충돌 방지
     var cfg=map.cfg, kx=Math.cos((cfg.WIN[1]+cfg.WIN[3])/2*Math.PI/180);
     function proj(lon,lat){ return [ (lon-cfg.WIN[0])*kx*cfg.SCALE+cfg.pad, (cfg.WIN[3]-lat)*cfg.SCALE+cfg.pad ]; }
     var COLOR={}, NAME={};
@@ -95,10 +99,21 @@
       landEl=el("path",{class:"cmap-land",d:landD}); svg.appendChild(landEl);
     }
     function clipped(g){ if(clipId) g.setAttribute("clip-path","url(#"+clipId+")"); return g; }
-    function setLand(d){ if(cpPath)cpPath.setAttribute("d",d); if(landEl)landEl.setAttribute("d",d);
-      if(glowO)glowO.setAttribute("d",d); if(glowI)glowI.setAttribute("d",d); }
+    var landCur=landD;
+    function setLand(d){ landCur=d; if(cpPath)cpPath.setAttribute("d",d); if(landEl)landEl.setAttribute("d",d);
+      if(glowO)glowO.setAttribute("d",d); if(glowI)glowI.setAttribute("d",d);
+      gCoast.querySelectorAll("path.cmap-terrline").forEach(function(p){ p.setAttribute("d",d); }); }
 
     var gTerr=clipped(el("g",{})); svg.appendChild(gTerr);
+    // 해안 띠: 영토 모양으로 클립한 land 외곽 스트로크 — 영토 폴리곤이 해안 밖(바다)까지 뻗어 있어도
+    // korsica처럼 해안선에도 자기 색 테두리가 온전히 둘리게 한다. land 경로가 커서 연도·해안선 전환 시에만 재구성.
+    var gCoast=clipped(el("g",{})); svg.appendChild(gCoast);
+    function rebuildCoast(){ gCoast.innerHTML="";
+      if(!landCur) return;
+      (map.territories[year]||[]).forEach(function(t,ti){
+        var cpid="cmapT"+uid+"_"+ti;
+        var tcp=el("clipPath",{id:cpid}); tcp.appendChild(el("path",{d:t.d,"clip-rule":"evenodd"})); gCoast.appendChild(tcp);
+        gCoast.appendChild(el("path",{class:"cmap-terrline",d:landCur,stroke:shade(COLOR[t.id]||"#888"),"clip-path":"url(#"+cpid+")"})); }); }
     // 지형은 영토 '위'에 grayscale multiply 오버레이 — flat 원색을 유지하면서 지형감만 은은하게 남긴다
     var img=null;
     if(reliefUrl){ img=el("image",{class:"cmap-relief",x:0,y:0,width:W,height:H,preserveAspectRatio:"none"});
@@ -123,7 +138,7 @@
       if(map.cities) map.cities.forEach(function(c){ var i=c.y[year]; if(i) present[i[0]]=1; });
       var html='<span><svg width="14" height="14"><text x="7" y="11" text-anchor="middle" font-size="13" fill="#c0453f">★</text></svg> 수도</span>'
         +'<span><svg width="14" height="14"><circle cx="7" cy="7" r="4" fill="#3f6fb0" stroke="#fff"/></svg> '+cityLbl+'</span>';
-      map.nations.forEach(function(n){ if(present[n.id]) html+='<span><i style="display:inline-block;width:11px;height:11px;border-radius:2px;background:'+tint(n.color)+';border:1.5px solid '+darken(n.color)+'"></i> '+n.name+'</span>'; });
+      map.nations.forEach(function(n){ if(present[n.id]) html+='<span><i style="display:inline-block;width:11px;height:11px;border-radius:2px;background:'+tint(n.color)+';border:1.5px solid '+shade(n.color)+'"></i> '+n.name+'</span>'; });
       lg.innerHTML=html;
     }
     if(opts.note){ var nt=document.createElement("p"); nt.className="cmap-note"; nt.textContent=opts.note; mount.appendChild(nt); }
@@ -183,6 +198,7 @@
       +'.cmap-relief{mix-blend-mode:multiply;opacity:.22;filter:grayscale(1) brightness(1.25)}'
       +'.cmap-rivers{opacity:.8}.cmap-river{fill:none;stroke:#8fc6dc;stroke-linejoin:round;stroke-linecap:round}.cmap-lake{fill:#a9e2f3}'
       +'.cmap-terr{fill-opacity:.96;stroke-linejoin:round}'
+      +'.cmap-terrline{fill:none;stroke-linejoin:round;stroke-linecap:round}'
       +'.cmap-terrlab{fill:#20242a;paint-order:stroke;stroke:#fff;stroke-linejoin:round;text-anchor:middle;font-weight:700}'
       +'.cmap-ruler{text-anchor:middle;font-weight:600;paint-order:stroke;stroke:#fff;stroke-linejoin:round}'
       +'.cmap-citylab{fill:#1c1a12;paint-order:stroke;stroke:#fff;stroke-linejoin:round;font-weight:700}'
@@ -259,6 +275,8 @@
       var ku=k*ui*us;
       gRiver.style.display=vis.river?"":"none";
       if(img) img.style.display=vis.relief?"":"none";
+      gCoast.style.display=vis.terr?"":"none";
+      gCoast.querySelectorAll("path.cmap-terrline").forEach(function(p){ p.style.strokeWidth=(6.4*ku)+"px"; });
       // 강 굵기 줌 감쇠(√k)
       var rk=Math.pow(k,0.5)*Math.sqrt(ui)*us;
       gRiver.querySelectorAll(".cmap-river").forEach(function(p){ if(p.dataset.w) p.setAttribute("stroke-width",(+p.dataset.w)*rk); });
@@ -277,10 +295,13 @@
       var placedLabs=[];
       if(vis.terr){
         var terrs=(map.territories[year]||[]);
-        terrs.forEach(function(t){
-          // korsica 방식: 파스텔 틴트 채움 + 자기 색의 진한 테두리 — 인접국이 서로 다른 색의 이중선을 만든다
-          var tp=el("path",{class:"cmap-terr",d:t.d,fill:tint(COLOR[t.id]||"#888"),stroke:darken(COLOR[t.id]),"fill-rule":"evenodd"});
-          tp.style.strokeWidth=(1.1*ku)+"px"; gTerr.appendChild(tp); });
+        terrs.forEach(function(t,ti){
+          var col=COLOR[t.id]||"#888";
+          // korsica 방식: 파스텔 틴트 채움 + 자기 색 진한 테두리를 '안쪽'으로(자기 모양으로 클립한 2배 굵기 스트로크)
+          // — 인접국 국경이 두 색의 나란한 띠가 된다. 클립은 rebuildCoast()가 만든 것을 공유.
+          gTerr.appendChild(el("path",{class:"cmap-terr",d:t.d,fill:tint(col),"fill-rule":"evenodd"}));
+          var ln=el("path",{class:"cmap-terrline",d:t.d,stroke:shade(col),"clip-path":"url(#cmapT"+uid+"_"+ti+")"});
+          ln.style.strokeWidth=(6.4*ku)+"px"; gTerr.appendChild(ln); }); // 화면상 보이는 폭 ≈ 절반(안쪽 클립) ≈ 2.5px — korsica 지도의 테두리 두께 기준
         var boxes=terrs.map(function(t){ var b=mainRingBox(t.d); return b&&{t:t,b:b}; }).filter(Boolean);
         boxes.sort(function(x,y){ return (y.b[2]-y.b[0])*(y.b[3]-y.b[1])-(x.b[2]-x.b[0])*(x.b[3]-x.b[1]); }); // 큰 영토부터 자리 선점
         boxes.forEach(function(o){ var b=o.b, nm=NAME[o.t.id]||"";
@@ -343,6 +364,7 @@
       d.onclick=function(){ setYear(i); };
       track.appendChild(d); });
     function setYear(i){ yearIdx=Math.max(0,Math.min(years.length-1,i)); year=years[yearIdx].y;
+      rebuildCoast();
       track.querySelectorAll(".cmap-tl-dot").forEach(function(x,xi){ x.classList.toggle("on",xi===yearIdx); });
       var act=track.children[yearIdx]; if(act&&act.scrollIntoView) act.scrollIntoView({block:"nearest",inline:"center",behavior:"smooth"});
       draw(); }
@@ -368,6 +390,7 @@
       vb.y=Math.max(0,Math.min(H-vb.h,(b[1]+b[3])/2-vb.h/2));
       applyVB();
     })(); }
+    rebuildCoast();
     draw();
   }
 
