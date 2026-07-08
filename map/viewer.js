@@ -12,7 +12,8 @@
 
    인터랙션: 휠 줌(커서 기준) · 드래그 이동 · 핀치 줌 · ＋/－/⟳/⛶/📷 버튼.
    줌 대응: 강 굵기 √k 감쇠, 라벨 크기·halo 비례,
-            축소(k>0.6)에선 수도★만 표시, 나라 라벨 충돌 회피.
+            완전 축소(k>0.6)에선 도시 숨김, 도시는 k≤0.6(수도)·k≤0.3(그 외)부터 단계 공개.
+            나라 라벨 앵커는 고정(최대 링 중심) — 겹치면 이동 대신 우선순위 낮은 쪽을 숨김.
    모바일: 첫 화면은 콘텐츠 범위로 자동 확대, 최대 줌은 화면폭 비례로 심화,
            전체화면은 화면 비율에 viewBox를 맞춤(미지원 브라우저는 고정 오버레이 폴백).
    ================================================== */
@@ -241,9 +242,34 @@
         t2.style.letterSpacing=(0.1*12*ku)+"px"; t2.style.strokeWidth=(2.2*ku)+"px";
         t2.textContent=r.name; gTL.appendChild(t2); }); }
 
-      // 도시(줌 규칙 + 시대별 이름) — 단계 공개: 수도★는 항상, 이름은 k≤0.6부터, 비수도 도시는 k≤0.3부터
-      var wide=k>0.6, cityPts=[];
-      if(vis.city && map.cities){
+      // 영토 + 나라 라벨 — 앵커 고정(최대 링 bbox 중심, 줌과 무관), 겹치면 이동 대신 작은 영토 쪽을 그 줌에선 숨김
+      var placedLabs=[];
+      if(vis.terr){
+        var terrs=(map.territories[year]||[]);
+        terrs.forEach(function(t){
+          var tp=el("path",{class:"cmap-terr",d:t.d,fill:COLOR[t.id]||"#888","fill-rule":"evenodd"}); tp.style.strokeWidth=(1.2*ku)+"px"; gTerr.appendChild(tp); });
+        var boxes=terrs.map(function(t){ var b=mainRingBox(t.d); return b&&{t:t,b:b}; }).filter(Boolean);
+        boxes.sort(function(x,y){ return (y.b[2]-y.b[0])*(y.b[3]-y.b[1])-(x.b[2]-x.b[0])*(x.b[3]-x.b[1]); }); // 큰 영토부터 자리 선점
+        boxes.forEach(function(o){ var b=o.b, nm=NAME[o.t.id]||"";
+          var bw=b[2]-b[0], bh=b[3]-b[1], mx=Math.max(bw,bh);
+          // 라벨을 영토 크기에 맞춰 축소 — 모든 화면 적용(세계지도의 좁은 유럽 등에서 이름이 과대 표시되지 않게)
+          var fit=1.3*mx/(1.24*Math.max(1,nm.length));
+          var minFs=(ui>1?11:9)*vb.w/(svg.clientWidth||820); // 화면상 최소 픽셀 보장
+          // 구글맵식 줌 연동 상한: 축소(k→1)일수록 12px까지 낮추고, 확대하면 16px까지 커짐
+          var capPx=Math.min(16, 12/Math.sqrt(k));
+          var fs=Math.min(capPx*ku, Math.max(fit, minFs));
+          var lx=(b[0]+b[2])/2, ly=(b[1]+b[3])/2+4*ku, halfW=nm.length*fs*0.62;
+          // 축소해도 영토의 2.6배를 넘는 소국은 이 줌에선 생략 — 확대하면 표시
+          if(halfW*2 > 2.6*mx) return;
+          if(placedLabs.some(function(q){ return Math.abs(q[0]-lx)<halfW+q[2] && Math.abs(q[1]-ly)<(fs+q[3])*0.55; })) return;
+          placedLabs.push([lx,ly,halfW,fs]);
+          var tx=el("text",{x:lx,y:ly,class:"cmap-terrlab"}); tx.style.fontSize=fs+"px";
+          tx.style.letterSpacing=(0.14*fs)+"px"; tx.style.strokeWidth=(3*ku)+"px"; tx.style.fill=darken(COLOR[o.t.id]);
+          tx.textContent=nm; gTL.appendChild(tx); }); }
+
+      // 도시(줌 규칙 + 시대별 이름) — 완전 축소(k>0.6)에선 숨김, k≤0.6부터 수도★+이름, k≤0.3부터 그 외 도시
+      var cityPts=[];
+      if(vis.city && map.cities && k<=0.6){
         var cl=map.cities.filter(function(c){ return c.y[year]; });
         cl.sort(function(a,b){ return (b.y[year][1]==="cap"?1:0)-(a.y[year][1]==="cap"?1:0); }); // 수도가 이름 자리를 먼저 차지
         cl.forEach(function(c){ var info=c.y[year];
@@ -251,48 +277,20 @@
         if(!isCap && k>0.3) return;
         var p=proj(c.lon,c.lat), col=COLOR[info[0]]||"#555";
         var g=el("g",{});
-        if(isCap){ var ss=(wide?9.5:13)*ku;
+        if(isCap){ var ss=13*ku;
           var s=el("text",{x:p[0],y:p[1]+ss*0.34,"text-anchor":"middle","font-size":ss,fill:col,
-            style:"paint-order:stroke;stroke:#fff;stroke-width:"+((wide?1.5:2)*ku)+"px"}); s.textContent="★"; g.appendChild(s); }
+            style:"paint-order:stroke;stroke:#fff;stroke-width:"+(2*ku)+"px"}); s.textContent="★"; g.appendChild(s); }
         else g.appendChild(el("circle",{cx:p[0],cy:p[1],r:3.5*ku,fill:col,stroke:"#fff","stroke-width":1*ku}));
-        if(!wide){ var cn=(info[2]||c.name), w2=cn.length*11*ku;
-          // 이름 자리 회피: 오른쪽 → 왼쪽 → 생략(기호만)
-          var hit=function(cx2){ return cityPts.some(function(q){ return Math.abs(cx2-q[0])<w2/2+8*ku+q[2] && Math.abs(p[1]-q[1])<11.5*ku; }); };
-          var side= !hit(p[0]+w2/2) ? 1 : (!hit(p[0]-w2/2) ? -1 : 0);
-          if(side){ var lab=el("text",{x:p[0]+side*8*ku,y:p[1]+4*ku,class:"cmap-citylab"}); if(side<0) lab.setAttribute("text-anchor","end");
-            lab.style.fontSize=(11*ku)+"px"; lab.style.strokeWidth=(2.4*ku)+"px"; lab.textContent=cn; g.appendChild(lab);
-            cityPts.push([p[0]+side*w2/2, p[1], w2/2+8*ku]); } // 충돌용 범위: ★부터 이름 끝까지
-          else cityPts.push([p[0],p[1],8*ku]); }
+        var cn=(info[2]||c.name), w2=cn.length*11*ku;
+        // 이름 자리 회피: 오른쪽 → 왼쪽 → 생략(기호만). 나라 라벨이 우선권을 가짐
+        var hit=function(cx2){ return cityPts.some(function(q){ return Math.abs(cx2-q[0])<w2/2+8*ku+q[2] && Math.abs(p[1]-q[1])<11.5*ku; })
+          || placedLabs.some(function(q){ return Math.abs(cx2-q[0])<w2/2+8*ku+q[2] && Math.abs(p[1]-q[1])<(11*ku+q[3])*0.62; }); };
+        var side= !hit(p[0]+w2/2) ? 1 : (!hit(p[0]-w2/2) ? -1 : 0);
+        if(side){ var lab=el("text",{x:p[0]+side*8*ku,y:p[1]+4*ku,class:"cmap-citylab"}); if(side<0) lab.setAttribute("text-anchor","end");
+          lab.style.fontSize=(11*ku)+"px"; lab.style.strokeWidth=(2.4*ku)+"px"; lab.textContent=cn; g.appendChild(lab);
+          cityPts.push([p[0]+side*w2/2, p[1], w2/2+8*ku]); } // 충돌용 범위: ★부터 이름 끝까지
         else cityPts.push([p[0],p[1],8*ku]);
         gCity.appendChild(g); }); }
-
-      // 영토 + 나라 라벨(충돌 회피)
-      var placedLabs=[];
-      if(vis.terr){ (map.territories[year]||[]).forEach(function(t){
-        var tp=el("path",{class:"cmap-terr",d:t.d,fill:COLOR[t.id]||"#888","fill-rule":"evenodd"}); tp.style.strokeWidth=(1.2*ku)+"px"; gTerr.appendChild(tp);
-        var b=mainRingBox(t.d); if(!b) return;
-        var nm=NAME[t.id]||"", bw=b[2]-b[0], bh=b[3]-b[1], mx=Math.max(bw,bh);
-        // 라벨을 영토 크기에 맞춰 축소 — 모든 화면 적용(세계지도의 좁은 유럽 등에서 이름이 과대 표시되지 않게)
-        var fit=1.3*mx/(1.24*Math.max(1,nm.length));
-        var minFs=(ui>1?11:9)*vb.w/(svg.clientWidth||820); // 화면상 최소 픽셀 보장
-        // 구글맵식 줌 연동 상한: 축소(k→1)일수록 12px까지 낮추고, 확대하면 16px까지 커짐
-        var capPx=Math.min(16, 12/Math.sqrt(k));
-        var fs=Math.min(capPx*ku, Math.max(fit, minFs));
-        var lx=(b[0]+b[2])/2, ly=(b[1]+b[3])/2+4*ku;
-        var halfW=nm.length*fs*0.62;
-        // 축소해도 영토의 2.6배를 넘는 소국은 이 줌에선 생략 — 확대하면 표시
-        if(halfW*2 > 2.6*mx) return;
-        function clash(x,y){ return cityPts.some(function(q){ return Math.abs(q[0]-x)<halfW+q[2] && Math.abs(q[1]-y)<(fs+11*ku)*0.62; })
-          || placedLabs.some(function(q){ return Math.abs(q[0]-x)<halfW+q[2] && Math.abs(q[1]-y)<fs*1.05; }); }
-        // 회피 후보: 세로 이동 우선, 넓은 영토는 가로 이동(영토 bbox 안)도 시도 — 끝내 못 피하면 중심 유지
-        var cand=[[0,0],[0,1],[0,-2],[0.9,0],[-0.9,0],[0,3],[0.9,1],[-0.9,-2],[0,-4],[0,5]];
-        for(var ci=0; ci<cand.length; ci++){ var nx=lx+cand[ci][0]*halfW*1.1, ny=ly+cand[ci][1]*fs*0.95;
-          if(cand[ci][0] && (nx-halfW<b[0]-4*ku || nx+halfW>b[2]+4*ku)) continue;
-          if(!clash(nx,ny)){ lx=nx; ly=ny; break; } }
-        placedLabs.push([lx,ly,halfW]);
-        var tx=el("text",{x:lx,y:ly,class:"cmap-terrlab"}); tx.style.fontSize=fs+"px";
-        tx.style.letterSpacing=(0.14*fs)+"px"; tx.style.strokeWidth=(3*ku)+"px"; tx.style.fill=darken(COLOR[t.id]);
-        tx.textContent=nm; gTL.appendChild(tx); }); }
 
       var Y=years[yearIdx]; sub.innerHTML=Y?('<b class="cmap-sub-year">'+Y.y+'년</b>'+(Y.nm?' <span class="cmap-sub-nm">'+Y.nm+'</span>':'')):"";
       renderLegend();
