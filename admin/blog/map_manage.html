@@ -125,7 +125,7 @@
     </svg>
     <div class="med-zoom"><button id="zIn">＋</button><button id="zOut">－</button><button id="zRst">⟳</button></div>
   </div>
-  <p class="med-hint">활성: <b id="medCurY">400</b>년 · <b id="medCur">고구려</b> — 영토: 점 드래그/회색점 추가/우클릭 삭제 · 도시모드: 클릭=추가, 마커=선택, 우클릭=삭제</p>
+  <p class="med-hint">활성: <b id="medCurY">400</b>년 · <b id="medCur">고구려</b> — 드래그=지도 이동 · 영토 클릭=나라 선택 · 빈 곳 클릭=점 추가 · 점 드래그=이동, 회색점=중간 추가, 점 우클릭=삭제</p>
   <div class="med-cpanel" id="medRefPanel"></div>
   <div class="med-cpanel" id="medCPanel"></div>
   <textarea class="med-out" id="medOut" readonly></textarea>
@@ -2754,7 +2754,10 @@
     var placedLabs=[]; // 나라 라벨끼리도 회피
     nations.forEach(function(n){ var g=geom[n.id]; if(!g||!g.length) return;
       var path=document.createElementNS(NS,"path"); path.setAttribute("d",mpPath(g)); path.setAttribute("class","med-terr");
-      path.setAttribute("fill",n.color); path.setAttribute("fill-rule","evenodd"); path.setAttribute("stroke-width",1.1*k); gTerr.appendChild(path);
+      path.setAttribute("fill",n.color); path.setAttribute("fill-rule","evenodd"); path.setAttribute("stroke-width",1.1*k);
+      path.dataset.nid=n.id; // 영토 클릭=나라 선택 (기본 편집 모드)
+      if(!panMode&&!cityMode&&!regionMode&&!adminMode&&!delMode) path.style.cursor="pointer";
+      gTerr.appendChild(path);
       var big=null,ba=-1; g.forEach(function(poly){var r=poly[0];var b=[9e9,9e9,-9e9,-9e9];r.forEach(function(p){if(p[0]<b[0])b[0]=p[0];if(p[0]>b[2])b[2]=p[0];if(p[1]<b[1])b[1]=p[1];if(p[1]>b[3])b[3]=p[1];});var a=(b[2]-b[0])*(b[3]-b[1]);if(a>ba){ba=a;big=b;}});
       if(big){ var fs=15.5*k, lx, ly, man=n.lab&&n.lab[year]; // 수동 앵커가 있으면 자동 배치·회피를 건너뜀
         if(man){ var mp=proj(man[0],man[1]); lx=mp[0]; ly=mp[1]; }
@@ -2786,45 +2789,58 @@
 
   function svgXY(e){ var pt=svg.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY; var q=pt.matrixTransform(svg.getScreenCTM().inverse()); return [q.x,q.y]; }
 
-  var drag=null, pan=null, dragCity=null, dragRegion=null, dragRef=null, dragAdmin=null, dragNatLab=null;
+  var drag=null, panDrag=null, dragCity=null, dragRegion=null, dragRef=null, dragAdmin=null, dragNatLab=null;
+  // 드래그=지도 이동(팬), 제자리 클릭(4px 미만)=클릭 액션 — 모든 모드 공통
+  function startPan(e, clickFn){ panDrag={sx:e.clientX, sy:e.clientY, vx:vb.x, vy:vb.y, moved:false, click:clickFn||null}; svg.setPointerCapture(e.pointerId); }
   svg.addEventListener("pointerdown",function(e){
     e.preventDefault(); // 드래그 중 글자 선택 방지
     if(e.target.id==="medRefHd"){ dragRef={mode:"size"}; svg.setPointerCapture(e.pointerId); return; }
     if(e.target.id==="medRefImg"){ var rxy0=svgXY(e); dragRef={mode:"move", dx:rxy0[0]-ref.x, dy:rxy0[1]-ref.y}; svg.setPointerCapture(e.pointerId); return; }
     if((regionMode||adminMode) && !locked && e.target.classList && e.target.classList.contains("med-lab")){ // 나라 라벨 드래그=수동 위치
       dragNatLab={id:e.target.dataset.nid, sx:e.clientX, sy:e.clientY, moved:false}; svg.setPointerCapture(e.pointerId); return; }
-    if(adminMode){ if(locked) return; var at=e.target;
+    var cx=e.clientX, cy=e.clientY; // 클릭 액션용 좌표(포인터업 시점이 아닌 누른 지점 기준)
+    if(adminMode){ if(locked){ startPan(e,null); return; } var at=e.target;
       if(at.classList.contains("med-alab")){ dragAdmin={ai:+at.dataset.ai, sx:e.clientX, sy:e.clientY, moved:false}; svg.setPointerCapture(e.pointerId); return; }
       if(at.classList.contains("med-nlab")){ dragRegion={ri:+at.dataset.ri, sx:e.clientX, sy:e.clientY, moved:false}; svg.setPointerCapture(e.pointerId); return; }
-      var axy=svgXY(e), all2=unproj(axy[0],axy[1]);
-      var aname=prompt("행정구역 이름 (예: 한주, 전라도)","새 구역"); if(aname==null||!aname.trim()) return;
-      var na={name:aname.trim(), lon:d2(all2[0]), lat:d2(all2[1]), nat:active||(nations[0]&&nations[0].id), y:{}}; na.y[year]=1;
-      admins.push(na); render(); status("행정구역 추가: "+na.name+" — "+((meta(na.nat)||{}).name||"")+" 소속 · "+year+"년 표시 (다른 연도는 관리창에서)"); return; }
-    if(panMode){ pan={sx:e.clientX,sy:e.clientY,vx:vb.x,vy:vb.y}; svg.setPointerCapture(e.pointerId); return; }
-    if(regionMode){ if(locked) return; var rt=e.target;
+      startPan(e, function(){ var axy=svgXY({clientX:cx,clientY:cy}), all2=unproj(axy[0],axy[1]);
+        var aname=prompt("행정구역 이름 (예: 한주, 전라도)","새 구역"); if(aname==null||!aname.trim()) return;
+        var na={name:aname.trim(), lon:d2(all2[0]), lat:d2(all2[1]), nat:active||(nations[0]&&nations[0].id)||null, y:{}}; na.y[year]=1;
+        admins.push(na); render(); status("행정구역 추가: "+na.name+" — "+((meta(na.nat)||{}).name||"")+" 소속 · "+year+"년 표시 (다른 연도는 관리창에서)"); });
+      return; }
+    if(panMode){ startPan(e,null); return; }
+    if(regionMode){ if(locked){ startPan(e,null); return; } var rt=e.target;
       if(rt.classList.contains("med-nlab")){ dragRegion={ri:+rt.dataset.ri, sx:e.clientX, sy:e.clientY, moved:false}; svg.setPointerCapture(e.pointerId); return; }
-      var rxy=svgXY(e), rll=unproj(rxy[0],rxy[1]);
-      var rname=prompt("지역 이름 (예: 한강유역, 요서)","새 지역"); if(rname==null||!rname.trim()) return;
-      regions.push({name:rname.trim(), lon:d2(rll[0]), lat:d2(rll[1]), y:allYearsOn()}); render(); status("지역 추가: "+rname.trim()); return; }
-    if(cityMode){ if(locked) return; var ct=e.target;
+      startPan(e, function(){ var rxy=svgXY({clientX:cx,clientY:cy}), rll=unproj(rxy[0],rxy[1]);
+        var rname=prompt("지역 이름 (예: 한강유역, 요서)","새 지역"); if(rname==null||!rname.trim()) return;
+        regions.push({name:rname.trim(), lon:d2(rll[0]), lat:d2(rll[1]), y:allYearsOn()}); render(); status("지역 추가: "+rname.trim()); });
+      return; }
+    if(cityMode){ if(locked){ startPan(e,null); return; } var ct=e.target;
       if(ct.classList.contains("med-nlab")){ dragRegion={ri:+ct.dataset.ri, sx:e.clientX, sy:e.clientY, moved:false}; svg.setPointerCapture(e.pointerId); return; } // 지역 명칭 드래그
       if(ct.classList.contains("med-citymk")){ selCity=+ct.dataset.ci; dragCity={ci:selCity}; svg.setPointerCapture(e.pointerId); buildCityPanel(); render(); return; }
-      var cxy=svgXY(e), cll=unproj(cxy[0],cxy[1]); var nc={name:"새 도시",lon:d2(cll[0]),lat:d2(cll[1]),y:{}};
-      nc.y[year]=[active||(nations[0]&&nations[0].id),"fort"]; cities.push(nc); selCity=cities.length-1; buildCityPanel(); render(); status("도시 추가 — 아래에서 이름·연도별 소속 설정"); return; }
-    if(locked||!active) return; var t=e.target;
-    if(delMode){ if(t.classList.contains("med-vtx")){ state[year][active].splice(+t.dataset.i,1); render(); } return; }
+      startPan(e, function(){ var cxy=svgXY({clientX:cx,clientY:cy}), cll=unproj(cxy[0],cxy[1]); var nc={name:"새 도시",lon:d2(cll[0]),lat:d2(cll[1]),y:{}};
+        nc.y[year]=[active||(nations[0]&&nations[0].id)||null,"fort"]; cities.push(nc); selCity=cities.length-1; buildCityPanel(); render(); status("도시 추가 — 아래에서 이름·연도별 소속 설정"); });
+      return; }
+    var t=e.target;
+    if(delMode){ if(!locked&&active&&t.classList.contains("med-vtx")){ state[year][active].splice(+t.dataset.i,1); render(); return; } startPan(e,null); return; }
+    if(t.classList&&t.classList.contains("med-terr")&&t.dataset.nid){ var selNid=t.dataset.nid; // 영토 클릭=그 나라 선택
+      startPan(e, function(){ var n=meta(selNid); if(!n) return; active=selNid;
+        document.getElementById("medCur").textContent=n.name; buildBar(); render(); status(n.name+" 선택 — 점을 바로 편집하세요"); });
+      return; }
+    if(locked||!active){ startPan(e,null); return; }
     if(t.classList.contains("med-vtx")){ var i=+t.dataset.i; if(e.altKey){ state[year][active].splice(i,1); render(); return; } drag={i:i}; svg.setPointerCapture(e.pointerId); return; }
     if(t.classList.contains("med-mid")){ var idx=+t.dataset.ins; var xy=svgXY(e); var ll=unproj(xy[0],xy[1]); state[year][active].splice(idx+1,0,[d2(ll[0]),d2(ll[1])]); render(); return; }
-    if(t.classList.contains("med-terr")||t.classList.contains("med-lab")) return;
-    var xy2=svgXY(e); var ll2=unproj(xy2[0],xy2[1]); (state[year][active]||(state[year][active]=[])).push([d2(ll2[0]),d2(ll2[1])]); render();
+    if(t.classList.contains("med-lab")){ startPan(e,null); return; }
+    startPan(e, function(){ var xy2=svgXY({clientX:cx,clientY:cy}); var ll2=unproj(xy2[0],xy2[1]);
+      (state[year][active]||(state[year][active]=[])).push([d2(ll2[0]),d2(ll2[1])]); render(); });
   });
   svg.addEventListener("pointermove",function(e){
     if(dragRef){ var rxy=svgXY(e);
       if(dragRef.mode==="move"){ ref.x=rxy[0]-dragRef.dx; ref.y=rxy[1]-dragRef.dy; }
       else { var nw=Math.max(20, rxy[0]-ref.x); ref.w=nw; ref.h=(ref.natW&&ref.natH)? nw*ref.natH/ref.natW : Math.max(20, rxy[1]-ref.y); }
       drawRef(); return; }
-    if(pan){ var sc=vb.w/svg.clientWidth; vb.x=pan.vx-(e.clientX-pan.sx)*sc; vb.y=pan.vy-(e.clientY-pan.sy)*sc;
-      vb.x=Math.max(0,Math.min(BASE[0]-vb.w,vb.x)); vb.y=Math.max(0,Math.min(BASE[1]-vb.h,vb.y)); applyVB(); return; }
+    if(panDrag){ if(!panDrag.moved && Math.hypot(e.clientX-panDrag.sx, e.clientY-panDrag.sy)>4) panDrag.moved=true;
+      if(panDrag.moved){ var sc=vb.w/svg.clientWidth; vb.x=panDrag.vx-(e.clientX-panDrag.sx)*sc; vb.y=panDrag.vy-(e.clientY-panDrag.sy)*sc;
+        vb.x=Math.max(0,Math.min(BASE[0]-vb.w,vb.x)); vb.y=Math.max(0,Math.min(BASE[1]-vb.h,vb.y)); applyVB(); } return; }
     if(dragRegion){ if(Math.hypot(e.clientX-dragRegion.sx, e.clientY-dragRegion.sy)>3) dragRegion.moved=true;
       if(dragRegion.moved){ var rxy=svgXY(e), rll=unproj(rxy[0],rxy[1]); var rr=regions[dragRegion.ri];
         if(rr){ rr.lon=d2(rll[0]); rr.lat=d2(rll[1]); render(); } } return; }
@@ -2846,7 +2862,8 @@
         if(aa2){ var an=prompt("행정구역 이름 변경", aa2.name); if(an!=null&&an.trim()){ aa2.name=an.trim(); } } }
       dragAdmin=null; render(); }
     if(dragNatLab){ if(dragNatLab.moved) status((meta(dragNatLab.id)||{}).name+" 라벨 위치 고정됨 ("+year+"년) — 우클릭=자동 배치 복귀"); dragNatLab=null; }
-    drag=null; pan=null; });
+    if(panDrag){ if(!panDrag.moved && panDrag.click) panDrag.click(); panDrag=null; }
+    drag=null; });
   svg.addEventListener("wheel",function(e){ e.preventDefault(); var xy=svgXY(e); zoomAt(xy[0],xy[1], e.deltaY<0?0.84:1.19); },{passive:false});
   svg.addEventListener("contextmenu",function(e){ var t=e.target;
     if(adminMode && t.classList&&t.classList.contains("med-alab")){ e.preventDefault(); var ai2=+t.dataset.ai;
@@ -3005,7 +3022,7 @@
       wrap.querySelector("#cyName").oninput=function(){ c.name=this.value; render(); };
       wrap.querySelector("#cyDel").onclick=function(){ if(!confirm(c.name+' 도시를 삭제할까요?')) return; cities.splice(selCity,1); selCity=null; buildCityPanel(); render(); };
       wrap.querySelectorAll(".cyOn").forEach(function(cb){ cb.onchange=function(){ var y=cb.dataset.y;
-        if(cb.checked){ c.y[y]=[active||nations[0].id,"fort"]; } else { delete c.y[y]; } buildCityPanel(); render(); }; });
+        if(cb.checked){ c.y[y]=[active||(nations[0]&&nations[0].id)||null,"fort"]; } else { delete c.y[y]; } buildCityPanel(); render(); }; });
       wrap.querySelectorAll(".cyOwner").forEach(function(sel){ sel.onchange=function(){ var y=sel.dataset.y; if(c.y[y]){ c.y[y][0]=sel.value; buildCityPanel(); render(); } }; });
       wrap.querySelectorAll(".cyType").forEach(function(sel){ sel.onchange=function(){ var y=sel.dataset.y; if(c.y[y]){ c.y[y][1]=sel.value; buildCityPanel(); render(); } }; });
     }
@@ -3080,7 +3097,7 @@
     so.onchange=function(){ mSort.city=this.value; renderCityList(); };
     var add=document.getElementById("mmAddCity");
     if(add) add.onclick=function(){ var ll=unproj(vb.x+vb.w/2, vb.y+vb.h/2);
-      var nc={name:"새 도시",lon:d2(ll[0]),lat:d2(ll[1]),y:{}}; nc.y[year]=[active||nations[0].id,"fort"];
+      var nc={name:"새 도시",lon:d2(ll[0]),lat:d2(ll[1]),y:{}}; nc.y[year]=[active||(nations[0]&&nations[0].id)||null,"fort"];
       cities.push(nc); mSel=cities.length-1; mQ.city=""; buildModal(); render(); };
     var c=cities[mSel]; if(!c) return;
     function parseLatLon(str){ var m=String(str).match(/-?\d+(?:\.\d+)?/g); if(!m||m.length<2) return null;
@@ -3100,7 +3117,7 @@
       cities.splice(mSel,1); if(selCity===mSel) selCity=null; else if(selCity>mSel) selCity--;
       mSel=Math.max(0,mSel-1); buildModal(); buildCityPanel(); render(); };
     m.querySelectorAll(".mmOn").forEach(function(cb){ cb.onchange=function(){ var y=cb.dataset.y;
-      if(cb.checked){ c.y[y]=[active||nations[0].id,"fort"]; } else { delete c.y[y]; } buildModal(); buildCityPanel(); render(); }; });
+      if(cb.checked){ c.y[y]=[active||(nations[0]&&nations[0].id)||null,"fort"]; } else { delete c.y[y]; } buildModal(); buildCityPanel(); render(); }; });
     m.querySelectorAll(".mmOwner").forEach(function(sel){ var y=sel.dataset.y; if(c.y[y]) sel.value=c.y[y][0];
       sel.onchange=function(){ if(c.y[y]){ c.y[y][0]=sel.value; buildCityPanel(); render(); } }; });
     m.querySelectorAll(".mmType").forEach(function(sel){ var y=sel.dataset.y; if(c.y[y]) sel.value=c.y[y][1];
@@ -3135,13 +3152,12 @@
         +'<td>'+(mSort.nation==="name"?'':'<button class="med-act mmNMv" data-id="'+n.id+'" data-d="-1" title="우선순위 낮춤">◀</button> <button class="med-act mmNMv" data-id="'+n.id+'" data-d="1" title="우선순위 높임">▶</button>')+'</td>'
         +'<td><button class="med-act mmNDel" data-id="'+n.id+'" title="삭제">🗑</button></td></tr>'; }).join("");
     box.innerHTML=rows? '<table><tr><th>색</th><th>이름</th>'+yearsList.map(function(Y){return '<th>'+Y.y+'</th>';}).join("")+'<th>도시</th><th>우선순위</th><th></th></tr>'+rows+'</table>'
-      : '<p class="med-lbl" style="padding:6px 2px">검색 결과가 없습니다</p>';
+      : '<p class="med-lbl" style="padding:6px 2px">'+(q?'검색 결과가 없습니다':'나라가 없습니다 — 도시국가만 있는 지도도 가능합니다. 위의 ＋ 추가로 만드세요.')+'</p>';
     var cnt=document.getElementById("mmNatCnt"); if(cnt) cnt.textContent=q? arr.length+"/"+nations.length : nations.length;
     box.querySelectorAll(".mmNCol").forEach(function(inp){ inp.oninput=function(){ var n=meta(inp.dataset.id); if(n){ n.color=inp.value; buildBar(); buildCityPanel(); render(); } }; });
     box.querySelectorAll(".mmNName").forEach(function(inp){ inp.oninput=function(){ var n=meta(inp.dataset.id); if(n){ n.name=inp.value; buildBar(); render(); } }; });
     box.querySelectorAll(".mmNMv").forEach(function(b){ b.onclick=function(){ move(b.dataset.id,+b.dataset.d); renderNationTbl(); }; });
     box.querySelectorAll(".mmNDel").forEach(function(b){ b.onclick=function(){ var n=meta(b.dataset.id); if(!n) return;
-      if(nations.length<=1){ status("최소 1개는 남겨두세요"); return; }
       if(!confirm(n.name+" 나라를 삭제할까요? 모든 연도의 영토가 지워집니다.")) return;
       delNation(n.id); buildModal(); }; }); }
   function wireNationTab(m){
@@ -3478,7 +3494,7 @@
   document.getElementById("zRst").onclick=function(){ vb={x:0,y:0,w:BASE[0],h:BASE[1]}; applyVB(); render(); };
 
   try{ if(localStorage.getItem(STORE_KEY)) loadData(); }catch(e){}
-  status("편집기 v20260708d");
+  status("편집기 v20260708e");
   buildYearBar(); buildBar(); render();
 })();
 </script>
