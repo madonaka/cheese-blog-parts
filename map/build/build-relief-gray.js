@@ -80,7 +80,7 @@ const OW=M.OW, OH=Math.round(OW*oh/ow), S=OW/ow; // 출력px / viewBoxpx
   const Eg=E;
 
   const cellx=ow/OW*(1/(kx*CFG.SCALE))*111320*kx, celly=oh/OH*(1/CFG.SCALE)*110570;
-  const ZF=3.5, az=315*Math.PI/180, zen=45*Math.PI/180, cz=Math.cos(zen), sz=Math.sin(zen);
+  const ZF=4.0, az=315*Math.PI/180, zen=45*Math.PI/180, cz=Math.cos(zen), sz=Math.sin(zen);
   function EG_(x,y){x=x<0?0:x>=OW?OW-1:x;y=y<0?0:y>=OH?OH-1:y;return Eg[y*OW+x];}
 
   // base↔korea 경계: base 는 전체 불투명, korea 만 박스 안쪽으로 페더(0→1) — 뷰어의 isolate 그룹에서
@@ -109,9 +109,9 @@ const OW=M.OW, OH=Math.round(OW*oh/ow), S=OW/ow; // 출력px / viewBoxpx
     const slope=Math.atan(Math.sqrt(zx*zx+zy*zy)), aspect=Math.atan2(zy,-zx);
     const cosd=Math.cos(az-aspect), sl=Math.sin(slope);
     const sd=sl*Math.max(0,-cosd);                       // 해 반대편(그늘) 사면만 0..1
-    const amb=0.18*sl*(1-0.85*Math.max(0,cosd));         // 질감용 약한 전방향 음영 — 햇빛 면은 거의 0
+    const amb=0.22*sl*(1-0.85*Math.max(0,cosd));         // 질감용 약한 전방향 음영 — 햇빛 면은 거의 0
     let ev=(EG_(x,y)-300)/2200; ev=ev<0?0:ev>1?1:ev; ev=ev*Math.sqrt(ev)*0.38; // 고도 심도 — 높을수록 뚜렷하게 어둡게(수묵 명암), 저지대(≤300m)는 0
-    let dark=gate*(0.62*sd+amb)+ev; if(dark>0.85) dark=0.85;
+    let dark=gate*(0.78*sd+amb)+ev; if(dark>0.85) dark=0.85;
     // 4단계 양자화 — multiply 오버레이에선 실효 수 단계라 밴딩이 안 보이고 PNG가 훨씬 작아진다
     // dark≈0일 때 256으로 넘쳐 0(검정)이 되므로 255로 캡 — 평지는 순백(영향 없음)이어야 한다
     const L=Math.min(255,Math.round(255*(1-dark)/4)*4);
