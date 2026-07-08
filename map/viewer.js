@@ -44,8 +44,8 @@
     var uid=(render._u=(render._u||0)+1); // 한 페이지 다중 지도에서 clipPath id 충돌 방지
     var cfg=map.cfg, kx=Math.cos((cfg.WIN[1]+cfg.WIN[3])/2*Math.PI/180);
     function proj(lon,lat){ return [ (lon-cfg.WIN[0])*kx*cfg.SCALE+cfg.pad, (cfg.WIN[3]-lat)*cfg.SCALE+cfg.pad ]; }
-    var COLOR={}, NAME={};
-    map.nations.forEach(function(n){ COLOR[n.id]=n.color; NAME[n.id]=n.name; });
+    var COLOR={}, NAME={}, LAB={};
+    map.nations.forEach(function(n){ COLOR[n.id]=n.color; NAME[n.id]=n.name; if(n.lab) LAB[n.id]=n.lab; }); // lab={연도:[lon,lat]} — 편집기에서 지정한 나라 라벨 수동 앵커
     var years=map.years.slice().sort(function(a,b){ return (+a.y)-(+b.y); });
     var yearIdx=0, year=years[0].y, vis={terr:1,river:1,city:1,relief:1};
 
@@ -212,6 +212,7 @@
       +'.cmap-ruler{text-anchor:middle;font-weight:600;paint-order:stroke;stroke:#fff;stroke-linejoin:round}'
       +'.cmap-citylab{fill:#1c1a12;paint-order:stroke;stroke:#fff;stroke-linejoin:round;font-weight:700}'
       +'.cmap-region{fill:#5f6570;opacity:.55;text-anchor:middle;font-weight:700}'
+      +'.cmap-admin{text-anchor:middle;font-weight:600;opacity:.85;paint-order:stroke;stroke:rgba(255,255,255,.9);stroke-linejoin:round}'
       +'text{font-family:"Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",sans-serif}';
     var reliefCache={};
     function blobToDataURL(b){ return new Promise(function(res){ var fr=new FileReader(); fr.onload=function(){ res(fr.result); }; fr.readAsDataURL(b); }); }
@@ -305,6 +306,13 @@
         t2.style.letterSpacing=(0.3*14*ku)+"px";
         t2.textContent=r.name; gTL.appendChild(t2); }); }
 
+      // 행정구역(신라 9주, 조선 8도 등) — 소속 나라색 계열의 보조 라벨. 좁은 화면의 넓은 뷰에서는 지역 통칭과 같이 숨김
+      if(map.admins && !(ui>1.5 && k>0.45)){ map.admins.forEach(function(a){ if(!a.y||!a.y[year]) return;
+        var pA=proj(a.lon,a.lat);
+        var tA=el("text",{x:pA[0],y:pA[1],class:"cmap-admin"}); tA.style.fontSize=(10.5*ku)+"px";
+        tA.style.strokeWidth=(2.2*ku)+"px"; tA.style.fill=darken(COLOR[a.nat]||"#666");
+        tA.textContent=a.name; gTL.appendChild(tA); }); }
+
       // 영토 + 나라 라벨 — 앵커 고정(최대 링 bbox 중심, 줌과 무관), 겹치면 이동 대신 작은 영토 쪽을 그 줌에선 숨김
       var placedLabs=[];
       if(vis.terr){
@@ -326,10 +334,13 @@
           // 구글맵식 줌 연동 상한: 축소(k→1)일수록 12px까지 낮추고, 확대하면 16px까지 커짐
           var capPx=Math.min(16, 12/Math.sqrt(k));
           var fs=Math.min(capPx*ku, Math.max(fit, minFs));
-          var lx=(b[0]+b[2])/2, ly=(b[1]+b[3])/2+4*ku, halfW=nm.length*fs*0.62;
+          var man=LAB[o.t.id]&&LAB[o.t.id][year]; // 수동 앵커가 있으면 그 위치에 항상 표시(생략·회피 규칙 제외)
+          var lx, ly, halfW=nm.length*fs*0.62;
+          if(man){ var mp2=proj(man[0],man[1]); lx=mp2[0]; ly=mp2[1]; }
+          else { lx=(b[0]+b[2])/2; ly=(b[1]+b[3])/2+4*ku; }
           // 축소해도 영토의 2.6배를 넘는 소국은 이 줌에선 생략 — 확대하면 표시
-          if(halfW*2 > 2.6*mx) return;
-          if(placedLabs.some(function(q){ return Math.abs(q[0]-lx)<halfW+q[2] && Math.abs(q[1]-ly)<(fs+q[3])*0.55; })) return;
+          if(!man && halfW*2 > 2.6*mx) return;
+          if(!man && placedLabs.some(function(q){ return Math.abs(q[0]-lx)<halfW+q[2] && Math.abs(q[1]-ly)<(fs+q[3])*0.55; })) return;
           placedLabs.push([lx,ly,halfW,fs]);
           var tx=el("text",{x:lx,y:ly,class:"cmap-terrlab"}); tx.style.fontSize=fs+"px";
           tx.style.letterSpacing=(0.14*fs)+"px"; tx.style.strokeWidth=(3*ku)+"px"; tx.style.fill=darken(COLOR[o.t.id]);
