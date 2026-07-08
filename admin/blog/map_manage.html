@@ -125,7 +125,7 @@
     </svg>
     <div class="med-zoom"><button id="zIn">＋</button><button id="zOut">－</button><button id="zRst">⟳</button></div>
   </div>
-  <p class="med-hint">활성: <b id="medCurY">400</b>년 · <b id="medCur">고구려</b> — 드래그=지도 이동 · 영토 클릭=나라 선택 · 빈 곳 클릭=점 추가 · 점 드래그=이동, 회색점=중간 추가, 점 우클릭=삭제</p>
+  <p class="med-hint">활성: <b id="medCurY">400</b>년 · <b id="medCur">고구려</b> — 드래그=지도 이동 · 영토 클릭=나라 선택 · 점 드래그=이동 · 점 추가=경계의 회색 점 드래그 · 점 우클릭=삭제 (새 영역은 처음 3점만 클릭)</p>
   <div class="med-cpanel" id="medRefPanel"></div>
   <div class="med-cpanel" id="medCPanel"></div>
   <textarea class="med-out" id="medOut" readonly></textarea>
@@ -2828,10 +2828,17 @@
       return; }
     if(locked||!active){ startPan(e,null); return; }
     if(t.classList.contains("med-vtx")){ var i=+t.dataset.i; if(e.altKey){ state[year][active].splice(i,1); render(); return; } drag={i:i}; svg.setPointerCapture(e.pointerId); return; }
-    if(t.classList.contains("med-mid")){ var idx=+t.dataset.ins; var xy=svgXY(e); var ll=unproj(xy[0],xy[1]); state[year][active].splice(idx+1,0,[d2(ll[0]),d2(ll[1])]); render(); return; }
+    if(t.classList.contains("med-mid")){ var idx=+t.dataset.ins; var xy=svgXY(e); var ll=unproj(xy[0],xy[1]);
+      state[year][active].splice(idx+1,0,[d2(ll[0]),d2(ll[1])]); render(); drag={i:idx+1}; svg.setPointerCapture(e.pointerId); return; } // 삽입 즉시 드래그로 위치 지정
     if(t.classList.contains("med-lab")){ startPan(e,null); return; }
-    startPan(e, function(){ var xy2=svgXY({clientX:cx,clientY:cy}); var ll2=unproj(xy2[0],xy2[1]);
-      (state[year][active]||(state[year][active]=[])).push([d2(ll2[0]),d2(ll2[1])]); render(); });
+    var pts0=state[year][active]||[];
+    if(pts0.length<3){ // 영역이 아직 없을 때만 클릭으로 시작점을 찍는다(3점까지)
+      startPan(e, function(){ var xy2=svgXY({clientX:cx,clientY:cy}); var ll2=unproj(xy2[0],xy2[1]);
+        (state[year][active]||(state[year][active]=[])).push([d2(ll2[0]),d2(ll2[1])]); render();
+        var np=state[year][active].length;
+        status(np<3? "시작점 "+np+"/3 — 세 점을 찍으면 영역이 만들어집니다" : "영역 생성됨 — 이후 점 추가는 경계의 회색 점을 끌어서 하세요"); });
+      return; }
+    startPan(e,null); // 영역이 있으면 빈 곳 클릭으로는 점이 추가되지 않음 — 점 추가는 회색 중간점 드래그로
   });
   svg.addEventListener("pointermove",function(e){
     if(dragRef){ var rxy=svgXY(e);
@@ -3494,7 +3501,7 @@
   document.getElementById("zRst").onclick=function(){ vb={x:0,y:0,w:BASE[0],h:BASE[1]}; applyVB(); render(); };
 
   try{ if(localStorage.getItem(STORE_KEY)) loadData(); }catch(e){}
-  status("편집기 v20260708e");
+  status("편집기 v20260708f");
   buildYearBar(); buildBar(); render();
 })();
 </script>
