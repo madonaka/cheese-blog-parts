@@ -34,8 +34,10 @@
     var v=parseInt(m[1],16), r=(v>>16)&255, g=(v>>8)&255, b=v&255, t=0.45;
     return "rgb("+Math.round(r+(255-r)*t)+","+Math.round(g+(255-g)*t)+","+Math.round(b+(255-b)*t)+")"; }
 
+  var OCEAN="#a9e2f3"; // flat 스타일의 바다색 — 스타일이므로 뷰어가 정한다(발행본 cfg.ocean 은 구형식, opts.ocean 으로만 재정의)
   function render(mount, opts){
     var map=opts.map, rivers=opts.rivers||{}, reliefUrl=opts.reliefUrl, landD=opts.land||"";
+    var ocean=opts.ocean||OCEAN;
     var cfg=map.cfg, kx=Math.cos((cfg.WIN[1]+cfg.WIN[3])/2*Math.PI/180);
     function proj(lon,lat){ return [ (lon-cfg.WIN[0])*kx*cfg.SCALE+cfg.pad, (cfg.WIN[3]-lat)*cfg.SCALE+cfg.pad ]; }
     var COLOR={}, NAME={};
@@ -72,7 +74,7 @@
 
     // 지도 래퍼(+줌 버튼 오버레이)
     var wrap=document.createElement("div"); wrap.className="cmap-mapwrap"; mount.appendChild(wrap);
-    var svg=el("svg",{class:"cmap-svg",viewBox:map.viewBox}); svg.style.background=(cfg.ocean||"#a9e2f3");
+    var svg=el("svg",{class:"cmap-svg",viewBox:map.viewBox}); svg.style.background=ocean;
     // 납작한 지도(세계 전도 등)는 표시 비율을 따로 지정해 크게 — 세로로 넘치는 부분은 바다 레터박스
     var dispAR=+opts.displayAspect||0;
     if(dispAR) svg.style.aspectRatio=String(dispAR);
@@ -203,7 +205,7 @@
         var mapW=1600, mapH=Math.round(mapW*vb.h/vb.w);
         cl.setAttribute("width",mapW); cl.setAttribute("height",mapH);
         var st=document.createElementNS(NS,"style"); st.textContent=EXPORT_CSS; cl.insertBefore(st, cl.firstChild);
-        var bg=el("rect",{x:vb.x,y:vb.y,width:vb.w,height:vb.h,fill:(cfg.ocean||"#a9e2f3")}); cl.insertBefore(bg, st.nextSibling);
+        var bg=el("rect",{x:vb.x,y:vb.y,width:vb.w,height:vb.h,fill:ocean}); cl.insertBefore(bg, st.nextSibling);
         var imEl=cl.querySelector("image");
         if(imEl){ if(reliefD){ imEl.setAttribute("href",reliefD); imEl.setAttributeNS("http://www.w3.org/1999/xlink","href",reliefD); } else imEl.remove(); }
         var svgStr=new XMLSerializer().serializeToString(cl);
