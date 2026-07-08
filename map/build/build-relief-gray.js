@@ -69,22 +69,15 @@ else { const p1=proj(KOREA_BOX[0],KOREA_BOX[3]), p2=proj(KOREA_BOX[2],KOREA_BOX[
   ox0=p1[0]; oy0=p1[1]; ow=p2[0]-p1[0]; oh=p2[1]-p1[1]; }
 const OW=M.OW, OH=Math.round(OW*oh/ow), S=OW/ow; // 출력px / viewBoxpx
 
-// 분리형 박스 블러(clamp 경계) — 고도 스파이크 제거용. 반복 적용으로 가우시안 근사
-function boxblur(src,w,h,r){ const tmp=new Float32Array(w*h), out=new Float32Array(w*h), n=2*r+1;
-  for(let y=0;y<h;y++){ const row=y*w;
-    for(let x=0;x<w;x++){ let s=0; for(let k=-r;k<=r;k++){ let xx=x+k; if(xx<0)xx=0; else if(xx>=w)xx=w-1; s+=src[row+xx]; } tmp[row+x]=s/n; } }
-  for(let x=0;x<w;x++){
-    for(let y=0;y<h;y++){ let s=0; for(let k=-r;k<=r;k++){ let yy=y+k; if(yy<0)yy=0; else if(yy>=h)yy=h-1; s+=tmp[yy*w+x]; } out[y*w+x]=s/n; } }
-  return out; }
-
 (async function main(){
   await ensureTiles();
   loadTiles();
   console.log(MODE,"고도 그리드",OW+"x"+OH,"...");
   const E=new Float32Array(OW*OH);
   for(let y=0;y<OH;y++)for(let x=0;x<OW;x++){ const ll=unproj(ox0+(x+0.5)/S, oy0+(y+0.5)/S); E[y*OW+x]=elevBil(ll[0],ll[1]); }
-  // 고도 그리드 1회 박스블러 — DEM 1m 양자화 노이즈만 완화(해상도 유지 위해 최소한만)
-  const Eg=boxblur(E,OW,OH,1);
+  // 블러 없음 — 예전 '점박이'의 원인은 고도 스파이크가 아니라 양자화 오버플로(검정 랩어라운드, 수정됨)였고,
+  // 평지 DEM 노이즈는 경사 게이트가 걸러낸다. 블러는 z10 잔능선을 뭉개 고해상 패치의 의미를 없앤다.
+  const Eg=E;
 
   const cellx=ow/OW*(1/(kx*CFG.SCALE))*111320*kx, celly=oh/OH*(1/CFG.SCALE)*110570;
   const ZF=3.5, az=315*Math.PI/180, zen=45*Math.PI/180, cz=Math.cos(zen), sz=Math.sin(zen);
