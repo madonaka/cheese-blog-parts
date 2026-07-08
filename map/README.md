@@ -13,8 +13,8 @@ map/
   data/
     samguk-map.json     published 지도 데이터 (겹침 절단 완료 → 뷰어는 라이브러리 불필요)
   assets/
-    relief.png          수묵 명암 지형도 z8 (바다=투명, 한반도 영역은 알파 구멍 — relief-korea 가 채움)
-    relief-korea.png    한반도 고해상 지형 패치 z10 (뷰어 opts.reliefHi 로 겹침, box=[122.5,32.8,132.5,44.2])
+    relief.webp         수묵 명암 지형도 z8 (바다=투명, 전체 불투명 — 페이지는 .webp 참조, .png 는 빌드 원본)
+    relief-korea.webp   한반도 고해상 지형 패치 z10 (뷰어 opts.reliefHi 로 base 위에 페더 합성, box=[122.5,32.8,132.5,44.2])
     rivers.json         강 경로 (HydroRIVERS 기반, 유량등급별 굵기 classes:[{w,d}], 하구 연장)
     land.json           벡터 해안선 — 해안선의 단일 기준. 뷰어가 지형·강·영토를 이 모양으로 클립
     land-paleo.json     고대 해안선 (해수면 +8m 비정, land.json과 같은 형식) — 뷰어 '고대 해안선' 토글용
@@ -72,10 +72,10 @@ repo(`madonaka/cheese-blog-parts`)에 커밋하면 다음 URL로 서빙된다:
 ```
 https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/map/cheese-map.css
 https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/map/viewer.js
-https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/map/assets/relief.png
+https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/map/assets/relief.webp
 https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/map/assets/rivers.json
 ```
-> 지형 PNG는 HTML에 인라인하지 말고 위 URL로 로드한다(1회 캐시). 갱신 시 `?v=YYYYMMDD` 쿼리로 캐시 무효화.
+> 지형 이미지는 HTML에 인라인하지 말고 위 URL로 로드한다(1회 캐시). 갱신 시 `?v=YYYYMMDD` 쿼리로 캐시 무효화.
 
 ## Blogger / 페이지에서 사용
 
@@ -95,7 +95,7 @@ https://cdn.jsdelivr.net/gh/madonaka/cheese-blog-parts@main/map/assets/rivers.js
     CheeseMap.render(document.getElementById('samgukMap'), {
       title:'삼국시대 동아시아', map:res[0], rivers:res[1], land:res[2].land,
       landPaleo:res[3].land,
-      reliefUrl:CDN+'assets/relief.png'
+      reliefUrl:CDN+'assets/relief.webp', reliefHi:{url:CDN+'assets/relief-korea.webp', box:[122.5,32.8,132.5,44.2]}
     });
   });
 </script>

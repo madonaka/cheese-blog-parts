@@ -122,4 +122,10 @@ const OW=M.OW, OH=Math.round(OW*oh/ow), S=OW/ow; // 출력px / viewBoxpx
   const buf=PNG.sync.write(png,{colorType:6});
   fs.writeFileSync(out,buf);
   console.log(out,OW+"x"+OH,"|",Math.round(buf.length/1024)+"KB");
+  // 발행용 webp 병행 출력(sharp 있을 때만) — 페이지들은 .webp 를 참조한다 (build-relief-world.js 와 동일 패턴)
+  let sharp=null; try{ sharp=require("sharp"); }catch(e){}
+  if(sharp){ const wout=out.replace(/\.png$/,".webp");
+    const info=await sharp(png.data,{raw:{width:OW,height:OH,channels:4}})
+      .webp({quality:82,alphaQuality:90,effort:5}).toFile(wout);
+    console.log(wout,"|",Math.round(info.size/1024)+"KB"); }
 })();

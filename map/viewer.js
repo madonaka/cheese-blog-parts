@@ -7,7 +7,7 @@
        map:      <published 지도 JSON>,      // Firestore published 또는 data/samguk-map.json
        rivers:   {classes:[{w,d}], lakes},   // assets/rivers.json
        land:     "<land path d>",            // assets/land.json 의 .land
-       reliefUrl:"https://cdn.../relief.png" // 지형 PNG (jsDelivr 등)
+       reliefUrl:"https://cdn.../relief.webp" // 지형 이미지 (jsDelivr 등)
      });
 
    인터랙션: 휠 줌(커서 기준) · 드래그 이동 · 핀치 줌 · ＋/－/⟳/⛶/📷 버튼.
