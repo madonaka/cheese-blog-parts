@@ -755,7 +755,13 @@
     .ici-date { font-size:.75rem; color:#94a3b8; font-weight:500; }
     .ici-badge { font-size:.7rem; padding:2px 6px; border-radius:4px; font-weight:700; color:#fff; }
     .ici-title { font-size:1.05rem; font-weight:700; color:#1e293b; margin-bottom:8px; line-height:1.3; }
+    .ici-clickable { cursor:pointer; flex:1; display:flex; flex-direction:column; border-radius:8px; margin:-4px; padding:4px; transition:background .15s; }
+    .ici-clickable:hover { background:#f8fafc; }
+    .ici-clickable:hover .ici-title { color:#2563eb; }
     .ici-body { font-size:.9rem; color:#64748b; line-height:1.5; flex:1; margin-bottom:12px; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; white-space:pre-wrap; }
+    .ici-more { color:#3b82f6; font-weight:700; }
+    .idea-view-body { padding:20px; max-height:60vh; overflow:auto; font-size:.95rem; line-height:1.7; color:#334155; white-space:pre-wrap; word-break:break-word; }
+    .idea-view-empty { color:#94a3b8; font-style:italic; }
     .ici-footer { display:flex; justify-content:space-between; align-items:center; padding-top:10px; border-top:1px dashed #e2e8f0; margin-top:auto; }
     .ici-btn { font-size:.8rem; padding:6px 10px; border-radius:6px; cursor:pointer; font-weight:700; border:1px solid #bfdbfe; background:#eff6ff; color:#3b82f6; }
     .ici-btn.cancel { background:#fff; border-color:#cbd5e1; color:#64748b; }
@@ -941,6 +947,21 @@
           <button style="background:#fff; color:#64748b;" onclick="closeIdeaModal()">닫기</button>
           <button style="background:#3b82f6; color:#fff; border:none;" onclick="saveIdea()">💾 저장</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="idea-view-modal" class="idea-modal-overlay" onclick="if(event.target===this) closeIdeaView()">
+    <div class="idea-modal-box">
+      <div class="idea-modal-head" style="display:flex; align-items:center; gap:8px;">
+        <span id="idea-view-badge" class="ici-badge"></span>
+        <span id="idea-view-title" style="flex:1;">아이디어</span>
+      </div>
+      <div class="idea-view-body" id="idea-view-detail"></div>
+      <div class="idea-modal-foot">
+        <span id="idea-view-date" class="ici-date" style="margin-right:auto;"></span>
+        <button style="background:#eff6ff; color:#3b82f6; border-color:#bfdbfe;" onclick="editFromView()">✏️ 수정</button>
+        <button style="background:#fff; color:#64748b;" onclick="closeIdeaView()">닫기</button>
       </div>
     </div>
   </div>
@@ -1819,7 +1840,9 @@
         const cat = IDEA_CATS[color] || IDEA_CATS['#64748b'];
         const realized = isIdeaRealized(t);
         const dateStr = t['기한'] ? String(t['기한']).split('T')[0] : '';
-        const plain = (t['상세내용'] || '내용 없음').replace(/<[^>]*>?/gm, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').trim().slice(0, 120);
+        const plainFull = (t['상세내용'] || '내용 없음').replace(/<[^>]*>?/gm, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').trim();
+        const plain = plainFull.slice(0, 120);
+        const isPlainClipped = plainFull.length > 120;
         const badgeLabel = realized ? '🚀 실현됨' : cat.label;
         const badgeColor = realized ? '#10b981' : color;
         const actionBtn = realized
@@ -1830,8 +1853,10 @@
             <span class="ici-badge" style="background:${badgeColor}">${badgeLabel}</span>
             <span class="ici-date">📅 ${escapeHtml(dateStr)}</span>
           </div>
-          <div class="ici-title">${escapeHtml(t['제목'] || '(제목 없음)')}</div>
-          <div class="ici-body">${escapeHtml(plain)}</div>
+          <div class="ici-clickable" onclick="openIdeaView('${t.ID}')" title="클릭하여 전체 내용 보기">
+            <div class="ici-title">${escapeHtml(t['제목'] || '(제목 없음)')}</div>
+            <div class="ici-body">${escapeHtml(plain)}${isPlainClipped ? '<span class="ici-more">… 더보기</span>' : ''}</div>
+          </div>
           <div class="ici-footer">
             ${actionBtn}
             <div style="display:flex; gap:4px;">
@@ -1896,6 +1921,39 @@
     }
 
     function closeIdeaModal() { document.getElementById('idea-modal').classList.remove('open'); }
+
+    /* 읽기 전용 뷰어 — 카드 텍스트 클릭 시 전체 내용 표시(수정창과 분리) */
+    let g_viewIdeaId = '';
+    function openIdeaView(id) {
+      const it = g_ideas.find(t => t.ID === id);
+      if (!it) return;
+      g_viewIdeaId = id;
+      const color = it['색상'] || '#64748b';
+      const cat = IDEA_CATS[color] || IDEA_CATS['#64748b'];
+      const realized = isIdeaRealized(it);
+      const badge = document.getElementById('idea-view-badge');
+      badge.textContent = realized ? '🚀 실현됨' : cat.label;
+      badge.style.background = realized ? '#10b981' : color;
+      document.getElementById('idea-view-title').textContent = it['제목'] || '(제목 없음)';
+      const dateStr = it['기한'] ? String(it['기한']).split('T')[0] : '';
+      document.getElementById('idea-view-date').textContent = dateStr ? '📅 ' + dateStr : '';
+      const detail = (it['상세내용'] || '')
+        .replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div)>/gi, '\n')
+        .replace(/<[^>]*>?/gm, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim();
+      const detailEl = document.getElementById('idea-view-detail');
+      if (detail) { detailEl.textContent = detail; detailEl.classList.remove('idea-view-empty'); }
+      else { detailEl.textContent = '상세 내용이 없습니다.'; detailEl.classList.add('idea-view-empty'); }
+      document.getElementById('idea-view-modal').classList.add('open');
+    }
+
+    function closeIdeaView() { document.getElementById('idea-view-modal').classList.remove('open'); }
+
+    function editFromView() {
+      const id = g_viewIdeaId;
+      closeIdeaView();
+      if (id) openIdeaModal(id);
+    }
 
     function openIdeaModal(id) {
       document.getElementById('idea-edit-id').value = id || '';
