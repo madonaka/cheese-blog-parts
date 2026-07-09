@@ -285,8 +285,22 @@
       border-radius: 12px; padding: 14px 18px; margin-bottom: 10px;
     }
 
-    .ticket-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .ticket-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; cursor: pointer; user-select: none; }
     .ticket-title { font-weight: 700; color: var(--text-main); }
+
+    /* 티켓 카드 접기/펼치기 — 기본은 헤더만, 클릭 시 로그·회의록 노출 */
+    .tk-summary { margin-left: auto; font-size: 0.78rem; color: var(--text-sub); font-weight: 700; white-space: nowrap; }
+    .ticket-head .log-chevron { flex-shrink: 0; color: #94a3b8; font-size: 0.75rem; transition: transform 0.2s; }
+    .ticket-card.open .ticket-head .log-chevron { transform: rotate(90deg); }
+    .ticket-body {
+      display: none;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border-color);
+    }
+    .ticket-card.open .ticket-body { display: block; }
+    .ticket-body .ticket-trail { margin-top: 6px; padding-top: 0; border-top: none; }
+    .tk-log-head { font-size: 0.78rem; font-weight: 800; color: var(--text-sub); }
 
     .ticket-trail {
       margin-top: 12px; padding-top: 10px;
@@ -541,6 +555,10 @@
     .ticket-trail-wrap > summary::before { content: '▸'; margin-right: 7px; }
     .ticket-trail-wrap[open] > summary::before { content: '▾'; }
     .ticket-trail-wrap .ticket-trail { margin-top: 6px; padding-top: 0; border-top: none; }
+
+    /* 작업 로그 → 티켓 연동 (배지 클릭) */
+    .ticket-id-link { cursor: pointer; transition: background 0.12s, color 0.12s; }
+    .ticket-id-link:hover { background: #ede9fe; color: #6d28d9; text-decoration: underline; }
 
     /* 티켓 → 작업 로그/회의록 연동 링크 */
     .trail-row.trail-link {
@@ -878,7 +896,7 @@
             <div class="log-row" id="row-${i}" onclick="toggleDetail(${i})">
               <span class="log-date">${escapeHtml(e.date)}</span>
               ${e.project ? `<span class="log-project ${e.project === '스토어프론트' ? 'store' : 'admin'}">${escapeHtml(e.project)}</span>` : ''}
-              ${e.ticket ? `<span class="ticket-id">${escapeHtml(e.ticket)}</span>` : ''}
+              ${e.ticket ? `<span class="ticket-id ticket-id-link" onclick="event.stopPropagation();openTicket('${escapeHtml(e.ticket)}')" title="티켓으로 이동">${escapeHtml(e.ticket)}</span>` : ''}
               <span class="log-content">${escapeHtml(e.content)}</span>
               ${e.hash ? `<span class="log-hash">${escapeHtml(e.hash)}</span>` : ''}
               <span class="log-chevron">▶</span>
@@ -1052,6 +1070,44 @@
       }
     }
 
+    // 티켓 검색·정렬 함수 — renderTickets와 openTicket이 동일한 표시 순서를 쓰도록 공유
+    function ticketMatchFn() {
+      const searchEl = document.getElementById('ticket-search');
+      const term = (searchEl ? searchEl.value : '').toLowerCase().trim();
+      return t => !term || [t.id, t.title, t.project].some(v => String(v || '').toLowerCase().includes(term));
+    }
+    function ticketCmpFn() {
+      const sortEl = document.getElementById('ticket-sort');
+      const sort = sortEl ? sortEl.value : 'id-asc';
+      return (a, b) => {
+        if (sort === 'project') {
+          const p = String(a.project || '').localeCompare(String(b.project || ''));
+          return p || String(a.id).localeCompare(String(b.id));
+        }
+        const base = String(a.id).localeCompare(String(b.id));
+        return sort === 'id-desc' ? -base : base;
+      };
+    }
+
+    // 작업 로그 배지 → 티켓 탭으로 이동해 해당 티켓 카드를 펼치고 강조.
+    // 검색·상태 필터가 대상을 가릴 수 있으므로 '전체'로 풀고 검색어를 비운 뒤 위치를 계산한다.
+    function openTicket(id) {
+      switchTab('tickets');
+      const searchEl = document.getElementById('ticket-search');
+      if (searchEl) searchEl.value = '';
+      g_ticketStatus = 'all';
+      const list = g_tickets.filter(ticketMatchFn()).sort(ticketCmpFn());
+      const pos = list.findIndex(t => t.id === id);
+      if (pos >= 0) g_page.tickets = Math.floor(pos / PAGE_SIZE.tickets) + 1;
+      renderTickets();
+      const card = document.getElementById('tkcard-' + id);
+      if (card) {
+        card.classList.add('open');   // 딥링크로 열면 로그·회의록까지 바로 보이도록 펼침
+        card.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        flashRow(card);
+      }
+    }
+
     // 회의록 제목·본문에 해당 티켓 번호가 등장하는지 (T-006이 T-0060에 오검출되지 않도록 뒷자리 숫자 배제)
     function ticketInText(text, id) {
       try {
@@ -1069,8 +1125,8 @@
       const stLabel = { todo: '할 일', doing: '진행 중', done: '완료' }[st] || st;
       const trail = g_entries.filter(e => e.ticket === t.id);
       const trailBlock = trail.length
-        ? `<details class="ticket-trail-wrap">
-            <summary>작업 로그 ${trail.length}건</summary>
+        ? `<div class="ticket-logs">
+            <div class="tk-log-head">작업 로그 ${trail.length}건</div>
             <div class="ticket-trail">${trail.map(e => {
               const idx = g_entries.indexOf(e);   // 작업 로그 탭에서 열 전역 인덱스
               return `<div class="trail-row trail-link" onclick="openWorklogEntry(${idx})" title="작업 로그에서 열기">
@@ -1080,8 +1136,8 @@
                 <span class="trail-go">↗</span>
               </div>`;
             }).join('')}</div>
-          </details>`
-        : `<div class="ticket-trail"><span class="empty-sm">연결된 작업 로그 없음</span></div>`;
+          </div>`
+        : `<div class="ticket-logs"><span class="empty-sm">연결된 작업 로그 없음</span></div>`;
 
       // 이 티켓 번호를 언급한 회의록 → 회의록 탭으로 연동
       const relMeetings = g_meetings
@@ -1100,15 +1156,25 @@
           </div>`
         : '';
 
-      return `<div class="ticket-card">
-        <div class="ticket-head">
+      // 접힌 상태에서도 한눈에 보이도록 로그·회의 개수 요약
+      const summaryBits = [];
+      if (trail.length) summaryBits.push(`로그 ${trail.length}`);
+      if (relMeetings.length) summaryBits.push(`회의 ${relMeetings.length}`);
+      const summary = summaryBits.length ? `<span class="tk-summary">${summaryBits.join(' · ')}</span>` : '<span class="tk-summary"></span>';
+
+      return `<div class="ticket-card" id="tkcard-${t.id}">
+        <div class="ticket-head" onclick="this.parentElement.classList.toggle('open')">
           <span class="ticket-id">${escapeHtml(t.id)}</span>
           <span class="tk-status-badge ${st}">${stLabel}</span>
           ${projBadge}
           <span class="ticket-title">${escapeHtml(t.title || '')}</span>
+          ${summary}
+          <span class="log-chevron">▶</span>
         </div>
-        ${trailBlock}
-        ${meetingBlock}
+        <div class="ticket-body">
+          ${trailBlock}
+          ${meetingBlock}
+        </div>
       </div>`;
     }
 
@@ -1118,21 +1184,8 @@
         root.innerHTML = '<div class="empty">티켓이 없습니다.</div>';
         return;
       }
-      const searchEl = document.getElementById('ticket-search');
-      const sortEl = document.getElementById('ticket-sort');
-      const term = (searchEl ? searchEl.value : '').toLowerCase().trim();
-      const sort = sortEl ? sortEl.value : 'id-asc';
-
-      const match = t => !term || [t.id, t.title, t.project]
-        .some(v => String(v || '').toLowerCase().includes(term));
-      const cmp = (a, b) => {
-        if (sort === 'project') {
-          const p = String(a.project || '').localeCompare(String(b.project || ''));
-          return p || String(a.id).localeCompare(String(b.id));
-        }
-        const base = String(a.id).localeCompare(String(b.id));
-        return sort === 'id-desc' ? -base : base;
-      };
+      const match = ticketMatchFn();
+      const cmp = ticketCmpFn();
 
       // 검색어에 걸린 티켓 기준으로 상태별 개수 집계 (칩 배지)
       const matched = g_tickets.filter(match);
