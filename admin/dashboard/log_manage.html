@@ -69,6 +69,32 @@
       font-size: 1rem;
     }
 
+    /* 🌟 Project 초점 배너 (docs/strategy/focus.md SSOT) */
+    .focus-banner {
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      flex-wrap: wrap;
+      padding: 14px 18px;
+      margin-bottom: 18px;
+      border: 1px solid #fcd34d;
+      background: linear-gradient(135deg, #fffbeb 0%, #fef9c3 100%);
+      border-radius: 14px;
+    }
+    .focus-star { font-size: 1.35rem; flex-shrink: 0; line-height: 1; }
+    .focus-main { flex: 1; min-width: 0; }
+    .focus-proj {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      font-weight: 800; color: #92400e; font-size: 0.98rem; letter-spacing: -0.01em;
+    }
+    .focus-horizon {
+      font-size: 0.72rem; font-weight: 800; color: #b45309;
+      background: #fef3c7; padding: 2px 9px; border-radius: 20px;
+      font-variant-numeric: tabular-nums;
+    }
+    .focus-items { margin-top: 4px; color: #78350f; font-size: 0.9rem; font-weight: 600; word-break: break-word; }
+    .focus-north { margin-top: 2px; font-size: 0.75rem; color: #a16207; }
+
     /* 탭 */
     .tab-bar {
       display: flex;
@@ -747,6 +773,8 @@
           </button>
         </div>
 
+        <div id="focus-banner" class="focus-banner" style="display:none;"></div>
+
         <details class="guide-box">
           <summary>사용법 — Claude Code에게 말로 지시하면 됩니다</summary>
           <div class="guide-body">
@@ -1422,8 +1450,46 @@
       row.classList.toggle('open', !open);
     }
 
+    /* ---------- 🌟 지금의 초점 배너 (docs/strategy/focus.md) ---------- */
+    async function loadFocus() {
+      const root = document.getElementById('focus-banner');
+      if (!root) return;
+      try {
+        const res = await fetch(bust('../../docs/strategy/focus.md'), { cache: 'no-store' });
+        if (!res.ok) throw new Error('status ' + res.status);
+        const text = (await res.text()).replace(/\r\n/g, '\n');
+        const { meta, body } = parseFrontmatter(text);
+
+        // '## 이번 초점' 섹션의 번호 항목 추출(볼드 제거)
+        const items = [];
+        const m = body.match(/##\s*이번 초점[^\n]*\n([\s\S]*?)(?:\n##\s|$)/);
+        if (m) {
+          m[1].split('\n').forEach(l => {
+            const mm = l.match(/^\s*\d+\.\s*(.+)$/);
+            if (mm) items.push(mm[1].replace(/\*\*/g, '').trim());
+          });
+        }
+
+        const proj = meta.project || 'Project';
+        const horizon = meta.horizon ? '~' + meta.horizon : '';
+        const north = meta.north_star || '';
+
+        root.innerHTML = `
+          <span class="focus-star">🌟</span>
+          <div class="focus-main">
+            <div class="focus-proj">${escapeHtml(proj)}${horizon ? `<span class="focus-horizon">${escapeHtml(horizon)}</span>` : ''}</div>
+            ${items.length ? `<div class="focus-items">${items.map((it, i) => (i + 1) + '. ' + escapeHtml(it)).join('　　')}</div>` : ''}
+            ${north ? `<div class="focus-north">북극성 · ${escapeHtml(north)}</div>` : ''}
+          </div>`;
+        root.style.display = 'flex';
+      } catch (e) {
+        root.style.display = 'none';   // 파일 없거나 실패 시 조용히 숨김
+      }
+    }
+
     /* ---------- init ---------- */
     async function loadAll() {
+      loadFocus();
       await loadWorklog();  // g_entries 채운 뒤 티켓 이력 조인
       loadTickets();
       loadMeetings();
@@ -1444,6 +1510,7 @@
         const wasIdea = ideaPanel ? ideaPanel.classList.contains('active') : false;
         g_prodLoaded = false;   // 다음에 제작 현황 탭을 열 때 새로 불러오도록
         g_ideasLoaded = false;  // 다음에 아이디어 탭을 열 때 새로 불러오도록
+        loadFocus();
         await loadWorklog();    // g_entries 갱신 후 티켓 이력 조인
         await Promise.all([loadTickets(), loadMeetings(), wasProd ? loadProduction() : Promise.resolve(), wasIdea ? loadIdeas() : Promise.resolve()]);
       } catch (e) {
