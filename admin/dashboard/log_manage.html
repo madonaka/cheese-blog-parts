@@ -81,8 +81,34 @@
       background: linear-gradient(135deg, #fffbeb 0%, #fef9c3 100%);
       border-radius: 14px;
     }
-    .focus-star { font-size: 1.35rem; flex-shrink: 0; line-height: 1; }
+    .focus-emblem { flex-shrink: 0; display: block; filter: drop-shadow(0 1px 3px rgba(245, 158, 11, 0.35)); }
+    .focus-emblem .lum-halo { animation: lum-glow 3s ease-in-out infinite; transform-origin: center; }
+    @keyframes lum-glow { 0%, 100% { opacity: 0.45; } 50% { opacity: 0.72; } }
     .focus-main { flex: 1; min-width: 0; }
+    .focus-link {
+      flex-shrink: 0; margin-left: auto; align-self: center;
+      font-size: 0.8rem; font-weight: 800; color: #b45309;
+      background: #fff7e6; border: 1px solid #fcd34d; border-radius: 8px;
+      padding: 6px 11px; cursor: pointer; white-space: nowrap;
+      transition: background 0.12s, border-color 0.12s;
+    }
+    .focus-link:hover { background: #fde68a; border-color: #f59e0b; }
+
+    /* 회의록 프로젝트 필터칩 */
+    .mtg-filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+    .mtg-chip {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 7px 14px; border: 1px solid var(--border-color); border-radius: 20px;
+      background: white; color: var(--text-sub); font-size: 0.88rem; font-weight: 700;
+      cursor: pointer; transition: border-color 0.15s, color 0.15s, background 0.15s;
+    }
+    .mtg-chip:hover { border-color: #cbd5e1; }
+    .mtg-chip .mtg-cnt { font-size: 0.72rem; font-weight: 800; background: #f1f5f9; color: #64748b; padding: 1px 8px; border-radius: 20px; }
+    .mtg-chip.active { color: white; }
+    .mtg-chip.active .mtg-cnt { background: rgba(255, 255, 255, 0.25); color: white; }
+    .mtg-chip.all.active { background: #334155; border-color: #334155; }
+    .mtg-chip.luminary.active { background: #f59e0b; border-color: #f59e0b; }
+    .mtg-tag { flex-shrink: 0; font-size: 0.72rem; font-weight: 800; padding: 2px 9px; border-radius: 6px; background: #fff7e6; color: #b45309; white-space: nowrap; }
     .focus-proj {
       display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
       font-weight: 800; color: #92400e; font-size: 0.98rem; letter-spacing: -0.01em;
@@ -773,7 +799,33 @@
           </button>
         </div>
 
-        <div id="focus-banner" class="focus-banner" style="display:none;"></div>
+        <div id="focus-banner" class="focus-banner" style="display:none;">
+          <svg class="focus-emblem" viewBox="0 0 48 48" width="42" height="42" aria-hidden="true" focusable="false">
+            <defs>
+              <radialGradient id="lumCore" cx="50%" cy="44%" r="58%">
+                <stop offset="0%" stop-color="#fffdf5"/>
+                <stop offset="42%" stop-color="#fde68a"/>
+                <stop offset="100%" stop-color="#f59e0b"/>
+              </radialGradient>
+              <linearGradient id="lumRay" x1="24" y1="0" x2="24" y2="48" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stop-color="#fcd34d"/>
+                <stop offset="100%" stop-color="#f59e0b"/>
+              </linearGradient>
+            </defs>
+            <circle class="lum-halo" cx="24" cy="24" r="22" fill="#fef3c7"/>
+            <g fill="url(#lumRay)">
+              <polygon points="24,1 27.5,24 24,47 20.5,24"/>
+              <polygon points="1,24 24,20.5 47,24 24,27.5"/>
+            </g>
+            <g fill="url(#lumRay)" opacity="0.55" transform="rotate(45 24 24)">
+              <polygon points="24,8 26,24 24,40 22,24"/>
+              <polygon points="8,24 24,22 40,24 24,26"/>
+            </g>
+            <circle cx="24" cy="24" r="7.5" fill="url(#lumCore)"/>
+            <circle cx="21.6" cy="21.6" r="2.1" fill="#fffdf5" opacity="0.9"/>
+          </svg>
+          <div class="focus-main" id="focus-main"></div>
+        </div>
 
         <details class="guide-box">
           <summary>사용법 — Claude Code에게 말로 지시하면 됩니다</summary>
@@ -908,6 +960,7 @@
     const PAGE_SIZE = { worklog: 20, tickets: 10, meetings: 15, production: 8 };
     let g_page = { worklog: 1, tickets: 1, meetings: 1, production: 1 };
     let g_ticketStatus = 'all';   // 티켓 상태 필터칩: all·todo·doing·done
+    let g_meetingProject = 'all'; // 회의록 프로젝트 필터: all·Luminary 등(회의 frontmatter의 project)
 
     // 페이저 HTML 생성 (총 항목·현재 페이지 기준). 페이지가 1개뿐이면 빈 문자열.
     function pagerHtml(tab, total, page, pageSize) {
@@ -1405,7 +1458,7 @@
         try {
           const r = await fetch(bust('../../meetings/' + f.name), { cache: 'no-store' });
           const { meta, body } = parseFrontmatter((await r.text()).replace(/\r\n/g, '\n'));
-          return { date: meta.date || '', title: meta.title || f.name, body };
+          return { date: meta.date || '', title: meta.title || f.name, body, project: meta.project || '' };
         } catch (e) { return null; }
       }))).filter(Boolean);
       g_meetings.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
@@ -1414,31 +1467,66 @@
       if (g_tickets.length) renderTickets();   // 티켓 카드의 '관련 회의록' 링크 채우기(회의록이 늦게 로드된 경우)
     }
 
+    // 회의록에 태그된 프로젝트 목록(등장하는 것만, 등장 순)
+    function meetingProjects() {
+      const out = [];
+      g_meetings.forEach(m => { if (m.project && !out.includes(m.project)) out.push(m.project); });
+      return out;
+    }
+
+    // 프로젝트 묶음 필터 변경 → 페이지 리셋 후 재렌더
+    function setMeetingProject(p) { g_meetingProject = p; g_page.meetings = 1; renderMeetings(); }
+
     function renderMeetings() {
       const root = document.getElementById('meetings-root');
       if (!g_meetings.length) {
         root.innerHTML = '<div class="empty">회의록이 없습니다.</div>';
         return;
       }
+
+      // 프로젝트 필터칩 — 태그된 프로젝트가 하나라도 있을 때만 노출
+      const projects = meetingProjects();
+      let filtersHtml = '';
+      if (projects.length) {
+        const chip = (key, label, cls) => {
+          const cnt = key === 'all' ? g_meetings.length : g_meetings.filter(m => m.project === key).length;
+          const active = g_meetingProject === key ? ' active' : '';
+          return `<button class="mtg-chip ${cls}${active}" onclick="setMeetingProject('${key}')">${label}<span class="mtg-cnt">${cnt}</span></button>`;
+        };
+        filtersHtml = '<div class="mtg-filters">'
+          + chip('all', '전체', 'all')
+          + projects.map(p => chip(p, (p === 'Luminary' ? '🌟 ' : '') + escapeHtml(p), p === 'Luminary' ? 'luminary' : 'proj')).join('')
+          + '</div>';
+      }
+
+      // 선택된 묶음으로 필터
+      const list = (g_meetingProject === 'all') ? g_meetings : g_meetings.filter(m => m.project === g_meetingProject);
+      if (!list.length) {
+        root.innerHTML = filtersHtml + '<div class="empty">이 묶음에 회의록이 없습니다.</div>';
+        return;
+      }
+
       const pageSize = PAGE_SIZE.meetings;
-      const totalPages = Math.max(1, Math.ceil(g_meetings.length / pageSize));
+      const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
       g_page.meetings = Math.min(Math.max(1, g_page.meetings), totalPages);
       const startIdx = (g_page.meetings - 1) * pageSize;
-      const slice = g_meetings.slice(startIdx, startIdx + pageSize);
+      const slice = list.slice(startIdx, startIdx + pageSize);
 
-      // k=페이지 내 순번, i=g_meetings 전역 인덱스(toggleMeeting이 참조)
-      root.innerHTML = slice.map((m, k) => {
+      // i=이번 렌더 내 고유 순번(toggleMeeting이 mrow-i/mbody-i로 참조)
+      root.innerHTML = filtersHtml + slice.map((m, k) => {
         const i = startIdx + k;
+        const projBadge = m.project ? `<span class="mtg-tag">${m.project === 'Luminary' ? '🌟 ' : ''}${escapeHtml(m.project)}</span>` : '';
         return `
           <div class="meeting-entry">
             <div class="meeting-row" id="mrow-${i}" onclick="toggleMeeting(${i})">
               <span class="log-date">${escapeHtml(m.date)}</span>
               <span class="meeting-title">${escapeHtml(m.title)}</span>
+              ${projBadge}
               <span class="log-chevron">▶</span>
             </div>
             <div class="meeting-body" id="mbody-${i}">${renderMarkdown(m.body)}</div>
           </div>`;
-      }).join('') + pagerHtml('meetings', g_meetings.length, g_page.meetings, pageSize);
+      }).join('') + pagerHtml('meetings', list.length, g_page.meetings, pageSize);
     }
 
     function toggleMeeting(i) {
@@ -1474,17 +1562,37 @@
         const horizon = meta.horizon ? '~' + meta.horizon : '';
         const north = meta.north_star || '';
 
-        root.innerHTML = `
-          <span class="focus-star">🌟</span>
-          <div class="focus-main">
-            <div class="focus-proj">${escapeHtml(proj)}${horizon ? `<span class="focus-horizon">${escapeHtml(horizon)}</span>` : ''}</div>
-            ${items.length ? `<div class="focus-items">${items.map((it, i) => (i + 1) + '. ' + escapeHtml(it)).join('　　')}</div>` : ''}
-            ${north ? `<div class="focus-north">북극성 · ${escapeHtml(north)}</div>` : ''}
-          </div>`;
+        const main = document.getElementById('focus-main');
+        main.innerHTML = `
+          <div class="focus-proj">${escapeHtml(proj)}${horizon ? `<span class="focus-horizon">${escapeHtml(horizon)}</span>` : ''}</div>
+          ${items.length ? `<div class="focus-items">${items.map((it, i) => (i + 1) + '. ' + escapeHtml(it)).join('　　')}</div>` : ''}
+          ${north ? `<div class="focus-north">북극성 · ${escapeHtml(north)}</div>` : ''}`;
+
+        // 관련 회의 묶음으로 이동하는 링크 (프로젝트명은 'Project ' 접두 제거 → 회의 frontmatter의 project 값과 일치)
+        const projName = proj.replace(/^Project\s+/i, '');
+        let link = document.getElementById('focus-mtg-link');
+        if (!link) {
+          link = document.createElement('button');
+          link.type = 'button';
+          link.id = 'focus-mtg-link';
+          link.className = 'focus-link';
+          root.appendChild(link);
+        }
+        link.textContent = '🗂 관련 회의 묶음 →';
+        link.onclick = () => openProjectMeetings(projName);
+
         root.style.display = 'flex';
       } catch (e) {
         root.style.display = 'none';   // 파일 없거나 실패 시 조용히 숨김
       }
+    }
+
+    // 초점 배너 → 회의록 탭의 해당 프로젝트 묶음으로 이동
+    function openProjectMeetings(project) {
+      switchTab('meetings');
+      setMeetingProject(project);
+      const panel = document.getElementById('panel-meetings');
+      if (panel && panel.scrollIntoView) panel.scrollIntoView({ block: 'start', behavior: 'smooth' });
     }
 
     /* ---------- init ---------- */
