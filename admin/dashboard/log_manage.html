@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>작업 관리 | Cheese Lab</title>
+  <title>치즈랩 아카이브 센터 | Cheese Lab</title>
 
   <link rel="stylesheet" href="../admin.css">
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
@@ -23,14 +23,41 @@
     }
 
     .log-header {
+      position: relative;
+      overflow: hidden;
       margin-bottom: 20px;
       display: flex;
-      align-items: flex-start;
+      align-items: center;
       justify-content: space-between;
       gap: 14px;
+      padding: 18px 20px;
+      border: 1px solid var(--border-color);
+      border-left: 4px solid var(--primary);
+      border-radius: 14px;
+      background: white;
     }
 
     .log-header-main { min-width: 0; }
+
+    /* 아카이브 센터 정체성 (아이콘 + 제목) */
+    .archive-identity { display: flex; align-items: center; gap: 14px; min-width: 0; }
+    .archive-icon {
+      flex-shrink: 0; width: 46px; height: 46px; border-radius: 12px;
+      background: #eff6ff; display: flex; align-items: center; justify-content: center;
+      font-size: 1.55rem; line-height: 1;
+    }
+
+    /* 새로고침 시 헤더를 훑고 지나가는 스캔라인 (재색인 느낌) */
+    .archive-scanline {
+      position: absolute; left: 0; right: 0; top: -60px; height: 60px;
+      background: linear-gradient(180deg, rgba(37, 99, 235, 0) 0%, rgba(37, 99, 235, 0.16) 50%, rgba(37, 99, 235, 0) 100%);
+      opacity: 0; pointer-events: none;
+    }
+    .archive-scanline.run { animation: archive-scan 0.75s ease; }
+    @keyframes archive-scan {
+      0%   { top: -60px; opacity: 0.9; }
+      100% { top: 100%;  opacity: 0; }
+    }
 
     .refresh-btn {
       flex-shrink: 0;
@@ -211,7 +238,24 @@
       gap: 10px;
     }
 
-    .log-entry { display: flex; flex-direction: column; }
+    /* 세로 시간축(스파인) — 작업 로그를 타임라인으로 */
+    .log-spine { position: relative; padding-left: 26px; display: flex; flex-direction: column; gap: 12px; }
+    .log-spine::before {
+      content: ''; position: absolute; left: 7px; top: 10px; bottom: 10px;
+      width: 2px; background: var(--border-color);
+    }
+
+    .log-entry { position: relative; display: flex; flex-direction: column; animation: spine-in 0.4s ease both; }
+    .log-entry::before {
+      content: ''; position: absolute; left: -24px; top: 20px;
+      width: 11px; height: 11px; border-radius: 50%;
+      background: var(--primary); box-shadow: 0 0 0 3px #fff;
+      z-index: 1;
+    }
+    @keyframes spine-in {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
 
     .log-row {
       display: flex;
@@ -697,8 +741,14 @@
 
     /* 모바일 최적화 */
     @media (max-width: 768px) {
-      .log-header h2 { font-size: 1.5rem; }
-      .log-header p { font-size: 0.9rem; }
+      .log-header { padding: 14px 16px; gap: 10px; }
+      .log-header h2 { font-size: 1.35rem; }
+      .log-header p { font-size: 0.85rem; }
+      .archive-icon { width: 40px; height: 40px; font-size: 1.3rem; }
+      .archive-identity { gap: 11px; }
+      .refresh-btn { padding: 8px 12px; font-size: 0.82rem; }
+      .log-spine { padding-left: 22px; }
+      .log-entry::before { left: -21px; }
       .tab-bar { gap: 2px; }
       .tab-btn { padding: 8px 12px; font-size: 0.92rem; }
 
@@ -796,13 +846,17 @@
 
       <section class="admin-content">
         <div class="log-header">
-          <div class="log-header-main">
-            <h2>작업 관리</h2>
-            <p>worklog·티켓·회의록·제작 현황을 한곳에서 봅니다.</p>
+          <div class="archive-identity">
+            <div class="archive-icon" aria-hidden="true">🗄️</div>
+            <div class="log-header-main">
+              <h2>치즈랩 아카이브 센터</h2>
+              <p>작업 로그·티켓·회의록·제작·아이디어를 한곳에 모아 보관합니다.</p>
+            </div>
           </div>
           <button type="button" id="refresh-btn" class="refresh-btn" onclick="refreshAll(this)" title="캐시를 비우고 최신 데이터를 다시 불러옵니다">
             <span class="refresh-ico">🔄</span><span class="refresh-lbl">새로고침</span>
           </button>
+          <div class="archive-scanline" id="archive-scanline"></div>
         </div>
 
         <div id="focus-banner" class="focus-banner" style="display:none;">
@@ -1103,10 +1157,10 @@
       const slice = g_entries.slice(startIdx, startIdx + pageSize);
 
       // k=페이지 내 순번, i=g_entries 전역 인덱스(toggleDetail·loadDetail이 참조)
-      root.innerHTML = slice.map((e, k) => {
+      root.innerHTML = '<div class="log-spine">' + slice.map((e, k) => {
         const i = startIdx + k;
         return `
-          <div class="log-entry">
+          <div class="log-entry" style="animation-delay:${k * 45}ms">
             <div class="log-row" id="row-${i}" onclick="toggleDetail(${i})">
               <span class="log-date">${escapeHtml(e.date)}</span>
               ${e.project ? `<span class="log-project ${e.project === '스토어프론트' ? 'store' : 'admin'}">${escapeHtml(e.project)}</span>` : ''}
@@ -1117,7 +1171,7 @@
             </div>
             <div class="log-detail" id="detail-${i}"></div>
           </div>`;
-      }).join('') + pagerHtml('worklog', g_entries.length, g_page.worklog, pageSize);
+      }).join('') + '</div>' + pagerHtml('worklog', g_entries.length, g_page.worklog, pageSize);
     }
 
     function toggleDetail(i) {
@@ -1628,6 +1682,8 @@
     async function refreshAll(btn) {
       if (btn && btn.disabled) return;
       g_bustStamp = '_=' + Date.now();
+      const scan = document.getElementById('archive-scanline');
+      if (scan) { scan.classList.remove('run'); void scan.offsetWidth; scan.classList.add('run'); }
       const lbl = btn ? btn.querySelector('.refresh-lbl') : null;
       const prevLbl = lbl ? lbl.textContent : '';
       if (btn) { btn.disabled = true; btn.classList.add('spinning'); }
