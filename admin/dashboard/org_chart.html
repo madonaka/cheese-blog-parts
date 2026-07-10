@@ -169,35 +169,35 @@
                   <div class="dept-card content">
                     <div class="dept-name">콘텐츠</div>
                     <div class="dept-scope">역사 콘텐츠·제작<br>DB·지도·연표</div>
-                    <div class="dept-count">회의 4</div>
+                    <div class="dept-count" data-dept-count="콘텐츠">회의 4</div>
                   </div>
                 </li>
                 <li>
                   <div class="dept-card tech">
                     <div class="dept-name">기술</div>
                     <div class="dept-scope">관리자 시스템<br>블로그·기록체계</div>
-                    <div class="dept-count">회의 6</div>
+                    <div class="dept-count" data-dept-count="기술">회의 6</div>
                   </div>
                 </li>
                 <li>
                   <div class="dept-card store">
                     <div class="dept-name">스토어</div>
                     <div class="dept-scope">상품·결제(PG)<br>판매·고객</div>
-                    <div class="dept-count">회의 3</div>
+                    <div class="dept-count" data-dept-count="스토어">회의 3</div>
                   </div>
                 </li>
                 <li>
                   <div class="dept-card ops">
                     <div class="dept-name">회사운영</div>
                     <div class="dept-scope">인사·재무<br>예산·총무</div>
-                    <div class="dept-count">회의 1</div>
+                    <div class="dept-count" data-dept-count="회사운영">회의 1</div>
                   </div>
                 </li>
                 <li>
                   <div class="dept-card strategy">
                     <div class="dept-name">전략</div>
                     <div class="dept-scope">북극성·방향<br>우선순위</div>
-                    <div class="dept-count">회의 1</div>
+                    <div class="dept-count" data-dept-count="전략">회의 1</div>
                   </div>
                 </li>
               </ul>
@@ -205,8 +205,8 @@
           </ul>
         </div>
 
-        <p class="org-note">
-          회의 수는 현재 <b>하드코딩(초안)</b>입니다 — 회의록 15건을 이 축으로 나눈 값. 아직 파일에 <code>dept</code> 태그가 없어 자동 집계가 아닙니다. (태그를 붙이면 회의록 탭처럼 자동으로 세도록 바꿀 수 있습니다.)
+        <p class="org-note" id="org-count-note">
+          회의 수는 회의록의 <code>dept</code> 태그를 읽어 <b>자동 집계</b>합니다. <span style="color:#94a3b8;">불러오는 중…</span>
         </p>
 
         <details class="org-explain">
@@ -224,6 +224,54 @@
 
   <script>
     window.CHEESE_ADMIN_ACTIVE_PAGE = "menu-org";
+
+    // 회의록 dept 태그 자동 집계 — 목록은 GitHub API, 본문은 Pages 정적 파일에서 읽어 부서별로 센다.
+    (function () {
+      const ADMIN_REPO = "madonaka/cheese-blog-parts";
+      const DEPTS = ["콘텐츠", "기술", "스토어", "회사운영", "전략"];
+
+      async function loadDeptCounts() {
+        let files;
+        try {
+          const res = await fetch(`https://api.github.com/repos/${ADMIN_REPO}/contents/meetings?ref=main`);
+          if (!res.ok) throw new Error("status " + res.status);
+          files = (await res.json()).filter(f => f.name.endsWith(".md"));
+        } catch (e) {
+          const note = document.getElementById("org-count-note");   // 실패 시 하드코딩 초안 유지
+          if (note) note.innerHTML = "회의 수는 회의록 <code>dept</code> 태그 기준입니다. (자동 집계 실패 — GitHub API 한도일 수 있음. 표시값은 최근 초안)";
+          return;
+        }
+
+        const counts = {};
+        DEPTS.forEach(d => counts[d] = 0);
+        let untagged = 0;
+        await Promise.all(files.map(async f => {
+          try {
+            const r = await fetch("../../meetings/" + f.name, { cache: "no-store" });
+            const text = (await r.text()).replace(/\r\n/g, "\n");
+            const fm = text.match(/^﻿?---\s*\n([\s\S]*?)\n---/);
+            let dept = "";
+            if (fm) { const mm = fm[1].match(/^dept:\s*(.+)$/m); if (mm) dept = mm[1].trim(); }
+            if (counts[dept] != null) counts[dept]++; else untagged++;
+          } catch (e) { /* 개별 파일 실패는 건너뜀 */ }
+        }));
+
+        DEPTS.forEach(d => {
+          const el = document.querySelector(`[data-dept-count="${d}"]`);
+          if (el) el.textContent = "회의 " + counts[d];
+        });
+
+        const total = DEPTS.reduce((s, d) => s + counts[d], 0);
+        const note = document.getElementById("org-count-note");
+        if (note) {
+          note.innerHTML = `회의록 <b>${total}건</b>을 <code>dept</code> 태그로 자동 집계했습니다.`
+            + (untagged ? ` <span style="color:#b45309;">(미태그 ${untagged}건 — 부서 태그 없음)</span>` : "");
+        }
+      }
+
+      if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", loadDeptCounts);
+      else loadDeptCounts();
+    })();
   </script>
 </body>
 
