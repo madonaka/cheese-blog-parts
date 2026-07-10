@@ -136,6 +136,24 @@
     .mtg-chip.all.active { background: #334155; border-color: #334155; }
     .mtg-chip.luminary.active { background: #f59e0b; border-color: #f59e0b; }
     .mtg-tag { flex-shrink: 0; font-size: 0.72rem; font-weight: 800; padding: 2px 9px; border-radius: 6px; background: #fff7e6; color: #b45309; white-space: nowrap; }
+
+    /* 필터 행 라벨 (부서 / 프로젝트) */
+    .mtg-filter-label { align-self: center; font-size: 0.75rem; font-weight: 800; color: #94a3b8; margin-right: 2px; }
+
+    /* 부서(dept) 필터칩 활성색 — org_chart 색과 맞춤 */
+    .mtg-chip.dept-content.active { background: #16a34a; border-color: #16a34a; }
+    .mtg-chip.dept-tech.active { background: #2563eb; border-color: #2563eb; }
+    .mtg-chip.dept-store.active { background: #d97706; border-color: #d97706; }
+    .mtg-chip.dept-ops.active { background: #64748b; border-color: #64748b; }
+    .mtg-chip.dept-strategy.active { background: #7c3aed; border-color: #7c3aed; }
+
+    /* 회의 행 부서 배지 */
+    .mtg-dept { flex-shrink: 0; font-size: 0.72rem; font-weight: 800; padding: 2px 9px; border-radius: 6px; white-space: nowrap; }
+    .mtg-dept.content { background: #f0fdf4; color: #15803d; }
+    .mtg-dept.tech { background: #eff6ff; color: #2563eb; }
+    .mtg-dept.store { background: #fffbeb; color: #b45309; }
+    .mtg-dept.ops { background: #f1f5f9; color: #64748b; }
+    .mtg-dept.strategy { background: #f5f3ff; color: #7c3aed; }
     .focus-proj {
       display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
       font-weight: 800; color: #92400e; font-size: 0.98rem; letter-spacing: -0.01em;
@@ -1036,6 +1054,7 @@
     let g_page = { worklog: 1, tickets: 1, meetings: 1, production: 1 };
     let g_ticketStatus = 'all';   // 티켓 상태 필터칩: all·todo·doing·done
     let g_meetingProject = 'all'; // 회의록 프로젝트 필터: all·Luminary 등(회의 frontmatter의 project)
+    let g_meetingDept = 'all';    // 회의록 부서 필터: all·콘텐츠·기술·스토어·회사운영·전략(회의 frontmatter의 dept)
 
     // 페이저 HTML 생성 (총 항목·현재 페이지 기준). 페이지가 1개뿐이면 빈 문자열.
     function pagerHtml(tab, total, page, pageSize) {
@@ -1533,7 +1552,7 @@
         try {
           const r = await fetch(bust('../../meetings/' + f.name), { cache: 'no-store' });
           const { meta, body } = parseFrontmatter((await r.text()).replace(/\r\n/g, '\n'));
-          return { date: meta.date || '', title: meta.title || f.name, body, project: meta.project || '' };
+          return { date: meta.date || '', title: meta.title || f.name, body, project: meta.project || '', dept: meta.dept || '' };
         } catch (e) { return null; }
       }))).filter(Boolean);
       g_meetings.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
@@ -1551,6 +1570,12 @@
 
     // 프로젝트 묶음 필터 변경 → 페이지 리셋 후 재렌더
     function setMeetingProject(p) { g_meetingProject = p; g_page.meetings = 1; renderMeetings(); }
+    // 부서 필터 변경 → 페이지 리셋 후 재렌더
+    function setMeetingDept(d) { g_meetingDept = d; g_page.meetings = 1; renderMeetings(); }
+    // 부서명 → 배지/칩 색상 클래스
+    function deptCls(d) {
+      return { '콘텐츠': 'content', '기술': 'tech', '스토어': 'store', '회사운영': 'ops', '전략': 'strategy' }[d] || 'ops';
+    }
 
     function renderMeetings() {
       const root = document.getElementById('meetings-root');
@@ -1559,25 +1584,49 @@
         return;
       }
 
-      // 프로젝트 필터칩 — 태그된 프로젝트가 하나라도 있을 때만 노출
-      const projects = meetingProjects();
+      // 두 축 필터 매처 (부서 · 프로젝트를 함께 적용)
+      const deptMatch = m => g_meetingDept === 'all' || m.dept === g_meetingDept;
+      const projMatch = m => g_meetingProject === 'all' || m.project === g_meetingProject;
+
       let filtersHtml = '';
-      if (projects.length) {
-        const chip = (key, label, cls) => {
-          const cnt = key === 'all' ? g_meetings.length : g_meetings.filter(m => m.project === key).length;
-          const active = g_meetingProject === key ? ' active' : '';
-          return `<button class="mtg-chip ${cls}${active}" onclick="setMeetingProject('${key}')">${label}<span class="mtg-cnt">${cnt}</span></button>`;
+
+      // 부서(dept) 필터칩 — 5부서 고정 순서, 등장하는 부서만. 개수는 프로젝트 필터 반영.
+      const DEPT_DEFS = [['콘텐츠', 'dept-content'], ['기술', 'dept-tech'], ['스토어', 'dept-store'], ['회사운영', 'dept-ops'], ['전략', 'dept-strategy']];
+      const presentDepts = DEPT_DEFS.filter(([d]) => g_meetings.some(m => m.dept === d));
+      if (presentDepts.length) {
+        const dchip = (key, label, cls) => {
+          const cnt = key === 'all'
+            ? g_meetings.filter(projMatch).length
+            : g_meetings.filter(m => projMatch(m) && m.dept === key).length;
+          const active = g_meetingDept === key ? ' active' : '';
+          return `<button class="mtg-chip ${cls}${active}" onclick="setMeetingDept('${key}')">${label}<span class="mtg-cnt">${cnt}</span></button>`;
         };
-        filtersHtml = '<div class="mtg-filters">'
-          + chip('all', '전체', 'all')
-          + projects.map(p => chip(p, (p === 'Luminary' ? '🌟 ' : '') + escapeHtml(p), p === 'Luminary' ? 'luminary' : 'proj')).join('')
+        filtersHtml += '<div class="mtg-filters"><span class="mtg-filter-label">부서</span>'
+          + dchip('all', '전체', 'all')
+          + presentDepts.map(([d, cls]) => dchip(d, escapeHtml(d), cls)).join('')
           + '</div>';
       }
 
-      // 선택된 묶음으로 필터
-      const list = (g_meetingProject === 'all') ? g_meetings : g_meetings.filter(m => m.project === g_meetingProject);
+      // 프로젝트 필터칩 — 태그된 프로젝트가 있을 때만. 개수는 부서 필터 반영.
+      const projects = meetingProjects();
+      if (projects.length) {
+        const pchip = (key, label, cls) => {
+          const cnt = key === 'all'
+            ? g_meetings.filter(deptMatch).length
+            : g_meetings.filter(m => deptMatch(m) && m.project === key).length;
+          const active = g_meetingProject === key ? ' active' : '';
+          return `<button class="mtg-chip ${cls}${active}" onclick="setMeetingProject('${key}')">${label}<span class="mtg-cnt">${cnt}</span></button>`;
+        };
+        filtersHtml += '<div class="mtg-filters"><span class="mtg-filter-label">프로젝트</span>'
+          + pchip('all', '전체', 'all')
+          + projects.map(p => pchip(p, (p === 'Luminary' ? '🌟 ' : '') + escapeHtml(p), p === 'Luminary' ? 'luminary' : 'proj')).join('')
+          + '</div>';
+      }
+
+      // 두 축을 함께 적용해 필터
+      const list = g_meetings.filter(m => projMatch(m) && deptMatch(m));
       if (!list.length) {
-        root.innerHTML = filtersHtml + '<div class="empty">이 묶음에 회의록이 없습니다.</div>';
+        root.innerHTML = filtersHtml + '<div class="empty">이 조건에 회의록이 없습니다.</div>';
         return;
       }
 
@@ -1590,12 +1639,14 @@
       // i=이번 렌더 내 고유 순번(toggleMeeting이 mrow-i/mbody-i로 참조)
       root.innerHTML = filtersHtml + slice.map((m, k) => {
         const i = startIdx + k;
+        const deptBadge = m.dept ? `<span class="mtg-dept ${deptCls(m.dept)}">${escapeHtml(m.dept)}</span>` : '';
         const projBadge = m.project ? `<span class="mtg-tag">${m.project === 'Luminary' ? '🌟 ' : ''}${escapeHtml(m.project)}</span>` : '';
         return `
           <div class="meeting-entry">
             <div class="meeting-row" id="mrow-${i}" onclick="toggleMeeting(${i})">
               <span class="log-date">${escapeHtml(m.date)}</span>
               <span class="meeting-title">${escapeHtml(m.title)}</span>
+              ${deptBadge}
               ${projBadge}
               <span class="log-chevron">▶</span>
             </div>
