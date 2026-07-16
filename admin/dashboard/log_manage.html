@@ -374,7 +374,22 @@
       box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
     }
 
-    #ticket-search { flex: 1; min-width: 180px; }
+    #ticket-search, #meeting-search { flex: 1; min-width: 180px; }
+
+    /* 회의록 기간(날짜 범위) 입력 */
+    .mtg-date-field { display: inline-flex; align-items: center; gap: 7px; font-size: 0.82rem; font-weight: 800; color: var(--text-sub); }
+    .mtg-date-field input[type="date"] { padding: 8px 10px; font-weight: 600; color: var(--text-main); font-variant-numeric: tabular-nums; }
+    .mtg-clear-btn {
+      padding: 9px 14px; border: 1px solid var(--border-color); border-radius: 10px;
+      background: white; color: var(--text-sub); font-size: 0.85rem; font-weight: 700; cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .mtg-clear-btn:hover { border-color: var(--primary); color: var(--primary); }
+    @media (max-width: 768px) {
+      .mtg-date-field { flex: 1; min-width: 132px; }
+      .mtg-date-field input[type="date"] { flex: 1; min-width: 0; }
+      .mtg-clear-btn { flex-basis: 100%; }
+    }
 
     .ticket-section { margin-bottom: 28px; }
 
@@ -951,6 +966,16 @@
         </div>
 
         <div id="panel-meetings" class="tab-panel">
+          <div class="ticket-controls">
+            <input type="text" id="meeting-search" class="ticket-input" placeholder="🔍 회의록 검색 (제목·내용·날짜·부서·프로젝트)" oninput="onMeetingSearch()">
+            <label class="mtg-date-field">시작
+              <input type="date" id="meeting-from" class="ticket-input" onchange="onMeetingSearch()" title="이 날짜 이후(포함)">
+            </label>
+            <label class="mtg-date-field">종료
+              <input type="date" id="meeting-to" class="ticket-input" onchange="onMeetingSearch()" title="이 날짜 이전(포함) · 특정 하루만 보려면 시작·종료를 같은 날로">
+            </label>
+            <button type="button" id="meeting-clear" class="mtg-clear-btn" onclick="clearMeetingDates()" title="기간 초기화">기간 초기화</button>
+          </div>
           <div id="meetings-root">
             <div class="empty">불러오는 중...</div>
           </div>
@@ -1346,6 +1371,12 @@
     // 티켓 → 회의록 탭으로 이동해 idx 회의록을 펼치고 강조
     function openMeetingEntry(idx) {
       switchTab('meetings');
+      // idx는 g_meetings 기준이므로 필터·검색·기간을 모두 초기화해 표시 순서를 원본과 일치시킨다
+      g_meetingProject = 'all';
+      g_meetingDept = 'all';
+      const sEl = document.getElementById('meeting-search'); if (sEl) sEl.value = '';
+      const fEl = document.getElementById('meeting-from'); if (fEl) fEl.value = '';
+      const tEl = document.getElementById('meeting-to'); if (tEl) tEl.value = '';
       g_page.meetings = Math.floor(idx / PAGE_SIZE.meetings) + 1;
       renderMeetings();
       const row = document.getElementById('mrow-' + idx);
@@ -1557,6 +1588,7 @@
         } catch (e) { return null; }
       }))).filter(Boolean);
       g_meetings.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+      setMeetingDateBounds();
       g_page.meetings = 1;   // 새로 불러오면 첫 페이지로
       renderMeetings();
       if (g_tickets.length) renderTickets();   // 티켓 카드의 '관련 회의록' 링크 채우기(회의록이 늦게 로드된 경우)
@@ -1573,6 +1605,24 @@
     function setMeetingProject(p) { g_meetingProject = p; g_page.meetings = 1; renderMeetings(); }
     // 부서 필터 변경 → 페이지 리셋 후 재렌더
     function setMeetingDept(d) { g_meetingDept = d; g_page.meetings = 1; renderMeetings(); }
+    // 단어 검색·기간 변경 → 페이지 리셋 후 재렌더 (값은 renderMeetings가 입력창에서 직접 읽음)
+    function onMeetingSearch() { g_page.meetings = 1; renderMeetings(); }
+    // 기간(시작·종료일) 초기화
+    function clearMeetingDates() {
+      const f = document.getElementById('meeting-from'); if (f) f.value = '';
+      const t = document.getElementById('meeting-to'); if (t) t.value = '';
+      onMeetingSearch();
+    }
+    // 날짜 입력의 선택 가능 범위(min·max)를 실제 회의록이 있는 구간으로 힌트. 값은 건드리지 않음.
+    function setMeetingDateBounds() {
+      const dates = g_meetings.map(m => m.date || '').filter(Boolean).sort();
+      if (!dates.length) return;
+      const min = dates[0], max = dates[dates.length - 1];
+      ['meeting-from', 'meeting-to'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) { el.min = min; el.max = max; }
+      });
+    }
     // 부서명 → 배지/칩 색상 클래스
     function deptCls(d) {
       return { '콘텐츠': 'content', '기술': 'tech', '스토어': 'store', '회사운영': 'ops', '전략': 'strategy' }[d] || 'ops';
@@ -1584,6 +1634,20 @@
         root.innerHTML = '<div class="empty">회의록이 없습니다.</div>';
         return;
       }
+
+      // 단어 검색 · 기간(시작·종료일) 필터 — 값은 정적 입력창에서 직접 읽어 입력 중 포커스가 유지되게 한다
+      const q = (document.getElementById('meeting-search')?.value || '').toLowerCase().trim();
+      const from = document.getElementById('meeting-from')?.value || '';
+      const to = document.getElementById('meeting-to')?.value || '';
+      const queryMatch = m => !q || [m.title, m.body, m.date, m.dept, m.project].some(v => String(v || '').toLowerCase().includes(q));
+      // 회의 날짜·입력값 모두 'YYYY-MM-DD'라 문자열 비교로 범위(양끝 포함)를 판정. 시작만·종료만도 허용.
+      const dateMatch = m => {
+        const d = (m.date || '').slice(0, 10);
+        if (from && (!d || d < from)) return false;
+        if (to && (!d || d > to)) return false;
+        return true;
+      };
+      const textMatch = m => queryMatch(m) && dateMatch(m);
 
       // 두 축 필터 매처 (부서 · 프로젝트를 함께 적용)
       const deptMatch = m => g_meetingDept === 'all' || m.dept === g_meetingDept;
@@ -1597,8 +1661,8 @@
       if (presentDepts.length) {
         const dchip = (key, label, cls) => {
           const cnt = key === 'all'
-            ? g_meetings.filter(projMatch).length
-            : g_meetings.filter(m => projMatch(m) && m.dept === key).length;
+            ? g_meetings.filter(m => textMatch(m) && projMatch(m)).length
+            : g_meetings.filter(m => textMatch(m) && projMatch(m) && m.dept === key).length;
           const active = g_meetingDept === key ? ' active' : '';
           return `<button class="mtg-chip ${cls}${active}" onclick="setMeetingDept('${key}')">${label}<span class="mtg-cnt">${cnt}</span></button>`;
         };
@@ -1613,8 +1677,8 @@
       if (projects.length) {
         const pchip = (key, label, cls) => {
           const cnt = key === 'all'
-            ? g_meetings.filter(deptMatch).length
-            : g_meetings.filter(m => deptMatch(m) && m.project === key).length;
+            ? g_meetings.filter(m => textMatch(m) && deptMatch(m)).length
+            : g_meetings.filter(m => textMatch(m) && deptMatch(m) && m.project === key).length;
           const active = g_meetingProject === key ? ' active' : '';
           return `<button class="mtg-chip ${cls}${active}" onclick="setMeetingProject('${key}')">${label}<span class="mtg-cnt">${cnt}</span></button>`;
         };
@@ -1624,10 +1688,11 @@
           + '</div>';
       }
 
-      // 두 축을 함께 적용해 필터
-      const list = g_meetings.filter(m => projMatch(m) && deptMatch(m));
+      // 두 축 + 검색·기간을 함께 적용해 필터
+      const list = g_meetings.filter(m => projMatch(m) && deptMatch(m) && textMatch(m));
       if (!list.length) {
-        root.innerHTML = filtersHtml + '<div class="empty">이 조건에 회의록이 없습니다.</div>';
+        const hint = (q || from || to) ? '검색·기간 조건에 맞는 회의록이 없습니다.' : '이 조건에 회의록이 없습니다.';
+        root.innerHTML = filtersHtml + `<div class="empty">${hint}</div>`;
         return;
       }
 
