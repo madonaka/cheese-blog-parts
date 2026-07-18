@@ -1003,6 +1003,11 @@
                                     <div class="card-head">
                                         <h3><i class="fas fa-list-ol" style="color:var(--primary);"></i>&nbsp; 문항 목록</h3>
                                         <span class="q-count-badge" id="q-count-badge">0문항</span>
+                                        <button class="btn btn-ghost btn-sm" onclick="openQBulkModal()"
+                                            title="AI가 생성한 JSON을 붙여넣어 여러 문항을 한 번에 추가"
+                                            style="border-style:dashed; border-color:#3b82f6; color:#3b82f6;">
+                                            <i class="fas fa-layer-group"></i> 대량 입력
+                                        </button>
                                         <button class="btn btn-ghost btn-sm" onclick="openQuestionBank()"
                                             title="문제 은행에서 기존 문제를 선택해 추가"
                                             style="border-style:dashed; border-color:#6366f1; color:#6366f1;">
@@ -1119,6 +1124,68 @@
             <button class="btn btn-ghost" onclick="closeBulkImportModal()">취소</button>
             <button class="btn btn-primary" id="btn-bulk-import" disabled onclick="startBulkImport()">
                 <i class="fas fa-file-import"></i> 가져오기
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- 문항 대량 입력 모달 -->
+<div class="modal-overlay" id="q-bulk-modal">
+    <div class="modal-card" style="max-width:680px; width:95vw; max-height:88vh; display:flex; flex-direction:column; padding:0; border-radius:14px; overflow:hidden;">
+        <div style="padding:16px 22px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px; flex-shrink:0;">
+            <h3 style="flex:1; margin:0; font-size:1rem; font-weight:800;"><i class="fas fa-layer-group" style="color:#3b82f6;"></i> 문항 대량 입력</h3>
+            <button class="btn btn-ghost btn-sm" onclick="closeQBulkModal()">닫기</button>
+        </div>
+
+        <div style="flex:1; overflow-y:auto; padding:20px;">
+
+            <!-- 사용 안내 -->
+            <div style="font-size:0.8rem; color:var(--text-sub); line-height:1.7; background:#f8fafc; border:1px solid var(--border); border-radius:8px; padding:10px 14px; margin-bottom:14px;">
+                ① 아래 <b>AI 프롬프트</b>를 복사해 AI(Claude·ChatGPT 등)에게 자료와 함께 전달 →
+                ② AI가 출력한 <b>JSON 배열</b>을 아래 칸에 붙여넣기 →
+                ③ 검증 결과 확인 후 <b>문항 추가</b>. 현재 세트의 기존 문항 뒤에 이어 붙고 즉시 저장됩니다.
+            </div>
+
+            <!-- AI 프롬프트 -->
+            <div style="margin-bottom:14px;">
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
+                    <label class="form-label" style="flex:1; margin:0;">AI 프롬프트 (DB 구조 + 규칙 + 예시)</label>
+                    <button class="btn btn-ghost btn-sm" onclick="toggleQBulkPrompt()" style="font-size:0.75rem;">
+                        <i class="fas fa-code"></i> 보기/숨기기
+                    </button>
+                    <button class="btn btn-primary btn-sm" onclick="copyQBulkPrompt()" style="font-size:0.75rem; background:#3b82f6;">
+                        <i class="fas fa-copy"></i> 프롬프트 복사
+                    </button>
+                </div>
+                <pre id="qbulk-prompt-pre" style="display:none; margin:0; padding:12px; background:#f8fafc; border:1px solid var(--border); border-radius:8px; font-size:0.72rem; line-height:1.6; max-height:260px; overflow:auto; white-space:pre-wrap; word-break:break-all;"></pre>
+            </div>
+
+            <!-- JSON 붙여넣기 -->
+            <div style="margin-bottom:14px;">
+                <label class="form-label">AI가 출력한 JSON 붙여넣기</label>
+                <textarea id="qbulk-json-input" class="form-control"
+                    style="min-height:150px; font-family:monospace; font-size:0.78rem; margin-top:4px;"
+                    placeholder='[{"text":"문제 본문","choices":["보기1","보기2","보기3","보기4"],"correct":0,"difficulty":"중","hint":"...","explanation":"..."}]'
+                    oninput="onQBulkJsonChange()"></textarea>
+            </div>
+
+            <!-- 미리보기 -->
+            <div id="qbulk-preview" style="display:none;">
+                <div style="font-size:0.8rem; font-weight:700; color:var(--text-sub); text-transform:uppercase; letter-spacing:0.3px; margin-bottom:8px;">
+                    감지된 문항 <span id="qbulk-preview-count" style="color:var(--primary);"></span>개
+                </div>
+                <div id="qbulk-preview-list" style="display:flex; flex-direction:column; gap:4px; max-height:200px; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:8px;"></div>
+            </div>
+
+            <!-- 에러 -->
+            <div id="qbulk-error" style="display:none; margin-top:10px; padding:10px 14px; background:#fef2f2; border:1px solid #fca5a5; border-radius:8px; font-size:0.8rem; color:#dc2626; white-space:pre-line;"></div>
+
+        </div>
+
+        <div style="padding:12px 20px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:8px; flex-shrink:0; background:#f8fafc;">
+            <button class="btn btn-ghost" onclick="closeQBulkModal()">취소</button>
+            <button class="btn btn-primary" id="btn-qbulk-add" disabled onclick="startQBulkAdd()">
+                <i class="fas fa-plus"></i> 문항 추가
             </button>
         </div>
     </div>
@@ -2681,6 +2748,203 @@ async function addSelectedFromBank() {
     }
 
     closeQBankModal();
+}
+
+/* ════════════════════════════════════════
+   문항 대량 입력 (AI JSON 붙여넣기)
+════════════════════════════════════════ */
+let qBulkParsed = null;
+
+const QBULK_EXAMPLE = [
+    {
+        text: '조선의 최고 합의 기관으로서 영의정·좌의정·우의정이 모여 국정 전반을 총리하던 기구는?',
+        context: '',
+        difficulty: '하',
+        choices: ['의금부(義禁府)', '사헌부(司憲府)', '의정부(議政府)', '승정원(承政院)'],
+        correct: 2,
+        hint: '삼정승이 모여 국정을 논의하던 기관으로, 이름에 "정(政)"자가 들어갑니다.',
+        explanation: '의정부는 삼정승으로 구성된 조선의 최고 합의 기관입니다. 의금부는 사법, 사헌부는 감찰, 승정원은 왕명 출납 기관입니다.',
+        source: '',
+        eraTags: ['joseon-early']
+    },
+    {
+        text: '다음 사료의 정책을 시행한 왕의 업적으로 옳은 것은?',
+        context: '"백성이 원하지 않는다면 이를 행할 수 없다." — 왕은 공법 시행에 앞서 17만여 명의 백성에게 찬반을 물었다.',
+        difficulty: '중',
+        choices: ['훈민정음을 창제하였다', '경국대전을 반포하였다', '규장각을 설치하였다', '균역법을 시행하였다'],
+        correct: 0,
+        hint: '공법 여론조사는 1430년의 일로, 이 왕은 과학·문화 전반에 큰 업적을 남겼습니다.',
+        explanation: '사료는 세종의 공법 여론조사입니다. 경국대전 반포는 성종, 규장각 설치는 정조, 균역법은 영조의 업적입니다.',
+        source: '',
+        eraTags: ['joseon-early']
+    }
+];
+
+function buildQBulkPrompt() {
+    const subject = currentSubject || 'korean';
+    const tagList = (ERA_TAGS[subject] || ERA_TAGS.korean)
+        .map(t => `    - "${t.tag}" : ${t.label}`).join('\n');
+
+    return [
+        '당신은 역사 퀴즈 출제 위원입니다. 아래 [자료]를 바탕으로 4지선다 객관식 문항을 만들어 주세요.',
+        '',
+        '[출력 형식]',
+        '- 다른 설명이나 코드블록 없이 JSON 배열([ ... ])만 출력합니다.',
+        '- 각 문항은 아래 필드를 가진 객체입니다.',
+        '  · "text"        (필수, 문자열) 문제 본문. 예: "다음 중 ~로 옳은 것은?"',
+        '  · "choices"     (필수, 문자열 배열) 보기 정확히 4개.',
+        '  · "correct"     (필수, 정수 0~3) 정답 보기의 인덱스. 0 = 1번 보기.',
+        '  · "difficulty"  (선택, "하"|"중"|"상") 생략 시 "중".',
+        '  · "context"     (선택, 문자열) 문제 위에 표시할 배경 지문·사료. 없으면 "".',
+        '  · "hint"        (선택, 문자열) 힌트. 정답을 직접 말하지 말고 단서만 제공.',
+        '  · "explanation" (선택, 문자열) 해설. 정답 근거와 나머지 보기가 오답인 이유 포함.',
+        '  · "source"      (선택, 문자열) 기출 출처. 예: "한능검 72회 15번". 자체 제작이면 "".',
+        `  · "eraTags"     (선택, 문자열 배열) 아래 허용 값만 사용. (현재 분야: ${SUBJECT_MAP[subject] || subject})`,
+        tagList,
+        '',
+        '[출제 규칙]',
+        '- 역사적 사실만 출제하고, 확실하지 않은 내용은 제외합니다.',
+        '- 정답은 문항당 1개이며, 보기 4개는 서로 명확히 구별되어야 합니다.',
+        '- correct(정답 위치)는 문항 간에 0~3에 고르게 분산시킵니다.',
+        '- 힌트·해설은 한국어 존댓말("~입니다")로 작성합니다.',
+        '- 문항 수는 요청 개수를 따르고, 별도 요청이 없으면 10문항을 만듭니다.',
+        '- 이미지 관련 필드는 넣지 않습니다(관리자 화면에서 별도 등록).',
+        '',
+        '[예시 출력]',
+        JSON.stringify(QBULK_EXAMPLE, null, 2),
+        '',
+        '[자료]',
+        '(여기에 원문 자료 또는 출제 주제를 붙여넣으세요)'
+    ].join('\n');
+}
+
+function openQBulkModal() {
+    if (!currentSetId) {
+        showNotif('먼저 퀴즈 기본 정보를 저장하세요.', 'error');
+        return;
+    }
+    document.getElementById('qbulk-json-input').value = '';
+    document.getElementById('qbulk-preview').style.display = 'none';
+    document.getElementById('qbulk-error').style.display = 'none';
+    document.getElementById('btn-qbulk-add').disabled = true;
+    qBulkParsed = null;
+    document.getElementById('qbulk-prompt-pre').textContent = buildQBulkPrompt();
+    document.getElementById('q-bulk-modal').classList.add('open');
+}
+
+function closeQBulkModal() {
+    document.getElementById('q-bulk-modal').classList.remove('open');
+}
+
+function toggleQBulkPrompt() {
+    const el = document.getElementById('qbulk-prompt-pre');
+    el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+async function copyQBulkPrompt() {
+    const text = buildQBulkPrompt();
+    try {
+        await navigator.clipboard.writeText(text);
+    } catch (e) {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+    }
+    showNotif('프롬프트가 복사되었습니다. AI에게 자료와 함께 붙여넣으세요.', 'success');
+}
+
+function normalizeQBulkItem(raw) {
+    const allowed = new Set((ERA_TAGS[currentSubject] || ERA_TAGS.korean).map(t => t.tag));
+    return {
+        text:         String(raw.text || '').trim(),
+        context:      String(raw.context || '').trim(),
+        contextImage: { url: '', desc: '' },
+        image:        { url: '', desc: '' },
+        choices:      Array.isArray(raw.choices) ? raw.choices.map(c => String(c || '').trim()) : [],
+        choiceImages: [{ url: '', desc: '' }, { url: '', desc: '' }, { url: '', desc: '' }, { url: '', desc: '' }],
+        correct:      raw.correct,
+        difficulty:   ['하', '중', '상'].includes(raw.difficulty) ? raw.difficulty : '중',
+        hint:         String(raw.hint || '').trim(),
+        explanation:  String(raw.explanation || '').trim(),
+        source:       String(raw.source || '').trim(),
+        eraTags:      Array.isArray(raw.eraTags) ? raw.eraTags.filter(t => allowed.has(t)) : []
+    };
+}
+
+function onQBulkJsonChange() {
+    const raw = document.getElementById('qbulk-json-input').value.trim();
+    const errEl = document.getElementById('qbulk-error');
+    const previewEl = document.getElementById('qbulk-preview');
+    const btn = document.getElementById('btn-qbulk-add');
+
+    if (!raw) {
+        errEl.style.display = 'none';
+        previewEl.style.display = 'none';
+        btn.disabled = true;
+        qBulkParsed = null;
+        return;
+    }
+
+    try {
+        // AI가 붙이는 ```json 코드펜스 허용
+        const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+        let parsed = JSON.parse(cleaned);
+        if (parsed && !Array.isArray(parsed) && Array.isArray(parsed.questions)) parsed = parsed.questions;
+        if (parsed && !Array.isArray(parsed) && typeof parsed === 'object') parsed = [parsed];
+        if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('최상위 구조가 문항 배열([...])이어야 합니다.');
+
+        const problems = [];
+        const items = parsed.map((item, i) => {
+            const n = normalizeQBulkItem(item || {});
+            if (!n.text) problems.push(`${i + 1}번: text(문제 본문)가 비어 있습니다.`);
+            if (n.choices.length !== 4 || n.choices.some(c => !c)) problems.push(`${i + 1}번: choices는 비어있지 않은 보기 4개여야 합니다.`);
+            if (!Number.isInteger(n.correct) || n.correct < 0 || n.correct > 3) problems.push(`${i + 1}번: correct는 0~3 사이 정수여야 합니다.`);
+            return n;
+        });
+        if (problems.length > 0) {
+            throw new Error(problems.slice(0, 8).join('\n') + (problems.length > 8 ? `\n…외 ${problems.length - 8}건` : ''));
+        }
+
+        qBulkParsed = items;
+        errEl.style.display = 'none';
+
+        document.getElementById('qbulk-preview-count').textContent = items.length;
+        document.getElementById('qbulk-preview-list').innerHTML = items.map((q, i) => {
+            const diffClass = q.difficulty === '하' ? 'low' : q.difficulty === '상' ? 'high' : 'mid';
+            return `<div style="padding:6px 8px; border-radius:6px; font-size:0.8rem; display:flex; gap:8px; align-items:center; background:#fff; border:1px solid var(--border);">
+                <span style="font-weight:800; color:var(--text-sub); flex-shrink:0;">${currentQs.length + i + 1}</span>
+                <span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escHtml(q.text)}</span>
+                <span class="diff-chip ${diffClass}" style="flex-shrink:0;">${q.difficulty}</span>
+                <span style="font-size:0.68rem; color:#166534; font-weight:700; flex-shrink:0;">정답 ${q.correct + 1}번</span>
+            </div>`;
+        }).join('');
+        previewEl.style.display = 'block';
+        btn.disabled = false;
+    } catch (e) {
+        qBulkParsed = null;
+        errEl.textContent = '⚠ ' + e.message;
+        errEl.style.display = 'block';
+        previewEl.style.display = 'none';
+        btn.disabled = true;
+    }
+}
+
+async function startQBulkAdd() {
+    if (!qBulkParsed || qBulkParsed.length === 0 || !currentSetId) return;
+    const btn = document.getElementById('btn-qbulk-add');
+    btn.disabled = true;
+
+    const count = qBulkParsed.length;
+    currentQs.push(...qBulkParsed);
+    qBulkParsed = null;
+    switchTab('questions');
+    renderQList();
+    await autoSaveQuestions();
+    window.showNotification('대량 입력 완료', `${count}개 문항이 추가·저장되었습니다.`, 'success');
+    closeQBulkModal();
 }
 </script>
 </body>
