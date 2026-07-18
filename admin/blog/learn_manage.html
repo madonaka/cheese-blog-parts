@@ -2154,6 +2154,16 @@
                                         <i class="fas fa-plus"></i> 청크 추가
                                     </button>
                                 </div>
+                                <div style="display:flex; align-items:center; flex-wrap:wrap; gap:8px 10px; margin-bottom:14px; padding:9px 12px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;">
+                                    <label class="form-label" for="seq-card-style-default" style="margin:0; text-transform:none; font-weight:700; font-size:0.82rem;">
+                                        <i class="fas fa-images" style="color:var(--primary);"></i> 이미지 카드 기본 표시 방식
+                                    </label>
+                                    <select class="form-control" id="seq-card-style-default" style="width:auto; flex:0 0 auto;" onchange="onCardStyleDefaultChange()">
+                                        <option value="">기본형 (이미지 위 · 본문 아래)</option>
+                                        <option value="cinema">자막형 (이미지 크게 + 하단 자막 패널)</option>
+                                    </select>
+                                    <span style="font-size:0.72rem; color:var(--text-sub); flex-basis:100%;">개별 청크에서 <b>전체 기본값 따름</b>으로 둔 이미지 카드에 일괄 적용됩니다. (자막형은 이미지가 있는 카드에서만 적용)</span>
+                                </div>
                                 <p style="font-size:0.78rem; color:var(--text-sub); margin-bottom:14px;">
                                     각 청크는 2~3문장 분량으로 작성합니다. 키워드를 지정하면 뷰어에서 "더 알아보기" 버튼으로 노출됩니다.
                                     키워드에 sub_seq_id를 연결하면 하위 시퀀스로 진입합니다.
@@ -4011,6 +4021,7 @@ function clearInfoForm() {
     document.getElementById('seq-thumbnail').value  = '';
     document.getElementById('seq-status').value      = 'draft';
     document.getElementById('seq-first-step').value  = '';
+    { const _cs = document.getElementById('seq-card-style-default'); if (_cs) _cs.value = ''; }
     setSelectedProducts([]);
     document.getElementById('seq-locked').value      = 'false';
     document.getElementById('seq-free-ratio').value  = '1.0';
@@ -4042,6 +4053,7 @@ function populateInfoForm(d) {
     document.getElementById('seq-thumbnail').value  = d.thumbnail_url ?? '';
     document.getElementById('seq-status').value      = d.status ?? 'draft';
     document.getElementById('seq-first-step').value  = d.first_step_id ?? '';
+    { const _cs = document.getElementById('seq-card-style-default'); if (_cs) _cs.value = d.steps_card_style_default === 'cinema' ? 'cinema' : ''; }
     setSelectedProducts(d.related_product_ids ?? []);
     document.getElementById('seq-locked').value      = d.is_locked ? 'true' : 'false';
     document.getElementById('seq-free-ratio').value  = String(d.free_ratio ?? (d.is_locked ? 0.3333 : 1.0));
@@ -4391,6 +4403,7 @@ async function buildAndSavePayload() {
         free_ratio:          freeRatio,
         total_steps:         totalSteps,
         free_step_count:     isLocked ? freeCount : totalSteps,
+        steps_card_style_default: readCardStyleDefault_(),
         steps:               publicSteps,
         quizzes,
         flashcards:          flashcardsData.filter(c => c.front),
@@ -4442,6 +4455,29 @@ async function buildAndSavePayload() {
 // ── TAB: 청크(Steps) ──
 // ════════════════════════════
 
+// ── 이미지 카드 표시 방식: 시퀀스 전체 기본값 + 청크별 오버라이드 ──
+// card_style(청크별 의도): '' = 전체 기본값 따름 · 'default' = 기본형 고정 · 'cinema' = 자막형 고정
+// share_style(뷰어·공유카드가 읽는 최종값): '' = 기본형 · 'cinema' = 자막형
+function readCardStyleDefault_() {
+    return (document.getElementById('seq-card-style-default')?.value ?? '') === 'cinema' ? 'cinema' : '';
+}
+function stepCardStyle_(step) {
+    // 명시적 card_style 우선. 없으면 레거시 share_style에서 유추(하위호환).
+    const cs = step.card_style;
+    if (cs === 'default' || cs === 'cinema' || cs === '') return cs;
+    return step.share_style === 'cinema' ? 'cinema' : '';
+}
+function resolveShareStyle_(cardStyle) {
+    if (cardStyle === 'cinema') return 'cinema';   // 자막형 고정
+    if (cardStyle === 'default') return '';         // 기본형 고정
+    return readCardStyleDefault_();                 // 전체 기본값 따름
+}
+function onCardStyleDefaultChange() {
+    syncStepsFromForm();   // 폼의 현재 입력값 보존
+    markDirty();
+    renderStepList();      // "따름 (현재: …)" 라벨 갱신
+}
+
 function renderStepList() {
     const listEl = document.getElementById('step-list');
     const scroller = document.getElementById('panel-steps');
@@ -4453,10 +4489,12 @@ function renderStepList() {
         return;
     }
     const parts = [];
+    const cardDefLabel = readCardStyleDefault_() === 'cinema' ? '자막형' : '기본형';
     parts.push(`<div class="step-insert-zone" onclick="insertStepAt(-1)" title="첫 번째 위치에 삽입">
         <span class="step-insert-label"><i class="fas fa-plus"></i> 여기에 삽입</span>
     </div>`);
     stepsData.forEach((step, i) => {
+        const cardStyle = stepCardStyle_(step);
         const subtitleBadge = step.is_subtitle ? `<span style="background:#d97706; color:#fff; font-size:0.65rem; font-weight:800; padding:2px 6px; border-radius:4px; margin-right:6px;">소제목</span>` : '';
         const preview = subtitleBadge + (step.text ?? '').substring(0, 40) + ((step.text ?? '').length > 40 ? '…' : '');
         const kwCount = (step.keywords ?? []).length;
@@ -4519,10 +4557,11 @@ function renderStepList() {
                     </div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">카드 표시 방식 <span style="font-weight:400; color:var(--text-sub);">(뷰어 화면 + 공유 카드에 함께 적용 · 미지정이면 기본형 · 자막형은 이미지가 있는 카드에서만)</span></label>
-                    <select class="form-control" data-step-sharestyle="${i}" onchange="markDirty()">
-                        <option value="" ${!step.share_style ? 'selected' : ''}>기본형 (이미지 위 · 본문 아래)</option>
-                        <option value="cinema" ${step.share_style === 'cinema' ? 'selected' : ''}>자막형 (이미지 크게 + 하단 자막 패널)</option>
+                    <label class="form-label">카드 표시 방식 <span style="font-weight:400; color:var(--text-sub);">(뷰어 화면 + 공유 카드에 함께 적용 · 자막형은 이미지가 있는 카드에서만)</span></label>
+                    <select class="form-control" data-step-cardstyle="${i}" onchange="markDirty()">
+                        <option value="" ${cardStyle === '' ? 'selected' : ''}>전체 기본값 따름 (현재: ${cardDefLabel})</option>
+                        <option value="default" ${cardStyle === 'default' ? 'selected' : ''}>기본형 (이미지 위 · 본문 아래)</option>
+                        <option value="cinema" ${cardStyle === 'cinema' ? 'selected' : ''}>자막형 (이미지 크게 + 하단 자막 패널)</option>
                     </select>
                 </div>
                 <div class="form-group">
@@ -5392,6 +5431,9 @@ function syncStepsFromForm() {
                 ref:  (row.querySelector('.step-ann-ref')?.value ?? '').trim(),
               })).filter(a => a.text || a.ref)
             : (step.annotations ?? []);
+        const cardStyle = document.querySelector(`[data-step-cardstyle="${i}"]`)
+            ? (document.querySelector(`[data-step-cardstyle="${i}"]`).value ?? '').trim()
+            : stepCardStyle_(step);   // 셀렉트 미렌더 시 기존 의도 보존
         return {
             ...step,
             id:              (document.querySelector(`[data-step-id="${i}"]`)?.value ?? '').trim(),
@@ -5400,7 +5442,8 @@ function syncStepsFromForm() {
             text:            (document.querySelector(`[data-step-text="${i}"]`)?.value ?? '').trim(),
             annotations,
             sub_sequence_id: (document.querySelector(`[data-step-subid="${i}"]`)?.value ?? '').trim(),
-            share_style:     (document.querySelector(`[data-step-sharestyle="${i}"]`)?.value ?? '').trim(),
+            card_style:      cardStyle,
+            share_style:     resolveShareStyle_(cardStyle),
         };
     });
 }
@@ -5773,6 +5816,9 @@ function _onTouchDragCancel() {
 function collectStepFormData() {
     return stepsData.map((step, i) => {
         const { _expanded, ...rest } = step; // UI 전용 플래그는 저장에서 제외
+        const cardStyle = document.querySelector(`[data-step-cardstyle="${i}"]`)
+            ? (document.querySelector(`[data-step-cardstyle="${i}"]`).value ?? '').trim()
+            : stepCardStyle_(step);
         return {
             ...rest,
             id:              (document.querySelector(`[data-step-id="${i}"]`)?.value ?? '').trim() || ('step_' + String(i+1).padStart(2,'0')),
@@ -5780,7 +5826,8 @@ function collectStepFormData() {
             image_url:       (document.querySelector(`[data-step-img="${i}"]`)?.value ?? '').trim(),
             text:            (document.querySelector(`[data-step-text="${i}"]`)?.value ?? '').trim(),
             sub_sequence_id: (document.querySelector(`[data-step-subid="${i}"]`)?.value ?? '').trim(),
-            share_style:     (document.querySelector(`[data-step-sharestyle="${i}"]`)?.value ?? '').trim(),
+            card_style:      cardStyle,
+            share_style:     resolveShareStyle_(cardStyle),
             order:           i + 1,
         };
     });
