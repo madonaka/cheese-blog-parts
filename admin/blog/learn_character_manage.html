@@ -98,6 +98,15 @@
     }
     .faction-badge i { font-size: 9px; margin-right: 4px; opacity: .85; }
 
+    /* 등장 위치 연결 설명 누락 경고 (빈값 또는 '본문 키워드 매핑' 자동 문구) */
+    .missing-conn-badge {
+      display: inline-block; margin-left: 6px; padding: 2px 8px; border-radius: 999px;
+      font-size: 11px; font-weight: 700; vertical-align: middle;
+      background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; white-space: nowrap;
+    }
+    .missing-conn-badge i { font-size: 9px; margin-right: 4px; opacity: .85; }
+    .app-note-input.conn-warn { border-color: #f87171 !important; background: #fef2f2; }
+
     .alt-names-cell { color: var(--sub); font-size: 12px; }
     .appearance-chips { display: flex; flex-wrap: wrap; gap: 4px; max-width: 320px; }
     .app-chip {
@@ -409,6 +418,9 @@
             <option value="name_asc">이름 순</option>
             <option value="created_desc">최신 등록 순</option>
           </select>
+          <label style="display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:700; color:#dc2626; white-space:nowrap; cursor:pointer;">
+            <input type="checkbox" id="cm-missing-conn-filter" onchange="renderList()"> 설명 누락만
+          </label>
         </div>
         
         <!-- 일괄 삭제 액션 바 -->
@@ -1012,6 +1024,12 @@
     return 0;
   }
 
+  // 등장 위치의 연결 설명이 비어 있거나 자동 문구('본문 키워드 매핑')로 남아 있는지 검사
+  function isConnMissingApp(a) {
+    const t = String((a && a.content_connection) || "").trim();
+    return !t || t === "본문 키워드 매핑";
+  }
+
   function renderList() {
     // 목록 렌더링 시 체크박스 상태 초기화
     const master = document.getElementById("select-all");
@@ -1023,7 +1041,8 @@
     const typeFilter = document.getElementById("cm-type-filter")?.value || "";
     const seriesFilter = document.getElementById("cm-series-filter")?.value || "";
     const seqFilter = document.getElementById("cm-seq-filter")?.value || "";
-    
+    const missingOnly = document.getElementById("cm-missing-conn-filter")?.checked || false;
+
     let allowedSeqIds = [];
     if (seriesFilter && !seqFilter) {
       allowedSeqIds = ALL_SEQUENCES.filter(s => {
@@ -1031,18 +1050,27 @@
         return gName === seriesFilter;
       }).map(s => s.id);
     }
-    
+
+    // 현재 시리즈/편 필터 범위 안의 등장 위치만 추림 (배지·누락 필터 공용)
+    const scopeApps = item => (item.appearances || []).filter(a => {
+      if (seqFilter) return a.sequence_id === seqFilter;
+      if (seriesFilter) return allowedSeqIds.includes(a.sequence_id);
+      return true;
+    });
+
     const filtered = ALL_ITEMS.filter(item => {
       const matchType = !typeFilter || item.type === typeFilter;
-      
+
       let matchSeq = true;
       if (seqFilter) {
         matchSeq = (item.appearances || []).some(a => a.sequence_id === seqFilter);
       } else if (seriesFilter) {
         matchSeq = (item.appearances || []).some(a => allowedSeqIds.includes(a.sequence_id));
       }
-      
-      if (!matchSeq || !matchType) return false;
+
+      const matchMissing = !missingOnly || scopeApps(item).some(isConnMissingApp);
+
+      if (!matchSeq || !matchType || !matchMissing) return false;
       if (!q) return true;
       
       const name = (item.name || "").normalize("NFC").toLowerCase();
@@ -1121,10 +1149,15 @@
         `<span class="faction-badge" title="국가/진영: ${esc(f)}"><i class="fa-solid fa-flag"></i>${esc(f)}</span>`
       ).join("");
 
+      const missingCount = scopeApps(item).filter(isConnMissingApp).length;
+      const missingBadge = missingCount
+        ? `<span class="missing-conn-badge" title="등장 위치 ${missingCount}건의 연결 설명이 비어 있거나 자동 문구입니다. 항목을 열어 채워주세요."><i class="fa-solid fa-triangle-exclamation"></i>설명 누락 ${missingCount}</span>`
+        : "";
+
       return `<tr>
         <td data-label="선택" style="text-align: center;"><input type="checkbox" class="item-checkbox" value="${item.id}" onchange="onItemCheckboxChange()"></td>
         <td data-label="구분"><span class="badge-type ${typeClass}">${typeLabel}</span></td>
-        <td data-label="이름"><strong onclick="openModal('${item.id}')" style="color: #2563eb; cursor: pointer; text-decoration: underline; text-underline-offset: 4px;" onmouseover="this.style.color='#1d4ed8'" onmouseout="this.style.color='#2563eb'">${esc(item.name || "(이름 없음)")}</strong>${newDot}${factionBadges}</td>
+        <td data-label="이름"><strong onclick="openModal('${item.id}')" style="color: #2563eb; cursor: pointer; text-decoration: underline; text-underline-offset: 4px;" onmouseover="this.style.color='#1d4ed8'" onmouseout="this.style.color='#2563eb'">${esc(item.name || "(이름 없음)")}</strong>${newDot}${factionBadges}${missingBadge}</td>
         <td data-label="별명/이명" class="alt-names-cell">${altNames ? esc(altNames) : "-"}</td>
         <td data-label="시기·생몰년" style="font-weight: 600;">${eraPeriod}</td>
         <td class="td-actions" style="text-align: right;">
@@ -1832,7 +1865,7 @@
             등장 학습 내용과 연결 (설명/메모)
             <button type="button" class="copy-base-memo-btn" onclick="copyBaseMemoToRow(this)" style="background:none; border:none; color:var(--accent); font-size:10px; font-weight:800; cursor:pointer; padding:0;">[기본 메모 가져오기]</button>
           </span>
-          <textarea class="app-note-input" placeholder="본문 속 활약이나 설명, 메모 텍스트를 상세히 적어주세요" style="width:100%; font-size:12px; border:1.5px solid var(--line); border-radius:8px; padding:8px; box-sizing:border-box; min-height:60px; font-family:inherit; resize:vertical;">${esc(connVal)}</textarea>
+          <textarea class="app-note-input${isConnMissingApp({ content_connection: connVal }) ? " conn-warn" : ""}" placeholder="본문 속 활약이나 설명, 메모 텍스트를 상세히 적어주세요" oninput="this.classList.toggle('conn-warn', isConnMissingApp({ content_connection: this.value }))" style="width:100%; font-size:12px; border:1.5px solid var(--line); border-radius:8px; padding:8px; box-sizing:border-box; min-height:60px; font-family:inherit; resize:vertical;">${esc(connVal)}</textarea>
         </div>
       </div>
     `;
@@ -1904,6 +1937,7 @@
     const textarea = entry.querySelector(".app-note-input");
     if (textarea) {
       textarea.value = baseMemo;
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
     }
   }
 
