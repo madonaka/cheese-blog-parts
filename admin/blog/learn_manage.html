@@ -7085,6 +7085,57 @@ async function confirmDeleteSequence() {
 }
 
 // ── 이미지 업로드 & 핸들러 ─────────────────
+// GAS 업로드는 응답이 세 갈래로 흔들린다.
+//   ① 정상 {ok:true, fileId:'...'}
+//   ② 본문이 유실돼 헬스체크 응답만 {ok:true, status:'...'} — fileId가 없다
+//   ③ JSON 대신 HTML(구글 리다이렉트·오류 페이지) — res.json()이 터진다
+// 예전 코드는 ok만 보고 ②를 성공으로 처리해 id=undefined URL을 입력칸에 박았고,
+// ③은 날것의 파싱 에러를 그대로 보여줬다. fileId를 받을 때까지 최대 3번 시도한다.
+async function uploadToDriveFile_(file, namePrefix) {
+    const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+
+    // admin-common.js 에 정의된 CHEESE_STORE_API_BASE 사용
+    const send = async () => {
+        const res = await fetch(window.CHEESE_STORE_API_BASE, {
+            method: 'POST',
+            body: JSON.stringify({
+                mode: 'uploadStoreFile',
+                fileName: namePrefix + Date.now() + '.png',
+                mimeType: file.type,
+                base64Data: base64
+            })
+        });
+        const txt = await res.text();
+        let json;
+        try {
+            json = JSON.parse(txt);
+        } catch (_) {
+            throw new Error('서버가 JSON이 아닌 응답을 보냈습니다(구글 스크립트 일시 오류)');
+        }
+        // 이 GAS는 실패 사유를 error가 아니라 message에 담는다(예: "올바르지 않은 모드입니다.")
+        if (!json.ok) throw new Error(json.error || json.message || '업로드 실패');
+        return json.fileId || '';
+    };
+
+    let lastErr = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+            const fileId = await send();
+            // 구글 드라이브 썸네일 URL 생성 (폭 1200px)
+            if (fileId) return `https://drive.google.com/thumbnail?id=${fileId}&sz=w1200`;
+            lastErr = new Error('서버가 파일 ID를 주지 않았습니다');
+        } catch (err) {
+            lastErr = err;
+        }
+    }
+    throw new Error(`${lastErr?.message ?? '업로드 실패'} — 3번 시도했습니다. 잠시 후 다시 시도해 주세요.`);
+}
+
 async function uploadImageFile(file, idx) {
     const urlInput = document.querySelector(`[data-step-img="${idx}"]`);
     const oldVal = urlInput.value;
@@ -7092,35 +7143,13 @@ async function uploadImageFile(file, idx) {
     urlInput.disabled = true;
 
     try {
-        const reader = new FileReader();
-        const base64 = await new Promise((resolve, reject) => {
-            reader.onload = () => resolve(reader.result.split(',')[1]);
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-        });
-
-        // admin-common.js 에 정의된 CHEESE_STORE_API_BASE 사용
-        const response = await fetch(window.CHEESE_STORE_API_BASE, {
-            method: 'POST',
-            body: JSON.stringify({
-                mode: 'uploadStoreFile',
-                fileName: 'learn_step_' + Date.now() + '.png',
-                mimeType: file.type,
-                base64Data: base64
-            })
-        });
-
-        const result = await response.json();
-        if (!result.ok) throw new Error(result.error || '업로드 실패');
-
-        // 구글 드라이브 썸네일 URL 생성 (폭 1200px)
-        const url = `https://drive.google.com/thumbnail?id=${result.fileId}&sz=w1200`;
-        urlInput.value = url;
+        urlInput.value = await uploadToDriveFile_(file, 'learn_step_');
         syncStepPreview(idx);
         toast('이미지가 업로드되었습니다.');
     } catch (err) {
         toast('이미지 업로드 실패: ' + err.message, true);
         urlInput.value = oldVal;
+        syncStepPreview(idx);
     } finally {
         urlInput.disabled = false;
     }
@@ -7141,24 +7170,7 @@ async function handleThumbnailPaste(e) {
     input.value = '업로드 중...';
     input.disabled = true;
     try {
-        const reader = new FileReader();
-        const base64 = await new Promise((resolve, reject) => {
-            reader.onload = () => resolve(reader.result.split(',')[1]);
-            reader.onerror = reject;
-            reader.readAsDataURL(imageFile);
-        });
-        const response = await fetch(window.CHEESE_STORE_API_BASE, {
-            method: 'POST',
-            body: JSON.stringify({
-                mode: 'uploadStoreFile',
-                fileName: 'learn_thumb_' + Date.now() + '.png',
-                mimeType: imageFile.type,
-                base64Data: base64
-            })
-        });
-        const result = await response.json();
-        if (!result.ok) throw new Error(result.error || '업로드 실패');
-        input.value = `https://drive.google.com/thumbnail?id=${result.fileId}&sz=w1200`;
+        input.value = await uploadToDriveFile_(imageFile, 'learn_thumb_');
         markDirty();
         toast('썸네일이 업로드되었습니다.');
     } catch (err) {

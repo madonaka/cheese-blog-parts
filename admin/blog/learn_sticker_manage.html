@@ -373,18 +373,38 @@
         reader.onerror = reject;
         reader.readAsDataURL(file);
       });
-      const res = await fetch(window.CHEESE_STORE_API_BASE, {
-        method: "POST",
-        body: JSON.stringify({
-          mode: "uploadStoreFile",
-          fileName: "learn_sticker_" + Date.now() + ".png",
-          mimeType: file.type,
-          base64Data: base64
-        })
-      });
-      const result = await res.json();
-      if (!result.ok) throw new Error(result.error || "업로드 실패");
-      input.value = `https://drive.google.com/thumbnail?id=${result.fileId}&sz=w600`;
+      // GAS 응답은 세 갈래로 흔들린다 — 정상 / 본문 유실(ok:true인데 fileId 없음) / JSON 아닌 HTML.
+      // ok가 아니라 fileId로 성공을 판정하고, 받을 때까지 최대 3번 시도한다.
+      const send = async () => {
+        const res = await fetch(window.CHEESE_STORE_API_BASE, {
+          method: "POST",
+          body: JSON.stringify({
+            mode: "uploadStoreFile",
+            fileName: "learn_sticker_" + Date.now() + ".png",
+            mimeType: file.type,
+            base64Data: base64
+          })
+        });
+        const txt = await res.text();
+        let json;
+        try {
+          json = JSON.parse(txt);
+        } catch (_) {
+          throw new Error("서버가 JSON이 아닌 응답을 보냈습니다(구글 스크립트 일시 오류)");
+        }
+        // 이 GAS는 실패 사유를 error가 아니라 message에 담는다
+        if (!json.ok) throw new Error(json.error || json.message || "업로드 실패");
+        return json.fileId || "";
+      };
+
+      let fileId = "", lastErr = null;
+      for (let attempt = 0; attempt < 3 && !fileId; attempt++) {
+        try { fileId = await send(); if (!fileId) lastErr = new Error("서버가 파일 ID를 주지 않았습니다"); }
+        catch (e) { lastErr = e; }
+      }
+      if (!fileId) throw new Error(`${lastErr?.message ?? "업로드 실패"} — 3번 시도했습니다. 잠시 후 다시 시도해 주세요.`);
+
+      input.value = `https://drive.google.com/thumbnail?id=${fileId}&sz=w600`;
       syncStickerPreview();
     } catch (err) {
       alert("이미지 업로드에 실패했습니다: " + err.message);
