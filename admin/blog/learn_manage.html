@@ -808,6 +808,36 @@
             pointer-events: none;
         }
 
+        /* 스티커 고르기 그리드 */
+        .sticker-pick-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+            gap: 10px;
+            max-height: 46vh;
+            overflow-y: auto;
+            padding: 4px;
+        }
+        .sticker-pick {
+            border: 1.5px solid var(--border);
+            border-radius: 10px;
+            padding: 8px 6px;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.15s, transform 0.15s;
+            background: #fff;
+        }
+        .sticker-pick:hover { border-color: var(--primary); transform: translateY(-2px); }
+        .sticker-pick-img { height: 62px; display: flex; align-items: center; justify-content: center; }
+        .sticker-pick-img img { max-width: 100%; max-height: 62px; }
+        .sticker-pick-code {
+            font-size: 0.68rem;
+            font-weight: 700;
+            color: var(--text-sub);
+            margin-top: 6px;
+            word-break: break-all;
+            line-height: 1.3;
+        }
+
         .set-item-thumb {
             width: 50px;
             height: 50px;
@@ -1188,6 +1218,22 @@
             text-align: center;
             color: var(--text-sub);
             font-size: 0.85rem;
+        }
+        /* 이미지 함께 보기(헤더 토글로 일괄 on/off) */
+        .overview-img-wrap { display: none; margin-top: 9px; cursor: default; }
+        .overview-list.show-img .overview-img-wrap { display: block; }
+        .overview-img {
+            display: block;
+            max-width: 100%;
+            max-height: 320px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: #f8fafc;
+        }
+        #overview-img-toggle-btn.is-on {
+            background: #e8eeff;
+            color: var(--primary);
+            border-color: var(--primary);
         }
 
         /* ── 청크 드래그 & 삽입 ── */
@@ -2763,6 +2809,7 @@
         <div style="padding:14px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px; flex-shrink:0;">
             <h3 style="flex:1; margin:0; font-size:1rem; font-weight:800;"><i class="fas fa-list-ul" style="color:var(--primary);"></i> 청크 개요</h3>
             <span id="overview-count" style="font-size:0.78rem; color:var(--text-sub); font-weight:600;"></span>
+            <button class="btn btn-ghost btn-sm" id="overview-img-toggle-btn" onclick="toggleOverviewImages()" title="이미지 함께 보기 / 복사"><i class="fas fa-image"></i> 이미지</button>
             <button class="btn btn-ghost btn-sm" id="overview-copy-btn" onclick="copyOverviewText()" title="전체 내용 복사"><i class="fas fa-copy"></i> 전체 복사</button>
             <button class="btn btn-ghost btn-sm" onclick="closeStepOverviewModal()">닫기</button>
         </div>
@@ -2845,7 +2892,9 @@ short,자본주의의 구조를 해부한 평생의 역작이었던 책의 제�
     <div class="modal-card" style="max-width:560px; width:92vw;">
         <h3><i class="fas fa-paste" style="color:var(--primary);"></i> 청크 대량 입력</h3>
         <p>여러 문단을 붙여넣으면 <strong>빈 줄(엔터 2번)</strong>을 기준으로 각각 별도의 청크로 자동 분리됩니다.<br>
-            <code>[소제목]</code> 다음에 오는 글은 <strong>소제목 카드</strong>로, 청크 본문 안의 <code>[주석]</code> 줄은 그 청크의 <strong>주석</strong>으로 자동 인식됩니다.</p>
+            <code>[소제목]</code> 다음에 오는 글은 <strong>소제목 카드</strong>로, 청크 본문 안의 <code>[주석]</code> 줄은 그 청크의 <strong>주석</strong>으로 자동 인식됩니다.<br>
+            <code>(코러스-멍)</code>처럼 괄호 표지로 시작하거나, <strong>짧은 이름 한 줄 + 따옴표 대사</strong>로 시작하면
+            <strong>대사형 카드</strong>가 되고 <a href="/admin/blog/learn_sticker_manage.html" target="_blank">스티커 함</a>의 같은 코드 그림이 자동으로 붙습니다.</p>
         <textarea id="bulk-steps-input" class="form-control" style="min-height:220px; max-height:55vh; font-size:0.85rem; line-height:1.7;"
             oninput="updateBulkStepsCount()"
             placeholder="[소제목]&#10;&#10;1. 사회주의 vs 공산주의 - 무엇이 다른가&#10;&#10;첫 번째 청크 본문입니다.&#10;[주석]&#10;본문 아래 작은 글씨로 붙는 보충 설명. (바로 뒤 또는 다음 줄에 작성)&#10;&#10;빈 줄로 구분하면 다음 청크가 됩니다."></textarea>
@@ -2859,6 +2908,30 @@ short,자본주의의 구조를 해부한 평생의 역작이었던 책의 제�
         <div class="modal-actions" style="margin-top:16px;">
             <button class="btn btn-ghost" onclick="closeBulkStepsModal()">취소</button>
             <button class="btn btn-primary" onclick="applyBulkSteps()"><i class="fas fa-plus"></i> 청크 추가</button>
+        </div>
+    </div>
+</div>
+
+<!-- 스티커 고르기 모달 -->
+<div class="modal-overlay" id="sticker-picker-modal">
+    <div class="modal-card" style="max-width:620px; width:94vw;">
+        <h3>😀 스티커 고르기</h3>
+        <p style="font-size:0.85rem; color:var(--text-sub); line-height:1.6;">
+            고르면 이 청크가 <strong>대사형 카드</strong>가 됩니다 — 그림이 작게 가운데로 들어가고 본문이 대사처럼 표시됩니다.<br>
+            새 그림은 <a href="/admin/blog/learn_sticker_manage.html" target="_blank">학습 스티커 함</a>에서 등록하세요.
+        </p>
+        <div style="display:flex; gap:8px; margin:12px 0;">
+            <input type="text" class="form-control" id="sticker-picker-search" placeholder="코드·이름 검색" style="flex:1;" oninput="renderStickerPickerGrid()">
+            <select class="form-control" id="sticker-picker-group" style="width:120px; flex-shrink:0;" onchange="renderStickerPickerGrid()">
+                <option value="">전체</option>
+                <option value="코러스">코러스</option>
+                <option value="인물">인물</option>
+                <option value="기타">기타</option>
+            </select>
+        </div>
+        <div id="sticker-picker-grid" class="sticker-pick-grid"></div>
+        <div class="modal-actions" style="margin-top:16px;">
+            <button class="btn btn-ghost" onclick="closeStickerPicker()">닫기</button>
         </div>
     </div>
 </div>
@@ -4516,25 +4589,156 @@ async function buildAndSavePayload() {
 
 // ── 이미지 카드 표시 방식: 시퀀스 전체 기본값 + 청크별 오버라이드 ──
 // card_style(청크별 의도): '' = 전체 기본값 따름 · 'default' = 기본형 고정 · 'cinema' = 자막형 고정
-// share_style(뷰어·공유카드가 읽는 최종값): '' = 기본형 · 'cinema' = 자막형
+//                          · 'sticker' = 대사형 고정(스티커를 작게 가운데)
+// share_style(뷰어·공유카드가 읽는 최종값): '' = 기본형 · 'cinema' = 자막형 · 'sticker' = 대사형
+// 대사형은 '전체 기본값'이 될 수 없다 — 청크마다 명시적으로 지정한다.
 function readCardStyleDefault_() {
     return (document.getElementById('seq-card-style-default')?.value ?? '') === 'cinema' ? 'cinema' : '';
 }
 function stepCardStyle_(step) {
     // 명시적 card_style 우선. 없으면 레거시 share_style에서 유추(하위호환).
     const cs = step.card_style;
-    if (cs === 'default' || cs === 'cinema' || cs === '') return cs;
-    return step.share_style === 'cinema' ? 'cinema' : '';
+    if (cs === 'default' || cs === 'cinema' || cs === 'sticker' || cs === '') return cs;
+    if (step.share_style === 'cinema') return 'cinema';
+    if (step.share_style === 'sticker') return 'sticker';
+    return '';
 }
 function resolveShareStyle_(cardStyle) {
-    if (cardStyle === 'cinema') return 'cinema';   // 자막형 고정
-    if (cardStyle === 'default') return '';         // 기본형 고정
-    return readCardStyleDefault_();                 // 전체 기본값 따름
+    if (cardStyle === 'cinema') return 'cinema';    // 자막형 고정
+    if (cardStyle === 'sticker') return 'sticker';  // 대사형 고정
+    if (cardStyle === 'default') return '';          // 기본형 고정
+    return readCardStyleDefault_();                  // 전체 기본값 따름
 }
 function onCardStyleDefaultChange() {
     syncStepsFromForm();   // 폼의 현재 입력값 보존
     markDirty();
     renderStepList();      // "따름 (현재: …)" 라벨 갱신
+}
+
+// 표시 방식을 바꾸면 화자 이름 칸을 접거나 편다 (재렌더 없이 그 카드만)
+function onStepCardStyleChange(i, val) {
+    const g = document.getElementById(`speaker-group-${i}`);
+    if (g) g.style.display = (val === 'sticker') ? 'flex' : 'none';
+}
+
+// ── 스티커 함(learn_stickers) — 한 번 등록해 두면 이모티콘처럼 골라 쓴다 ──
+// 청크에는 URL을 그대로 박아 둔다(뷰어가 라이브러리를 따로 읽지 않게).
+// sticker_id는 나중에 라이브러리 그림을 교체했을 때 일괄 갱신하려고 함께 남긴다.
+let stickerLibrary   = [];      // learn_stickers 캐시
+let stickerLibLoaded = false;
+let _stickerTargetIdx = null;   // 지금 스티커를 고르는 청크 번호
+
+async function ensureStickerLibrary(force = false) {
+    if (stickerLibLoaded && !force) return stickerLibrary;
+    const res = await safeFetchDB({ action: 'get', collection: 'learn_stickers' });
+    stickerLibrary = (res.data ?? []).sort((a, b) =>
+        (a.order ?? 100) - (b.order ?? 100) || String(a.code ?? '').localeCompare(String(b.code ?? '')));
+    stickerLibLoaded = true;
+    return stickerLibrary;
+}
+
+function stickerByCode_(code) {
+    const key = String(code ?? '').trim();
+    if (!key) return null;
+    return stickerLibrary.find(s => String(s.code ?? '').trim() === key) ?? null;
+}
+
+// 최근 사용 (브라우저에만 기억)
+const STICKER_RECENT_KEY = 'cheese_sticker_recent';
+function stickerRecent_() {
+    try { return JSON.parse(localStorage.getItem(STICKER_RECENT_KEY) || '[]'); } catch (_) { return []; }
+}
+function pushStickerRecent_(id) {
+    try {
+        const list = [id, ...stickerRecent_().filter(x => x !== id)].slice(0, 12);
+        localStorage.setItem(STICKER_RECENT_KEY, JSON.stringify(list));
+    } catch (_) {}
+}
+
+async function openStickerPicker(idx) {
+    _stickerTargetIdx = idx;
+    const grid = document.getElementById('sticker-picker-grid');
+    document.getElementById('sticker-picker-modal').classList.add('open');
+    if (grid) grid.innerHTML = '<div class="empty-state">스티커를 불러오는 중...</div>';
+    try {
+        await ensureStickerLibrary();
+        renderStickerPickerGrid();
+    } catch (e) {
+        if (grid) grid.innerHTML = `<div class="empty-state" style="color:#dc2626;">스티커를 불러오지 못했습니다: ${e.message}</div>`;
+    }
+}
+
+function closeStickerPicker() {
+    document.getElementById('sticker-picker-modal').classList.remove('open');
+    _stickerTargetIdx = null;
+}
+
+function renderStickerPickerGrid() {
+    const grid = document.getElementById('sticker-picker-grid');
+    if (!grid) return;
+    const q = (document.getElementById('sticker-picker-search')?.value ?? '').trim().toLowerCase();
+    const g = (document.getElementById('sticker-picker-group')?.value ?? '');
+
+    let list = stickerLibrary.filter(s => {
+        if (g && (s.group ?? '') !== g) return false;
+        if (!q) return true;
+        return `${s.code ?? ''} ${s.name ?? ''}`.toLowerCase().includes(q);
+    });
+
+    // 검색·필터가 없을 때만 최근 사용을 앞으로 끌어올린다
+    if (!q && !g) {
+        const recent = stickerRecent_();
+        list = [...list].sort((a, b) => {
+            const ra = recent.indexOf(a.id), rb = recent.indexOf(b.id);
+            if (ra === -1 && rb === -1) return 0;
+            if (ra === -1) return 1;
+            if (rb === -1) return -1;
+            return ra - rb;
+        });
+    }
+
+    if (!list.length) {
+        grid.innerHTML = stickerLibrary.length
+            ? '<div class="empty-state">조건에 맞는 스티커가 없습니다.</div>'
+            : '<div class="empty-state">등록된 스티커가 없습니다. <a href="/admin/blog/learn_sticker_manage.html" target="_blank">학습 스티커 함</a>에서 먼저 등록하세요.</div>';
+        return;
+    }
+
+    grid.innerHTML = list.map(s => `
+        <div class="sticker-pick" onclick="applyStickerToStep('${escAttr_(s.id)}')" title="${escAttr_(s.name ?? '')}">
+            <div class="sticker-pick-img"><img src="${escAttr_(s.url ?? '')}" alt="" onerror="this.style.visibility='hidden'"></div>
+            <div class="sticker-pick-code">${s.code ?? ''}</div>
+        </div>`).join('');
+}
+
+function applyStickerToStep(stickerId) {
+    const idx = _stickerTargetIdx;
+    const s = stickerLibrary.find(x => x.id === stickerId);
+    if (idx === null || !s) return;
+
+    // 폼 → 데이터 반영 후 값을 바꾸고 다시 그린다(펼침 상태는 _expanded로 유지됨)
+    syncStepsFromForm();
+    const step = stepsData[idx];
+    if (!step) { closeStickerPicker(); return; }
+
+    step.image_url  = s.url ?? '';
+    step.sticker_id = s.id;
+    step.card_style = 'sticker';
+    step.share_style = resolveShareStyle_('sticker');
+    // 인물 스티커는 이름표를 기본으로 채워 준다(코러스는 무명이므로 비운다)
+    if ((s.group ?? '') === '인물') {
+        if (!(step.speaker ?? '').trim()) step.speaker = s.code ?? '';
+        if (!(step.speaker_title ?? '').trim()) step.speaker_title = s.title ?? '';
+    } else {
+        step.speaker = '';
+        step.speaker_title = '';
+    }
+
+    pushStickerRecent_(s.id);
+    closeStickerPicker();
+    renderStepList();
+    refreshBadges();
+    markDirty();
 }
 
 function renderStepList() {
@@ -4555,7 +4759,8 @@ function renderStepList() {
     stepsData.forEach((step, i) => {
         const cardStyle = stepCardStyle_(step);
         const subtitleBadge = step.is_subtitle ? `<span style="background:#d97706; color:#fff; font-size:0.65rem; font-weight:800; padding:2px 6px; border-radius:4px; margin-right:6px;">소제목</span>` : '';
-        const preview = subtitleBadge + (step.text ?? '').substring(0, 40) + ((step.text ?? '').length > 40 ? '…' : '');
+        const stickerBadge = cardStyle === 'sticker' ? `<span style="background:#4f46e5; color:#fff; font-size:0.65rem; font-weight:800; padding:2px 6px; border-radius:4px; margin-right:6px;">대사</span>` : '';
+        const preview = subtitleBadge + stickerBadge + (step.text ?? '').substring(0, 40) + ((step.text ?? '').length > 40 ? '…' : '');
         const kwCount = (step.keywords ?? []).length;
         const thumb = step.image_url
             ? `<img src="${step.image_url}" class="step-head-thumb" onerror="this.style.visibility='hidden'">`
@@ -4595,12 +4800,22 @@ function renderStepList() {
                                    value="${step.image_url ?? ''}" data-step-img="${i}"
                                    onpaste="handleStepImagePaste(event,${i})"
                                    oninput="syncStepPreview(${i})">
+                            <button class="btn btn-ghost btn-sm" type="button" style="flex-shrink:0; white-space:nowrap;" onclick="openStickerPicker(${i})" title="등록해 둔 스티커에서 고르기 (대사형 카드가 됩니다)">😀 스티커</button>
                             <button class="btn btn-ghost btn-sm" type="button" style="flex-shrink:0; white-space:nowrap;" onclick="pickStepImage(${i})" title="기기에서 이미지 파일 선택"><i class="fas fa-folder-open"></i> 파일</button>
                         </div>
                         <div class="img-upload-hint"><i class="fas fa-upload"></i> 드래그·붙여넣기 하거나 '파일' 버튼으로 선택하세요</div>
                         <img id="step-preview-${i}" src="${step.image_url ?? ''}" class="step-img-preview"
                              style="display: ${step.image_url ? 'block' : 'none'}"
                              onerror="this.style.display='none'">
+                    </div>
+                </div>
+                <div class="form-group step-speaker-group" id="speaker-group-${i}" style="display:${cardStyle === 'sticker' ? 'flex' : 'none'};">
+                    <label class="form-label">화자 이름 · 직함 <span style="font-weight:400; color:var(--text-sub);">(대사형 전용 · 뉴스 자막처럼 스티커 아래 "이름 (직함)" · 코러스처럼 무명이면 비워두세요)</span></label>
+                    <div style="display:flex; gap:6px;">
+                        <input type="text" class="form-control" placeholder="이름 (예: 루스벨트)" style="flex:1; min-width:0;"
+                               value="${escAttr_(step.speaker ?? '')}" data-step-speaker="${i}" oninput="markDirty()">
+                        <input type="text" class="form-control" placeholder="직함 (예: 미국 32대 대통령)" style="flex:1.3; min-width:0;"
+                               value="${escAttr_(step.speaker_title ?? '')}" data-step-speakertitle="${i}" oninput="markDirty()">
                     </div>
                 </div>
                 <div class="form-group step-text-group">
@@ -4633,10 +4848,11 @@ function renderStepList() {
                         </div>
                         <div class="form-group">
                             <label class="form-label">카드 표시 방식 <span style="font-weight:400; color:var(--text-sub);">(뷰어 화면 + 공유 카드에 함께 적용 · 자막형은 이미지가 있는 카드에서만)</span></label>
-                            <select class="form-control" data-step-cardstyle="${i}" onchange="markDirty()">
+                            <select class="form-control" data-step-cardstyle="${i}" onchange="markDirty(); onStepCardStyleChange(${i}, this.value)">
                                 <option value="" ${cardStyle === '' ? 'selected' : ''}>전체 기본값 따름 (현재: ${cardDefLabel})</option>
                                 <option value="default" ${cardStyle === 'default' ? 'selected' : ''}>기본형 (이미지 위 · 본문 아래)</option>
                                 <option value="cinema" ${cardStyle === 'cinema' ? 'selected' : ''}>자막형 (이미지 크게 + 하단 자막 패널)</option>
+                                <option value="sticker" ${cardStyle === 'sticker' ? 'selected' : ''}>대사형 (스티커를 작게 가운데 + 대사)</option>
                             </select>
                         </div>
                         <div class="form-group">
@@ -4856,7 +5072,7 @@ function applyBulkQuizzes() {
 }
 
 // ── 청크 대량 입력 ────────────────────────
-function openBulkStepsModal() {
+async function openBulkStepsModal() {
     syncStepsFromForm();
     document.getElementById('bulk-steps-input').value = '';
     updateBulkStepsCount();
@@ -4872,6 +5088,15 @@ function openBulkStepsModal() {
     });
 
     document.getElementById('bulk-steps-modal').classList.add('open');
+
+    // 스티커 함을 캐시해 둬야 (코러스-멍) 같은 표지에 그림을 붙일 수 있다.
+    // 실패해도 대량 입력 자체는 막지 않는다(대사형 카드는 만들고 그림만 비운다).
+    try {
+        await ensureStickerLibrary();
+        updateBulkStepsCount();   // 로드 후 미등록 코드 안내 갱신
+    } catch (e) {
+        console.warn('[sticker] 라이브러리 로드 실패:', e);
+    }
 }
 
 function closeBulkStepsModal() {
@@ -4881,10 +5106,40 @@ function closeBulkStepsModal() {
 // 빈 줄로 분리한 뒤 [소제목]/[주석] 마커를 인식해 청크 객체 배열로 변환한다.
 // - [소제목] : 그 자체 블록이면 다음 블록을, 뒤에 글이 붙어 있으면 그 글을 소제목 청크로 지정
 // - [주석]   : 청크 본문 중 해당 줄을 떼어내 그 청크의 주석으로 추가 (참조 텍스트는 비움)
+// - (코러스-멍) "…"        : 대사형 카드 + 스티커 함에서 코드가 '코러스-멍'인 그림 자동 지정
+// - 이름 한 줄 + "대사"     : 대사형 카드 + 코드가 그 이름인 그림 자동 지정 + 화자 이름표
+//   (스티커가 등록돼 있지 않아도 대사형 카드로는 만든다 — 그림만 나중에 채우면 된다)
 function parseBulkStepBlocks() {
     const makeStep = (text, isSub, annotations) => ({
         id: '', is_subtitle: isSub, image_url: '', text, keywords: [], sub_sequence_id: '', annotations
     });
+
+    // 본문 첫 줄에서 화자/코러스 표지를 떼어내 대사형 청크로 바꾼다.
+    // 반환: { speaker, code, body } (표지가 없으면 null)
+    const readDialogueMark = (bodyText) => {
+        const lines = bodyText.split('\n');
+        const first = (lines[0] ?? '').trim();
+
+        // ① (코러스-멍) "…"  — 괄호 표지가 첫 줄 맨 앞에 붙는다
+        const chorus = first.match(/^\(\s*([^)]+?)\s*\)\s*([\s\S]*)$/);
+        if (chorus) {
+            const code = chorus[1].trim();
+            // 등록된 코드이거나 '코러스'로 시작할 때만 표지로 본다(일반 괄호 문장 오인 방지)
+            if (stickerByCode_(code) || code.startsWith('코러스')) {
+                const rest = [chorus[2], ...lines.slice(1)].join('\n').trim();
+                return { speaker: '', code, body: rest };
+            }
+        }
+
+        // ② 짧은 이름 한 줄 + 다음 줄이 따옴표로 시작 — 인물 대사
+        const second = (lines[1] ?? '').trim();
+        const looksLikeName = first && first.length <= 12
+            && !/["“”]/.test(first) && !/[.?!…]$/.test(first) && !/^[▲*\[(]/.test(first);
+        if (looksLikeName && /^["“]/.test(second)) {
+            return { speaker: first, code: first, body: lines.slice(1).join('\n').trim() };
+        }
+        return null;
+    };
     const rawBlocks = document.getElementById('bulk-steps-input').value
         .split(/\n\s*\n/)
         .map(s => s.trim())
@@ -4930,6 +5185,24 @@ function parseBulkStepBlocks() {
             if (annotations.length && steps.length) steps[steps.length - 1].annotations.push(...annotations);
             continue;
         }
+
+        // 대사/코러스 표지 인식 — 소제목 블록은 대상이 아니다
+        const mark = isSub ? null : readDialogueMark(bodyText);
+        if (mark && mark.body) {
+            const st = makeStep(mark.body, false, annotations);
+            const found = stickerByCode_(mark.code);
+            st.card_style  = 'sticker';
+            st.share_style = resolveShareStyle_('sticker');
+            st.speaker     = mark.speaker;
+            // 직함은 스티커 함에 등록해 둔 값을 따라온다(대본에는 이름만 있으므로)
+            st.speaker_title = mark.speaker ? (found?.title ?? '') : '';
+            st.image_url   = found?.url ?? '';
+            st.sticker_id  = found?.id ?? '';
+            st._stickerCode = mark.code;          // 미등록 표시용(저장 전 제거)
+            steps.push(st);
+            continue;
+        }
+
         steps.push(makeStep(bodyText, isSub, annotations));
     }
     return steps;
@@ -4939,8 +5212,19 @@ function updateBulkStepsCount() {
     const steps = parseBulkStepBlocks();
     const subCount = steps.filter(s => s.is_subtitle).length;
     const annCount = steps.reduce((n, s) => n + (s.annotations?.length ?? 0), 0);
-    const extra = (subCount || annCount) ? ` (소제목 ${subCount} · 주석 ${annCount})` : '';
-    document.getElementById('bulk-steps-count').textContent = `감지된 청크: ${steps.length}개${extra}`;
+    const dlgSteps = steps.filter(s => s.card_style === 'sticker');
+    const missing  = dlgSteps.filter(s => !s.image_url);
+    const parts = [];
+    if (subCount) parts.push(`소제목 ${subCount}`);
+    if (annCount) parts.push(`주석 ${annCount}`);
+    if (dlgSteps.length) parts.push(`대사 ${dlgSteps.length}`);
+    const extra = parts.length ? ` (${parts.join(' · ')})` : '';
+    const el = document.getElementById('bulk-steps-count');
+    el.innerHTML = `감지된 청크: ${steps.length}개${extra}`;
+    if (missing.length) {
+        const codes = [...new Set(missing.map(s => s._stickerCode).filter(Boolean))];
+        el.innerHTML += `<br><span style="color:#dc2626;">스티커 함에 없는 코드 ${codes.length}종: ${codes.slice(0, 8).join(', ')}${codes.length > 8 ? ' 외' : ''} — 카드는 만들어지고 그림만 비어 있습니다.</span>`;
+    }
 }
 
 function applyBulkSteps() {
@@ -5156,6 +5440,9 @@ function executeDeleteRange() {
 }
 
 // ── 청크 개요 모달 ────────────────────────
+let overviewShowImages = false;
+try { overviewShowImages = localStorage.getItem('overviewShowImages') === '1'; } catch (e) {}
+
 function openStepOverviewModal() {
     syncStepsFromForm();
     const listEl = document.getElementById('overview-list');
@@ -5171,21 +5458,46 @@ function openStepOverviewModal() {
             const text = (step.text ?? '').trim() || '<span style="color:#9ca3af;">(내용 없음)</span>';
             const kws  = (step.keywords ?? []);
             const anns = step.annotations ?? (step.annotation ? [{text: step.annotation}] : []);
+            const img  = (step.image_url ?? '').trim();
             const subBadge = step.is_subtitle ? `<span style="display:inline-block; background:#d97706; color:#fff; font-size:0.6rem; font-weight:800; padding:1px 6px; border-radius:4px; margin-right:6px; vertical-align:middle;">소제목</span>` : '';
             return `
             <div class="overview-row" onclick="jumpToStep(${i})">
                 <div class="overview-num">${i + 1}</div>
                 <div>
                     <div class="overview-text">${subBadge}${text}</div>
+                    ${img ? `<div class="overview-img-wrap" onclick="event.stopPropagation()"><img class="overview-img" src="${escAttr_(img)}" alt="" loading="lazy" onerror="this.style.display='none'"></div>` : ''}
                     ${kws.length ? `<div class="overview-meta">${kws.map(k => `<span class="overview-kw">${k}</span>`).join('')}</div>` : ''}
                     ${anns.filter(a => a.text).map(a => `<div class="overview-note">✱ ${a.text}</div>`).join('')}
                 </div>
             </div>`;
         }).join('');
     }
+    applyOverviewImageMode_();
     const searchEl = document.getElementById('overview-search');
     if (searchEl) searchEl.value = '';
     document.getElementById('step-overview-modal').classList.add('open');
+}
+
+// 이미지 함께 보기 토글 (켜져 있으면 [전체 복사]에도 이미지가 함께 담긴다)
+function toggleOverviewImages() {
+    overviewShowImages = !overviewShowImages;
+    try { localStorage.setItem('overviewShowImages', overviewShowImages ? '1' : '0'); } catch (e) {}
+    applyOverviewImageMode_();
+}
+
+function applyOverviewImageMode_() {
+    const listEl = document.getElementById('overview-list');
+    const btn    = document.getElementById('overview-img-toggle-btn');
+    if (listEl) listEl.classList.toggle('show-img', overviewShowImages);
+    if (btn) {
+        const imgCount = stepsData.filter(s => (s.image_url ?? '').trim()).length;
+        btn.style.display = imgCount ? '' : 'none';
+        btn.classList.toggle('is-on', overviewShowImages);
+        btn.innerHTML = `<i class="fas fa-image"></i> 이미지 ${overviewShowImages ? `${imgCount}` : '보기'}`;
+        btn.title = overviewShowImages
+            ? `이미지 함께 보기 켜짐 (복사 시 이미지 ${imgCount}장 포함)`
+            : '이미지 함께 보기 / 복사';
+    }
 }
 
 function closeStepOverviewModal() {
@@ -5214,11 +5526,47 @@ function copyOverviewText() {
         return `${i + 1} : ${subMark}${textPart}${annText}`;
     }).join('\n');
     const text = header ? `${header}\n\n${body}` : body;
-    navigator.clipboard.writeText(text).then(() => {
+
+    const imgCount = stepsData.filter(s => (s.image_url ?? '').trim()).length;
+    const withImages = overviewShowImages && imgCount > 0;
+
+    const done = () => {
         const btn = document.getElementById('overview-copy-btn');
         if (btn) { btn.innerHTML = '<i class="fas fa-check"></i> 복사됨'; setTimeout(() => { btn.innerHTML = '<i class="fas fa-copy"></i> 전체 복사'; }, 1800); }
-        toast(`${stepsData.length}개 청크 내용이 복사되었습니다.`);
-    }).catch(() => toast('복사에 실패했습니다.'));
+        toast(withImages
+            ? `${stepsData.length}개 청크 내용이 이미지 ${imgCount}장과 함께 복사되었습니다.`
+            : `${stepsData.length}개 청크 내용이 복사되었습니다.`);
+    };
+    const fail = () => toast('복사에 실패했습니다.');
+
+    // 이미지 보기가 꺼져 있으면 기존과 동일한 순수 텍스트 복사
+    if (!withImages || typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) {
+        navigator.clipboard.writeText(text).then(done).catch(fail);
+        return;
+    }
+
+    // 서식 있는 복사: 리치 편집기에는 이미지가 실물로, 순수 텍스트에는 기존 형식 그대로
+    const html = buildOverviewCopyHtml_(header);
+    navigator.clipboard.write([new ClipboardItem({
+        'text/html':  new Blob([html], { type: 'text/html' }),
+        'text/plain': new Blob([text], { type: 'text/plain' })
+    })]).then(done).catch(() => navigator.clipboard.writeText(text).then(done).catch(fail));
+}
+
+function buildOverviewCopyHtml_(header) {
+    const escUrl = (u) => escapeHtml_(u).replace(/"/g, '&quot;');
+    const rows = stepsData.map((step, i) => {
+        const textPart = escapeHtml_((step.text ?? '').trim()).replace(/\n/g, '<br>');
+        const anns = step.annotations ?? (step.annotation ? [{text: step.annotation}] : []);
+        const annHtml = anns.filter(a => a.text)
+            .map(a => `<div style="font-size:0.9em; color:#64748b;">✱ ${escapeHtml_(a.text.trim())}</div>`).join('');
+        const img = (step.image_url ?? '').trim();
+        const imgHtml = img ? `<div style="margin-top:6px;"><img src="${escUrl(img)}" style="max-width:100%;"></div>` : '';
+        const subMark = step.is_subtitle ? '[소제목] ' : '';
+        return `<div style="margin-bottom:14px;"><div>${i + 1} : ${subMark}${textPart}</div>${annHtml}${imgHtml}</div>`;
+    }).join('');
+    const headerHtml = header ? `<div style="font-weight:700; margin-bottom:14px;">${escapeHtml_(header)}</div>` : '';
+    return `<div>${headerHtml}${rows}</div>`;
 }
 
 // ── 청크 일괄 추출(다운로드) ────────────────
@@ -5508,6 +5856,8 @@ function syncStepsFromForm() {
             sub_sequence_id: (document.querySelector(`[data-step-subid="${i}"]`)?.value ?? '').trim(),
             card_style:      cardStyle,
             share_style:     resolveShareStyle_(cardStyle),
+            speaker:         (document.querySelector(`[data-step-speaker="${i}"]`)?.value ?? step.speaker ?? '').trim(),
+            speaker_title:   (document.querySelector(`[data-step-speakertitle="${i}"]`)?.value ?? step.speaker_title ?? '').trim(),
         };
     });
 }
@@ -5888,7 +6238,7 @@ function _onTouchDragCancel() {
 
 function collectStepFormData() {
     return stepsData.map((step, i) => {
-        const { _expanded, ...rest } = step; // UI 전용 플래그는 저장에서 제외
+        const { _expanded, _stickerCode, ...rest } = step; // UI 전용 플래그는 저장에서 제외
         const cardStyle = document.querySelector(`[data-step-cardstyle="${i}"]`)
             ? (document.querySelector(`[data-step-cardstyle="${i}"]`).value ?? '').trim()
             : stepCardStyle_(step);
@@ -5901,6 +6251,8 @@ function collectStepFormData() {
             sub_sequence_id: (document.querySelector(`[data-step-subid="${i}"]`)?.value ?? '').trim(),
             card_style:      cardStyle,
             share_style:     resolveShareStyle_(cardStyle),
+            speaker:         (document.querySelector(`[data-step-speaker="${i}"]`)?.value ?? step.speaker ?? '').trim(),
+            speaker_title:   (document.querySelector(`[data-step-speakertitle="${i}"]`)?.value ?? step.speaker_title ?? '').trim(),
             order:           i + 1,
         };
     });
