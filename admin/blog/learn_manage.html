@@ -3033,7 +3033,8 @@ short,자본주의의 구조를 해부한 평생의 역작이었던 책의 제�
         <p>여러 문단을 붙여넣으면 <strong>빈 줄(엔터 2번)</strong>을 기준으로 각각 별도의 청크로 자동 분리됩니다.<br>
             <code>[소제목]</code> 다음에 오는 글은 <strong>소제목 카드</strong>로, 청크 본문 안의 <code>[주석]</code> 줄은 그 청크의 <strong>주석</strong>으로 자동 인식됩니다.<br>
             <code>(코러스-멍)</code>처럼 괄호 표지로 시작하거나, <strong>짧은 이름 한 줄 + 따옴표 대사</strong>로 시작하면
-            <strong>대사형 카드</strong>가 되고 <a href="/admin/blog/learn_sticker_manage.html" target="_blank">스티커 함</a>의 같은 코드 그림이 자동으로 붙습니다.</p>
+            <strong>대사형 카드</strong>가 되고 <a href="/admin/blog/learn_sticker_manage.html" target="_blank">스티커 함</a>의 같은 코드 그림이 자동으로 붙습니다.<br>
+            문단 앞에 <code>1:</code> <code>2:</code> 같은 <strong>청크 번호</strong>가 붙어 있으면 자동으로 떼어내고 본문만 카드에 담습니다. (연도 문장 <code>1917: …</code>은 그대로 둡니다)</p>
         <textarea id="bulk-steps-input" class="form-control" style="min-height:220px; max-height:55vh; font-size:0.85rem; line-height:1.7;"
             oninput="updateBulkStepsCount()"
             placeholder="[소제목]&#10;&#10;1. 사회주의 vs 공산주의 - 무엇이 다른가&#10;&#10;첫 번째 청크 본문입니다.&#10;[주석]&#10;본문 아래 작은 글씨로 붙는 보충 설명. (바로 뒤 또는 다음 줄에 작성)&#10;&#10;빈 줄로 구분하면 다음 청크가 됩니다."></textarea>
@@ -5340,6 +5341,8 @@ function closeBulkStepsModal() {
 // - (코러스-멍) "…"        : 대사형 카드 + 스티커 함에서 코드가 '코러스-멍'인 그림 자동 지정
 // - 이름 한 줄 + "대사"     : 대사형 카드 + 코드가 그 이름인 그림 자동 지정 + 화자 이름표
 //   (스티커가 등록돼 있지 않아도 대사형 카드로는 만든다 — 그림만 나중에 채우면 된다)
+let _bulkStrippedNums = 0;   // 직전 파싱에서 떼어낸 청크 번호 개수(안내용)
+
 function parseBulkStepBlocks() {
     const makeStep = (text, isSub, annotations) => ({
         id: '', is_subtitle: isSub, image_url: '', text, keywords: [], sub_sequence_id: '', annotations
@@ -5376,9 +5379,35 @@ function parseBulkStepBlocks() {
         .map(s => s.trim())
         .filter(Boolean);
 
+    // "1:", "2." 처럼 블록 앞에 붙는 청크 번호는 본문이 아니므로 떼어낸다.
+    // "1917: …" 같은 연도 문장을 자르지 않도록 세 자리 이하 번호가 블록을 따라
+    // 연속으로 이어질 때만 번호로 인정하고, 번호를 제목에 쓰는 소제목은 건드리지 않는다.
+    const stripBlockNumbers = (blocks) => {
+        const skip = blocks.map((b, i) =>
+            /^\[\s*소제목\s*\]/.test(b) || (i > 0 && /^\[\s*소제목\s*\]\s*$/.test(blocks[i - 1])));
+        const hits = [];
+        blocks.forEach((b, i) => {
+            if (skip[i]) return;
+            const m = b.match(/^(\d{1,3})\s*[:.)](\s*)([\s\S]*)$/);
+            if (!m) return;
+            if (!m[2] && /^\d/.test(m[3])) return;   // "1.5배" 같은 수치 표현 보호
+            if (!m[3].trim()) return;
+            hits.push({ i, n: parseInt(m[1], 10), rest: m[3].trim() });
+        });
+        const consecutive = hits.every((h, k) => k === 0 || h.n === hits[k - 1].n + 1);
+        // 한 블록만 붙여넣은 경우는 "1:" 형태일 때만 번호로 본다.
+        const enough = hits.length >= 2
+            || (hits.length === 1 && hits[0].n === 1 && /^\d{1,3}\s*:/.test(blocks[hits[0].i]));
+        if (!hits.length || !consecutive || !enough) { _bulkStrippedNums = 0; return blocks; }
+        const out = blocks.slice();
+        hits.forEach(h => { out[h.i] = h.rest; });
+        _bulkStrippedNums = hits.length;
+        return out;
+    };
+
     const steps = [];
     let pendingSubtitle = false;
-    for (const block of rawBlocks) {
+    for (const block of stripBlockNumbers(rawBlocks)) {
         const subMatch = block.match(/^\[\s*소제목\s*\]\s*([\s\S]*)$/);
         if (subMatch) {
             const rest = subMatch[1].trim();
@@ -5449,6 +5478,7 @@ function updateBulkStepsCount() {
     if (subCount) parts.push(`소제목 ${subCount}`);
     if (annCount) parts.push(`주석 ${annCount}`);
     if (dlgSteps.length) parts.push(`대사 ${dlgSteps.length}`);
+    if (_bulkStrippedNums) parts.push(`번호 제거 ${_bulkStrippedNums}`);
     const extra = parts.length ? ` (${parts.join(' · ')})` : '';
     const el = document.getElementById('bulk-steps-count');
     el.innerHTML = `감지된 청크: ${steps.length}개${extra}`;
