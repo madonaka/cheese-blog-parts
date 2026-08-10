@@ -63,6 +63,21 @@
 
     .sk-empty { padding:60px 20px; text-align:center; color:var(--sub); font-size:14px; }
 
+    /* 인물 묶음 — 한 사람의 표정들을 한 줄기로 모아 둔다 */
+    .sk-person-block { margin-bottom:22px; }
+    .sk-person-head { display:flex; align-items:center; gap:8px; margin-bottom:9px; }
+    .sk-person-name { font-size:14px; font-weight:900; color:var(--text); }
+    .sk-person-count {
+      font-size:10px; font-weight:800; padding:2px 8px; border-radius:999px;
+      background:#e0e7ff; color:#3730a3;
+    }
+    .sk-person-warn {
+      font-size:10px; font-weight:800; padding:2px 8px; border-radius:999px;
+      background:#fee2e2; color:#991b1b; cursor:help;
+    }
+    /* 인물 카드는 큰 글씨가 '표정', 작은 회색이 매칭 코드 */
+    .sk-item-key { font-family:ui-monospace, monospace; color:#94a3b8; }
+
     /* 모달 */
     .sk-overlay {
       position:fixed; inset:0; background:rgba(15,23,42,0.45); display:none;
@@ -103,8 +118,9 @@
         </div>
         <p class="sk-lead">
           여기에 한 번 등록한 그림은 마이크로 학습의 청크 편집기에서 이모티콘처럼 골라 쓸 수 있습니다.<br>
-          <strong>코드</strong>는 대량 입력에서 자동으로 짝을 찾는 열쇠입니다. 대본에 <code>(코러스-멍)</code>이라고 쓰면 코드가 <code>코러스-멍</code>인 스티커가,
-          화자 이름이 <code>루스벨트</code>면 코드가 <code>루스벨트</code>인 스티커가 붙습니다.<br>
+          <strong>코드</strong>는 대량 입력에서 자동으로 짝을 찾는 열쇠입니다. 대본에 <code>(코러스-멍)</code>이라고 쓰면 코드가 <code>코러스-멍</code>인 스티커가 붙습니다.<br>
+          <strong>인물</strong>은 <strong>인물 이름</strong>으로 찾습니다 — 대본에 <code>윌슨</code>이면 그 사람의 기본 표정이, <code>윌슨(고민)</code>이면 표정이 <code>고민</code>인 그림이 붙습니다.
+          학습 페이지 이름표에는 <strong>괄호를 뺀 인물 이름</strong>만 나가므로, 표정을 여러 장 올려도 이름표는 늘 같습니다.<br>
           배경은 <strong>흰색이어도 됩니다</strong> — 뷰어가 주간·야간 모두 배경을 지우고 선만 남깁니다(투명 PNG도 그대로 잘 나옵니다).
           다만 <strong>선이 검은 그림</strong>을 전제로 하니, 색이 들어간 그림은 올린 뒤 뷰어에서 한 번 확인하세요.
         </p>
@@ -123,7 +139,7 @@
           <span style="font-size:12px; color:var(--sub);" id="sk-count"></span>
         </div>
 
-        <div class="sk-grid" id="sk-grid"></div>
+        <div id="sk-grid"></div>
         <div class="sk-empty" id="sk-empty" style="display:none;">등록된 스티커가 없습니다. 오른쪽 위 ‘스티커 등록’으로 시작하세요.</div>
       </div>
     </main>
@@ -137,22 +153,39 @@
     <input type="hidden" id="sk-id">
 
     <div class="sk-field">
-      <label class="sk-label">코드 <span class="sk-hint">(대량 입력 자동 매칭 열쇠 · 예: 코러스-멍, 루스벨트)</span></label>
-      <input class="sk-input" id="sk-code" placeholder="코러스-멍">
-    </div>
-
-    <div class="sk-field">
       <label class="sk-label">그룹</label>
-      <select class="sk-input" id="sk-group">
+      <select class="sk-input" id="sk-group" onchange="syncStickerPersonFields()">
         <option value="코러스">코러스 (이름표 없음)</option>
         <option value="인물">인물 (이름표 표시)</option>
         <option value="기타">기타</option>
       </select>
     </div>
 
+    <!-- 인물 전용 — 이름표에 나가는 값과 표정을 가른다 -->
+    <div id="sk-person-fields" style="display:none;">
+      <div class="sk-field">
+        <label class="sk-label">인물 이름 <span class="sk-hint">(학습 페이지 이름표에 그대로 나갑니다 · 예: 윌슨)</span></label>
+        <input class="sk-input" id="sk-person" placeholder="윌슨" oninput="suggestStickerCode()">
+      </div>
+
+      <div class="sk-field">
+        <label class="sk-label">표정 <span class="sk-hint">(같은 사람의 다른 그림을 구분 · 비우면 그 인물의 기본 표정 · 예: 고민)</span></label>
+        <input class="sk-input" id="sk-expression" placeholder="고민" oninput="suggestStickerCode()">
+        <div style="font-size:11px; color:#94a3b8; margin-top:5px; line-height:1.6;">
+          대량 입력 대본에서 <code style="background:#f1f5f9; padding:1px 5px; border-radius:4px;">윌슨(고민)</code>으로 지목합니다.
+          <strong>이름표에는 괄호를 뺀 이름만</strong> 나갑니다.
+        </div>
+      </div>
+
+      <div class="sk-field">
+        <label class="sk-label">직함 <span class="sk-hint">(뷰어에서 이름 옆 괄호로 · 예: 미국 32대 대통령)</span></label>
+        <input class="sk-input" id="sk-title" placeholder="미국 32대 대통령">
+      </div>
+    </div>
+
     <div class="sk-field">
-      <label class="sk-label">직함 <span class="sk-hint">(인물 전용 · 뷰어에서 이름 옆 괄호로 · 예: 미국 32대 대통령)</span></label>
-      <input class="sk-input" id="sk-title" placeholder="미국 32대 대통령">
+      <label class="sk-label">코드 <span class="sk-hint">(대량 입력 자동 매칭 열쇠 · 인물은 위 두 칸으로 자동 제안됩니다)</span></label>
+      <input class="sk-input" id="sk-code" placeholder="코러스-멍">
     </div>
 
     <div class="sk-field">
@@ -181,6 +214,7 @@
 
     <div class="sk-modal-actions">
       <button class="sk-btn danger" id="sk-delete-btn" style="display:none;" onclick="deleteSticker()"><i class="fa-solid fa-trash"></i> 삭제</button>
+      <button class="sk-btn ghost" id="sk-another-btn" style="display:none;" onclick="openAnotherExpression()"><i class="fa-solid fa-masks-theater"></i> 다른 표정 추가</button>
       <button class="sk-btn ghost" onclick="closeStickerModal()">취소</button>
       <button class="sk-btn" onclick="saveSticker()"><i class="fa-solid fa-check"></i> 저장</button>
     </div>
@@ -231,24 +265,63 @@
     const list = ALL_STICKERS.filter(s => {
       if (g && (s.group ?? "") !== g) return false;
       if (!q) return true;
-      return `${s.code ?? ""} ${s.name ?? ""}`.toLowerCase().includes(q);
+      return `${s.code ?? ""} ${s.person ?? ""} ${s.expression ?? ""} ${s.name ?? ""}`.toLowerCase().includes(q);
     });
 
     document.getElementById("sk-count").textContent = `${list.length}개 / 전체 ${ALL_STICKERS.length}개`;
     empty.style.display = ALL_STICKERS.length ? "none" : "block";
 
-    grid.innerHTML = list.map(s => `
+    const persons = list.filter(s => (s.group ?? "") === "인물");
+    const others  = list.filter(s => (s.group ?? "") !== "인물");
+
+    // 인물은 사람별로 묶어 보여 준다 — 같은 사람의 표정이 흩어져 있으면 뭐가 있는지 알 수 없다
+    const byPerson = new Map();
+    persons.forEach(s => {
+      const p = personName_(s);
+      if (!byPerson.has(p)) byPerson.set(p, []);
+      byPerson.get(p).push(s);
+    });
+    const personBlocks = [...byPerson.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([p, items]) => {
+        items.sort((a, b) => (a.expression ? 1 : 0) - (b.expression ? 1 : 0)
+          || String(a.expression ?? "").localeCompare(String(b.expression ?? "")));
+        const needsName = items.some(s => !(s.person ?? "").trim());
+        return `
+        <div class="sk-person-block">
+          <div class="sk-person-head">
+            <span class="sk-person-name">${escHtml_(p)}</span>
+            <span class="sk-person-count">표정 ${items.length}</span>
+            ${needsName ? `<span class="sk-person-warn" title="인물 이름 칸이 비어 있어 코드가 그대로 이름표로 나갑니다">이름 미지정</span>` : ""}
+          </div>
+          <div class="sk-grid">${items.map(cardHtml_).join("")}</div>
+        </div>`;
+      }).join("");
+
+    grid.innerHTML = personBlocks + (others.length ? `<div class="sk-grid">${others.map(cardHtml_).join("")}</div>` : "");
+  }
+
+  // 인물 이름 — person이 비면 code로 되돌아간다(예전 스티커와 같은 동작)
+  function personName_(s) {
+    return String(s?.person ?? "").trim() || String(s?.code ?? "").trim();
+  }
+
+  function cardHtml_(s) {
+    const isPerson = (s.group ?? "") === "인물";
+    const ex = isPerson ? String(s.expression ?? "").trim() : "";
+    return `
       <div class="sk-item" onclick="openStickerModal('${escAttr_(s.id)}')">
         <div class="sk-item-imgbox">
           ${s.url
             ? `<img src="${escAttr_(s.url)}" alt="" onerror="this.outerHTML='<i class=\\'fa-solid fa-image sk-noimg\\'></i>'">`
             : `<i class="fa-solid fa-image sk-noimg"></i>`}
         </div>
-        <div class="sk-item-code">${escHtml_(s.code)}</div>
+        <div class="sk-item-code">${isPerson ? escHtml_(ex || "기본") : escHtml_(s.code)}</div>
+        ${isPerson ? `<div class="sk-item-name sk-item-key">${escHtml_(s.code)}</div>` : ""}
         ${s.title ? `<div class="sk-item-name">(${escHtml_(s.title)})</div>` : ""}
         ${s.name ? `<div class="sk-item-name">${escHtml_(s.name)}</div>` : ""}
-        <span class="sk-item-group g-${escAttr_(s.group ?? "기타")}">${escHtml_(s.group ?? "기타")}</span>
-      </div>`).join("");
+        ${isPerson ? "" : `<span class="sk-item-group g-${escAttr_(s.group ?? "기타")}">${escHtml_(s.group ?? "기타")}</span>`}
+      </div>`;
   }
 
   /* ── 모달 ── */
@@ -258,13 +331,58 @@
     document.getElementById("sk-id").value = s?.id ?? "";
     document.getElementById("sk-code").value = s?.code ?? "";
     document.getElementById("sk-group").value = s?.group ?? "코러스";
+    document.getElementById("sk-person").value = s?.person ?? "";
+    document.getElementById("sk-expression").value = s?.expression ?? "";
     document.getElementById("sk-title").value = s?.title ?? "";
     document.getElementById("sk-name").value = s?.name ?? "";
     document.getElementById("sk-url").value = s?.url ?? "";
     document.getElementById("sk-order").value = s?.order ?? 100;
     document.getElementById("sk-delete-btn").style.display = s ? "inline-flex" : "none";
+    syncStickerPersonFields();
     syncStickerPreview();
     document.getElementById("sk-modal-overlay").classList.add("open");
+  }
+
+  /* 인물일 때만 이름·표정·직함 칸을 보여 준다 */
+  function syncStickerPersonFields() {
+    const isPerson = document.getElementById("sk-group").value === "인물";
+    document.getElementById("sk-person-fields").style.display = isPerson ? "block" : "none";
+    // '다른 표정 추가'는 이미 저장된 인물 스티커에서만 의미가 있다
+    const editing = !!document.getElementById("sk-id").value;
+    document.getElementById("sk-another-btn").style.display = (isPerson && editing) ? "inline-flex" : "none";
+  }
+
+  /* 코드는 매칭 키일 뿐이라 사람이 지어낼 이유가 없다 — 이름·표정에서 자동으로 제안한다.
+     이미 손으로 쓴 코드가 있으면 건드리지 않는다(직접 정한 값이 우선). */
+  function suggestStickerCode() {
+    const codeEl = document.getElementById("sk-code");
+    const person = document.getElementById("sk-person").value.trim();
+    const expr   = document.getElementById("sk-expression").value.trim();
+    if (!person) return;
+    const suggested = expr ? `${person}-${expr}` : person;
+    const cur = codeEl.value.trim();
+    // 비어 있거나, 직전 제안을 그대로 두고 있을 때만 갱신한다
+    if (!cur || cur === codeEl.dataset.suggested) {
+      codeEl.value = suggested;
+      codeEl.dataset.suggested = suggested;
+    }
+  }
+
+  /* 같은 인물의 다른 표정을 이어서 등록 — 이름·직함·정렬을 물려받고 그림과 표정만 새로 넣는다 */
+  function openAnotherExpression() {
+    const person = document.getElementById("sk-person").value.trim()
+      || document.getElementById("sk-code").value.trim();
+    const title  = document.getElementById("sk-title").value.trim();
+    const order  = document.getElementById("sk-order").value;
+    openStickerModal();                      // 새 등록으로 초기화
+    document.getElementById("sk-group").value = "인물";
+    document.getElementById("sk-person").value = person;
+    document.getElementById("sk-title").value = title;
+    document.getElementById("sk-order").value = order;
+    document.getElementById("sk-code").value = "";
+    document.getElementById("sk-modal-title").textContent = `${person} — 다른 표정 추가`;
+    syncStickerPersonFields();
+    document.getElementById("sk-expression").focus();
   }
 
   function closeStickerModal() {
@@ -292,9 +410,30 @@
     const dup = ALL_STICKERS.find(s => s.id !== id && (s.code ?? "") === code);
     if (dup && !confirm(`코드 "${code}"를 쓰는 스티커가 이미 있습니다. 그래도 저장할까요?\n(대량 입력에서 어느 쪽이 붙을지 보장되지 않습니다)`)) return;
 
+    // 같은 인물 + 같은 표정도 마찬가지로 어느 쪽이 붙을지 알 수 없다(표정을 비운 '기본'끼리도 포함)
+    if (document.getElementById("sk-group").value === "인물") {
+      const p = (document.getElementById("sk-person").value ?? "").trim();
+      const e = (document.getElementById("sk-expression").value ?? "").trim();
+      if (p) {
+        const dupPerson = ALL_STICKERS.find(s =>
+          s.id !== id && (s.group ?? "") === "인물"
+          && ((s.person ?? "").trim() || (s.code ?? "").trim()) === p
+          && (s.expression ?? "").trim() === e);
+        if (dupPerson) {
+          const what = e ? `"${p}"의 표정 "${e}"` : `"${p}"의 기본 표정`;
+          if (!confirm(`${what}가 이미 있습니다(코드: ${dupPerson.code}). 그래도 저장할까요?\n표정 이름을 다르게 두면 대본에서 골라 쓸 수 있습니다.`)) return;
+        }
+      }
+    }
+
+    const group = document.getElementById("sk-group").value || "기타";
     const data = {
       code,
-      group: document.getElementById("sk-group").value || "기타",
+      group,
+      // 인물 전용 — person이 뷰어 이름표를 맡고 code는 매칭 키로만 남는다.
+      // 비워 두면 뷰어가 code로 되돌아가므로(예전 스티커와 같은 동작) 저장은 막지 않는다.
+      person:     group === "인물" ? (document.getElementById("sk-person").value ?? "").trim() : "",
+      expression: group === "인물" ? (document.getElementById("sk-expression").value ?? "").trim() : "",
       title: (document.getElementById("sk-title").value ?? "").trim(),
       name: (document.getElementById("sk-name").value ?? "").trim(),
       url,

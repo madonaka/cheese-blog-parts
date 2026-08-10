@@ -940,6 +940,17 @@
             word-break: break-all;
             line-height: 1.3;
         }
+        /* 같은 인물의 표정 구분 — 이름 아래 작은 배지 */
+        .sticker-pick-ex {
+            display: block;
+            margin-top: 3px;
+            font-size: 0.62rem;
+            font-weight: 800;
+            color: #3730a3;
+            background: #e0e7ff;
+            border-radius: 999px;
+            padding: 1px 6px;
+        }
 
         .set-item-thumb {
             width: 50px;
@@ -3033,7 +3044,8 @@ short,자본주의의 구조를 해부한 평생의 역작이었던 책의 제�
         <p>여러 문단을 붙여넣으면 <strong>빈 줄(엔터 2번)</strong>을 기준으로 각각 별도의 청크로 자동 분리됩니다.<br>
             <code>[소제목]</code> 다음에 오는 글은 <strong>소제목 카드</strong>로, 청크 본문 안의 <code>[주석]</code> 줄은 그 청크의 <strong>주석</strong>으로 자동 인식됩니다.<br>
             <code>(코러스-멍)</code>처럼 괄호 표지로 시작하거나, <strong>짧은 이름 한 줄 + 따옴표 대사</strong>로 시작하면
-            <strong>대사형 카드</strong>가 되고 <a href="/admin/blog/learn_sticker_manage.html" target="_blank">스티커 함</a>의 같은 코드 그림이 자동으로 붙습니다.<br>
+            <strong>대사형 카드</strong>가 되고 <a href="/admin/blog/learn_sticker_manage.html" target="_blank">스티커 함</a>의 그림이 자동으로 붙습니다.
+            같은 사람의 다른 표정은 이름 뒤 괄호로 지목합니다 — <code>윌슨(고민)</code>. <strong>이름표에는 괄호를 뺀 이름만</strong> 나갑니다.<br>
             문단 앞에 <code>1:</code> <code>2:</code> 같은 <strong>청크 번호</strong>가 붙어 있으면 자동으로 떼어내고 본문만 카드에 담습니다. (연도 문장 <code>1917: …</code>은 그대로 둡니다)</p>
         <textarea id="bulk-steps-input" class="form-control" style="min-height:220px; max-height:55vh; font-size:0.85rem; line-height:1.7;"
             oninput="updateBulkStepsCount()"
@@ -4833,6 +4845,28 @@ function stickerByCode_(code) {
     return stickerLibrary.find(s => String(s.code ?? '').trim() === key) ?? null;
 }
 
+/* ── 인물 스티커: 코드(매칭 키)와 이름표(사람 이름)를 가른다 ──
+   같은 사람의 표정을 여러 장 두려면 코드가 서로 달라야 하는데(윌슨 / 윌슨-고민),
+   예전에는 그 코드가 그대로 화자 이름표로 나갔다("윌슨 고민"이 이름표로 뜸).
+   이제 person(사람 이름)이 이름표를 맡고, code는 순수 매칭 키로만 쓴다.
+   person이 비어 있으면 code를 쓴다 — 이 필드가 없던 기존 스티커도 그대로 동작한다. */
+function stickerPersonName_(s) {
+    return String(s?.person ?? '').trim() || String(s?.code ?? '').trim();
+}
+/* 사람 이름(+표정)으로 찾기. 표정을 지정하면 그것부터, 없으면 기본 표정(표정 값이 빈 것)을
+   찾고, 그것도 없으면 그 사람의 첫 장(order 순)을 준다. */
+function stickerByPerson_(person, expression = '') {
+    const p = String(person ?? '').trim();
+    if (!p) return null;
+    const mine = stickerLibrary.filter(s => stickerPersonName_(s) === p);
+    if (!mine.length) return null;
+    const ex = String(expression ?? '').trim();
+    if (ex) {
+        return mine.find(s => String(s.expression ?? '').trim() === ex) ?? null;
+    }
+    return mine.find(s => !String(s.expression ?? '').trim()) ?? mine[0];
+}
+
 // 최근 사용 (브라우저에만 기억)
 const STICKER_RECENT_KEY = 'cheese_sticker_recent';
 function stickerRecent_() {
@@ -4872,7 +4906,7 @@ function renderStickerPickerGrid() {
     let list = stickerLibrary.filter(s => {
         if (g && (s.group ?? '') !== g) return false;
         if (!q) return true;
-        return `${s.code ?? ''} ${s.name ?? ''}`.toLowerCase().includes(q);
+        return `${s.code ?? ''} ${s.person ?? ''} ${s.expression ?? ''} ${s.name ?? ''}`.toLowerCase().includes(q);
     });
 
     // 검색·필터가 없을 때만 최근 사용을 앞으로 끌어올린다
@@ -4894,11 +4928,17 @@ function renderStickerPickerGrid() {
         return;
     }
 
-    grid.innerHTML = list.map(s => `
-        <div class="sticker-pick" onclick="applyStickerToStep('${escAttr_(s.id)}')" title="${escAttr_(s.name ?? '')}">
+    // 인물은 코드가 아니라 '사람 이름 + 표정'으로 보여 준다(코드는 매칭 키일 뿐 고를 때 쓰는 이름이 아니다)
+    grid.innerHTML = list.map(s => {
+        const isPerson = (s.group ?? '') === '인물';
+        const label = isPerson ? stickerPersonName_(s) : (s.code ?? '');
+        const ex = isPerson ? String(s.expression ?? '').trim() : '';
+        return `
+        <div class="sticker-pick" onclick="applyStickerToStep('${escAttr_(s.id)}')" title="${escAttr_(s.name ?? s.code ?? '')}">
             <div class="sticker-pick-img"><img src="${escAttr_(s.url ?? '')}" alt="" onerror="this.style.visibility='hidden'"></div>
-            <div class="sticker-pick-code">${s.code ?? ''}</div>
-        </div>`).join('');
+            <div class="sticker-pick-code">${escHtml_(label)}${ex ? `<span class="sticker-pick-ex">${escHtml_(ex)}</span>` : ''}</div>
+        </div>`;
+    }).join('');
 }
 
 function applyStickerToStep(stickerId) {
@@ -4917,7 +4957,8 @@ function applyStickerToStep(stickerId) {
     step.share_style = resolveShareStyle_('sticker');
     // 인물 스티커는 이름표를 기본으로 채워 준다(코러스는 무명이므로 비운다)
     if ((s.group ?? '') === '인물') {
-        if (!(step.speaker ?? '').trim()) step.speaker = s.code ?? '';
+        // 이름표에는 코드가 아니라 사람 이름이 들어간다 — 표정만 다른 그림을 골라도 이름은 그대로다
+        if (!(step.speaker ?? '').trim()) step.speaker = stickerPersonName_(s);
         if (!(step.speaker_title ?? '').trim()) step.speaker_title = s.title ?? '';
     } else {
         step.speaker = '';
@@ -5339,7 +5380,9 @@ function closeBulkStepsModal() {
 // - [소제목] : 그 자체 블록이면 다음 블록을, 뒤에 글이 붙어 있으면 그 글을 소제목 청크로 지정
 // - [주석]   : 청크 본문 중 해당 줄을 떼어내 그 청크의 주석으로 추가 (참조 텍스트는 비움)
 // - (코러스-멍) "…"        : 대사형 카드 + 스티커 함에서 코드가 '코러스-멍'인 그림 자동 지정
-// - 이름 한 줄 + "대사"     : 대사형 카드 + 코드가 그 이름인 그림 자동 지정 + 화자 이름표
+// - 이름 한 줄 + "대사"     : 대사형 카드 + 그 사람의 기본 표정 그림 자동 지정 + 화자 이름표
+// - 이름(표정) 한 줄 + "대사" : 같은 사람의 다른 표정 지목 (예: 윌슨(고민))
+//   이름표에는 괄호를 뗀 사람 이름만 들어간다 — 표정은 그림을 고르는 열쇠일 뿐이다.
 //   (스티커가 등록돼 있지 않아도 대사형 카드로는 만든다 — 그림만 나중에 채우면 된다)
 let _bulkStrippedNums = 0;   // 직전 파싱에서 떼어낸 청크 번호 개수(안내용)
 
@@ -5349,7 +5392,7 @@ function parseBulkStepBlocks() {
     });
 
     // 본문 첫 줄에서 화자/코러스 표지를 떼어내 대사형 청크로 바꾼다.
-    // 반환: { speaker, code, body } (표지가 없으면 null)
+    // 반환: { speaker, code, person, expression, body } (표지가 없으면 null)
     const readDialogueMark = (bodyText) => {
         const lines = bodyText.split('\n');
         const first = (lines[0] ?? '').trim();
@@ -5361,16 +5404,26 @@ function parseBulkStepBlocks() {
             // 등록된 코드이거나 '코러스'로 시작할 때만 표지로 본다(일반 괄호 문장 오인 방지)
             if (stickerByCode_(code) || code.startsWith('코러스')) {
                 const rest = [chorus[2], ...lines.slice(1)].join('\n').trim();
-                return { speaker: '', code, body: rest };
+                return { speaker: '', code, person: '', expression: '', body: rest };
             }
         }
 
         // ② 짧은 이름 한 줄 + 다음 줄이 따옴표로 시작 — 인물 대사
+        //    이름 뒤 괄호는 표정 지목이다: "윌슨(고민)" → 사람 윌슨 · 표정 고민.
+        //    맨 앞 괄호(①의 코러스 표지)와 헷갈리지 않게 '이름 뒤'만 본다.
         const second = (lines[1] ?? '').trim();
-        const looksLikeName = first && first.length <= 12
+        const looksLikeName = first && first.length <= 16
             && !/["“”]/.test(first) && !/[.?!…]$/.test(first) && !/^[▲*\[(]/.test(first);
         if (looksLikeName && /^["“]/.test(second)) {
-            return { speaker: first, code: first, body: lines.slice(1).join('\n').trim() };
+            const m = first.match(/^(.+?)\s*[(（]\s*([^)）]+?)\s*[)）]$/);
+            const person = (m ? m[1] : first).trim();
+            const expression = m ? m[2].trim() : '';
+            return {
+                speaker: person,          // 이름표에는 표정을 뺀 사람 이름만
+                code: first,              // 옛 방식(코드=대본의 이름)도 계속 찾아본다
+                person, expression,
+                body: lines.slice(1).join('\n').trim()
+            };
         }
         return null;
     };
@@ -5450,12 +5503,18 @@ function parseBulkStepBlocks() {
         const mark = isSub ? null : readDialogueMark(bodyText);
         if (mark && mark.body) {
             const st = makeStep(mark.body, false, annotations);
-            const found = stickerByCode_(mark.code);
+            // 찾는 순서: ① 코드 정확 일치(옛 방식·코러스) → ② 사람 이름 + 표정 → ③ 사람 이름(기본 표정)
+            const found = stickerByCode_(mark.code)
+                ?? stickerByPerson_(mark.person, mark.expression)
+                ?? stickerByPerson_(mark.person);
             st.card_style  = 'sticker';
             st.share_style = resolveShareStyle_('sticker');
-            st.speaker     = mark.speaker;
+            // 이름표는 스티커에 적힌 사람 이름을 우선한다(대본이 약칭이어도 표기가 통일된다)
+            st.speaker     = mark.speaker
+                ? (found && (found.group ?? '') === '인물' ? stickerPersonName_(found) : mark.speaker)
+                : '';
             // 직함은 스티커 함에 등록해 둔 값을 따라온다(대본에는 이름만 있으므로)
-            st.speaker_title = mark.speaker ? (found?.title ?? '') : '';
+            st.speaker_title = st.speaker ? (found?.title ?? '') : '';
             st.image_url   = found?.url ?? '';
             st.sticker_id  = found?.id ?? '';
             st._stickerCode = mark.code;          // 미등록 표시용(저장 전 제거)
@@ -5484,7 +5543,7 @@ function updateBulkStepsCount() {
     el.innerHTML = `감지된 청크: ${steps.length}개${extra}`;
     if (missing.length) {
         const codes = [...new Set(missing.map(s => s._stickerCode).filter(Boolean))];
-        el.innerHTML += `<br><span style="color:#dc2626;">스티커 함에 없는 코드 ${codes.length}종: ${codes.slice(0, 8).join(', ')}${codes.length > 8 ? ' 외' : ''} — 카드는 만들어지고 그림만 비어 있습니다.</span>`;
+        el.innerHTML += `<br><span style="color:#dc2626;">스티커 함에서 못 찾은 이름·코드 ${codes.length}종: ${codes.slice(0, 8).join(', ')}${codes.length > 8 ? ' 외' : ''} — 카드는 만들어지고 그림만 비어 있습니다.</span>`;
     }
 }
 
