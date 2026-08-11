@@ -83,6 +83,41 @@
     .im-use-txt { color:var(--text); }
 
     .im-empty { padding:60px 20px; text-align:center; color:var(--sub); font-size:14px; }
+
+    /* 고르기 · 실행 */
+    .im-pick { position:absolute; top:8px; left:8px; width:18px; height:18px; cursor:pointer; z-index:2; }
+    .im-card { position:relative; }
+    .im-card.is-picked { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-light), var(--shadow); }
+    .im-actionbar {
+      position:sticky; bottom:0; z-index:5; margin-top:18px;
+      background:var(--card); border:1px solid var(--line); border-radius:14px; box-shadow:0 -6px 20px rgba(15,23,42,0.06);
+      padding:12px 16px; display:none; gap:10px 12px; align-items:center; flex-wrap:wrap;
+    }
+    .im-actionbar.on { display:flex; }
+    .im-actionbar b { color:var(--accent); }
+    .im-btn {
+      padding:9px 16px; border:none; border-radius:9px; font-size:13px; font-weight:800; cursor:pointer;
+      background:var(--accent); color:#fff; font-family:inherit; white-space:nowrap;
+    }
+    .im-btn:hover { filter:brightness(1.08); }
+    .im-btn.ghost { background:#fff; color:var(--text); border:1.5px solid var(--line); }
+    .im-btn:disabled { opacity:0.45; cursor:not-allowed; }
+
+    /* 확인 모달 */
+    .im-ov { position:fixed; inset:0; background:rgba(15,23,42,0.45); display:none; align-items:center; justify-content:center; z-index:1250; padding:20px; }
+    .im-ov.open { display:flex; }
+    .im-modal { background:#fff; border-radius:18px; width:640px; max-width:95vw; max-height:92vh; overflow-y:auto; padding:24px; }
+    .im-modal h3 { margin:0 0 6px; font-size:18px; font-weight:900; }
+    .im-modal .im-modal-sub { font-size:13px; color:var(--sub); line-height:1.7; margin:0 0 16px; }
+    .im-plan { background:#f8fafc; border:1px solid var(--line); border-radius:10px; padding:12px 14px; font-size:13px; line-height:1.9; margin-bottom:14px; }
+    .im-plan b { color:var(--text); }
+    .im-diff { font-family:ui-monospace, monospace; font-size:11.5px; line-height:1.7; max-height:180px; overflow-y:auto; background:#0f172a; color:#e2e8f0; border-radius:10px; padding:10px 12px; margin-bottom:14px; word-break:break-all; }
+    .im-diff .o { color:#fca5a5; }
+    .im-diff .n { color:#86efac; }
+    .im-modal-actions { display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; }
+    .im-log { font-size:12px; line-height:1.8; max-height:200px; overflow-y:auto; background:#f8fafc; border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-bottom:14px; display:none; }
+    .im-log.on { display:block; }
+    .im-log .ok { color:#0f766e; } .im-log .ng { color:#dc2626; }
     .im-state { padding:50px 20px; text-align:center; color:var(--sub); font-size:14px; }
 
     /* 크게 보기 */
@@ -132,8 +167,46 @@
         <div class="im-grid" id="im-grid"></div>
         <div class="im-state" id="im-state"><i class="fa-solid fa-spinner fa-spin"></i> 학습 데이터를 불러오는 중...</div>
         <div class="im-empty" id="im-empty" style="display:none;">조건에 맞는 그림이 없습니다.</div>
+
+        <div class="im-actionbar" id="im-actionbar">
+          <span><b id="im-picked-n">0</b>장 선택됨</span>
+          <button type="button" class="im-btn ghost" onclick="pickAllShown()">보이는 것 모두</button>
+          <button type="button" class="im-btn ghost" onclick="clearPicks()">선택 해제</button>
+          <span style="flex:1;"></span>
+          <select class="im-select" id="im-newsz" style="padding:8px 12px;">
+            <option value="320">크기를 w320으로 (스티커·작은 그림)</option>
+            <option value="480" selected>크기를 w480으로 (본문 340px 기준 권장)</option>
+            <option value="720">크기를 w720으로 (자막형 큰 사진)</option>
+            <option value="1200">크기를 w1200으로 (되돌리기)</option>
+          </select>
+          <button type="button" class="im-btn" onclick="openPlan('resize')">크기 바꾸기</button>
+          <button type="button" class="im-btn ghost" id="im-swap-btn" onclick="openPlan('swap')">주소 교체</button>
+        </div>
       </div>
     </main>
+  </div>
+</div>
+
+<!-- 실행 전 확인 -->
+<div class="im-ov" id="im-plan-ov">
+  <div class="im-modal">
+    <h3 id="im-plan-title">바꾸기 전 확인</h3>
+    <p class="im-modal-sub" id="im-plan-sub"></p>
+    <div id="im-swap-field" style="display:none; margin-bottom:14px;">
+      <label style="display:block; font-size:12px; font-weight:800; color:var(--sub); margin-bottom:6px;">바꿀 그림 주소</label>
+      <input type="text" id="im-swap-url" class="im-search" style="padding-left:14px;" placeholder="https://drive.google.com/thumbnail?id=...&sz=w1200" oninput="onSwapUrlInput()">
+      <div style="font-size:11.5px; color:var(--sub); margin-top:6px; line-height:1.6;">
+        이미 올라가 있는 그림의 주소를 넣으세요. 새 파일을 올리는 기능은 아직 없습니다.
+      </div>
+    </div>
+    <div class="im-plan" id="im-plan-body"></div>
+    <div class="im-diff" id="im-plan-diff"></div>
+    <div class="im-log" id="im-plan-log"></div>
+    <div class="im-modal-actions">
+      <button type="button" class="im-btn ghost" onclick="downloadBackup()"><i class="fa-solid fa-download"></i> 되돌리기용 백업 내려받기</button>
+      <button type="button" class="im-btn ghost" onclick="closePlan()">취소</button>
+      <button type="button" class="im-btn" id="im-plan-go" onclick="runPlan()">이대로 반영</button>
+    </div>
   </div>
 </div>
 
@@ -320,8 +393,11 @@
         </a>`).join("");
 
       const over = szNum(im.sz) >= 900;
+      const picked = PICKED.has(im.url);
       return `
-        <div class="im-card">
+        <div class="im-card${picked ? " is-picked" : ""}" data-url="${escAttr_(im.url)}">
+          <input type="checkbox" class="im-pick" ${picked ? "checked" : ""}
+                 onchange="togglePick('${escAttr_(im.url)}', this.checked)" title="골라서 한꺼번에 바꾸기">
           <div class="im-thumb" onclick="openLightbox('${escAttr_(im.url)}')" title="눌러서 원본 크기로 보기">
             <img src="${escAttr_(thumbUrl_(im.url, 320))}" alt="" loading="lazy"
                  onerror="this.outerHTML='<i class=\\'fa-solid fa-image im-noimg\\'></i>'">
@@ -340,6 +416,173 @@
         </div>`;
     }).join("");
 
+    syncActionBar();   // 필터를 바꿔도 고른 목록은 유지된다(주소 기준)
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     고르기 → 미리보기 → 반영
+     여기서만 쓰기가 일어난다. 지키는 것 셋:
+      ① 쓰기 직전에 그 편의 본문을 다시 읽는다. steps는 배열 통짜 덮어쓰기라,
+         캐시로 쓰면 그 사이 청크 편집기에서 저장한 내용을 지운다.
+      ② 유료 구간이 걸린 편은 learn_sequences_full 도 같이 고친다. 공개 쪽만
+         고치면 구매자가 보는 본문은 옛 그림 그대로다.
+      ③ 무엇을 몇 개 문서에 쓰는지 먼저 보여 주고, 되돌릴 백업을 받게 한다.
+     ══════════════════════════════════════════════════════════════ */
+  const PICKED = new Set();     // 고른 그림 주소
+  let PLAN = null;              // { kind, changes:[{url,newUrl}], seqIds:[], uses }
+
+  function togglePick(url, on) {
+    if (on) PICKED.add(url); else PICKED.delete(url);
+    syncActionBar();
+    document.querySelector(`.im-card[data-url="${CSS.escape(url)}"]`)?.classList.toggle("is-picked", on);
+  }
+  function pickAllShown() {
+    document.querySelectorAll(".im-card").forEach(c => PICKED.add(c.dataset.url));
+    renderImages(); syncActionBar();
+  }
+  function clearPicks() { PICKED.clear(); renderImages(); syncActionBar(); }
+
+  function syncActionBar() {
+    const bar = document.getElementById("im-actionbar");
+    bar.classList.toggle("on", PICKED.size > 0);
+    document.getElementById("im-picked-n").textContent = PICKED.size;
+    // 주소 교체는 한 장씩만 — 여러 장을 한 주소로 바꾸는 건 실수일 가능성이 높다
+    const swap = document.getElementById("im-swap-btn");
+    swap.disabled = PICKED.size !== 1;
+    swap.title = PICKED.size === 1 ? "" : "주소 교체는 한 장만 고른 상태에서 할 수 있습니다";
+  }
+
+  function openPlan(kind) {
+    const picks = [...PICKED].map(u => IMAGES.find(im => im.url === u)).filter(Boolean);
+    if (!picks.length) return;
+
+    let changes = [];
+    if (kind === "resize") {
+      const px = document.getElementById("im-newsz").value;
+      changes = picks
+        .map(im => ({ im, newUrl: thumbUrl_(im.url, px) }))
+        .filter(c => c.newUrl !== c.im.url);          // 이미 그 크기면 건드리지 않는다
+      if (!changes.length) { alert("고른 그림이 이미 그 크기입니다."); return; }
+      document.getElementById("im-swap-field").style.display = "none";
+    } else {
+      // 주소 교체 — 모달 안 입력칸으로 받는다(붙여넣기가 편하고, 창을 멈추지 않는다)
+      const im = picks[0];
+      changes = [{ im, newUrl: im.url }];             // 아직 그대로 — 입력하면 아래에서 갱신
+      const field = document.getElementById("im-swap-field");
+      field.style.display = "block";
+      const input = document.getElementById("im-swap-url");
+      input.value = im.url;
+      setTimeout(() => { input.focus(); input.select(); }, 50);
+    }
+
+    const seqIds = [...new Set(changes.flatMap(c => c.im.uses.map(u => u.seqId)))];
+    const paidSeq = [...new Set(changes.flatMap(c => c.im.uses.filter(u => u.paid).map(u => u.seqId)))];
+    const useCount = changes.reduce((n, c) => n + c.im.uses.length, 0);
+    PLAN = { kind, changes, seqIds, paidSeq, useCount };
+
+    document.getElementById("im-plan-title").textContent = kind === "resize" ? "받아 오는 크기 바꾸기" : "그림 주소 교체";
+    document.getElementById("im-plan-sub").innerHTML =
+      "청크에 저장된 <b>그림 주소만</b> 바꿉니다. 구글 드라이브의 파일 자체는 그대로입니다.";
+    document.getElementById("im-plan-body").innerHTML = `
+      <div>· 바꿀 그림 <b>${changes.length}장</b></div>
+      <div>· 고쳐지는 청크 <b>${useCount}개</b></div>
+      <div>· 건드리는 편 <b>${seqIds.length}편</b>${paidSeq.length ? ` <span class="im-badge paid">그중 ${paidSeq.length}편은 유료 본문도 함께</span>` : ""}</div>
+      <div>· 쓰는 문서 <b>${seqIds.length + paidSeq.length}개</b></div>`;
+    document.getElementById("im-plan-diff").innerHTML = changes.slice(0, 6).map(c =>
+      `<div><span class="o">− ${escHtml_(c.im.url)}</span><br><span class="n">+ ${escHtml_(c.newUrl)}</span></div>`
+    ).join("<br>") + (changes.length > 6 ? `<div style="opacity:.7;margin-top:6px;">… 외 ${changes.length - 6}장</div>` : "");
+    const log = document.getElementById("im-plan-log");
+    log.className = "im-log"; log.innerHTML = "";
+    const go = document.getElementById("im-plan-go");
+    go.disabled = (kind === "swap");     // 주소를 실제로 바꾸기 전엔 못 누른다
+    go.textContent = "이대로 반영";
+    go.onclick = runPlan;
+    document.getElementById("im-plan-ov").classList.add("open");
+  }
+
+  /* 주소 교체 입력칸 — 칠 때마다 비교 화면과 버튼 상태를 갱신한다 */
+  function onSwapUrlInput() {
+    if (!PLAN || PLAN.kind !== "swap") return;
+    const v = document.getElementById("im-swap-url").value.trim();
+    const im = PLAN.changes[0].im;
+    PLAN.changes[0].newUrl = v;
+    document.getElementById("im-plan-diff").innerHTML =
+      `<div><span class="o">− ${escHtml_(im.url)}</span><br><span class="n">+ ${escHtml_(v || "(비어 있음)")}</span></div>`;
+    const ok = !!v && v !== im.url;
+    document.getElementById("im-plan-go").disabled = !ok;
+  }
+
+  function closePlan() { document.getElementById("im-plan-ov").classList.remove("open"); }
+
+  /* 되돌리기용 백업 — 바꾸기 전 원본 주소와 그 자리를 파일로 남긴다 */
+  function downloadBackup() {
+    if (!PLAN) return;
+    const rows = PLAN.changes.flatMap(c => c.im.uses.map(u => ({
+      seq_id: u.seqId, seq_title: u.seqTitle, step_index: u.stepIdx, paid: u.paid,
+      before: c.im.url, after: c.newUrl
+    })));
+    const blob = new Blob([JSON.stringify({ made_at: new Date().toISOString(), kind: PLAN.kind, rows }, null, 1)],
+      { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `learn_image_backup_${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  async function runPlan() {
+    if (!PLAN) return;
+    const go = document.getElementById("im-plan-go");
+    go.disabled = true; go.textContent = "반영 중...";
+    const log = document.getElementById("im-plan-log");
+    log.className = "im-log on"; log.innerHTML = "";
+    const say = (html) => { log.innerHTML += html + "<br>"; log.scrollTop = log.scrollHeight; };
+
+    const swapMap = new Map(PLAN.changes.map(c => [c.im.url, c.newUrl]));
+    let okDocs = 0, ngDocs = 0, okSteps = 0;
+
+    for (const seqId of PLAN.seqIds) {
+      const title = PLAN.changes.flatMap(c => c.im.uses).find(u => u.seqId === seqId)?.seqTitle || seqId;
+      try {
+        // ① 공개 문서 — 반드시 지금 값을 다시 읽어서 그 위에 고친다
+        const cur = await safeFetchDB({ action: "getDoc", collection: "learn_sequences", id: seqId });
+        const steps = (cur.data?.steps || []).map(st => {
+          const u = String(st.image_url || "").trim();
+          return swapMap.has(u) ? { ...st, image_url: swapMap.get(u) } : st;
+        });
+        const changed = steps.filter((st, i) => st.image_url !== (cur.data.steps[i].image_url || "")).length;
+        if (changed) {
+          await safeFetchDB({ action: "set", collection: "learn_sequences", id: seqId, data: { steps } });
+          okSteps += changed;
+        }
+        okDocs++;
+        say(`<span class="ok">✔ ${escHtml_(title.slice(0, 24))} — 청크 ${changed}개</span>`);
+
+        // ② 유료 본문 — 있으면 같이. 여기를 빠뜨리면 구매자 화면만 옛 그림이 남는다
+        if (PLAN.paidSeq.includes(seqId)) {
+          const curF = await safeFetchDB({ action: "getDoc", collection: "learn_sequences_full", id: seqId });
+          const fSteps = (curF.data?.steps || []).map(st => {
+            const u = String(st.image_url || "").trim();
+            return swapMap.has(u) ? { ...st, image_url: swapMap.get(u) } : st;
+          });
+          const fChanged = fSteps.filter((st, i) => st.image_url !== (curF.data.steps[i].image_url || "")).length;
+          if (fChanged) {
+            await safeFetchDB({ action: "set", collection: "learn_sequences_full", id: seqId, data: { steps: fSteps } });
+            okSteps += fChanged;
+          }
+          okDocs++;
+          say(`<span class="ok">✔ ${escHtml_(title.slice(0, 20))} (유료 본문) — 청크 ${fChanged}개</span>`);
+        }
+      } catch (e) {
+        ngDocs++;
+        say(`<span class="ng">✘ ${escHtml_(title.slice(0, 24))} — ${escHtml_(e.message)}</span>`);
+      }
+    }
+
+    say(`<b>끝났습니다. 문서 ${okDocs}개 성공${ngDocs ? ` · ${ngDocs}개 실패` : ""} · 청크 ${okSteps}개 변경</b>`);
+    go.textContent = ngDocs ? "일부 실패 — 목록 새로고침" : "완료 — 목록 새로고침";
+    go.disabled = false;
+    go.onclick = () => location.reload();
   }
 
   function toggleUses(btn) {
