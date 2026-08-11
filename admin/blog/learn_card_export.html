@@ -285,8 +285,10 @@
      - 읽기 전용: safeFetchDB는 get/getDoc만 호출한다.
      ════════════════════════════════════════ */
 
+  // 라이브 관리자 도메인(admin.cheesehistory.com)에는 /learn 이 없고, 학습 쪽은
+  // plus.cheesehistory.com 에만 있다(반대로 plus 에는 /admin 이 없다). 그래서 같은 출처를
+  // 먼저 보고 없으면 plus 에서 받는다 — 라이브에서는 폴백이 정상 경로다.
   const SHARE_CARD_SRC = "/learn/components/share-card.js?v=1.2.7";
-  // 관리자 페이지를 storefront가 아닌 곳(로컬 blog-parts 서버 등)에서 열면 위 경로가 없다 — 라이브에서 받아온다.
   const SHARE_CARD_FALLBACK = "https://plus.cheesehistory.com/learn/components/share-card.js?v=1.2.7";
 
   const CARD_SIZE = 1080;    // share-card.js의 SIZE와 같다
@@ -335,21 +337,30 @@
       document.head.appendChild(s);
     });
   }
+  // BRAND는 1.2.7부터 있다. 이게 없으면 bare(머리말 없는 카드)도 없는 옛 판이라,
+  // 세로 이미지에 카드마다 출처가 박힌 채로 조용히 나와 버린다 — 쓸 수 있는 판인지 여기서 가린다.
+  function rendererOk_() {
+    return !!(window.LearnShareCard?.drawCard && window.LearnShareCard.BRAND);
+  }
+
   function ensureRenderer() {
-    if (window.LearnShareCard?.drawCard) return Promise.resolve();
+    if (rendererOk_()) return Promise.resolve();
     if (rendererPromise) return rendererPromise;
-    rendererPromise = loadScript_(SHARE_CARD_SRC)
-      .catch(() => loadScript_(SHARE_CARD_FALLBACK))
-      .then(() => {
-        if (!window.LearnShareCard?.drawCard) {
-          throw new Error("카드 렌더러(share-card.js)가 drawCard를 내주지 않습니다 — storefront 배포본이 예전 버전일 수 있습니다.");
-        }
-        // BRAND는 1.2.7부터 있다. 없으면 bare(머리말 없는 카드)도 없는 옛 판이라,
-        // 세로 이미지에 카드마다 출처가 박힌 채로 조용히 나와 버린다.
-        if (!window.LearnShareCard.BRAND) {
-          throw new Error("카드 렌더러가 옛 판(1.2.6 이하)입니다 — storefront를 배포한 뒤 새로고침해 주세요.");
-        }
-      });
+    rendererPromise = (async () => {
+      // 주소가 살아 있어도 옛 판이거나(캐시) 엉뚱한 404 페이지일 수 있으니,
+      // '불러와졌다'가 아니라 '쓸 수 있는 판이다'를 기준으로 다음 주소로 넘어간다.
+      for (const src of [SHARE_CARD_SRC, SHARE_CARD_FALLBACK]) {
+        try { await loadScript_(src); } catch (_) { continue; }
+        if (rendererOk_()) return;
+      }
+      if (!window.LearnShareCard?.drawCard) {
+        throw new Error("카드 렌더러(share-card.js)를 불러오지 못했습니다 — 네트워크나 배포본을 확인해 주세요.");
+      }
+      throw new Error("카드 렌더러가 옛 판(1.2.6 이하)입니다 — storefront를 배포한 뒤 새로고침해 주세요.");
+    })().catch((err) => {
+      rendererPromise = null;   // 다음 시도에서 다시 받아볼 수 있게 놓아준다
+      throw err;
+    });
     return rendererPromise;
   }
 
