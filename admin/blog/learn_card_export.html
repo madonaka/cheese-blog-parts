@@ -50,7 +50,11 @@
     }
     .ce-select:focus, .ce-input:focus { border-color:var(--accent); outline:none; box-shadow:0 0 0 3px var(--accent-light); }
     .ce-select.wide { min-width:340px; max-width:100%; flex:1; cursor:pointer; }
+    .ce-select.series { min-width:230px; cursor:pointer; }
     .ce-input.range { width:220px; }
+    .ce-search-wrap { position:relative; flex:1; min-width:200px; }
+    .ce-search-wrap i { position:absolute; left:13px; top:50%; transform:translateY(-50%); color:var(--sub); font-size:12px; }
+    .ce-input.search { width:100%; padding-left:36px; }
     .ce-chk { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:700; color:var(--sub); cursor:pointer; white-space:nowrap; }
     .ce-hint { font-size:11.5px; color:var(--sub); line-height:1.6; }
 
@@ -147,11 +151,22 @@
         <div class="ce-panel">
           <p class="ce-panel-title"><i class="fa-solid fa-book-open"></i> 1. 편 고르기</p>
           <div class="ce-row">
-            <span class="ce-label">학습 시퀀스</span>
-            <select class="ce-select wide" id="ce-seq" onchange="onSeqChange()">
+            <span class="ce-label">시리즈</span>
+            <select class="ce-select series" id="ce-series" onchange="onSeriesChange()">
               <option value="">불러오는 중...</option>
             </select>
+            <span class="ce-search-wrap">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <input type="text" class="ce-input search" id="ce-search" placeholder="편 제목으로 찾기 (예: 대공황)" oninput="fillSeqOptions()">
+            </span>
             <button type="button" class="ce-btn ghost sm" onclick="loadSequences()"><i class="fa-solid fa-rotate"></i> 목록 새로고침</button>
+          </div>
+          <div class="ce-row">
+            <span class="ce-label">편</span>
+            <select class="ce-select wide" id="ce-seq" onchange="onSeqChange()">
+              <option value="">— 시리즈를 먼저 고르세요 —</option>
+            </select>
+            <span class="ce-count" id="ce-seq-count"></span>
           </div>
           <div class="ce-row">
             <span class="ce-hint" id="ce-seq-hint">시퀀스를 고르면 청크(카드) 목록이 나옵니다.</span>
@@ -317,10 +332,14 @@
     return rendererPromise;
   }
 
-  /* ── 1) 시퀀스 목록 ── */
+  /* ── 1) 시퀀스 목록 ──
+     137편이 한 드롭다운에 들어가면 찾기가 어렵다 — 시리즈로 한 번 거르고,
+     제목 검색으로도 좁힐 수 있게 두 단으로 나눈다. */
   async function loadSequences() {
-    const sel = document.getElementById("ce-seq");
-    sel.innerHTML = '<option value="">불러오는 중...</option>';
+    const seriesSel = document.getElementById("ce-series");
+    const seqSel = document.getElementById("ce-seq");
+    seriesSel.innerHTML = '<option value="">불러오는 중...</option>';
+    seqSel.innerHTML = '<option value="">불러오는 중...</option>';
     try {
       const res = await safeFetchDB({ action: "get", collection: "learn_sequences" });
       SEQ_LIST = (res.data || [])
@@ -332,26 +351,69 @@
         }))
         .sort((a, b) => String(a.series).localeCompare(String(b.series)) || a.order - b.order);
 
-      const groups = new Map();
-      SEQ_LIST.forEach(s => {
-        if (!groups.has(s.series)) groups.set(s.series, []);
-        groups.get(s.series).push(s);
+      const counts = new Map();
+      SEQ_LIST.forEach(s => counts.set(s.series, (counts.get(s.series) || 0) + 1));
+      let html = `<option value="">전체 시리즈 (${SEQ_LIST.length}편)</option>`;
+      [...counts.keys()].forEach(series => {
+        html += `<option value="${escHtml_(series)}">${escHtml_(series)} · ${counts.get(series)}편</option>`;
       });
-      let html = '<option value="">— 편을 고르세요 —</option>';
-      groups.forEach((list, series) => {
-        html += `<optgroup label="${escHtml_(series)}">`;
-        list.forEach(s => {
-          html += `<option value="${escHtml_(s.id)}">${escHtml_(s.title)}</option>`;
-        });
-        html += "</optgroup>";
-      });
-      sel.innerHTML = html;
-      document.getElementById("ce-seq-hint").textContent = `시퀀스 ${SEQ_LIST.length}편을 불러왔습니다.`;
+      seriesSel.innerHTML = html;
+
+      fillSeqOptions();
+      document.getElementById("ce-seq-hint").textContent =
+        `시리즈 ${counts.size}개 · 시퀀스 ${SEQ_LIST.length}편을 불러왔습니다.`;
     } catch (err) {
-      sel.innerHTML = '<option value="">불러오기 실패</option>';
+      seriesSel.innerHTML = '<option value="">불러오기 실패</option>';
+      seqSel.innerHTML = '<option value="">불러오기 실패</option>';
       document.getElementById("ce-seq-hint").textContent = "목록을 불러오지 못했습니다: " + err.message;
       toast("시퀀스 목록 불러오기 실패", true);
     }
+  }
+
+  /* 시리즈·검색어로 거른 편 목록을 두 번째 드롭다운에 채운다.
+     검색어가 있으면 시리즈 밖까지 뒤진다(어느 시리즈였는지 잊었을 때가 잦다). */
+  function fillSeqOptions() {
+    const series = document.getElementById("ce-series").value;
+    const q = document.getElementById("ce-search").value.trim().toLowerCase();
+    const seqSel = document.getElementById("ce-seq");
+    const keep = seqSel.value;
+
+    let list = SEQ_LIST;
+    if (q) list = list.filter(s => (s.title + " " + s.id).toLowerCase().includes(q));
+    else if (series) list = list.filter(s => s.series === series);
+
+    let html;
+    if (!list.length) {
+      html = '<option value="">— 찾는 편이 없습니다 —</option>';
+    } else if (q || !series) {
+      // 여러 시리즈가 섞이는 경우에만 시리즈 이름으로 묶어 보여 준다
+      html = `<option value="">— 편을 고르세요 (${list.length}편) —</option>`;
+      const groups = new Map();
+      list.forEach(s => {
+        if (!groups.has(s.series)) groups.set(s.series, []);
+        groups.get(s.series).push(s);
+      });
+      groups.forEach((items, name) => {
+        html += `<optgroup label="${escHtml_(name)}">`;
+        items.forEach(s => { html += `<option value="${escHtml_(s.id)}">${escHtml_(s.title)}</option>`; });
+        html += "</optgroup>";
+      });
+    } else {
+      html = `<option value="">— 편을 고르세요 (${list.length}편) —</option>`;
+      list.forEach(s => { html += `<option value="${escHtml_(s.id)}">${escHtml_(s.title)}</option>`; });
+    }
+    seqSel.innerHTML = html;
+
+    // 거르기 전에 보던 편이 아직 목록에 있으면 고른 상태를 유지한다(불필요한 재조회 방지).
+    // 걸러져 나갔더라도 아래 패널은 건드리지 않는다 — 검색어를 쳤다고 만들어 둔 카드가 날아가면 안 된다.
+    if (keep && list.some(s => s.id === keep)) seqSel.value = keep;
+
+    document.getElementById("ce-seq-count").textContent = list.length ? `${list.length}편` : "";
+  }
+
+  function onSeriesChange() {
+    document.getElementById("ce-search").value = "";
+    fillSeqOptions();
   }
 
   /* ── 편 고르면 청크 불러오기 ──
