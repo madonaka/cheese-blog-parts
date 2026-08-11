@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>치즈 스토어프론트 페이지 천이도</title>
+<style>
+:root{
+  --bg:#f6f5f1; --panel:#fffdf8; --ink:#1d1b16; --muted:#6b6558; --line:#ddd6c7;
+  --main:#c0392b; --sub:#8a8172; --back:#b9b0a0; --global:#2f6f8f; --orphan:#a1670c;
+  --chip:#efece2;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#15140f; --panel:#1e1c16; --ink:#f0ece1; --muted:#9c9484; --line:#3a3629;
+         --main:#e07a6a; --sub:#8a8172; --back:#6a6355; --global:#6fb3d2; --orphan:#d9a441; --chip:#2a271e; }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  line-height:1.55;}
+.wrap{max-width:1500px;margin:0 auto;padding:32px 20px 80px}
+h1{font-size:1.7rem;margin:0 0 6px;letter-spacing:-.02em}
+.sub{color:var(--muted);font-size:.92rem;margin:0 0 22px}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:18px;
+  position:sticky;top:0;z-index:30;background:var(--bg);padding:10px 0;border-bottom:1px solid var(--line)}
+.btn{border:1px solid var(--line);background:var(--panel);color:var(--ink);
+  padding:6px 13px;border-radius:999px;font-size:.85rem;cursor:pointer;font-family:inherit}
+.btn.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:.8rem;color:var(--muted);margin-left:auto}
+.legend i{display:inline-block;width:22px;height:0;border-top:2px solid;vertical-align:middle;margin-right:5px}
+
+#stage{position:relative}
+/* 선은 클러스터 패널(z:2) 위, 노드(z:6) 아래에 깔린다 */
+#wires{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:5;overflow:visible}
+.cluster{position:relative;z-index:2;background:var(--panel);border:1px solid var(--line);
+  border-radius:14px;padding:14px 16px 16px;margin-bottom:18px}
+/* 위로 넘어가는 선이 지나갈 여백 */
+.cluster > h2{font-size:.82rem;margin:0 0 30px;color:var(--muted);font-weight:700;
+  letter-spacing:.06em;text-transform:uppercase;display:flex;gap:8px;align-items:center}
+.cluster > h2 b{color:var(--ink);font-size:.95rem;letter-spacing:-.01em;text-transform:none}
+.row{display:flex;flex-wrap:wrap;gap:34px 26px;align-items:flex-start}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px}
+
+.node{position:relative;z-index:6;min-width:150px;max-width:210px;background:var(--bg);
+  border:1px solid var(--line);border-left:3px solid var(--sub);border-radius:9px;
+  padding:8px 11px;cursor:default;transition:.14s}
+.node b{display:block;font-size:.9rem;letter-spacing:-.01em}
+.node code{display:block;font-size:.7rem;color:var(--muted);font-family:ui-monospace,Consolas,monospace;
+  margin-top:2px;word-break:break-all}
+.node small{display:block;font-size:.72rem;color:var(--muted);margin-top:5px}
+.node.entry{border-left-color:var(--main);background:color-mix(in srgb,var(--main) 8%,var(--bg))}
+.node.orphan{border-left-color:var(--orphan);border-style:dashed}
+.node.dev{opacity:.62}
+.node:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.13)}
+.node.dim{opacity:.2}
+.node.hot{box-shadow:0 0 0 2px var(--main);opacity:1}
+.tag{position:absolute;top:-9px;right:8px;font-size:.62rem;background:var(--chip);
+  border:1px solid var(--line);border-radius:999px;padding:1px 7px;color:var(--muted)}
+
+path.wire{fill:none;stroke-width:1.4;opacity:.5}
+path.wire.main{stroke:var(--main);stroke-width:2;opacity:.85}
+path.wire.sub{stroke:var(--sub)}
+path.wire.back{stroke:var(--back);stroke-dasharray:4 4}
+path.wire.bad{stroke:var(--orphan);stroke-width:2.2;stroke-dasharray:7 3;opacity:.95}
+path.wire.global{stroke:var(--global);stroke-dasharray:2 5;opacity:.55}
+path.wire.faded{opacity:.06}
+path.wire.hot{opacity:1;stroke-width:2.6}
+
+.notes{margin-top:34px;display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px}
+.note{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+.note h3{margin:0 0 10px;font-size:1rem}
+.note ul{margin:0;padding-left:18px;font-size:.87rem;color:var(--ink)}
+.note li{margin-bottom:7px}
+.note li span{color:var(--muted)}
+code.p{font-family:ui-monospace,Consolas,monospace;font-size:.8em;background:var(--chip);
+  padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>치즈 스토어프론트 페이지 천이도</h1>
+  <p class="sub">
+    <code class="p">cheese-storefront/</code> 의 공개 페이지 46개와, 정적 <code class="p">href</code> · JS 안의
+    <code class="p">location.href</code> · 카드 클릭 핸들러까지 추적한 실제 이동 경로. 관리자(<code class="p">/admin</code>)와
+    개발 도구는 제외. <b>기준일 2026-08-11</b>
+  </p>
+
+  <div class="toolbar">
+    <button class="btn on" data-filter="all">전체</button>
+    <button class="btn" data-filter="main">핵심 동선만</button>
+    <button class="btn" data-filter="global">글로벌 내비 포함</button>
+    <button class="btn" data-filter="bad">문제 지점만</button>
+    <span class="legend">
+      <span><i style="border-color:var(--main)"></i>핵심 전진</span>
+      <span><i style="border-color:var(--sub)"></i>일반 이동</span>
+      <span><i style="border-color:var(--back);border-top-style:dashed"></i>되돌아가기</span>
+      <span><i style="border-color:var(--orphan);border-top-style:dashed"></i>어긋난 이동</span>
+      <span><i style="border-color:var(--global);border-top-style:dotted"></i>헤더·푸터·장바구니(전 페이지)</span>
+    </span>
+  </div>
+
+  <div id="stage">
+    <svg id="wires"></svg>
+
+    <!-- 0. 글로벌 -->
+    <section class="cluster">
+      <h2><b>0 · 글로벌 셸</b> 모든 페이지에 실려 있음 · load-layout.js / firebase-common.js</h2>
+      <div class="row">
+        <div class="node" data-id="header"><b>공통 헤더</b><code>header.html</code><small>스토어 · 이슈 아카이브 · 연표 뱅크 · 마이페이지 · 비회원 조회</small></div>
+        <div class="node" data-id="cart"><b>장바구니 드로어</b><code>firebase-common.js</code><small>어느 페이지에서든 결제로 직행</small></div>
+        <div class="node" data-id="footer"><b>공통 푸터</b><code>footer.html</code><small>공지 · 개인정보 · 이용약관</small></div>
+        <div class="node" data-id="policy"><b>정책 3종</b><code>/policy/notice · privacy · terms</code></div>
+        <div class="node" data-id="404"><b>404</b><code>/404.html</code><small>→ 홈</small></div>
+      </div>
+    </section>
+
+    <!-- 1. 진입 -->
+    <section class="cluster">
+      <h2><b>1 · 진입</b> 랜딩과 시리즈 티저</h2>
+      <div class="row">
+        <div class="node entry" data-id="index"><span class="tag">시작점</span><b>홈</b><code>/index.html</code><small>히어로·최신 에피소드·티저 카드</small></div>
+        <div class="node" data-id="soviet"><b>소련편 티저</b><code>/series/soviet/</code><small>스크롤 시네마</small></div>
+        <div class="node" data-id="usa"><b>미국편 티저</b><code>/series/usa/</code><small>스크롤 시네마</small></div>
+      </div>
+    </section>
+
+    <!-- 2. 학습 -->
+    <section class="cluster">
+      <h2><b>2 · 학습 본동선</b> 사이트의 척추</h2>
+      <div class="row">
+        <div class="node" data-id="k-index"><b>역사 선택</b><code>/korean/index.html</code><small>한국·미국·중국·일본·러시아·세계주제</small></div>
+        <div class="node" data-id="k-list"><b>시리즈 목록</b><code>/korean/series-list.html</code><small>?country=…</small></div>
+        <div class="node" data-id="k-series"><b>시리즈 상세</b><code>/korean/series.html</code><small>?id=… · 에피소드 목록 + 복습 자료실 탭</small></div>
+        <div class="node" data-id="viewer"><b>학습 뷰어</b><code>/learn/viewer.html</code><small>?id=… · 이전/다음 편 · 아웃트로 탭 내장</small></div>
+        <div class="node" data-id="remedial"><b>보충 학습</b><code>/learn/remedial.html</code></div>
+        <div class="node" data-id="flashcard"><b>플래시카드</b><code>/learn/flashcard.html</code></div>
+      </div>
+    </section>
+
+    <div class="cols">
+      <!-- 3. 퀴즈 -->
+      <section class="cluster">
+        <h2><b>3 · 퀴즈</b></h2>
+        <div class="row">
+          <div class="node" data-id="q-bank"><b>퀴즈 뱅크</b><code>/quiz/quiz-bank.html</code></div>
+          <div class="node" data-id="q-config"><b>퀴즈 설정</b><code>/quiz/quiz-config.html</code></div>
+          <div class="node" data-id="q-detail"><b>퀴즈 풀기</b><code>/quiz/quiz-detail.html</code><small>?from_seq= 로 학습에서 진입</small></div>
+          <div class="node" data-id="q-wrong"><b>오답 노트</b><code>/quiz/wrong-note.html</code></div>
+        </div>
+      </section>
+
+      <!-- 4. 스토어 -->
+      <section class="cluster">
+        <h2><b>4 · 스토어 · 결제</b></h2>
+        <div class="row">
+          <div class="node" data-id="s-products"><b>상품 목록</b><code>/shop/products.html</code></div>
+          <div class="node" data-id="s-detail"><b>상품 상세</b><code>/shop/detail.html</code></div>
+          <div class="node" data-id="s-checkout"><b>결제</b><code>/shop/checkout.html</code></div>
+          <div class="node" data-id="s-success"><b>결제 완료</b><code>/shop/success.html</code></div>
+          <div class="node" data-id="s-fail"><b>결제 실패</b><code>/shop/fail.html</code></div>
+        </div>
+      </section>
+
+      <!-- 5. 계정 -->
+      <section class="cluster">
+        <h2><b>5 · 계정</b></h2>
+        <div class="row">
+          <div class="node" data-id="mypage"><b>마이페이지</b><code>/account/mypage.html</code><small>구매 시리즈 · 주문 · 문의</small></div>
+          <div class="node" data-id="guest"><b>비회원 조회</b><code>/account/guest-lookup.html</code></div>
+        </div>
+      </section>
+
+      <!-- 6. 연표 -->
+      <section class="cluster">
+        <h2><b>6 · 연표</b> 두 계열이 따로 있음</h2>
+        <div class="row">
+          <div class="node" data-id="k-timeline"><b>한국사 연표</b><code>/korean/timeline.html</code></div>
+          <div class="node" data-id="k-ttable"><b>연표 표</b><code>/korean/timeline-table.html</code></div>
+          <div class="node" data-id="t-bank"><b>연표 뱅크</b><code>/timeline/timeline-bank.html</code><small>헤더 진입</small></div>
+          <div class="node" data-id="t-detail"><span class="tag">막다른 길</span><b>연표 상세</b><code>/timeline/timeline-detail.html</code><small>?theme=northeast-asia 한 건만 · 나가는 링크 0개</small></div>
+        </div>
+      </section>
+    </div>
+
+    <div class="cols">
+      <!-- 7. 아카이브 -->
+      <section class="cluster">
+        <h2><b>7 · 이슈 아카이브</b></h2>
+        <div class="row">
+          <div class="node" data-id="a-index"><b>연도 인덱스</b><code>/archive/issue-index.html</code><small>헤더 진입</small></div>
+          <div class="node" data-id="a-detail"><b>연도 상세</b><code>/archive/issue-detail.html</code></div>
+          <div class="node" data-id="a-series"><b>이슈 시리즈</b><code>/archive/issue-series.html</code></div>
+          <div class="node" data-id="a-search"><b>검색 결과</b><code>/archive/issue-search-results.html</code></div>
+          <div class="node" data-id="ar-board"><b>시리즈 보드</b><code>/articles/series-board.html</code></div>
+        </div>
+      </section>
+
+      <!-- 8. 아티클 -->
+      <section class="cluster">
+        <h2><b>8 · 아티클</b> 자체 진입구가 없음</h2>
+        <div class="row">
+          <div class="node orphan" data-id="ar-index"><span class="tag">진입 없음</span><b>아티클 목록</b><code>/articles/index.html</code></div>
+          <div class="node" data-id="ar-detail"><b>아티클 상세</b><code>/articles/detail.html</code></div>
+          <div class="node" data-id="ar-sdetail"><b>시리즈 상세</b><code>/articles/series-detail.html</code></div>
+        </div>
+      </section>
+    </div>
+
+    <!-- 9. 고립 -->
+    <section class="cluster">
+      <h2><b>9 · 끊긴 페이지</b> 존재하지만 어느 페이지에서도 링크되지 않음</h2>
+      <div class="row">
+        <div class="node orphan" data-id="t-index"><b>주제 허브</b><code>/topics/index.html</code></div>
+        <div class="node orphan" data-id="t-detail2"><b>주제 상세</b><code>/topics/detail.html</code><small>학습·퀴즈·아티클·스토어로 뻗는 허브인데 정작 아무도 안 부름</small></div>
+        <div class="node orphan" data-id="forum"><b>역사 포럼</b><code>/forum/history-forum.html</code></div>
+        <div class="node orphan" data-id="forum-d"><b>포럼 글</b><code>/forum/history-forum-detail.html</code></div>
+        <div class="node orphan" data-id="rec"><b>추천 허브</b><code>/recommend/index.html</code></div>
+        <div class="node orphan" data-id="rec-d"><b>시대별 추천</b><code>/recommend/era-detail.html</code></div>
+        <div class="node orphan" data-id="hmap"><b>역사 지도</b><code>/history-map.html</code><small>/map/viewer.js 사용</small></div>
+        <div class="node orphan" data-id="fc-hub"><b>플래시카드 허브</b><code>/learn/flashcard_hub.html</code></div>
+        <div class="node orphan" data-id="typing-list"><b>타자 목록</b><code>/learn/typing-list.html</code></div>
+        <div class="node orphan" data-id="typing"><b>타자 연습</b><code>/learn/typing.html</code></div>
+        <div class="node orphan" data-id="outro"><b>아웃트로(레거시)</b><code>/learn/outro.html</code><small>뷰어 탭으로 흡수됨 · 진입 시 뷰어로 리다이렉트</small></div>
+        <div class="node orphan" data-id="a-2026"><b>2026 이슈 상세</b><code>/archive/issue-detail-2026.html</code><small>별도 사본</small></div>
+        <div class="node orphan dev" data-id="seed"><b>퀴즈 시드</b><code>/quiz/seed.html</code><small>개발용</small></div>
+        <div class="node orphan dev" data-id="chatbot"><b>챗봇 테스트</b><code>/learn/chatbot_test.html</code><small>개발용</small></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="notes">
+    <div class="note">
+      <h3>천이도가 드러내는 것</h3>
+      <ul>
+        <li><b>본동선은 5홉짜리 한 줄이다.</b> <span>홈 → 역사 선택 → 시리즈 목록 → 시리즈 상세 → 학습 뷰어. 여기서 퀴즈와 스토어로 갈라진다. 이 축은 링크가 촘촘하고, 되돌아가기(뷰어 → 역사 선택)까지 갖춰져 있다.</span></li>
+        <li><b>학습 → 구매 전환로가 3개 있다.</b> <span>시리즈 상세 · 학습 뷰어 · 아웃트로가 각각 <code class="p">/shop/detail.html?id=</code> 로 직행한다. 반대로 스토어에서 학습으로 오는 길은 마이페이지의 "구매한 시리즈"뿐이다.</span></li>
+        <li><b>퀴즈 뱅크는 헤더에 없다.</b> <span>진입로가 시리즈 상세·학습 뷰어의 CTA와, 끊긴 <code class="p">/topics/detail</code> 뿐이다. 퀴즈 자체를 목적으로 온 사용자는 도달할 방법이 없다.</span></li>
+        <li><b>연표가 두 계열로 갈라져 있다.</b> <span>홈이 보내는 <code class="p">/korean/timeline</code> 계열과, 헤더가 보내는 <code class="p">/timeline/timeline-bank</code> 계열이 서로 링크되지 않는다.</span></li>
+        <li><b>아카이브와 아티클은 한 줄로 이어져 있다.</b> <span>이슈 시리즈 → 시리즈 보드가 유일한 연결이고, 정작 아티클 목록으로는 못 넘어간다.</span></li>
+      </ul>
+    </div>
+    <div class="note">
+      <h3>끊긴 페이지 14개</h3>
+      <ul>
+        <li><b>클러스터째 고립</b> <span>주제(topics) 2개, 포럼 2개, 추천 2개. 각 클러스터 안에서는 목록↔상세가 정상 동작하는데 바깥에서 들어오는 링크가 0이다. 특히 <code class="p">/topics/detail</code>은 학습·퀴즈·아티클·스토어로 뻗는 교차 허브라, 헤더에 한 줄만 넣으면 끊긴 퀴즈 뱅크와 아티클까지 같이 살아난다.</span></li>
+        <li><b>학습 주변부</b> <span>플래시카드 허브 · 타자 목록/연습은 뷰어와 아웃트로 어디에서도 안 부른다. 플래시카드는 뷰어가 <code class="p">/learn/flashcard.html?id=</code> 로 직접 열기 때문에 허브만 남겨졌다.</span></li>
+        <li><b>레거시 잔재</b> <span><code class="p">/learn/outro.html</code>(뷰어 탭으로 흡수, 리다이렉트만 함), <code class="p">/archive/issue-detail-2026.html</code>(사본), <code class="p">/history-map.html</code>.</span></li>
+        <li><b>개발용</b> <span><code class="p">/quiz/seed.html</code>, <code class="p">/learn/chatbot_test.html</code> — 배포 대상에서 빼도 되는 것들.</span></li>
+      </ul>
+    </div>
+    <div class="note">
+      <h3>되돌아가기 점검 (2026-08-11)</h3>
+      <ul>
+        <li><b>고침 · 다음 편으로 넘어가면 나가기가 두 단계 위로 떨어지던 문제</b>
+          <span>이전 편 카드는 <code class="p">&origin=</code>을 전파하는데 다음 편 카드만 빠져 있었다. 같은 규칙을 적용했다.</span></li>
+        <li><b>고침 · 퀴즈·플래시카드 왕복 후 시리즈를 잃던 문제</b>
+          <span><code class="p">navigateExit()</code>이 <code class="p">outro=true</code>면 출처를 통째로 버렸다. 대신 진입 시점에 '들어왔던 목록'을 sessionStorage에 확정해 두고, 학습 흐름 안쪽 페이지(뷰어·퀴즈·보완·플래시카드·아웃트로)는 출처 후보에서 제외한다. 이슈 아카이브가 이미 쓰던 방식과 같다.</span></li>
+        <li><b>고침 · 시리즈 상세의 '← 목록으로'가 목록으로 안 가던 문제</b>
+          <span>역사 선택으로 하드코딩돼 있어 <code class="p">?country=</code> 필터가 날아갔다. 목록을 거쳐 왔다는 근거(referrer 또는 직전 목록 URL)가 있을 때만 그쪽으로 보내고, 없으면 기존 폴백을 유지한다.</span></li>
+        <li><b>남은 것</b> <span>미국편 티저 CTA <code class="p">?id=20</code>(id 형식 불일치), 연표 상세 막다른 길, 오답 노트에서 푼 문제가 퀴즈 뱅크로 복귀하는 것, 상품 상세 breadcrumb 고정.</span></li>
+      </ul>
+    </div>
+    <div class="note">
+      <h3>읽을 때 주의</h3>
+      <ul>
+        <li><span>호스팅이 <code class="p">cleanUrls: true</code> 라, <code class="p">/korean/series?id=</code> 같은 확장자 없는 링크(소련편 티저)도 정상 동작한다.</span></li>
+        <li><span><code class="p">/japanese/**</code>, <code class="p">/chinese/**</code> 는 301로 <code class="p">/korean</code> 에 합쳐진다. 아웃트로·뷰어에 남은 그 링크들은 결국 역사 선택으로 떨어진다.</span></li>
+        <li><span>모달·드로어(로그인, 후기 작성, 인사이트 공유, 연표 정보창)는 페이지 이동이 아니라 노드로 세지 않았다. 단, 연표 정보창 안의 "학습하기"는 실제 이동이라 그렸다.</span></li>
+        <li><span>헤더·푸터·장바구니는 전 페이지 공통이라 점선으로 한 번만 그렸다. 실제로는 46개 페이지 전부에서 나가는 화살표다.</span></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<script>
+const EDGES = [
+  // 글로벌
+  ["header","s-products","global"],["header","a-index","global"],["header","t-bank","global"],
+  ["header","mypage","global"],["header","guest","global"],["header","index","global"],
+  ["footer","policy","global"],["cart","s-checkout","global"],["404","index","global"],
+
+  // 진입
+  ["index","k-index","main"],["index","viewer","sub"],["index","k-timeline","sub"],
+  ["index","soviet","sub"],["index","usa","sub"],["index","s-products","sub"],
+  ["soviet","k-series","main"],
+  ["usa","k-series","bad"],            // ?id=20 — 실제 시리즈 id 형식(series-…)과 다름
+
+  // 학습
+  ["k-index","k-list","main"],
+  ["k-list","k-series","main"],["k-list","viewer","sub"],
+  ["k-series","viewer","main"],["k-series","q-detail","sub"],["k-series","q-wrong","sub"],
+  ["k-series","s-detail","sub"],
+  ["k-series","k-list","back"],        // 2026-08-11 수정: 거쳐 온 목록(?country= 유지)으로 복귀
+  ["k-series","k-index","back"],       // 목록을 거치지 않고 들어온 경우의 폴백
+  ["viewer","viewer","sub"],
+  ["viewer","flashcard","sub"],["viewer","remedial","sub"],
+  ["viewer","q-detail","main"],["viewer","s-detail","sub"],["viewer","s-products","sub"],
+  ["viewer","k-index","back"],         // 돌아갈 목록을 못 찾았을 때의 폴백
+  ["remedial","viewer","back"],["flashcard","viewer","back"],
+  ["outro","viewer","back"],["outro","flashcard","sub"],["outro","remedial","sub"],
+  ["outro","q-detail","sub"],["outro","s-detail","sub"],["outro","k-index","back"],
+  ["fc-hub","flashcard","sub"],["typing-list","typing","sub"],
+
+  // 퀴즈
+  ["q-bank","q-config","main"],["q-bank","q-detail","main"],["q-bank","q-wrong","sub"],
+  ["q-bank","s-products","sub"],
+  ["q-config","q-detail","main"],["q-config","q-bank","back"],
+  ["q-detail","q-bank","back"],["q-detail","viewer","sub"],
+  ["q-wrong","q-detail","sub"],["q-wrong","q-bank","back"],
+
+  // 스토어
+  ["s-products","s-detail","main"],["s-detail","s-products","back"],
+  ["s-checkout","s-success","main"],["s-checkout","s-fail","sub"],["s-checkout","s-products","back"],
+  ["s-success","mypage","main"],["s-success","guest","sub"],
+  ["s-fail","s-products","back"],["s-fail","index","back"],
+
+  // 계정
+  ["mypage","k-series","sub"],["mypage","s-detail","sub"],["mypage","s-products","sub"],
+  ["guest","mypage","sub"],
+
+  // 연표
+  ["k-timeline","k-ttable","sub"],["k-ttable","k-timeline","sub"],
+  ["k-timeline","viewer","sub"],["k-ttable","viewer","sub"],
+  ["t-bank","t-detail","main"],
+
+  // 아카이브
+  ["a-index","a-detail","main"],
+  ["a-detail","a-series","sub"],["a-detail","a-search","sub"],["a-detail","a-index","back"],
+  ["a-detail","a-detail","sub"],
+  ["a-search","a-detail","sub"],["a-search","a-index","back"],
+  ["a-series","a-detail","sub"],["a-series","ar-board","sub"],
+  ["ar-board","a-series","sub"],
+
+  // 아티클
+  ["ar-index","ar-detail","main"],["ar-index","ar-sdetail","main"],
+  ["ar-detail","ar-index","back"],["ar-sdetail","ar-index","back"],["ar-sdetail","a-detail","sub"],
+
+  // 끊긴 클러스터
+  ["t-index","t-detail2","main"],
+  ["t-detail2","ar-index","sub"],["t-detail2","ar-detail","sub"],["t-detail2","q-bank","sub"],
+  ["t-detail2","q-detail","sub"],["t-detail2","viewer","sub"],["t-detail2","s-products","sub"],
+  ["t-detail2","t-index","back"],
+  ["forum","forum-d","main"],["forum-d","forum","back"],
+  ["rec","rec-d","main"],["rec-d","rec","back"],
+];
+
+const svg = document.getElementById('wires');
+const stage = document.getElementById('stage');
+const nodes = {};
+document.querySelectorAll('.node').forEach(n => nodes[n.dataset.id] = n);
+let mode = 'all';
+
+function anchors(r, o){
+  return {
+    r:[r.right, r.top+r.height/2, 1, 0], l:[r.left, r.top+r.height/2, -1, 0],
+    t:[r.left+r.width/2, r.top, 0, -1], b:[r.left+r.width/2, r.bottom, 0, 1]
+  };
+}
+function draw(){
+  const base = stage.getBoundingClientRect();
+  svg.setAttribute('viewBox', `0 0 ${base.width} ${base.height}`);
+  svg.style.height = base.height + 'px';
+  const KINDS = {main:'var(--main)', sub:'var(--sub)', back:'var(--back)',
+                 global:'var(--global)', bad:'var(--orphan)'};
+  let out = '<defs>' + Object.entries(KINDS).map(([k,c]) =>
+    `<marker id="ah-${k}" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6.5" markerHeight="6.5" orient="auto">
+       <path d="M0 0 L8 4 L0 8 z" fill="${c}"/></marker>`).join('') + '</defs>';
+
+  for (const [from, to, kind] of EDGES){
+    const a = nodes[from], b = nodes[to];
+    if (!a || !b) continue;
+    if (mode === 'main' && kind !== 'main') continue;
+    if (mode === 'bad' && kind !== 'bad') continue;
+    if (mode === 'all' && kind === 'global') continue;
+
+    const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+    const A = {x:ra.left-base.left, y:ra.top-base.top, w:ra.width, h:ra.height};
+    const B = {x:rb.left-base.left, y:rb.top-base.top, w:rb.width, h:rb.height};
+
+    if (from === to){ // 자기 자신 (다음 편 / 다른 연도)
+      const x = A.x+A.w*0.75, y = A.y;
+      out += `<path class="wire ${kind}" data-a="${from}" data-b="${to}"
+        d="M${x} ${y} c 6 -22, 40 -22, 46 0" marker-end="url(#ah-${kind})"/>`;
+      continue;
+    }
+
+    const dx = (B.x+B.w/2) - (A.x+A.w/2);
+    const dy = (B.y+B.h/2) - (A.y+A.h/2);
+    let p1, p2, c1, c2;
+    if (Math.abs(dy) < Math.max(A.h, B.h)*0.9){       // 같은 줄
+      const gap = Math.abs(dx) - (A.w/2 + B.w/2);
+      if (gap > 70){                                    // 사이에 노드가 낀다 → 위로 넘어간다
+        p1 = [A.x+A.w/2, A.y]; p2 = [B.x+B.w/2, B.y];
+        const lift = Math.min(64, 28 + Math.abs(dx)*0.09);
+        c1 = [p1[0], p1[1]-lift]; c2 = [p2[0], p2[1]-lift];
+      } else {                                          // 바로 옆 → 좌우로 붙인다
+        const right = dx > 0;
+        p1 = [right ? A.x+A.w : A.x, A.y+A.h/2];
+        p2 = [right ? B.x : B.x+B.w, B.y+B.h/2];
+        const k = Math.min(70, Math.abs(p2[0]-p1[0])/2 + 14) * (right?1:-1);
+        c1 = [p1[0]+k, p1[1]]; c2 = [p2[0]-k, p2[1]];
+      }
+    } else {                                            // 다른 줄 → 상하
+      const down = dy > 0;
+      p1 = [A.x+A.w/2, down ? A.y+A.h : A.y];
+      p2 = [B.x+B.w/2, down ? B.y : B.y+B.h];
+      const k = Math.min(120, Math.abs(p2[1]-p1[1])/2 + 20) * (down?1:-1);
+      c1 = [p1[0], p1[1]+k]; c2 = [p2[0], p2[1]-k];
+    }
+    out += `<path class="wire ${kind}" data-a="${from}" data-b="${to}"
+      d="M${p1[0]} ${p1[1]} C${c1[0]} ${c1[1]}, ${c2[0]} ${c2[1]}, ${p2[0]} ${p2[1]}"
+      marker-end="url(#ah-${kind})"/>`;
+  }
+  svg.innerHTML = out;
+}
+
+function highlight(id){
+  const wires = svg.querySelectorAll('path.wire');
+  if (!id){
+    wires.forEach(w => w.classList.remove('faded','hot'));
+    Object.values(nodes).forEach(n => n.classList.remove('dim','hot'));
+    return;
+  }
+  const near = new Set([id]);
+  wires.forEach(w => {
+    const on = w.dataset.a === id || w.dataset.b === id;
+    w.classList.toggle('hot', on);
+    w.classList.toggle('faded', !on);
+    if (on){ near.add(w.dataset.a); near.add(w.dataset.b); }
+  });
+  Object.entries(nodes).forEach(([k,n]) => {
+    n.classList.toggle('dim', !near.has(k));
+    n.classList.toggle('hot', k === id);
+  });
+}
+
+Object.values(nodes).forEach(n => {
+  n.addEventListener('mouseenter', () => highlight(n.dataset.id));
+  n.addEventListener('mouseleave', () => highlight(null));
+});
+document.querySelectorAll('.btn[data-filter]').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.btn[data-filter]').forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    mode = b.dataset.filter;
+    draw();
+  });
+});
+
+draw();
+window.addEventListener('resize', draw);
+if (document.fonts) document.fonts.ready.then(draw);
+// 폰트 로딩·줄바꿈 변화로 노드가 움직이면 선도 다시 그린다
+if (window.ResizeObserver){
+  let t;
+  new ResizeObserver(() => { clearTimeout(t); t = setTimeout(draw, 60); }).observe(stage);
+}
+</script>
+</body>
+</html>
