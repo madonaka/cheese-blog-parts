@@ -60,6 +60,13 @@
     .im-badge.multi { background:#fef3c7; color:#b45309; }
     .im-badge.sticker { background:#e0e7ff; color:#3730a3; }
     .im-badge.big { background:#fee2e2; color:#991b1b; }
+    .im-badge.paid { background:#fce7f3; color:#9d174d; }
+
+    /* 보호 컬렉션을 못 읽었을 때 — 목록이 반쪽이라는 사실을 숨기지 않는다 */
+    .im-warn {
+      background:#fffbeb; border:1px solid #fde68a; color:#92400e; border-radius:12px;
+      padding:11px 14px; font-size:13px; line-height:1.6; margin-bottom:16px;
+    }
     .im-meta { font-size:11px; color:var(--sub); line-height:1.6; word-break:break-all; }
     .im-uses { border-top:1px dashed var(--line); padding-top:8px; margin-top:1px; }
     .im-uses-btn {
@@ -103,6 +110,7 @@
           그림 주소의 <code>sz=w숫자</code>는 구글 드라이브에서 받아 오는 가로 픽셀입니다.
         </p>
 
+        <div id="im-warn"></div>
         <div class="im-stats" id="im-stats"></div>
 
         <div class="im-bar">
@@ -153,10 +161,19 @@
   function escAttr_(s) { return escHtml_(s).replace(/"/g, "&quot;"); }
 
   /* 그림 하나를 나타내는 항목:
-     { url, uses:[{seqId, seqTitle, seqOrder, stepIdx, text, style}], isSticker, sz, w, h }
-     같은 주소를 여러 청크가 쓰면 항목 하나에 uses가 쌓인다 — 이 페이지의 핵심이다. */
+     { url, uses:[{seqId, seqTitle, seqOrder, stepIdx, text, style, paid}], isSticker, sz }
+     같은 주소를 여러 청크가 쓰면 항목 하나에 uses가 쌓인다 — 이 페이지의 핵심이다.
+
+     ⚠ 유료(잠긴) 편은 본문이 두 곳에 나뉜다:
+       learn_sequences       공개 — 무료 구간 청크만
+       learn_sequences_full  보호 — 전체 청크 (구매자에게만 전달)
+     공개 쪽만 읽으면 유료 구간의 그림이 통째로 안 보인다(현재 59편·4천여 청크).
+     그래서 _full이 있는 편은 그쪽을 본문의 정본으로 삼고, 무료 구간 길이로
+     어디부터가 유료인지 표시한다. */
   let IMAGES = [];
   let SEQ_LIST = [];
+  let FULL_OK = false;      // 보호 컬렉션(유료 구간)까지 읽었는가
+  let HIDDEN_USES = 0;      // 그중 유료 구간에 있던 사용처 수
 
   const szOf = (url) => (String(url).match(/[?&]sz=([^&]+)/) || [, ""])[1];
   // 'w1200' → 1200 (정렬용). 숫자가 없으면 0.
@@ -172,24 +189,34 @@
 
   async function loadAll() {
     try {
-      const [seqRes, stkRes] = await Promise.all([
+      const [seqRes, stkRes, fullRes] = await Promise.all([
         safeFetchDB({ action: "get", collection: "learn_sequences" }),
-        safeFetchDB({ action: "get", collection: "learn_stickers" }).catch(() => ({ data: [] }))
+        safeFetchDB({ action: "get", collection: "learn_stickers" }).catch(() => ({ data: [] })),
+        // 보호 컬렉션 — 토큰이 없거나 막히면 공개분만으로 계속한다(안내는 아래 배너)
+        safeFetchDB({ action: "get", collection: "learn_sequences_full" }).catch(() => null)
       ]);
       const seqs = seqRes.data || [];
       const stickerUrls = new Set((stkRes.data || []).map(s => String(s.url || "").trim()).filter(Boolean));
+      FULL_OK = !!fullRes;
+      const fullById = new Map((fullRes?.data || []).map(f => [f.id, f.steps || []]));
 
       SEQ_LIST = seqs
         .map(s => ({ id: s.id, title: s.title || "(제목 없음)", order: s.series_order ?? 9999, series: s.series_name || s.group || "" }))
         .sort((a, b) => String(a.series).localeCompare(String(b.series)) || a.order - b.order);
 
       const map = new Map();
+      HIDDEN_USES = 0;
       seqs.forEach(s => {
-        (s.steps || []).forEach((st, i) => {
+        const freeLen = (s.steps || []).length;          // 공개(무료) 구간 길이
+        const full = fullById.get(s.id);                  // 있으면 이게 전체 본문
+        const steps = full && full.length ? full : (s.steps || []);
+        steps.forEach((st, i) => {
           const url = String(st.image_url || "").trim();
           if (!url) return;
+          const paid = !!(full && full.length) && i >= freeLen;   // 무료 구간 뒤 = 유료
+          if (paid) HIDDEN_USES++;
           if (!map.has(url)) {
-            map.set(url, { url, uses: [], isSticker: stickerUrls.has(url), sz: szOf(url), w: 0, h: 0 });
+            map.set(url, { url, uses: [], isSticker: stickerUrls.has(url), sz: szOf(url) });
           }
           map.get(url).uses.push({
             seqId: s.id,
@@ -197,7 +224,8 @@
             seqOrder: s.series_order ?? 9999,
             stepIdx: i,
             text: String(st.text || "").replace(/\s+/g, " ").trim().slice(0, 60),
-            style: st.share_style || ""
+            style: st.share_style || "",
+            paid
           });
         });
       });
@@ -233,9 +261,15 @@
     const szText = Object.entries(bySz).sort((a, b) => b[1] - a[1])
       .map(([k, v]) => `${k} ${v}`).join(" · ");
 
+    document.getElementById("im-warn").innerHTML = FULL_OK ? "" : `
+      <div class="im-warn"><b>유료 구간은 목록에 없습니다.</b>
+      잠긴 편의 전체 본문(<code>learn_sequences_full</code>)을 읽지 못해 무료 구간만 표시하고 있습니다.
+      관리자로 다시 로그인하면 전체가 나옵니다.</div>`;
+
     document.getElementById("im-stats").innerHTML = `
       <div class="im-stat"><div class="im-stat-k">서로 다른 그림</div><div class="im-stat-v">${IMAGES.length}<small>장</small></div></div>
-      <div class="im-stat"><div class="im-stat-k">붙어 있는 청크</div><div class="im-stat-v">${totalUses}<small>개</small></div></div>
+      <div class="im-stat"><div class="im-stat-k">붙어 있는 청크</div><div class="im-stat-v">${totalUses}<small>개</small></div>${
+        HIDDEN_USES ? `<div class="im-stat-k" style="margin-top:3px;font-weight:700;">그중 유료 구간 ${HIDDEN_USES}개</div>` : ""}</div>
       <div class="im-stat"><div class="im-stat-k">그림이 있는 편</div><div class="im-stat-v">${seqSet.size}<small>편</small></div></div>
       <div class="im-stat ${multi.length ? "warn" : ""}"><div class="im-stat-k">여러 곳에 쓰인 그림</div><div class="im-stat-v">${multi.length}<small>장</small></div></div>
       <div class="im-stat"><div class="im-stat-k">스티커 함 그림</div><div class="im-stat-v">${stickers}<small>장</small></div></div>
@@ -280,7 +314,8 @@
       const uses = im.uses.map(u => `
         <a class="im-use" href="/admin/blog/learn_manage.html?id=${encodeURIComponent(u.seqId)}" target="_blank"
            title="이 편의 청크 편집기로 이동">
-          <span class="im-use-seq">${escHtml_(u.seqTitle.slice(0, 26))} · ${u.stepIdx + 1}번 청크${u.style ? " · " + escHtml_(u.style) : ""}</span><br>
+          <span class="im-use-seq">${escHtml_(u.seqTitle.slice(0, 26))} · ${u.stepIdx + 1}번 청크${u.style ? " · " + escHtml_(u.style) : ""}${
+            u.paid ? ` <span class="im-badge paid">유료 구간</span>` : ""}</span><br>
           <span class="im-use-txt">${escHtml_(u.text) || "(본문 없음)"}</span>
         </a>`).join("");
 
