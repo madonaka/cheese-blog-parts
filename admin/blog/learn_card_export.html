@@ -242,10 +242,11 @@
           </div>
           <div class="ce-row">
             <span class="ce-hint">
-              <strong>낱장</strong>은 1080×1080 카드가 한 장씩 든 ZIP,
-              <strong>세로</strong>는 카드를 위아래로 이어붙인 긴 이미지입니다. 결과 격자의 ⬇ 로 카드 한 장만 받을 수도 있습니다.<br>
+              <strong>낱장</strong>은 1080×1080 카드가 한 장씩 든 ZIP(카드마다 출처가 들어갑니다),
+              <strong>세로</strong>는 카드를 여백 없이 붙인 긴 이미지로 <strong>브랜드·출처가 맨 위와 맨 아래 한 번씩만</strong> 들어갑니다.
+              결과 격자의 ⬇ 로 카드 한 장만 받을 수도 있습니다.<br>
               한 장에 그릴 수 있는 높이는 브라우저·기기마다 다르고(휴대폰은 특히 낮습니다) 파일도 무거워집니다 —
-              그래서 세로 이미지는 정한 장수마다 잘라 여러 장으로 만듭니다. 10장이면 대략 1080×10,900px입니다.
+              그래서 세로 이미지는 정한 장수마다 잘라 여러 장으로 만듭니다(10장이면 대략 1080×11,160px, 나뉘면 각 장에 출처가 따로 들어갑니다).
               결과가 두 장 이상이면 ZIP으로 묶어 내려받습니다.
             </span>
           </div>
@@ -284,12 +285,13 @@
      - 읽기 전용: safeFetchDB는 get/getDoc만 호출한다.
      ════════════════════════════════════════ */
 
-  const SHARE_CARD_SRC = "/learn/components/share-card.js?v=1.2.6";
+  const SHARE_CARD_SRC = "/learn/components/share-card.js?v=1.2.7";
   // 관리자 페이지를 storefront가 아닌 곳(로컬 blog-parts 서버 등)에서 열면 위 경로가 없다 — 라이브에서 받아온다.
-  const SHARE_CARD_FALLBACK = "https://plus.cheesehistory.com/learn/components/share-card.js?v=1.2.6";
+  const SHARE_CARD_FALLBACK = "https://plus.cheesehistory.com/learn/components/share-card.js?v=1.2.7";
 
   const CARD_SIZE = 1080;    // share-card.js의 SIZE와 같다
-  const STRIP_GAP = 28;      // 세로 이어붙이기에서 카드 사이 여백
+  const STRIP_HEAD_H = 200;  // 세로 이미지 맨 위 머리말(브랜드+편 제목) 높이
+  const STRIP_FOOT_H = 160;  // 맨 아래 꼬리말(출처) 높이
   const STRIP_BG  = "#faf8f5";
 
   let SEQ_LIST   = [];   // [{id,title,series,order}]
@@ -341,6 +343,11 @@
       .then(() => {
         if (!window.LearnShareCard?.drawCard) {
           throw new Error("카드 렌더러(share-card.js)가 drawCard를 내주지 않습니다 — storefront 배포본이 예전 버전일 수 있습니다.");
+        }
+        // BRAND는 1.2.7부터 있다. 없으면 bare(머리말 없는 카드)도 없는 옛 판이라,
+        // 세로 이미지에 카드마다 출처가 박힌 채로 조용히 나와 버린다.
+        if (!window.LearnShareCard.BRAND) {
+          throw new Error("카드 렌더러가 옛 판(1.2.6 이하)입니다 — storefront를 배포한 뒤 새로고침해 주세요.");
         }
       });
     return rendererPromise;
@@ -678,7 +685,8 @@
 
         const name = `cheese-history_${CUR_SEQ.id}_${String(i + 1).padStart(2, "0")}.png`;
         const url = URL.createObjectURL(blob);
-        CARDS.push({ idx: i, blob, url, name });
+        // style은 세로 이어붙이기에서 같은 모양으로 다시 그릴 때 쓴다
+        CARDS.push({ idx: i, blob, url, name, style: resolveStyle_(step, mode) });
 
         const cell = document.createElement("div");
         cell.className = "ce-result-card";
@@ -753,7 +761,6 @@
     }
   }
 
-  /* 만든 카드를 세로로 이어붙인다. 카드 사이는 크림 여백 + 가운데 옅은 금선. */
   function loadBlobImage_(url) {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -763,32 +770,92 @@
     });
   }
 
-  async function buildStrip_(chunk) {
+  /* ── 세로로 이어붙이기 ──
+     한 장으로 이어진 그림이라 카드마다 브랜드·출처를 반복할 이유가 없다.
+     맨 위에 머리말(브랜드+편 제목), 맨 아래에 꼬리말(출처)을 한 번씩만 두고
+     카드는 여백 없이 붙인다. 그래서 카드를 '머리말·꼬리말 없이'(bare) 다시 그린다
+     — 미리보기·낱장 저장용으로 만들어 둔 그림에는 이미 머리말이 박혀 있기 때문. */
+  function stripBrand_() {
+    const S = window.LearnShareCard || {};
+    return {
+      brand: S.BRAND || "CHEESE HISTORY",
+      copyright: S.COPYRIGHT || "© CHEESE HISTORY",
+      notice: S.NOTICE || "",
+      c: S.COLORS || { bg: STRIP_BG, gold: "#b8860b", muted: "#8a7a6b" }
+    };
+  }
+
+  function drawGoldRule_(ctx, y, halfWidth) {
+    const g = ctx.createLinearGradient(CARD_SIZE / 2 - halfWidth, 0, CARD_SIZE / 2 + halfWidth, 0);
+    g.addColorStop(0, "rgba(184,134,11,0)");
+    g.addColorStop(0.5, "rgba(184,134,11,0.85)");
+    g.addColorStop(1, "rgba(184,134,11,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(CARD_SIZE / 2 - halfWidth, y, halfWidth * 2, 1.5);
+  }
+
+  function drawStripHeader_(ctx, title, part, parts) {
+    const { brand, c } = stripBrand_();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillStyle = c.gold;
+    ctx.font = '800 30px "Noto Sans KR", sans-serif';
+    try { ctx.letterSpacing = "10px"; } catch (_) {}
+    ctx.fillText(brand, CARD_SIZE / 2, 84);
+    try { ctx.letterSpacing = "0px"; } catch (_) {}
+
+    ctx.fillStyle = c.muted;
+    ctx.font = '700 26px "Noto Sans KR", sans-serif';
+    const label = parts > 1 ? `${title} (${part}/${parts})` : title;
+    ctx.fillText(label, CARD_SIZE / 2, 132);
+    drawGoldRule_(ctx, 164, 90);
+  }
+
+  function drawStripFooter_(ctx, top) {
+    const { copyright, notice, c } = stripBrand_();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+    drawGoldRule_(ctx, top + 40, 90);
+    ctx.fillStyle = c.muted;
+    ctx.font = '700 24px "Noto Sans KR", sans-serif';
+    ctx.fillText(copyright, CARD_SIZE / 2, top + 86);
+    ctx.fillStyle = "rgba(138,122,107,0.72)";
+    ctx.font = '400 19px "Noto Sans KR", sans-serif';
+    ctx.fillText(notice, CARD_SIZE / 2, top + 120);
+  }
+
+  async function buildStrip_(chunk, title, part, parts, onCard) {
     const n = chunk.length;
     const canvas = document.createElement("canvas");
     canvas.width = CARD_SIZE;
-    canvas.height = n * CARD_SIZE + (n - 1) * STRIP_GAP;
+    canvas.height = STRIP_HEAD_H + n * CARD_SIZE + STRIP_FOOT_H;
     const ctx = canvas.getContext("2d");
     ctx.fillStyle = STRIP_BG;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    let y = 0;
+    drawStripHeader_(ctx, title, part, parts);
+
+    let y = STRIP_HEAD_H;
     for (let k = 0; k < n; k++) {
-      const img = await loadBlobImage_(chunk[k].url);
-      ctx.drawImage(img, 0, y, CARD_SIZE, CARD_SIZE);
+      const step = CUR_SEQ?.steps?.[chunk[k].idx];
+      if (!step) throw new Error("본문이 바뀌었습니다 — 카드를 다시 만들어 주세요.");
+      if (onCard) onCard(k, n);
+      const card = await window.LearnShareCard.drawCard({
+        title,
+        text: plainText_(step),
+        imageUrl: String(step.image_url ?? "").trim(),
+        sticker: styleOf_(step) === "sticker",
+        speaker: String(step.speaker ?? "").trim(),
+        speakerTitle: String(step.speaker_title ?? "").trim(),
+        bare: true
+      }, chunk[k].style || "classic");
+      ctx.drawImage(card, 0, y);
+      card.width = card.height = 0;   // 다음 장을 그리기 전에 놓아준다
       y += CARD_SIZE;
-      if (k < n - 1) {
-        // 카드 사이 구분 금선
-        const gy = y + STRIP_GAP / 2;
-        const g = ctx.createLinearGradient(CARD_SIZE / 2 - 140, 0, CARD_SIZE / 2 + 140, 0);
-        g.addColorStop(0, "rgba(184,134,11,0)");
-        g.addColorStop(0.5, "rgba(184,134,11,0.55)");
-        g.addColorStop(1, "rgba(184,134,11,0)");
-        ctx.fillStyle = g;
-        ctx.fillRect(CARD_SIZE / 2 - 140, gy, 280, 1.5);
-        y += STRIP_GAP;
-      }
+      await new Promise(r => setTimeout(r, 0));
     }
+    drawStripFooter_(ctx, y);
+
     const blob = await new Promise((resolve, reject) => {
       canvas.toBlob(b => b ? resolve(b) : reject(new Error("긴 이미지를 만들지 못했습니다 — 한 장당 장수를 줄여 보세요.")), "image/png");
     });
@@ -809,11 +876,17 @@
     for (let i = 0; i < CARDS.length; i += per) chunks.push(CARDS.slice(i, i + per));
 
     try {
+      // 머리말·꼬리말 없는 판으로 다시 그려야 해서 렌더러가 필요하다
+      await ensureRenderer();
+      const title = CUR_SEQ?.title ?? "";
       const files = [];
       for (let c = 0; c < chunks.length; c++) {
-        msg.textContent = `긴 이미지를 만드는 중... ${c + 1} / ${chunks.length}`;
         bar.style.width = Math.round((c / chunks.length) * 100) + "%";
-        const blob = await buildStrip_(chunks[c]);
+        const blob = await buildStrip_(chunks[c], title, c + 1, chunks.length, (k, n) => {
+          msg.textContent = chunks.length > 1
+            ? `긴 이미지 ${c + 1}/${chunks.length} — 카드 ${k + 1}/${n} 그리는 중...`
+            : `카드를 이어붙이는 중... ${k + 1}/${n}`;
+        });
         const name = chunks.length === 1
           ? `cheese-history_${seqSlug_()}_strip.png`
           : `cheese-history_${seqSlug_()}_strip${String(c + 1).padStart(2, "0")}.png`;
