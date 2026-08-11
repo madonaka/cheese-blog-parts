@@ -90,6 +90,31 @@
     .badge-type.nation { background: #fef3c7; color: #b45309; }
     .badge-type.organization { background: #fae8ff; color: #a21caf; }
 
+    /* 인물 얼굴 — 학습 스티커 함에서 이름으로 이어 온 그림 (사전에 저장하지 않는다) */
+    .cm-face {
+      width: 28px; height: 28px; border-radius: 50%; object-fit: cover; object-position: 50% 12%;
+      vertical-align: middle; margin-right: 8px; flex-shrink: 0;
+      background: #fff; border: 1.5px solid var(--line);
+    }
+    /* 그림이 없는 인물 — 빈 자리를 남겨 '아직 안 그린 인물'이 목록에서 바로 보이게 */
+    .cm-face-none {
+      display: inline-flex; align-items: center; justify-content: center;
+      background: #f1f5f9; color: #cbd5e1; font-size: 12px;
+    }
+
+    /* 편집 모달 얼굴 미리보기 */
+    .cm-face-preview {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 14px;
+      padding: 10px 12px; background: #f8fafc; border: 1px solid var(--line); border-radius: 10px;
+    }
+    .cm-face-preview img, .cm-face-preview .cm-face-none {
+      width: 46px; height: 46px; border-radius: 50%; object-fit: cover; object-position: 50% 12%;
+      background: #fff; border: 1.5px solid var(--line); flex-shrink: 0;
+    }
+    .cm-face-preview .cm-face-none { display: flex; align-items: center; justify-content: center; background: #f1f5f9; color: #cbd5e1; font-size: 18px; }
+    .cm-face-preview-text { font-size: 12px; color: var(--sub); line-height: 1.6; }
+    .cm-face-preview-text b { color: var(--text); }
+
     /* 사건의 국가/진영 배지 (목록에서 한눈에 식별) */
     .faction-badge {
       display: inline-block; margin-left: 6px; padding: 2px 8px; border-radius: 999px;
@@ -484,9 +509,12 @@
         </div>
         <div class="cm-field">
           <label>대표 이름 *</label>
-          <input type="text" id="cm-name" placeholder="예: 리다자오, 톈안먼 사태">
+          <input type="text" id="cm-name" placeholder="예: 리다자오, 톈안먼 사태" oninput="renderFacePreview()">
         </div>
       </div>
+
+      <!-- 학습 스티커 함에서 이름으로 이어 온 얼굴 (인물 전용 · 사전에 저장하지 않는다) -->
+      <div class="cm-face-preview" id="cm-face-preview" style="display:none;"></div>
 
       <div class="cm-field">
         <label>한국식 독음 (후리가나 표시용, 선택) — 비워두면 표시 안 됨</label>
@@ -923,12 +951,15 @@
 
   async function loadAll() {
     try {
-      const [cRes, sRes] = await Promise.all([
+      const [cRes, sRes, kRes] = await Promise.all([
         safeFetchDB({ action: "get", collection: "learn_characters", orderByField: "created_at" }),
-        safeFetchDB({ action: "get", collection: "learn_sequences" })
+        safeFetchDB({ action: "get", collection: "learn_sequences" }),
+        // 학습 스티커 함의 인물 그림 — 사전에 저장하지 않고 이름으로만 잇는다(아래 buildFaceMap)
+        safeFetchDB({ action: "get", collection: "learn_stickers" }).catch(() => ({ data: [] }))
       ]);
       ALL_ITEMS = cRes.data || [];
       ALL_SEQUENCES = sRes.data || [];
+      buildFaceMap(kRes.data || []);
       buildSeqFilter();
       renderList();
       
@@ -938,6 +969,43 @@
       const tbody = document.getElementById("cm-tbody");
       if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="empty-msg" style="color:#dc2626;"><i class="fa-solid fa-triangle-exclamation"></i> 불러오기 실패: ${e.message}</td></tr>`;
     }
+  }
+
+  /* ── 학습 스티커 함 얼굴 잇기 ──
+     사전에는 그림을 저장하지 않는다. 스티커의 person(= 학습 화면 이름표에 나가는 사람 이름)과
+     사전의 name·alt_names를 이름으로 맞출 뿐이라, 스티커를 바꾸면 여기와 시리즈 페이지에
+     함께 반영되고 두 데이터가 어긋날 여지가 없다. (스토어프론트 쪽은 korean/char-face.js) */
+  let FACE_BY_NAME = new Map();
+  const faceKey_ = (s) => String(s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+
+  function buildFaceMap(stickers) {
+    FACE_BY_NAME = new Map();
+    const persons = (stickers || [])
+      .filter(s => (s.group || "") === "인물" && String(s.url || "").trim())
+      .map(s => ({
+        // person이 비면 code가 이름 역할을 한다(스티커 함의 폴백 규칙과 같다)
+        name: String(s.person || "").trim() || String(s.code || "").trim(),
+        url: String(s.url).trim(),
+        expression: String(s.expression || "").trim(),
+        order: s.order ?? 100
+      }))
+      .filter(p => p.name);
+    // 사전에는 '기본 표정'을 쓴다 — 표정이 붙은 그림은 대사 카드용이다
+    persons.sort((a, b) => (a.expression ? 1 : 0) - (b.expression ? 1 : 0) || a.order - b.order);
+    persons.forEach(p => {
+      const k = faceKey_(p.name);
+      if (!FACE_BY_NAME.has(k)) FACE_BY_NAME.set(k, p.url);
+    });
+  }
+
+  function faceForItem_(item) {
+    if (!item || item.type !== "character" || !FACE_BY_NAME.size) return "";
+    const names = [item.name, ...(Array.isArray(item.alt_names) ? item.alt_names : [])];
+    for (const n of names) {
+      const url = FACE_BY_NAME.get(faceKey_(n));
+      if (url) return url;
+    }
+    return "";
   }
 
   function buildSeqFilter() {
@@ -1154,10 +1222,19 @@
         ? `<span class="missing-conn-badge" title="등장 위치 ${missingCount}건의 연결 설명이 비어 있거나 자동 문구입니다. 항목을 열어 채워주세요."><i class="fa-solid fa-triangle-exclamation"></i>설명 누락 ${missingCount}</span>`
         : "";
 
+      // 인물이면 스티커 함에서 이어 온 얼굴을 이름 앞에 둔다.
+      // 그림이 없으면 빈 자리를 남겨 "아직 안 그린 인물"이 목록에서 바로 보이게 한다.
+      const faceUrl = faceForItem_(item);
+      const faceCell = item.type === "character"
+        ? (faceUrl
+            ? `<img class="cm-face" src="${esc(faceUrl)}" alt="" title="학습 스티커 함의 그림" loading="lazy" onerror="this.outerHTML='<span class=&quot;cm-face cm-face-none&quot; title=&quot;그림을 불러오지 못했습니다&quot;><i class=&quot;fa-solid fa-user&quot;></i></span>'">`
+            : `<span class="cm-face cm-face-none" title="학습 스티커 함에 이 인물의 그림이 없습니다"><i class="fa-solid fa-user"></i></span>`)
+        : "";
+
       return `<tr>
         <td data-label="선택" style="text-align: center;"><input type="checkbox" class="item-checkbox" value="${item.id}" onchange="onItemCheckboxChange()"></td>
         <td data-label="구분"><span class="badge-type ${typeClass}">${typeLabel}</span></td>
-        <td data-label="이름"><strong onclick="openModal('${item.id}')" style="color: #2563eb; cursor: pointer; text-decoration: underline; text-underline-offset: 4px;" onmouseover="this.style.color='#1d4ed8'" onmouseout="this.style.color='#2563eb'">${esc(item.name || "(이름 없음)")}</strong>${newDot}${factionBadges}${missingBadge}</td>
+        <td data-label="이름">${faceCell}<strong onclick="openModal('${item.id}')" style="color: #2563eb; cursor: pointer; text-decoration: underline; text-underline-offset: 4px;" onmouseover="this.style.color='#1d4ed8'" onmouseout="this.style.color='#2563eb'">${esc(item.name || "(이름 없음)")}</strong>${newDot}${factionBadges}${missingBadge}</td>
         <td data-label="별명/이명" class="alt-names-cell">${altNames ? esc(altNames) : "-"}</td>
         <td data-label="시기·생몰년" style="font-weight: 600;">${eraPeriod}</td>
         <td class="td-actions" style="text-align: right;">
@@ -1286,6 +1363,9 @@
       if (relLabel) relLabel.innerHTML = "⚡ 연관 사건 (사전의 사건 항목에서 검색)";
       if (relInput) relInput.placeholder = "사건명 검색...";
     }
+
+    // 얼굴 미리보기는 인물일 때만 — 구분을 바꾸면 같이 켜고 끈다
+    renderFacePreview();
   }
 
   /* ── 탭 전환 ── */
@@ -1981,6 +2061,27 @@
     }).filter(a => a.sequence_id); // 편 ID가 유효한 것만 저장
   }
 
+  /* 편집 모달의 얼굴 미리보기 — 인물일 때만. 이름을 고치면 매칭이 달라지므로 그때마다 다시 그린다.
+     여기서 보이는 그림은 시리즈 페이지 인물 사전 탭에 그대로 나가는 얼굴이다. */
+  function renderFacePreview() {
+    const box = document.getElementById("cm-face-preview");
+    if (!box) return;
+    const type = document.getElementById("cm-type")?.value || "character";
+    if (type !== "character") { box.style.display = "none"; return; }
+
+    const name = (document.getElementById("cm-name")?.value || "").trim();
+    const url = faceForItem_({ type: "character", name, alt_names: getAltNames() });
+    box.style.display = "flex";
+    box.innerHTML = url
+      ? `<img src="${esc(url)}" alt="" loading="lazy">
+         <span class="cm-face-preview-text"><b>학습 스티커 함의 그림이 연결됐습니다.</b><br>
+           시리즈 페이지 인물 사전 탭에 이 얼굴이 나갑니다. 그림 교체는 스티커 함에서 합니다.</span>`
+      : `<span class="cm-face-none"><i class="fa-solid fa-user"></i></span>
+         <span class="cm-face-preview-text"><b>연결된 그림이 없습니다.</b><br>
+           <a href="/admin/blog/learn_sticker_manage.html" target="_blank">학습 스티커 함</a>에서 인물 이름을
+           <b>${esc(name || "이 항목의 이름")}</b>(또는 별명 중 하나)으로 등록하면 자동으로 붙습니다.</span>`;
+  }
+
   /* ── 모달 열기/닫기 (실시간 Get 적용) ── */
   async function openModal(id) {
     const modal = document.getElementById("cm-modal-bg");
@@ -2053,6 +2154,7 @@
         
         appList.innerHTML = "";
         (item.appearances || []).forEach(a => addAppearanceRow(a));
+        renderFacePreview();
       } catch (err) {
         alert("최신 데이터를 가져오는 중 오류가 발생했습니다: " + err.message);
         closeModal();
@@ -2079,6 +2181,7 @@
     }
 
     toggleTypeFields();
+    renderFacePreview();
   }
 
   function closeModal() {
