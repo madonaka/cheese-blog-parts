@@ -108,6 +108,15 @@
 
     .ce-empty { padding:34px 16px; text-align:center; color:var(--sub); font-size:13px; }
 
+    /* 아직 쓸 수 없는 패널 — 숨기지 않고 흐리게 둬서 무엇이 나올지는 보이게 한다 */
+    .ce-panel.is-idle .ce-row, .ce-panel.is-idle .ce-hint { opacity:0.5; }
+    .ce-lock-note {
+      display:none; margin-top:12px; padding:10px 13px; border-radius:10px;
+      background:#f8fafc; border:1px dashed var(--line); color:var(--sub); font-size:12px; font-weight:700;
+    }
+    .ce-panel.is-idle .ce-lock-note { display:block; }
+    .ce-lock-note i { margin-right:6px; }
+
     /* 라이트박스 */
     .ce-lb { position:fixed; inset:0; background:rgba(15,23,42,0.82); display:none; align-items:center; justify-content:center; z-index:9000; padding:24px; }
     .ce-lb.open { display:flex; }
@@ -215,12 +224,12 @@
           </div>
         </div>
 
-        <!-- 4) 저장 -->
-        <div class="ce-panel" id="ce-save-panel" style="display:none;">
+        <!-- 4) 저장 — 카드를 만들기 전에도 어떤 방식으로 저장되는지 보이게 띄워 둔다 -->
+        <div class="ce-panel is-idle" id="ce-save-panel">
           <p class="ce-panel-title"><i class="fa-solid fa-download"></i> 4. 저장</p>
           <div class="ce-row">
-            <button type="button" class="ce-btn" onclick="saveSingles()"><i class="fa-regular fa-images"></i> 낱장으로 저장 (ZIP)</button>
-            <button type="button" class="ce-btn" onclick="saveStrip()"><i class="fa-solid fa-arrows-up-down"></i> 세로로 이어붙여 저장</button>
+            <button type="button" class="ce-btn" id="ce-save-singles" onclick="saveSingles()"><i class="fa-regular fa-images"></i> 낱장으로 저장 (ZIP)</button>
+            <button type="button" class="ce-btn" id="ce-save-strip" onclick="saveStrip()"><i class="fa-solid fa-arrows-up-down"></i> 세로로 이어붙여 저장</button>
             <span class="ce-label">한 장에</span>
             <select class="ce-select" id="ce-strip-per">
               <option value="5">5장씩</option>
@@ -233,10 +242,15 @@
           </div>
           <div class="ce-row">
             <span class="ce-hint">
+              <strong>낱장</strong>은 1080×1080 카드가 한 장씩 든 ZIP,
+              <strong>세로</strong>는 카드를 위아래로 이어붙인 긴 이미지입니다. 결과 격자의 ⬇ 로 카드 한 장만 받을 수도 있습니다.<br>
               한 장에 그릴 수 있는 높이는 브라우저·기기마다 다르고(휴대폰은 특히 낮습니다) 파일도 무거워집니다 —
               그래서 세로 이미지는 정한 장수마다 잘라 여러 장으로 만듭니다. 10장이면 대략 1080×10,900px입니다.
               결과가 두 장 이상이면 ZIP으로 묶어 내려받습니다.
             </span>
+          </div>
+          <div class="ce-lock-note" id="ce-save-lock">
+            <i class="fa-regular fa-clock"></i> 아직 만든 카드가 없습니다 — 위에서 <strong>카드 만들기</strong>를 먼저 누르세요.
           </div>
           <div class="ce-progress" id="ce-save-progress">
             <div class="ce-bar"><div class="ce-bar-in" id="ce-save-bar-in"></div></div>
@@ -422,7 +436,6 @@
     const id = document.getElementById("ce-seq").value;
     document.getElementById("ce-pick-panel").style.display = "none";
     document.getElementById("ce-make-panel").style.display = "none";
-    document.getElementById("ce-save-panel").style.display = "none";
     document.getElementById("ce-result-panel").style.display = "none";
     clearCards();
     CUR_SEQ = null;
@@ -587,11 +600,24 @@
   }
 
   /* ── 3) 카드 만들기 ── */
+  /* 저장 패널은 숨기지 않고 흐린 채로 띄워 둔다 — 어떤 방식으로 저장되는지 미리 보이게. */
+  function setSaveReady(on) {
+    const panel = document.getElementById("ce-save-panel");
+    if (!panel) return;
+    panel.classList.toggle("is-idle", !on);
+    ["ce-save-singles", "ce-save-strip"].forEach(id => {
+      const b = document.getElementById(id);
+      if (b) b.disabled = !on;
+    });
+  }
+
   function clearCards() {
     CARDS.forEach(c => { try { URL.revokeObjectURL(c.url); } catch (_) {} });
     CARDS = [];
     const grid = document.getElementById("ce-result-grid");
     if (grid) grid.innerHTML = "";
+    setSaveReady(false);
+    document.getElementById("ce-save-progress")?.classList.remove("on");
   }
 
   function resolveStyle_(step, mode) {
@@ -614,7 +640,6 @@
     prog.classList.add("on");
     bar.style.width = "0%";
     msg.textContent = "카드 렌더러를 불러오는 중...";
-    document.getElementById("ce-save-panel").style.display = "none";
     clearCards();
 
     try {
@@ -675,7 +700,7 @@
     bar.style.width = "100%";
     msg.textContent = `${CARDS.length}장 완성했습니다.`;
     document.getElementById("ce-result-count").textContent = `(${CARDS.length}장)`;
-    document.getElementById("ce-save-panel").style.display = CARDS.length ? "" : "none";
+    setSaveReady(CARDS.length > 0);
     btn.disabled = false;
     if (CARDS.length) toast(`${CARDS.length}장 만들었습니다.`);
   }
@@ -819,7 +844,10 @@
   }
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeLightbox(); });
 
-  document.addEventListener("DOMContentLoaded", loadSequences);
+  document.addEventListener("DOMContentLoaded", () => {
+    setSaveReady(false);
+    loadSequences();
+  });
 </script>
 </body>
 </html>
