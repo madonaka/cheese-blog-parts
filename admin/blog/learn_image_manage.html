@@ -61,6 +61,9 @@
     .im-badge.sticker { background:#e0e7ff; color:#3730a3; }
     .im-badge.big { background:#fee2e2; color:#991b1b; }
     .im-badge.paid { background:#fce7f3; color:#9d174d; }
+    .im-badge.safe { background:#dcfce7; color:#166534; }
+    .im-badge.keep { background:#f1f5f9; color:#475569; }
+    .im-danger { background:#fef2f2; border:1px solid #fecaca; color:#991b1b; border-radius:10px; padding:10px 12px; font-size:12.5px; line-height:1.7; margin-bottom:12px; }
 
     /* 보호 컬렉션을 못 읽었을 때 — 목록이 반쪽이라는 사실을 숨기지 않는다 */
     .im-warn {
@@ -161,6 +164,7 @@
           </select>
           <label class="im-chk"><input type="checkbox" id="im-multi" onchange="renderImages()"> 여러 곳에 쓰인 것만</label>
           <label class="im-chk"><input type="checkbox" id="im-nosticker" onchange="renderImages()"> 스티커 제외</label>
+          <label class="im-chk"><input type="checkbox" id="im-safe" onchange="renderImages()"> 줄여도 안전한 것만</label>
           <span class="im-count" id="im-count"></span>
         </div>
 
@@ -174,13 +178,14 @@
           <button type="button" class="im-btn ghost" onclick="clearPicks()">선택 해제</button>
           <span style="flex:1;"></span>
           <select class="im-select" id="im-newsz" style="padding:8px 12px;">
-            <option value="320">크기를 w320으로 (스티커·작은 그림)</option>
-            <option value="480" selected>크기를 w480으로 (본문 340px 기준 권장)</option>
-            <option value="720">크기를 w720으로 (자막형 큰 사진)</option>
-            <option value="1200">크기를 w1200으로 (되돌리기)</option>
+            <option value="320" selected>w320 — 대사형 스티커(최대 148px, 확대 없음)</option>
+            <option value="480">w480</option>
+            <option value="720">w720</option>
+            <option value="1200">w1200 — 확대·자막형 기본값</option>
           </select>
           <button type="button" class="im-btn" onclick="openPlan('resize')">크기 바꾸기</button>
           <button type="button" class="im-btn ghost" id="im-swap-btn" onclick="openPlan('swap')">주소 교체</button>
+          <button type="button" class="im-btn ghost" onclick="openPlan('detach')" style="color:#991b1b;">청크에서 떼어내기</button>
         </div>
       </div>
     </main>
@@ -195,8 +200,14 @@
     <div id="im-swap-field" style="display:none; margin-bottom:14px;">
       <label style="display:block; font-size:12px; font-weight:800; color:var(--sub); margin-bottom:6px;">바꿀 그림 주소</label>
       <input type="text" id="im-swap-url" class="im-search" style="padding-left:14px;" placeholder="https://drive.google.com/thumbnail?id=...&sz=w1200" oninput="onSwapUrlInput()">
-      <div style="font-size:11.5px; color:var(--sub); margin-top:6px; line-height:1.6;">
-        이미 올라가 있는 그림의 주소를 넣으세요. 새 파일을 올리는 기능은 아직 없습니다.
+      <div id="im-drop" style="border:2px dashed var(--line); border-radius:10px; padding:12px; text-align:center; margin-top:8px;"
+           ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+        <button type="button" class="im-btn ghost" onclick="document.getElementById('im-file').click()">
+          <i class="fa-solid fa-folder-open"></i> 새 그림 올리기
+        </button>
+        <div style="font-size:11.5px; color:var(--sub); margin-top:7px; line-height:1.6;" id="im-drop-hint">
+          여기에 끌어다 놓거나 붙여넣어도 됩니다. 올리면 위 칸에 주소가 채워집니다.
+        </div>
       </div>
     </div>
     <div class="im-plan" id="im-plan-body"></div>
@@ -209,6 +220,8 @@
     </div>
   </div>
 </div>
+
+<input type="file" id="im-file" accept="image/*" style="display:none;" onchange="onFilePicked(event)">
 
 <div class="im-lb" id="im-lb" onclick="closeLightbox(event)">
   <button type="button" class="im-lb-close" onclick="closeLightbox(event)">✕</button>
@@ -289,8 +302,9 @@
           const paid = !!(full && full.length) && i >= freeLen;   // 무료 구간 뒤 = 유료
           if (paid) HIDDEN_USES++;
           if (!map.has(url)) {
-            map.set(url, { url, uses: [], isSticker: stickerUrls.has(url), sz: szOf(url) });
+            map.set(url, { url, uses: [], isSticker: stickerUrls.has(url), sz: szOf(url), kinds: new Set() });
           }
+          map.get(url).kinds.add(st.share_style || "photo");
           map.get(url).uses.push({
             seqId: s.id,
             seqTitle: s.title || "(제목 없음)",
@@ -303,6 +317,18 @@
         });
       });
       IMAGES = [...map.values()];
+      /* 줄여도 되는 그림인지 판정 — 뷰어의 실제 규칙을 그대로 옮긴 것이다.
+         · 대사형(sticker): 확대가 막혀 있고 최대 148px로 그린다 → 줄여도 안전
+         · 자막형(cinema): 확대는 막혀 있지만 화면을 채운다 → 크게 유지해야 한다
+         · 그 밖의 사진: 눌러서 확대하면 최대 94vw까지 늘린다(같은 주소를 쓴다)
+                        → 줄이면 확대 화질이 그만큼 떨어진다 */
+      IMAGES.forEach(im => {
+        const k = [...im.kinds];
+        im.onlySticker = k.length > 0 && k.every(x => x === "sticker");
+        im.hasCinema = k.includes("cinema");
+        im.zoomable = k.some(x => x !== "sticker" && x !== "cinema");
+        im.safeToShrink = im.onlySticker;
+      });
 
       const seqSel = document.getElementById("im-seq");
       SEQ_LIST.forEach(s => {
@@ -360,9 +386,11 @@
     const multiOnly = document.getElementById("im-multi")?.checked;
     const noSticker = document.getElementById("im-nosticker")?.checked;
 
+    const safeOnly = document.getElementById("im-safe")?.checked;
     let list = IMAGES.filter(im => {
       if (multiOnly && im.uses.length < 2) return false;
       if (noSticker && im.isSticker) return false;
+      if (safeOnly && !im.safeToShrink) return false;
       if (seqId && !im.uses.some(u => u.seqId === seqId)) return false;
       if (!q) return true;
       return im.uses.some(u => `${u.seqTitle} ${u.text}`.toLowerCase().includes(q));
@@ -381,6 +409,9 @@
         `<span class="im-badge use">${im.uses.length}개 청크</span>`,
         seqCount > 1 ? `<span class="im-badge multi">${seqCount}개 편에 걸침</span>` : "",
         im.isSticker ? `<span class="im-badge sticker">스티커 함</span>` : "",
+        im.safeToShrink ? `<span class="im-badge safe">줄여도 안전</span>`
+          : im.hasCinema ? `<span class="im-badge keep">자막형 — 크게 유지</span>`
+          : `<span class="im-badge keep">확대 대상 — 크게 유지</span>`,
         im.sz ? `<span class="im-badge">${escHtml_(im.sz)}</span>` : ""
       ].filter(Boolean).join("");
 
@@ -457,6 +488,7 @@
     if (!picks.length) return;
 
     let changes = [];
+    let danger = "";
     if (kind === "resize") {
       const px = document.getElementById("im-newsz").value;
       changes = picks
@@ -464,6 +496,19 @@
         .filter(c => c.newUrl !== c.im.url);          // 이미 그 크기면 건드리지 않는다
       if (!changes.length) { alert("고른 그림이 이미 그 크기입니다."); return; }
       document.getElementById("im-swap-field").style.display = "none";
+      // 줄이면 손해 보는 그림이 섞였는지 — 뷰어의 확대 보기가 같은 주소를 쓴다
+      const risky = changes.filter(c => !c.im.safeToShrink && +px < szNum(c.im.sz));
+      if (risky.length) {
+        danger = `<div class="im-danger"><b>${risky.length}장은 줄이면 화질이 떨어집니다.</b>
+          확대해서 보는 사진과 자막형(화면을 채우는) 카드는 지금 주소를 그대로 크게 씁니다.
+          카드에 <span class="im-badge safe">줄여도 안전</span>이 붙은 것만 줄이는 편이 좋습니다.</div>`;
+      }
+    } else if (kind === "detach") {
+      changes = picks.map(im => ({ im, newUrl: "" }));
+      document.getElementById("im-swap-field").style.display = "none";
+      danger = `<div class="im-danger"><b>고른 그림을 쓰는 청크에서 그림을 빼냅니다.</b>
+        본문 글은 그대로 남고 그림만 사라집니다. 구글 드라이브의 파일은 지워지지 않으니,
+        되돌리려면 백업 파일의 주소를 다시 넣으면 됩니다.</div>`;
     } else {
       // 주소 교체 — 모달 안 입력칸으로 받는다(붙여넣기가 편하고, 창을 멈추지 않는다)
       const im = picks[0];
@@ -480,9 +525,11 @@
     const useCount = changes.reduce((n, c) => n + c.im.uses.length, 0);
     PLAN = { kind, changes, seqIds, paidSeq, useCount };
 
-    document.getElementById("im-plan-title").textContent = kind === "resize" ? "받아 오는 크기 바꾸기" : "그림 주소 교체";
+    document.getElementById("im-plan-title").textContent =
+      kind === "resize" ? "받아 오는 크기 바꾸기" : kind === "detach" ? "청크에서 그림 떼어내기" : "그림 주소 교체";
     document.getElementById("im-plan-sub").innerHTML =
-      "청크에 저장된 <b>그림 주소만</b> 바꿉니다. 구글 드라이브의 파일 자체는 그대로입니다.";
+      "청크에 저장된 <b>그림 주소만</b> 바꿉니다. 구글 드라이브의 파일 자체는 그대로입니다."
+      + danger;
     document.getElementById("im-plan-body").innerHTML = `
       <div>· 바꿀 그림 <b>${changes.length}장</b></div>
       <div>· 고쳐지는 청크 <b>${useCount}개</b></div>
@@ -513,6 +560,78 @@
   }
 
   function closePlan() { document.getElementById("im-plan-ov").classList.remove("open"); }
+
+  /* ── 새 그림 올리기 (구글 드라이브) ──
+     스티커 함과 같은 GAS 업로드 흐름이다. 그쪽에서 겪은 함정을 그대로 가져왔다:
+     GAS 응답이 세 갈래로 흔들린다 — 정상 / ok는 true인데 fileId가 없음 / JSON이 아닌 HTML.
+     그래서 ok가 아니라 fileId로 성공을 판정하고 최대 3번 시도한다.
+     올린 그림은 확대·자막형에서도 쓸 수 있게 w1200으로 받는다(줄이는 건 크기 바꾸기로). */
+  function onDragOver(e) { e.preventDefault(); document.getElementById("im-drop").style.borderColor = "var(--accent)"; }
+  function onDragLeave(e) { e.preventDefault(); document.getElementById("im-drop").style.borderColor = "var(--line)"; }
+  function onDrop(e) {
+    e.preventDefault(); onDragLeave(e);
+    const f = e.dataTransfer?.files?.[0];
+    if (f && f.type.startsWith("image/")) uploadImage(f);
+  }
+  function onFilePicked(e) {
+    const f = e.target.files?.[0];
+    if (f) uploadImage(f);
+    e.target.value = "";
+  }
+  document.addEventListener("paste", (e) => {
+    if (!document.getElementById("im-plan-ov").classList.contains("open")) return;
+    if (document.getElementById("im-swap-field").style.display === "none") return;
+    const items = e.clipboardData?.items || [];
+    for (const it of items) {
+      if (it.type.indexOf("image") === 0) { e.preventDefault(); uploadImage(it.getAsFile()); return; }
+    }
+  });
+
+  async function uploadImage(file) {
+    const hint = document.getElementById("im-drop-hint");
+    const urlInput = document.getElementById("im-swap-url");
+    hint.textContent = "올리는 중...";
+    urlInput.disabled = true;
+    try {
+      const base64 = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(String(r.result).split(",")[1]);
+        r.onerror = rej;
+        r.readAsDataURL(file);
+      });
+      const send = async () => {
+        const res = await fetch(window.CHEESE_STORE_API_BASE, {
+          method: "POST",
+          body: JSON.stringify({
+            mode: "uploadStoreFile",
+            fileName: "learn_body_" + Date.now() + ".png",
+            mimeType: file.type,
+            base64Data: base64
+          })
+        });
+        const txt = await res.text();
+        let json;
+        try { json = JSON.parse(txt); }
+        catch (_) { throw new Error("서버가 JSON이 아닌 응답을 보냈습니다(구글 스크립트 일시 오류)"); }
+        if (!json.ok) throw new Error(json.error || json.message || "업로드 실패");
+        return json.fileId || "";
+      };
+      let fileId = "", lastErr = null;
+      for (let i = 0; i < 3 && !fileId; i++) {
+        try { fileId = await send(); if (!fileId) lastErr = new Error("서버가 파일 ID를 주지 않았습니다"); }
+        catch (err) { lastErr = err; }
+      }
+      if (!fileId) throw new Error(`${lastErr?.message ?? "업로드 실패"} — 3번 시도했습니다.`);
+
+      urlInput.value = `https://drive.google.com/thumbnail?id=${fileId}&sz=w1200`;
+      onSwapUrlInput();
+      hint.innerHTML = `<span style="color:#166534;font-weight:800;">올렸습니다. 아래에서 확인하고 반영하세요.</span>`;
+    } catch (err) {
+      hint.innerHTML = `<span style="color:#dc2626;font-weight:800;">${escHtml_(err.message)}</span>`;
+    } finally {
+      urlInput.disabled = false;
+    }
+  }
 
   /* 되돌리기용 백업 — 바꾸기 전 원본 주소와 그 자리를 파일로 남긴다 */
   function downloadBackup() {
