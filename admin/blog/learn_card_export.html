@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>학습 카드 이미지 뽑기 · Cheese Admin</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="../admin.css" />
+  <script src="../admin-common.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <!-- 카드 글씨는 뷰어와 같은 서체로 그린다 (learn/viewer.html과 동일) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@300;400;500;700;900&family=Noto+Sans+KR:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
+
+  <!-- 낱장 묶음 저장(ZIP)용. 못 불러오면 순차 저장으로 자동 폴백한다. -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+  <script>
+    window.CHEESE_ADMIN_ACTIVE_PAGE = "learn_card_export";
+    window.CHEESE_ADMIN_PAGE_SUBTITLE = "학습 카드 이미지 뽑기";
+  </script>
+  <style>
+    :root {
+      --bg: #f8fafc; --card: #ffffff; --text: #0f172a; --sub: #64748b;
+      --line: rgba(15,23,42,0.08);
+      --shadow: 0 10px 25px -5px rgba(15,23,42,0.04), 0 8px 10px -6px rgba(15,23,42,0.04);
+      --r: 16px; --accent: #0f766e; --accent-light: #ccfbf1;
+    }
+    .ce-wrap { padding: 24px; max-width: 1320px; margin: 0 auto; }
+    .ce-title-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; flex-wrap:wrap; gap:10px; }
+    .ce-title { font-size:24px; font-weight:900; color:var(--text); margin:0; display:flex; align-items:center; gap:10px; }
+    .ce-title i { color: var(--accent); }
+    .ce-lead { font-size:13px; color:var(--sub); line-height:1.7; margin:0 0 18px; }
+    .ce-lead code { background:#f1f5f9; padding:1px 6px; border-radius:5px; font-size:12px; }
+
+    .ce-panel {
+      background:var(--card); border:1px solid var(--line); border-radius:var(--r); box-shadow:var(--shadow);
+      padding:16px 18px; margin-bottom:18px;
+    }
+    .ce-panel-title { font-size:13px; font-weight:900; color:var(--text); margin:0 0 12px; display:flex; align-items:center; gap:7px; }
+    .ce-panel-title i { color:var(--accent); font-size:12px; }
+
+    .ce-row { display:flex; gap:10px 12px; align-items:center; flex-wrap:wrap; }
+    .ce-row + .ce-row { margin-top:12px; }
+    .ce-label { font-size:12px; font-weight:800; color:var(--sub); white-space:nowrap; }
+    .ce-select, .ce-input {
+      padding:9px 12px; border:1.5px solid var(--line); border-radius:10px; font-size:13px;
+      background:#fff; font-family:inherit; color:var(--text); box-sizing:border-box;
+    }
+    .ce-select:focus, .ce-input:focus { border-color:var(--accent); outline:none; box-shadow:0 0 0 3px var(--accent-light); }
+    .ce-select.wide { min-width:340px; max-width:100%; flex:1; cursor:pointer; }
+    .ce-input.range { width:220px; }
+    .ce-chk { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:700; color:var(--sub); cursor:pointer; white-space:nowrap; }
+    .ce-hint { font-size:11.5px; color:var(--sub); line-height:1.6; }
+
+    .ce-btn {
+      padding:9px 16px; border:none; border-radius:10px; background:var(--accent); color:#fff;
+      font-size:13px; font-weight:800; cursor:pointer; font-family:inherit; display:inline-flex; align-items:center; gap:7px;
+    }
+    .ce-btn:hover { filter:brightness(1.08); }
+    .ce-btn:disabled { opacity:0.45; cursor:not-allowed; filter:none; }
+    .ce-btn.ghost { background:#fff; color:var(--sub); border:1.5px solid var(--line); }
+    .ce-btn.ghost:hover { border-color:var(--accent); color:var(--accent); filter:none; }
+    .ce-btn.sm { padding:6px 11px; font-size:12px; }
+
+    /* 청크 목록 */
+    .ce-list-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+    .ce-count { font-size:12px; color:var(--sub); margin-left:auto; white-space:nowrap; font-weight:700; }
+    .ce-list { border:1px solid var(--line); border-radius:12px; overflow:hidden; max-height:420px; overflow-y:auto; }
+    .ce-item { display:flex; gap:11px; align-items:flex-start; padding:10px 12px; border-bottom:1px solid var(--line); cursor:pointer; }
+    .ce-item:last-child { border-bottom:none; }
+    .ce-item:hover { background:#f8fafc; }
+    .ce-item.off { opacity:0.5; }
+    .ce-item input[type=checkbox] { margin-top:3px; flex-shrink:0; }
+    .ce-idx { font-size:11px; font-weight:900; color:var(--sub); width:26px; flex-shrink:0; text-align:right; padding-top:2px; }
+    .ce-thumb { width:44px; height:44px; border-radius:7px; background:#f1f5f9; flex-shrink:0; overflow:hidden; display:flex; align-items:center; justify-content:center; }
+    .ce-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+    .ce-thumb .ce-noimg { color:#cbd5e1; font-size:14px; }
+    .ce-item-body { flex:1; min-width:0; }
+    .ce-item-badges { display:flex; gap:5px; flex-wrap:wrap; margin-bottom:3px; }
+    .ce-badge { font-size:10px; font-weight:800; padding:2px 7px; border-radius:999px; background:#f1f5f9; color:var(--sub); }
+    .ce-badge.cinema { background:#e0e7ff; color:#4338ca; }
+    .ce-badge.sticker { background:#fef3c7; color:#b45309; }
+    .ce-badge.sub { background:#fee2e2; color:#b91c1c; }
+    .ce-badge.paid { background:#f3e8ff; color:#7e22ce; }
+    .ce-item-text { font-size:12.5px; color:var(--text); line-height:1.5; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+
+    /* 진행 막대 */
+    .ce-progress { margin-top:12px; display:none; }
+    .ce-progress.on { display:block; }
+    .ce-bar { height:8px; border-radius:999px; background:#e2e8f0; overflow:hidden; }
+    .ce-bar-in { height:100%; width:0%; background:var(--accent); transition:width 0.2s; }
+    .ce-progress-msg { font-size:12px; color:var(--sub); font-weight:700; margin-top:7px; }
+
+    /* 결과 격자 */
+    .ce-result-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(160px, 1fr)); gap:14px; }
+    .ce-result-card { border:1px solid var(--line); border-radius:12px; overflow:hidden; background:#fff; }
+    .ce-result-card img { width:100%; display:block; cursor:zoom-in; background:#faf8f5; }
+    .ce-result-foot { display:flex; align-items:center; justify-content:space-between; padding:7px 9px; gap:6px; }
+    .ce-result-no { font-size:11px; font-weight:900; color:var(--sub); }
+    .ce-icon-btn { border:none; background:transparent; color:var(--sub); cursor:pointer; font-size:12px; padding:3px 5px; border-radius:6px; }
+    .ce-icon-btn:hover { background:#f1f5f9; color:var(--accent); }
+
+    .ce-empty { padding:34px 16px; text-align:center; color:var(--sub); font-size:13px; }
+
+    /* 라이트박스 */
+    .ce-lb { position:fixed; inset:0; background:rgba(15,23,42,0.82); display:none; align-items:center; justify-content:center; z-index:9000; padding:24px; }
+    .ce-lb.open { display:flex; }
+    .ce-lb img { max-width:min(560px, 92vw); max-height:88vh; border-radius:10px; box-shadow:0 20px 60px rgba(0,0,0,0.4); }
+    .ce-lb-close { position:absolute; top:18px; right:22px; background:transparent; border:none; color:#fff; font-size:24px; cursor:pointer; }
+
+    /* 토스트 */
+    #toast {
+      position:fixed; left:50%; bottom:28px; transform:translateX(-50%) translateY(12px);
+      background:#1e293b; color:#fff; padding:11px 18px; border-radius:10px; font-size:13px; font-weight:700;
+      opacity:0; pointer-events:none; transition:opacity 0.2s, transform 0.2s; z-index:9500;
+    }
+    #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+
+    @media (max-width: 700px) {
+      .ce-wrap { padding:16px; }
+      .ce-select.wide { min-width:0; width:100%; }
+      .ce-input.range { width:100%; }
+    }
+  </style>
+</head>
+
+<body>
+<div class="admin-shell">
+  <div id="admin-header-slot"></div>
+  <div class="admin-main">
+    <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+    <main class="admin-content">
+      <div class="ce-wrap">
+
+        <div class="ce-title-row">
+          <h2 class="ce-title"><i class="fa-solid fa-layer-group"></i> 학습 카드 이미지 뽑기</h2>
+        </div>
+        <p class="ce-lead">
+          학습 뷰어의 <strong>카드 공유</strong>와 똑같은 그림을 한 편 통째로 한 번에 만듭니다.
+          <strong>낱장 묶음</strong>(1080×1080 카드 여러 장)이나 <strong>세로로 이어붙인 긴 이미지</strong>로 저장할 수 있습니다.<br>
+          읽기 전용 화면입니다 — 여기서 본문을 고치거나 저장하지 않습니다. 카드에는 항상 출처(© CHEESE HISTORY)가 함께 담깁니다.
+        </p>
+
+        <!-- 1) 어느 편을 뽑을지 -->
+        <div class="ce-panel">
+          <p class="ce-panel-title"><i class="fa-solid fa-book-open"></i> 1. 편 고르기</p>
+          <div class="ce-row">
+            <span class="ce-label">학습 시퀀스</span>
+            <select class="ce-select wide" id="ce-seq" onchange="onSeqChange()">
+              <option value="">불러오는 중...</option>
+            </select>
+            <button type="button" class="ce-btn ghost sm" onclick="loadSequences()"><i class="fa-solid fa-rotate"></i> 목록 새로고침</button>
+          </div>
+          <div class="ce-row">
+            <span class="ce-hint" id="ce-seq-hint">시퀀스를 고르면 청크(카드) 목록이 나옵니다.</span>
+          </div>
+        </div>
+
+        <!-- 2) 카드 고르기 -->
+        <div class="ce-panel" id="ce-pick-panel" style="display:none;">
+          <p class="ce-panel-title"><i class="fa-solid fa-list-check"></i> 2. 카드 고르기</p>
+          <div class="ce-row">
+            <span class="ce-label">구간</span>
+            <input type="text" class="ce-input range" id="ce-range" placeholder="예: 1-12, 15, 20-24" onkeydown="if(event.key==='Enter')applyRange()">
+            <button type="button" class="ce-btn ghost sm" onclick="applyRange()">구간 적용</button>
+            <button type="button" class="ce-btn ghost sm" onclick="selectAll(true)">전체 선택</button>
+            <button type="button" class="ce-btn ghost sm" onclick="selectAll(false)">전체 해제</button>
+            <label class="ce-chk"><input type="checkbox" id="ce-include-sub" onchange="renderStepList()"> 소제목 카드도 포함</label>
+          </div>
+          <div class="ce-list-head">
+            <span class="ce-hint">줄을 눌러 켜고 끕니다. 소제목 카드는 기본으로 빠집니다.</span>
+            <span class="ce-count" id="ce-count">—</span>
+          </div>
+          <div class="ce-list" id="ce-list"></div>
+        </div>
+
+        <!-- 3) 만들기 -->
+        <div class="ce-panel" id="ce-make-panel" style="display:none;">
+          <p class="ce-panel-title"><i class="fa-solid fa-wand-magic-sparkles"></i> 3. 카드 만들기</p>
+          <div class="ce-row">
+            <span class="ce-label">카드 모양</span>
+            <select class="ce-select" id="ce-style">
+              <option value="auto">청크에 지정된 대로 (권장)</option>
+              <option value="classic">전부 기본형 (크림 배경 + 액자)</option>
+              <option value="cinema">사진 있는 카드는 자막형</option>
+            </select>
+            <button type="button" class="ce-btn" id="ce-make-btn" onclick="makeCards()"><i class="fa-solid fa-play"></i> 카드 만들기</button>
+          </div>
+          <div class="ce-row">
+            <span class="ce-hint">
+              사진은 원본에서 새로 받아 그립니다 — 장수가 많으면 시간이 좀 걸립니다.
+              구글 드라이브 사진이 막히면 그 카드만 사진 없이(글만) 그려집니다.
+            </span>
+          </div>
+          <div class="ce-progress" id="ce-progress">
+            <div class="ce-bar"><div class="ce-bar-in" id="ce-bar-in"></div></div>
+            <p class="ce-progress-msg" id="ce-progress-msg"></p>
+          </div>
+        </div>
+
+        <!-- 4) 저장 -->
+        <div class="ce-panel" id="ce-save-panel" style="display:none;">
+          <p class="ce-panel-title"><i class="fa-solid fa-download"></i> 4. 저장</p>
+          <div class="ce-row">
+            <button type="button" class="ce-btn" onclick="saveSingles()"><i class="fa-regular fa-images"></i> 낱장으로 저장 (ZIP)</button>
+            <button type="button" class="ce-btn" onclick="saveStrip()"><i class="fa-solid fa-arrows-up-down"></i> 세로로 이어붙여 저장</button>
+            <span class="ce-label">한 장에</span>
+            <select class="ce-select" id="ce-strip-per">
+              <option value="5">5장씩</option>
+              <option value="8">8장씩</option>
+              <option value="10" selected>10장씩</option>
+              <option value="12">12장씩</option>
+              <option value="14">14장씩</option>
+              <option value="20">20장씩 (PC 전용)</option>
+            </select>
+          </div>
+          <div class="ce-row">
+            <span class="ce-hint">
+              한 장에 그릴 수 있는 높이는 브라우저·기기마다 다르고(휴대폰은 특히 낮습니다) 파일도 무거워집니다 —
+              그래서 세로 이미지는 정한 장수마다 잘라 여러 장으로 만듭니다. 10장이면 대략 1080×10,900px입니다.
+              결과가 두 장 이상이면 ZIP으로 묶어 내려받습니다.
+            </span>
+          </div>
+          <div class="ce-progress" id="ce-save-progress">
+            <div class="ce-bar"><div class="ce-bar-in" id="ce-save-bar-in"></div></div>
+            <p class="ce-progress-msg" id="ce-save-msg"></p>
+          </div>
+        </div>
+
+        <!-- 결과 -->
+        <div class="ce-panel" id="ce-result-panel" style="display:none;">
+          <p class="ce-panel-title"><i class="fa-solid fa-photo-film"></i> 만들어진 카드 <span id="ce-result-count" style="color:var(--sub); font-weight:800;"></span></p>
+          <div class="ce-result-grid" id="ce-result-grid"></div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+</div>
+
+<div class="ce-lb" id="ce-lb" onclick="closeLightbox(event)">
+  <button type="button" class="ce-lb-close" onclick="closeLightbox(event)">✕</button>
+  <img id="ce-lb-img" src="" alt="카드 미리보기">
+</div>
+
+<div id="toast"></div>
+
+<script>
+  /* ════════════════════════════════════════
+     학습 카드 이미지 뽑기
+     - 카드 그림은 storefront의 learn/components/share-card.js(LearnShareCard.drawCard)를 그대로 쓴다.
+       뷰어의 '카드 공유'와 결과가 어긋나지 않게 하려고 그리기 코드를 여기에 복제하지 않는다.
+     - 읽기 전용: safeFetchDB는 get/getDoc만 호출한다.
+     ════════════════════════════════════════ */
+
+  const SHARE_CARD_SRC = "/learn/components/share-card.js?v=1.2.6";
+  // 관리자 페이지를 storefront가 아닌 곳(로컬 blog-parts 서버 등)에서 열면 위 경로가 없다 — 라이브에서 받아온다.
+  const SHARE_CARD_FALLBACK = "https://plus.cheesehistory.com/learn/components/share-card.js?v=1.2.6";
+
+  const CARD_SIZE = 1080;    // share-card.js의 SIZE와 같다
+  const STRIP_GAP = 28;      // 세로 이어붙이기에서 카드 사이 여백
+  const STRIP_BG  = "#faf8f5";
+
+  let SEQ_LIST   = [];   // [{id,title,series,order}]
+  let CUR_SEQ    = null; // {id,title,steps,freeLen}
+  let PICKED     = new Set();  // 선택된 step 인덱스
+  let CARDS      = [];   // [{idx, blob, url, name}]
+
+  /* ── API (읽기 전용) ── */
+  async function safeFetchDB(payload) {
+    if (!window.CHEESE_ADMIN_DB_API) throw new Error("API 엔드포인트가 정의되지 않았습니다.");
+    const res = await fetch(window.CHEESE_ADMIN_DB_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Admin-Token": window.CHEESE_ADMIN_TOKEN || "" },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "Firebase 오류");
+    return data;
+  }
+
+  function toast(msg, isErr) {
+    const el = document.getElementById("toast");
+    el.textContent = msg;
+    el.style.background = isErr ? "#dc2626" : "#1e293b";
+    el.classList.add("show");
+    setTimeout(() => el.classList.remove("show"), 2800);
+  }
+
+  function escHtml_(s) {
+    return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  /* ── 카드 렌더러 불러오기 ── */
+  let rendererPromise = null;
+  function loadScript_(src) {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = src;
+      s.onload = resolve;
+      s.onerror = () => reject(new Error("load failed: " + src));
+      document.head.appendChild(s);
+    });
+  }
+  function ensureRenderer() {
+    if (window.LearnShareCard?.drawCard) return Promise.resolve();
+    if (rendererPromise) return rendererPromise;
+    rendererPromise = loadScript_(SHARE_CARD_SRC)
+      .catch(() => loadScript_(SHARE_CARD_FALLBACK))
+      .then(() => {
+        if (!window.LearnShareCard?.drawCard) {
+          throw new Error("카드 렌더러(share-card.js)가 drawCard를 내주지 않습니다 — storefront 배포본이 예전 버전일 수 있습니다.");
+        }
+      });
+    return rendererPromise;
+  }
+
+  /* ── 1) 시퀀스 목록 ── */
+  async function loadSequences() {
+    const sel = document.getElementById("ce-seq");
+    sel.innerHTML = '<option value="">불러오는 중...</option>';
+    try {
+      const res = await safeFetchDB({ action: "get", collection: "learn_sequences" });
+      SEQ_LIST = (res.data || [])
+        .map(s => ({
+          id: s.id,
+          title: s.title || "(제목 없음)",
+          series: s.series_name || s.group || "기타",
+          order: s.series_order ?? 9999
+        }))
+        .sort((a, b) => String(a.series).localeCompare(String(b.series)) || a.order - b.order);
+
+      const groups = new Map();
+      SEQ_LIST.forEach(s => {
+        if (!groups.has(s.series)) groups.set(s.series, []);
+        groups.get(s.series).push(s);
+      });
+      let html = '<option value="">— 편을 고르세요 —</option>';
+      groups.forEach((list, series) => {
+        html += `<optgroup label="${escHtml_(series)}">`;
+        list.forEach(s => {
+          html += `<option value="${escHtml_(s.id)}">${escHtml_(s.title)}</option>`;
+        });
+        html += "</optgroup>";
+      });
+      sel.innerHTML = html;
+      document.getElementById("ce-seq-hint").textContent = `시퀀스 ${SEQ_LIST.length}편을 불러왔습니다.`;
+    } catch (err) {
+      sel.innerHTML = '<option value="">불러오기 실패</option>';
+      document.getElementById("ce-seq-hint").textContent = "목록을 불러오지 못했습니다: " + err.message;
+      toast("시퀀스 목록 불러오기 실패", true);
+    }
+  }
+
+  /* ── 편 고르면 청크 불러오기 ──
+     본문 전체는 보호 컬렉션(learn_sequences_full)에 있다. 토큰이 없거나 막히면 공개(무료) 구간만 쓴다. */
+  async function onSeqChange() {
+    const id = document.getElementById("ce-seq").value;
+    document.getElementById("ce-pick-panel").style.display = "none";
+    document.getElementById("ce-make-panel").style.display = "none";
+    document.getElementById("ce-save-panel").style.display = "none";
+    document.getElementById("ce-result-panel").style.display = "none";
+    clearCards();
+    CUR_SEQ = null;
+    if (!id) return;
+
+    const hint = document.getElementById("ce-seq-hint");
+    hint.textContent = "본문을 불러오는 중...";
+    try {
+      const pub = await safeFetchDB({ action: "getDoc", collection: "learn_sequences", id });
+      const seq = pub.data || {};
+      const freeSteps = Array.isArray(seq.steps) ? seq.steps : [];
+      let steps = freeSteps;
+      let fullOk = false;
+      try {
+        const full = await safeFetchDB({ action: "getDoc", collection: "learn_sequences_full", id });
+        const fullSteps = full?.data?.steps;
+        if (Array.isArray(fullSteps) && fullSteps.length) { steps = fullSteps; fullOk = true; }
+      } catch (_) { /* 토큰 없음 등 — 공개분만으로 계속 */ }
+
+      CUR_SEQ = { id, title: seq.title || "(제목 없음)", steps, freeLen: freeSteps.length };
+      // 유료 편은 본문 뒷부분이 learn_sequences_full에만 있다. 그걸 못 읽었는지는
+      // 시퀀스가 스스로 적어 둔 total_steps와 견줘 판단한다(문서가 아예 없는 무료 편과 구분).
+      const totalKnown = Number(seq.total_steps ?? 0);
+      const truncated = !fullOk && totalKnown > steps.length;
+      hint.textContent = `『${CUR_SEQ.title}』 청크 ${steps.length}개`
+        + (fullOk ? " (유료 구간 포함 전체 본문)"
+                  : truncated ? ` (공개 구간만 — 전체 ${totalKnown}개 중. 뒷부분은 관리자 토큰이 있어야 나옵니다)`
+                              : " (전체 본문)");
+
+      PICKED = new Set();
+      renderStepList(true);
+      document.getElementById("ce-pick-panel").style.display = "";
+      document.getElementById("ce-make-panel").style.display = "";
+    } catch (err) {
+      hint.textContent = "본문을 불러오지 못했습니다: " + err.message;
+      toast("본문 불러오기 실패", true);
+    }
+  }
+
+  /* ── 청크 종류 판별 (뷰어 viewer.js와 같은 기준) ── */
+  function styleOf_(step) {
+    const s = (step.share_style ?? step.card_style ?? "").trim();
+    if (s === "sticker" && String(step.image_url ?? "").trim() && !step.is_subtitle) return "sticker";
+    if (s === "cinema" && String(step.image_url ?? "").trim()) return "cinema";
+    return "classic";
+  }
+
+  /* step.text의 마크업 제거 → 순수 텍스트 (viewer.js openCardShare와 같은 처리) */
+  function plainText_(step) {
+    const tmp = document.createElement("div");
+    tmp.innerHTML = String(step.text ?? "").replace(/<br\s*\/?>/gi, "\n");
+    return (tmp.textContent || "").replace(/[ \t]+/g, " ").trim();
+  }
+
+  /* ── 청크 목록 그리기 ── */
+  function renderStepList(resetPick) {
+    if (!CUR_SEQ) return;
+    const includeSub = document.getElementById("ce-include-sub").checked;
+    const steps = CUR_SEQ.steps;
+
+    if (resetPick) {
+      PICKED = new Set();
+      steps.forEach((st, i) => { if (includeSub || !st.is_subtitle) PICKED.add(i); });
+    } else if (!includeSub) {
+      steps.forEach((st, i) => { if (st.is_subtitle) PICKED.delete(i); });
+    }
+
+    const rows = steps.map((st, i) => {
+      const kind = styleOf_(st);
+      const img = String(st.image_url ?? "").trim();
+      const paid = CUR_SEQ.freeLen > 0 && i >= CUR_SEQ.freeLen && steps.length > CUR_SEQ.freeLen;
+      const disabled = !includeSub && st.is_subtitle;
+      const on = PICKED.has(i);
+      const badges = [
+        st.is_subtitle ? '<span class="ce-badge sub">소제목</span>' : "",
+        kind === "cinema" ? '<span class="ce-badge cinema">자막형</span>' : "",
+        kind === "sticker" ? '<span class="ce-badge sticker">대사형</span>' : "",
+        (kind === "classic" && !st.is_subtitle) ? `<span class="ce-badge">${img ? "사진" : "글"}</span>` : "",
+        paid ? '<span class="ce-badge paid">유료</span>' : "",
+        st.speaker ? `<span class="ce-badge">${escHtml_(st.speaker)}</span>` : ""
+      ].filter(Boolean).join("");
+      const thumb = img
+        ? `<img src="${escHtml_(thumbUrl_(img))}" alt="" loading="lazy" onerror="this.style.display='none'">`
+        : '<span class="ce-noimg"><i class="fa-regular fa-file-lines"></i></span>';
+      const text = plainText_(st).slice(0, 120) || "(빈 카드)";
+      return `
+        <div class="ce-item${disabled ? " off" : ""}" onclick="togglePick(${i}, event)">
+          <input type="checkbox" ${on ? "checked" : ""} ${disabled ? "disabled" : ""} onclick="event.stopPropagation(); togglePick(${i})">
+          <span class="ce-idx">${i + 1}</span>
+          <span class="ce-thumb">${thumb}</span>
+          <span class="ce-item-body">
+            <span class="ce-item-badges">${badges}</span>
+            <span class="ce-item-text">${escHtml_(text)}</span>
+          </span>
+        </div>`;
+    }).join("");
+
+    document.getElementById("ce-list").innerHTML = rows || '<div class="ce-empty">청크가 없습니다.</div>';
+    updateCount();
+  }
+
+  /* 목록 썸네일은 작게 받는다 (learn_image_manage와 같은 방식) */
+  function thumbUrl_(url) {
+    const u = String(url || "");
+    if (!/drive\.google\.com\/thumbnail/.test(u)) return u;
+    return u.replace(/([?&]sz=)[^&]*/, "$1w120");
+  }
+
+  function updateCount() {
+    const el = document.getElementById("ce-count");
+    el.textContent = `${PICKED.size}장 선택 / 전체 ${CUR_SEQ ? CUR_SEQ.steps.length : 0}개`;
+    const btn = document.getElementById("ce-make-btn");
+    if (btn) btn.disabled = PICKED.size === 0;
+  }
+
+  function togglePick(i, ev) {
+    if (ev) ev.stopPropagation();
+    const st = CUR_SEQ?.steps?.[i];
+    if (!st) return;
+    if (!document.getElementById("ce-include-sub").checked && st.is_subtitle) return;
+    if (PICKED.has(i)) PICKED.delete(i); else PICKED.add(i);
+    renderStepList();
+  }
+
+  function selectAll(on) {
+    if (!CUR_SEQ) return;
+    const includeSub = document.getElementById("ce-include-sub").checked;
+    PICKED = new Set();
+    if (on) CUR_SEQ.steps.forEach((st, i) => { if (includeSub || !st.is_subtitle) PICKED.add(i); });
+    renderStepList();
+  }
+
+  /* "1-12, 15, 20-24" → 선택 (1부터 세는 번호) */
+  function applyRange() {
+    if (!CUR_SEQ) return;
+    const raw = document.getElementById("ce-range").value.trim();
+    if (!raw) { toast("구간을 입력하세요 (예: 1-12, 15)", true); return; }
+    const includeSub = document.getElementById("ce-include-sub").checked;
+    const total = CUR_SEQ.steps.length;
+    const picked = new Set();
+    let bad = false;
+    raw.split(",").forEach(part => {
+      const p = part.trim();
+      if (!p) return;
+      const m = p.match(/^(\d+)\s*(?:[-~]\s*(\d+))?$/);
+      if (!m) { bad = true; return; }
+      const from = parseInt(m[1], 10);
+      const to = m[2] ? parseInt(m[2], 10) : from;
+      const lo = Math.min(from, to), hi = Math.max(from, to);
+      for (let n = lo; n <= hi; n++) {
+        const i = n - 1;
+        if (i < 0 || i >= total) continue;
+        if (!includeSub && CUR_SEQ.steps[i].is_subtitle) continue;
+        picked.add(i);
+      }
+    });
+    if (bad) { toast("구간 형식을 확인하세요 (예: 1-12, 15)", true); return; }
+    if (!picked.size) { toast("그 구간에 뽑을 카드가 없습니다.", true); return; }
+    PICKED = picked;
+    renderStepList();
+    toast(`${picked.size}장 선택했습니다.`);
+  }
+
+  /* ── 3) 카드 만들기 ── */
+  function clearCards() {
+    CARDS.forEach(c => { try { URL.revokeObjectURL(c.url); } catch (_) {} });
+    CARDS = [];
+    const grid = document.getElementById("ce-result-grid");
+    if (grid) grid.innerHTML = "";
+  }
+
+  function resolveStyle_(step, mode) {
+    const kind = styleOf_(step);
+    if (kind === "sticker") return "classic";     // 대사형은 항상 기본형 골격(스티커를 작게)
+    if (mode === "classic") return "classic";
+    if (mode === "cinema") return String(step.image_url ?? "").trim() ? "cinema" : "classic";
+    return kind === "cinema" ? "cinema" : "classic";   // auto
+  }
+
+  async function makeCards() {
+    if (!CUR_SEQ || !PICKED.size) return;
+    const btn = document.getElementById("ce-make-btn");
+    const prog = document.getElementById("ce-progress");
+    const bar = document.getElementById("ce-bar-in");
+    const msg = document.getElementById("ce-progress-msg");
+    const mode = document.getElementById("ce-style").value;
+
+    btn.disabled = true;
+    prog.classList.add("on");
+    bar.style.width = "0%";
+    msg.textContent = "카드 렌더러를 불러오는 중...";
+    document.getElementById("ce-save-panel").style.display = "none";
+    clearCards();
+
+    try {
+      await ensureRenderer();
+    } catch (err) {
+      msg.textContent = "실패: " + err.message;
+      btn.disabled = false;
+      toast("카드 렌더러를 불러오지 못했습니다.", true);
+      return;
+    }
+
+    const idxs = [...PICKED].sort((a, b) => a - b);
+    const grid = document.getElementById("ce-result-grid");
+    document.getElementById("ce-result-panel").style.display = "";
+
+    for (let n = 0; n < idxs.length; n++) {
+      const i = idxs[n];
+      const step = CUR_SEQ.steps[i];
+      msg.textContent = `카드를 그리는 중... ${n + 1} / ${idxs.length} (${i + 1}번 청크)`;
+      bar.style.width = Math.round((n / idxs.length) * 100) + "%";
+      try {
+        const canvas = await window.LearnShareCard.drawCard({
+          title: CUR_SEQ.title,
+          text: plainText_(step),
+          imageUrl: String(step.image_url ?? "").trim(),
+          sticker: styleOf_(step) === "sticker",
+          speaker: String(step.speaker ?? "").trim(),
+          speakerTitle: String(step.speaker_title ?? "").trim()
+        }, resolveStyle_(step, mode));
+
+        const blob = await new Promise((resolve, reject) => {
+          canvas.toBlob(b => b ? resolve(b) : reject(new Error("toBlob 실패")), "image/png");
+        });
+        // 캔버스는 여기서 놓아준다 — 장수가 많으면 캔버스를 들고 있는 것만으로 메모리가 샌다.
+        canvas.width = canvas.height = 0;
+
+        const name = `cheese-history_${CUR_SEQ.id}_${String(i + 1).padStart(2, "0")}.png`;
+        const url = URL.createObjectURL(blob);
+        CARDS.push({ idx: i, blob, url, name });
+
+        const cell = document.createElement("div");
+        cell.className = "ce-result-card";
+        cell.innerHTML =
+          `<img src="${url}" alt="${i + 1}번 카드" onclick="openLightbox('${url}')">` +
+          '<div class="ce-result-foot">' +
+          `  <span class="ce-result-no">${i + 1}번</span>` +
+          `  <button type="button" class="ce-icon-btn" title="이 카드만 저장" onclick="saveOne(${CARDS.length - 1})"><i class="fa-solid fa-download"></i></button>` +
+          "</div>";
+        grid.appendChild(cell);
+      } catch (err) {
+        console.warn("[card-export] 실패:", i, err);
+        toast(`${i + 1}번 카드를 만들지 못했습니다.`, true);
+      }
+      // 화면이 멈춘 것처럼 보이지 않게 한 장마다 숨을 돌린다
+      await new Promise(r => setTimeout(r, 0));
+    }
+
+    bar.style.width = "100%";
+    msg.textContent = `${CARDS.length}장 완성했습니다.`;
+    document.getElementById("ce-result-count").textContent = `(${CARDS.length}장)`;
+    document.getElementById("ce-save-panel").style.display = CARDS.length ? "" : "none";
+    btn.disabled = false;
+    if (CARDS.length) toast(`${CARDS.length}장 만들었습니다.`);
+  }
+
+  /* ── 4) 저장 ── */
+  function downloadBlob_(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 8000);
+  }
+
+  function saveOne(n) {
+    const c = CARDS[n];
+    if (c) downloadBlob_(c.blob, c.name);
+  }
+
+  function seqSlug_() {
+    return (CUR_SEQ?.id || "cards").replace(/[^\w-]/g, "_");
+  }
+
+  /* 여러 장을 ZIP으로. JSZip이 없으면 한 장씩 순차 저장(브라우저가 다중 다운로드 허용을 물어볼 수 있다). */
+  async function saveMany_(files, zipName) {
+    if (files.length === 1) { downloadBlob_(files[0].blob, files[0].name); return; }
+    if (typeof JSZip === "undefined") {
+      for (const f of files) {
+        downloadBlob_(f.blob, f.name);
+        await new Promise(r => setTimeout(r, 350));
+      }
+      toast("ZIP 라이브러리를 못 불러와 한 장씩 저장했습니다.");
+      return;
+    }
+    const zip = new JSZip();
+    files.forEach(f => zip.file(f.name, f.blob));
+    const blob = await zip.generateAsync({ type: "blob" });
+    downloadBlob_(blob, zipName);
+  }
+
+  async function saveSingles() {
+    if (!CARDS.length) return;
+    try {
+      await saveMany_(CARDS.map(c => ({ blob: c.blob, name: c.name })), `cheese-history_${seqSlug_()}_cards.zip`);
+      toast(`${CARDS.length}장을 저장했습니다.`);
+    } catch (err) {
+      toast("저장 실패: " + err.message, true);
+    }
+  }
+
+  /* 만든 카드를 세로로 이어붙인다. 카드 사이는 크림 여백 + 가운데 옅은 금선. */
+  function loadBlobImage_(url) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("미리보기 이미지를 읽지 못했습니다."));
+      img.src = url;
+    });
+  }
+
+  async function buildStrip_(chunk) {
+    const n = chunk.length;
+    const canvas = document.createElement("canvas");
+    canvas.width = CARD_SIZE;
+    canvas.height = n * CARD_SIZE + (n - 1) * STRIP_GAP;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = STRIP_BG;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    let y = 0;
+    for (let k = 0; k < n; k++) {
+      const img = await loadBlobImage_(chunk[k].url);
+      ctx.drawImage(img, 0, y, CARD_SIZE, CARD_SIZE);
+      y += CARD_SIZE;
+      if (k < n - 1) {
+        // 카드 사이 구분 금선
+        const gy = y + STRIP_GAP / 2;
+        const g = ctx.createLinearGradient(CARD_SIZE / 2 - 140, 0, CARD_SIZE / 2 + 140, 0);
+        g.addColorStop(0, "rgba(184,134,11,0)");
+        g.addColorStop(0.5, "rgba(184,134,11,0.55)");
+        g.addColorStop(1, "rgba(184,134,11,0)");
+        ctx.fillStyle = g;
+        ctx.fillRect(CARD_SIZE / 2 - 140, gy, 280, 1.5);
+        y += STRIP_GAP;
+      }
+    }
+    const blob = await new Promise((resolve, reject) => {
+      canvas.toBlob(b => b ? resolve(b) : reject(new Error("긴 이미지를 만들지 못했습니다 — 한 장당 장수를 줄여 보세요.")), "image/png");
+    });
+    canvas.width = canvas.height = 0;
+    return blob;
+  }
+
+  async function saveStrip() {
+    if (!CARDS.length) return;
+    const per = parseInt(document.getElementById("ce-strip-per").value, 10) || 10;
+    const prog = document.getElementById("ce-save-progress");
+    const bar = document.getElementById("ce-save-bar-in");
+    const msg = document.getElementById("ce-save-msg");
+    prog.classList.add("on");
+    bar.style.width = "0%";
+
+    const chunks = [];
+    for (let i = 0; i < CARDS.length; i += per) chunks.push(CARDS.slice(i, i + per));
+
+    try {
+      const files = [];
+      for (let c = 0; c < chunks.length; c++) {
+        msg.textContent = `긴 이미지를 만드는 중... ${c + 1} / ${chunks.length}`;
+        bar.style.width = Math.round((c / chunks.length) * 100) + "%";
+        const blob = await buildStrip_(chunks[c]);
+        const name = chunks.length === 1
+          ? `cheese-history_${seqSlug_()}_strip.png`
+          : `cheese-history_${seqSlug_()}_strip${String(c + 1).padStart(2, "0")}.png`;
+        files.push({ blob, name });
+        await new Promise(r => setTimeout(r, 0));
+      }
+      bar.style.width = "100%";
+      msg.textContent = `${files.length}장 저장 중...`;
+      await saveMany_(files, `cheese-history_${seqSlug_()}_strip.zip`);
+      msg.textContent = chunks.length === 1
+        ? "긴 이미지 1장을 저장했습니다."
+        : `긴 이미지 ${chunks.length}장으로 나눠 저장했습니다.`;
+      toast("세로 이미지를 저장했습니다.");
+    } catch (err) {
+      msg.textContent = "실패: " + err.message;
+      toast(err.message, true);
+    }
+  }
+
+  /* ── 라이트박스 ── */
+  function openLightbox(url) {
+    document.getElementById("ce-lb-img").src = url;
+    document.getElementById("ce-lb").classList.add("open");
+  }
+  function closeLightbox(e) {
+    if (e && e.target && e.target.tagName === "IMG" && e.target.id === "ce-lb-img") return;
+    document.getElementById("ce-lb").classList.remove("open");
+  }
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeLightbox(); });
+
+  document.addEventListener("DOMContentLoaded", loadSequences);
+</script>
+</body>
+</html>
