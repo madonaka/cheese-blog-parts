@@ -30,6 +30,8 @@
   <div class="ct-wrap">
     <div class="ct-tools">
       <input type="search" id="q" placeholder="사건 이름으로 찾기" />
+      <input type="search" id="yq" style="width:200px"
+             placeholder="해 · 날짜 — 1945 · 1945.8 · 1940~50" title="해 한 개(1945) · 달까지(1945.8 · 1945-08-15) · 사이(1940~1950 · 1940~50 · ~1900 · 1990~)" />
       <select id="yrSel"><option value="">시대 전체</option></select>
       <select id="lvSel">
         <option value="">등급 전체</option>
@@ -129,11 +131,52 @@
     $('yrSel').innerHTML = out.join('');
   }
 
+  /* 해 · 날짜로 거르기 — 적는 법 몇 가지를 다 받는다.
+       1945            그 해
+       1945.8 · 1945-08 · 1945년 8월    그 달
+       1945.8.15 · 1945-08-15           그 날
+       1940~1950 · 1940~50 · 1940-1950  사이(뒤 두 자리로 적어도 앞자리를 따라간다)
+       ~1900 · 1990~                    한쪽만
+     못 알아들으면 거르지 않고 칸을 빨갛게 표시한다. */
+  function yrTest(raw) {
+    var s = String(raw || '').replace(/[년월일]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!s) return { ok: true, fn: null };
+    var m, lo, hi;
+    if ((m = s.match(/^(\d{1,4})\s*[~–—]\s*(\d{1,4})$/)) ||
+        (m = s.match(/^(\d{3,4})\s*-\s*(\d{3,4})$/))) {
+      lo = +m[1]; hi = +m[2];
+      if (hi < 100) hi = Math.floor(lo / 100) * 100 + hi;    // 1940~50
+      if (hi < lo) { var t = lo; lo = hi; hi = t; }
+      return { ok: true, fn: function (y) { return y >= lo && y <= hi; } };
+    }
+    if ((m = s.match(/^[~–—-]\s*(\d{1,4})$/))) {
+      hi = +m[1];
+      return { ok: true, fn: function (y) { return y && y <= hi; } };
+    }
+    if ((m = s.match(/^(\d{1,4})\s*[~–—-]$/))) {
+      lo = +m[1];
+      return { ok: true, fn: function (y) { return y >= lo; } };
+    }
+    if ((m = s.match(/^(\d{1,4})[.\-\/ ](\d{1,2})(?:[.\-\/ ](\d{1,2}))?$/))) {
+      var yy = +m[1], mm = +m[2], dd = m[3] ? +m[3] : 0;
+      return { ok: true, fn: function (y, mo, da) {
+        return y === yy && mo === mm && (!dd || da === dd); } };
+    }
+    if ((m = s.match(/^(\d{1,4})$/))) {
+      var y0 = +m[1];
+      return { ok: true, fn: function (y) { return y === y0; } };
+    }
+    return { ok: false, fn: null };
+  }
+
   function rows() {
     var q = $('q').value.trim(), yr = $('yrSel').value, lv = $('lvSel').value, sh = $('shareSel').value;
+    var yt = yrTest($('yq').value);
+    $('yq').style.borderColor = yt.ok ? '' : '#b3261e';
     return T.rows().filter(function (d) {
-      var v = T.view(d, T.tl), y = T.ymd(v.year)[0];
+      var v = T.view(d, T.tl), q2 = T.ymd(v.year), y = q2[0];
       if (T.orig[d.id] !== JSON.stringify(d)) return true;   // 저장 안 한 것은 늘 보인다
+      if (yt.fn && !yt.fn(y, q2[1], q2[2])) return false;
       if (q && v.name.indexOf(q) < 0) return false;
       if (yr && !(y >= +yr && y < +yr + 10)) return false;
       if (lv === '0' && d.tier) return false;
@@ -261,7 +304,7 @@
     }
     T.clearDraft(); load();
   });
-  ['q', 'yrSel', 'lvSel', 'shareSel'].forEach(function (id) {
+  ['q', 'yq', 'yrSel', 'lvSel', 'shareSel'].forEach(function (id) {
     $(id).addEventListener('input', function () { shown = 80; draw(); });
     $(id).addEventListener('change', function () { shown = 80; draw(); });
   });
