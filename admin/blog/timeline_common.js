@@ -99,6 +99,9 @@
     var mk = ('mark' in o) ? o.mark : d.mark;
     if (mk && (def.marks || []).some(function (q) { return q[0] === mk; })) e.mk = mk;
     else if (mk === 'none') e.mk = 'none';
+    /* 경과(사건 상세 창에 세로로 세우는 몇 줄) — 적어 둔 사건만 싣는다 */
+    var st = ('steps' in o) ? o.steps : d.steps;
+    if (st && st.length) e.steps = st;
     return e;
   };
 
@@ -106,7 +109,7 @@
      생성기(rebuild_poster.py)와 종이의 덧칠(timeline-live.js)이 쓰는 것과 같다. */
   T.liveKey = function (e) { return e.y + '|' + (e.m || 0) + '|' + String(e.n || '').replace(/\s/g, ''); };
   /* 견줄 때 칸 차례가 달라도 같게 보이도록 한 줄로 굳힌다 */
-  var ORDER = ['y', 'm', 'd', 'n', 'i', 'memo', 'hl', 'cal', 'x', 'xr', 'xt', 's', 'L'];
+  var ORDER = ['y', 'm', 'd', 'n', 'i', 'memo', 'hl', 'cal', 'x', 'xr', 'xt', 's', 'L', 'mk', 'steps'];
   T.canon = function (e) {
     var o = {};
     ORDER.forEach(function (k) { if (e[k] !== undefined) o[k] = e[k]; });
@@ -266,6 +269,8 @@
       if ((a[q[0]] || '') !== (b[q[0]] || ''))
         out.push({ w: q[1], a: String(a[q[0]] || '(없음)'), b: String(b[q[0]] || '(없음)') });
     });
+    if ((a.steps || []).join('|') !== (b.steps || []).join('|'))
+      out.push({ w: '경과', a: (a.steps || []).length + '줄', b: (b.steps || []).length + '줄' });
     if ((a.factions || []).join(' · ') !== (b.factions || []).join(' · '))
       out.push({ w: '나라', a: (a.factions || []).join(' · ') || '(없음)',
                  b: (b.factions || []).join(' · ') || '(없음)' });
@@ -306,7 +311,8 @@
     var body = { name: d.name, birth_year: d.birth_year, memo: d.memo || '',
                  factions: d.factions || [],
                  important: !!d.important, timelines: d.timelines || [], by_tl: d.by_tl || {} };
-    ['tier', 'category', 'exam', 'short', 'cal'].forEach(function (f) {
+    if ((d.steps || []).length) body.steps = d.steps;
+    ['tier', 'category', 'exam', 'short', 'mark', 'cal'].forEach(function (f) {
       if (d[f] !== undefined && d[f] !== '') body[f] = d[f];
     });
     return body;

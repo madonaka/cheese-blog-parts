@@ -57,6 +57,20 @@
             <div class="row" id="fTls"></div>
             <label class="wide">설명</label>
             <textarea class="wide" id="fMemo" style="min-height:120px"></textarea>
+            <div class="wide" style="margin-top:4px">
+              <button type="button" class="ct-btn sm" id="stepsToggle" aria-expanded="false">
+                경과 넣기 <span id="stepsN" class="ct-muted"></span>
+              </button>
+              <div id="stepsBox" hidden style="margin-top:8px">
+                <p class="ct-hint" style="margin:0 0 6px">
+                  한 줄에 하나씩, <b>날짜 : 내용</b> 으로 적습니다. 날짜를 안 적으면 내용만 나옵니다.<br>
+                  사건 상세 창에서 설명 아래에 세로 흐름으로 보입니다. 경과가 없는 사건은 비워 두세요.
+                </p>
+                <textarea id="fSteps" style="width:100%;min-height:120px"
+                  placeholder="2016년 1월 2일 : 평양 순안공항에서 출국 직전 북한 당국에 체포&#10;2016년 3월 16일 : 최고재판소, 노동교화형 15년 선고"></textarea>
+                <div id="stepsPrev" style="margin-top:10px"></div>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -156,7 +170,7 @@
   </div>
 </div>
 <script src="../admin-common.js"></script>
-<script src="./timeline_common.js?v=20260912i"></script>
+<script src="./timeline_common.js?v=20260913a"></script>
 <script>
 (function () {
   'use strict';
@@ -210,6 +224,8 @@
     $('fRaw').textContent = '자료값 ' + (doc.birth_year || '');
     facBox();
     $('fMemo').value = doc.memo || '';
+    $('fSteps').value = (doc.steps || []).join('\n');
+    stepsDraw();
     /* 등급 · 갈래는 이 연표에 따로 적어 둔 값이 있으면 그것을 보여 준다(종이가 그 값으로 그려진다) */
     var ov = (doc.by_tl || {})[tl] || {};
     $('fTier').value = String(('tier' in ov ? ov.tier : doc.tier) || '');
@@ -269,6 +285,32 @@
     facBox();
     after();
   });
+
+  /* ── 경과 ── 접어 두었다가 단추를 누르면 펼친다(경과가 있는 사건은 처음부터 펼친다) */
+  function stepsDraw() {
+    var st = doc.steps || [];
+    $('stepsN').textContent = st.length ? '· ' + st.length + '줄' : '';
+    if (st.length && $('stepsBox').hidden) stepsOpen(true);
+    $('stepsPrev').innerHTML = st.length
+      ? '<div class="ct-doc"><div class="hd"><b>이렇게 보입니다</b></div>' +
+        st.map(function (x) {
+          var k = x.search(/\s*[:|｜]\s*/);
+          var w = k > 0 ? x.slice(0, k).trim() : '';
+          var t = k > 0 ? x.slice(k).replace(/^\s*[:|｜]\s*/, '') : x;
+          return '<div style="display:flex;gap:10px;padding:4px 0;border-left:2px solid #e2dac9;' +
+            'margin-left:3px;padding-left:12px">' +
+            '<b style="min-width:96px;font-size:12.5px;color:#6b5a33">' + T.esc(w) + '</b>' +
+            '<span style="font-size:13px">' + T.esc(t) + '</span></div>';
+        }).join('') + '</div>'
+      : '';
+  }
+  function stepsOpen(on) {
+    $('stepsBox').hidden = !on;
+    $('stepsToggle').setAttribute('aria-expanded', on ? 'true' : 'false');
+    $('stepsToggle').firstChild.nodeValue = on ? '경과 접기 ' : '경과 넣기 ';
+  }
+  $('stepsToggle').addEventListener('click', function () { stepsOpen($('stepsBox').hidden); });
+
 
   /* 지금 고른 등급 · 갈래가 종이에서 어떤 색으로 나오는지 그대로 보여 준다 */
   function hlChip() {
@@ -373,7 +415,7 @@
   }
 
   /* 공통 칸 */
-  ['fName', 'fY', 'fM', 'fD', 'fMemo', 'fTier', 'fImp', 'fCat', 'fMark', 'fShort', 'fExam', 'fCal']
+  ['fName', 'fY', 'fM', 'fD', 'fMemo', 'fSteps', 'fTier', 'fImp', 'fCat', 'fMark', 'fShort', 'fExam', 'fCal']
     .forEach(function (k) {
       $(k).addEventListener('input', pull);
       $(k).addEventListener('change', pull);
@@ -383,6 +425,8 @@
     doc.birth_year = T.ymdTxt(+$('fY').value, +$('fM').value, +$('fD').value);
 
     doc.memo = $('fMemo').value;
+    var st = $('fSteps').value.split('\n').map(function (x) { return x.trim(); }).filter(Boolean);
+    if (st.length) doc.steps = st; else delete doc.steps;
     /* 이 연표에만 따로 적어 둔 등급 · 갈래가 이미 있으면 그쪽을 고친다(다른 연표를 건드리지 않는다).
        없으면 공통값을 고친다 — 굳이 새 전용값을 만들지 않는다. */
     var ov = (doc.by_tl || {})[tl] || {};
@@ -412,7 +456,7 @@
     $('title').textContent = v.name || (T.isNew(id) ? '새 사건' : '');
     crumb();
     $('fRaw').textContent = '자료값 ' + (doc.birth_year || '');
-    hlChip(); who();
+    hlChip(); who(); stepsDraw();
     T.saveDraft(); mark(); push();
   }
 
