@@ -374,14 +374,41 @@
     return { add: add, set: set, del: del };
   };
 
-  T.publish = function (d, why) {
+  /* 지금 사이트에 **실제로 나가 있는** 사건 — 구운 종이에 앞서 낸 덧칠을 씌운 것.
+     종이하고만 견주면 이미 낸 것이 늘 「새로」로 떠서, 무엇이 아직 안 나갔는지 알 수 없다.
+     씌우는 규칙은 종이 쪽 timeline-live.js 와 같아야 한다. */
+  T.live = function (tl) {
+    return T.db({ action: 'getDoc', collection: 'timeline_live', id: tl })
+      .then(function (r) { return (r && r.data) || null; })
+      .catch(function () { return null; });
+  };
+  T.applyLive = function (paper, doc) {
+    var raw = doc && doc.json;
+    if (!raw) return paper.slice();
+    var d;
+    try { d = JSON.parse(raw); } catch (e) { return paper.slice(); }
+    var cur = paper.slice(), ix = {};
+    cur.forEach(function (e, i) { ix[T.liveKey(e)] = i; });
+    (d.del || []).forEach(function (k) { if (ix[k] != null) cur[ix[k]] = null; });
+    (d.set || []).forEach(function (e) {
+      var i = ix[T.liveKey(e)];
+      if (i != null) cur[i] = e; else cur.push(e);
+    });
+    (d.add || []).forEach(function (e) { if (ix[T.liveKey(e)] == null) cur.push(e); });
+    return cur.filter(Boolean);
+  };
+
+  /* d  = 구운 종이 기준 차이 — 덧칠 문서에 통째로 들어간다(사이트가 이것대로 그린다)
+     nw = 지금 사이트 기준 차이 — 기록에는 **이번에 새로 나가는 것**만 적는다 */
+  T.publish = function (d, nw, why) {
+    nw = nw || d;
     var json = JSON.stringify({ add: d.add, set: d.set, del: d.del });
     if (json.length > 700000)
       return Promise.reject(new Error('차이가 너무 커서(' + Math.round(json.length / 1024) +
         'KB) 덧칠로 낼 수 없습니다. 종이를 다시 구워야 합니다.'));
     var now = new Date().toISOString();
     var body = { tl: T.tl, rev: now, why: why || '',
-                 n_add: d.add.length, n_set: d.set.length, n_del: d.del.length,
+                 n_add: nw.add.length, n_set: nw.set.length, n_del: nw.del.length,
                  json: json, by: window.CHEESE_ADMIN_LOGIN_ID || '' };
     /* timeline_live 에는 **지금 덧칠할 것 한 벌**만 산다(다음 발행이 덮어쓴다).
        그래서 「무엇을 언제 냈는가」는 따로 timeline_changes 에 한 줄씩 쌓는다 —
@@ -391,9 +418,9 @@
         return T.db({ action: 'create', collection: 'timeline_changes',
           data: { kind: 'publish', book: (T.of(T.tl) || {}).name || T.tl, tl: T.tl,
                   when: now.slice(0, 10), why: why || '',
-                  items: d.add.map(function (e) { return { w: '새로', a: '', b: e.y + ' ' + e.n }; })
-                    .concat(d.set.map(function (e) { return { w: '고침', a: '', b: e.y + ' ' + e.n }; }))
-                    .concat(d.del.map(function (k) { return { w: '뺌', a: k.replace(/\|/g, ' · '), b: '' }; }))
+                  items: nw.add.map(function (e) { return { w: '새로', a: '', b: e.y + ' ' + e.n }; })
+                    .concat(nw.set.map(function (e) { return { w: '고침', a: '', b: e.y + ' ' + e.n }; }))
+                    .concat(nw.del.map(function (k) { return { w: '뺌', a: k.replace(/\|/g, ' · '), b: '' }; }))
                     .slice(0, 300),
                   by: window.CHEESE_ADMIN_LOGIN_ID || '', created_at: now } });
       })
@@ -407,9 +434,9 @@
           var head = arr.slice(0, 12).join(' · ');
           return { w: w + ' ' + arr.length + '건', a: '', b: head + (arr.length > 12 ? ' 외 ' + (arr.length - 12) + '건' : ''), why: '' };
         };
-        var items = [line('새로 실은 사건', d.add.map(name)),
-                     line('고친 사건', d.set.map(name)),
-                     line('뺀 사건', d.del.map(function (k) { return k.replace(/\|/g, ' · '); }))]
+        var items = [line('새로 실은 사건', nw.add.map(name)),
+                     line('고친 사건', nw.set.map(name)),
+                     line('뺀 사건', nw.del.map(function (k) { return k.replace(/\|/g, ' · '); }))]
                     .filter(Boolean);
         if (items.length) items[0].why = why || '';
         return T.db({ action: 'create', collection: 'timeline_changelog',
