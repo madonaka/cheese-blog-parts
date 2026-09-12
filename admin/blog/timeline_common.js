@@ -349,7 +349,7 @@
     return chain.then(function () {
       if (!ids.length) return { n: 0 };
       return T.db({ action: 'create', collection: 'timeline_changes',
-        data: { book: (T.of(T.tl) || {}).name || T.tl, tl: T.tl,
+        data: { kind: 'save', book: (T.of(T.tl) || {}).name || T.tl, tl: T.tl,
                 when: new Date().toISOString().slice(0, 10), why: why,
                 items: items.slice(0, 300), by: window.CHEESE_ADMIN_LOGIN_ID || '',
                 created_at: new Date().toISOString() } })
@@ -379,10 +379,24 @@
     if (json.length > 700000)
       return Promise.reject(new Error('차이가 너무 커서(' + Math.round(json.length / 1024) +
         'KB) 덧칠로 낼 수 없습니다. 종이를 다시 구워야 합니다.'));
-    var body = { tl: T.tl, rev: new Date().toISOString(), why: why || '',
+    var now = new Date().toISOString();
+    var body = { tl: T.tl, rev: now, why: why || '',
                  n_add: d.add.length, n_set: d.set.length, n_del: d.del.length,
                  json: json, by: window.CHEESE_ADMIN_LOGIN_ID || '' };
+    /* timeline_live 에는 **지금 덧칠할 것 한 벌**만 산다(다음 발행이 덮어쓴다).
+       그래서 「무엇을 언제 냈는가」는 따로 timeline_changes 에 한 줄씩 쌓는다 —
+       저장 기록과 같은 곳이고, kind 로 갈린다('save' · 'publish'). */
     return T.db({ action: 'set', collection: 'timeline_live', id: T.tl, data: body })
+      .then(function () {
+        return T.db({ action: 'create', collection: 'timeline_changes',
+          data: { kind: 'publish', book: (T.of(T.tl) || {}).name || T.tl, tl: T.tl,
+                  when: now.slice(0, 10), why: why || '',
+                  items: d.add.map(function (e) { return { w: '새로', a: '', b: e.y + ' ' + e.n }; })
+                    .concat(d.set.map(function (e) { return { w: '고침', a: '', b: e.y + ' ' + e.n }; }))
+                    .concat(d.del.map(function (k) { return { w: '뺌', a: k.replace(/\|/g, ' · '), b: '' }; }))
+                    .slice(0, 300),
+                  by: window.CHEESE_ADMIN_LOGIN_ID || '', created_at: now } });
+      })
       .then(function () { return body; });
   };
 
