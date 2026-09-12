@@ -42,7 +42,17 @@
               <select id="fD" style="width:96px"></select>
               <span class="ct-muted" id="fRaw"></span>
             </div>
-            <label>나라</label><input type="text" id="fFac" placeholder="쉼표로 나눈다 — 조선, 청" />
+            <label>나라</label>
+            <div>
+              <div class="row" id="facBox" style="flex-wrap:wrap;gap:5px;margin-bottom:6px"></div>
+              <div class="row">
+                <input type="text" id="fFacNew" list="facList" style="width:190px"
+                       placeholder="골라 넣거나 새로 칩니다" autocomplete="off" />
+                <datalist id="facList"></datalist>
+                <button class="ct-btn sm" id="facAdd" type="button">넣기</button>
+                <span class="ct-muted" id="facHint" style="font-size:12px"></span>
+              </div>
+            </div>
             <label>실리는 연표</label>
             <div class="row" id="fTls"></div>
             <label class="wide">설명</label>
@@ -141,7 +151,7 @@
   </div>
 </div>
 <script src="../admin-common.js"></script>
-<script src="./timeline_common.js?v=20260912c"></script>
+<script src="./timeline_common.js?v=20260912d"></script>
 <script>
 (function () {
   'use strict';
@@ -189,7 +199,7 @@
     $('fM').value = String(q[1] || 0);
     $('fD').value = String(q[2] || 0);
     $('fRaw').textContent = '자료값 ' + (doc.birth_year || '');
-    $('fFac').value = (doc.factions || []).join(', ');
+    facBox();
     $('fMemo').value = doc.memo || '';
     /* 등급 · 갈래는 이 연표에 따로 적어 둔 값이 있으면 그것을 보여 준다(종이가 그 값으로 그려진다) */
     var ov = (doc.by_tl || {})[tl] || {};
@@ -209,6 +219,45 @@
     mark();
     if (ready) { push(); }
   }
+
+  /* ── 나라 ── 이미 쓰이는 이름에서 고르고, 없으면 쳐서 넣는다.
+     고른 것은 알약으로 서고 ×로 뺀다. 값은 이 알약들이 곧 doc.factions 다. */
+  function facBox() {
+    var have = doc.factions || [];
+    $('facBox').innerHTML = have.length
+      ? have.map(function (f, i) {
+          return '<span class="ct-tag db" style="display:inline-flex;gap:6px;align-items:center">' +
+            T.esc(f) + '<button type="button" data-fac="' + i + '" title="뺀다" ' +
+            'style="border:0;background:none;cursor:pointer;font-weight:900;padding:0;color:inherit">×</button></span>';
+        }).join('')
+      : '<span class="ct-muted" style="font-size:12px">아직 없음</span>';
+    var list = (T.facs || []).filter(function (q) { return have.indexOf(q.name) < 0; });
+    $('facList').innerHTML = list.map(function (q) {
+      return '<option value="' + T.esc(q.name) + '">' + (q.mine ? '이 연표 ' + q.mine + '건' : q.n + '건') + '</option>';
+    }).join('');
+    $('facHint').textContent = '쓰이는 이름 ' + list.length + '가지';
+  }
+  function facPut() {
+    var v = $('fFacNew').value.trim().replace(/,$/, '');
+    if (!v) return;
+    doc.factions = (doc.factions || []).concat(v.split(',').map(function (x) { return x.trim(); })
+      .filter(function (x) { return x && (doc.factions || []).indexOf(x) < 0; }));
+    $('fFacNew').value = '';
+    facBox();
+    after();
+  }
+  $('facAdd').addEventListener('click', facPut);
+  $('fFacNew').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); facPut(); }
+  });
+  $('fFacNew').addEventListener('change', facPut);          // 목록에서 고르면 바로 들어간다
+  $('facBox').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-fac]');
+    if (!b) return;
+    doc.factions.splice(+b.dataset.fac, 1);
+    facBox();
+    after();
+  });
 
   /* 지금 고른 등급 · 갈래가 종이에서 어떤 색으로 나오는지 그대로 보여 준다 */
   function hlChip() {
@@ -313,7 +362,7 @@
   }
 
   /* 공통 칸 */
-  ['fName', 'fY', 'fM', 'fD', 'fFac', 'fMemo', 'fTier', 'fImp', 'fCat', 'fShort', 'fExam', 'fCal']
+  ['fName', 'fY', 'fM', 'fD', 'fMemo', 'fTier', 'fImp', 'fCat', 'fShort', 'fExam', 'fCal']
     .forEach(function (k) {
       $(k).addEventListener('input', pull);
       $(k).addEventListener('change', pull);
@@ -321,7 +370,7 @@
   function pull() {
     doc.name = $('fName').value.trim();
     doc.birth_year = T.ymdTxt(+$('fY').value, +$('fM').value, +$('fD').value);
-    doc.factions = $('fFac').value.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+
     doc.memo = $('fMemo').value;
     /* 이 연표에만 따로 적어 둔 등급 · 갈래가 이미 있으면 그쪽을 고친다(다른 연표를 건드리지 않는다).
        없으면 공통값을 고친다 — 굳이 새 전용값을 만들지 않는다. */

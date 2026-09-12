@@ -112,6 +112,24 @@
     })).then(function (parts) {
       var all = parts[0].concat(parts[1]);
       T.allIds = all.map(function (d) { return d.id; });
+      /* 이미 쓰이고 있는 나라 이름을 모아 둔다 — 상세에서 골라 넣는다.
+         이 연표에서 쓰는 것을 앞에, 다른 연표 것을 뒤에 둔다(둘 다 고를 수 있다). */
+      var cnt = {}, mineCnt = {};
+      all.forEach(function (d) {
+        if (d.type !== 'event') return;
+        var here = (d.timelines || []).indexOf(tl) >= 0;
+        (d.factions || []).forEach(function (f) {
+          f = String(f || '').trim();
+          if (!f) return;
+          cnt[f] = (cnt[f] || 0) + 1;
+          if (here) mineCnt[f] = (mineCnt[f] || 0) + 1;
+        });
+      });
+      T.facs = Object.keys(cnt).sort(function (a, b) {
+        var x = (mineCnt[b] || 0) - (mineCnt[a] || 0);
+        return x || (cnt[b] - cnt[a]) || a.localeCompare(b);
+      }).map(function (f) { return { name: f, n: cnt[f], mine: mineCnt[f] || 0 }; });
+
       var mine = all.filter(function (d) {
         return d.type === 'event' && (d.timelines || []).indexOf(tl) >= 0;
       });
