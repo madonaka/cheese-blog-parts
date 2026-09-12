@@ -17,14 +17,14 @@
     list: [
       /* marks — 그 연표 그림 코드의 MARK_ART_FN 에 있는 것만 적는다(없는 이름을 보내면 마크가 안 그려진다).
          적어 두지 않은 연표는 관리창에서 마크를 못 고른다 — 종이 쪽에 e.mk 를 넣어야 열린다. */
-      { key: 'kr', name: '한국 근현대사', col: 'learn_characters', span: '1860~오늘', exam: true, cal: true,
+      { key: 'kr', name: '한국 근현대사', book: '한국근현대', col: 'learn_characters', span: '1860~오늘', exam: true, cal: true,
         marks: [['tg', '태극 — 독립운동 · 우리 쪽 일'], ['uk', '일장기 — 일제가 한 일'],
                 ['nk', '북한기 — 북한 도발'], ['uni', '한반도 — 남북 화해'],
                 ['demo', '횃불 — 민주화운동'], ['undong', '학생 · 재야'], ['teuk', '특별검사'],
                 ['pres', '대통령 선거'], ['as', '총선'], ['local', '지방선거'], ['chin', '친일 단체']] },
-      { key: 'cn', name: '중국 근현대사', col: 'timeline_events', span: '1840~오늘' },
-      { key: 'jp', name: '일본 근현대사', col: 'timeline_events', span: '1820~오늘' },
-      { key: 'nk', name: '북한', col: 'timeline_events', span: '1945~오늘', left: true,
+      { key: 'cn', name: '중국 근현대사', book: '중국근현대', col: 'timeline_events', span: '1840~오늘' },
+      { key: 'jp', name: '일본 근현대사', book: '일본근현대', col: 'timeline_events', span: '1820~오늘' },
+      { key: 'nk', name: '북한', book: '북한', col: 'timeline_events', span: '1945~오늘', left: true,
         marks: [['tg', '태극 — 남한 쪽 일'], ['uk', '일장기 — 일제가 한 일'],
                 ['nk', '북한기 — 북한 도발'], ['uni', '한반도 — 남북 함께'],
                 ['sk', '남한의 북한 관련'], ['hab', '좌우 합작'],
@@ -440,7 +440,7 @@
                     .filter(Boolean);
         if (items.length) items[0].why = why || '';
         return T.db({ action: 'create', collection: 'timeline_changelog',
-          data: { tl: T.tl, book: (T.of(T.tl) || {}).name || T.tl, when: now.slice(0, 10),
+          data: { tl: T.tl, book: (T.of(T.tl) || {}).book || T.tl, when: now.slice(0, 10),
                   ed: '관리창 발행', items: items, created_at: now } });
       })
       .then(function () { return body; });
