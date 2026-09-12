@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>연표 관리</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link rel="stylesheet" href="../admin.css" />
+<link rel="stylesheet" href="./cjk_timeline.css" />
+</head>
+<body>
+<div class="admin-shell">
+  <div id="admin-header-slot"></div>
+  <div class="admin-main">
+    <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+    <main class="admin-content">
+
+<div class="ct">
+  <div class="ct-bar">
+    <h2>연표 관리</h2>
+    <select id="tlSel" title="연표"></select>
+    <span id="dirty" class="ct-dirty"></span>
+    <span class="sp"></span>
+    <span id="stat" class="ct-muted">불러오는 중…</span>
+    <button class="ct-btn" id="btnReset">되돌리기</button>
+    <button class="ct-btn pri" id="btnSave" disabled>저장</button>
+  </div>
+
+  <div class="ct-wrap">
+    <div class="ct-tools">
+      <input type="search" id="q" placeholder="사건 이름으로 찾기" />
+      <select id="yrSel"><option value="">시대 전체</option></select>
+      <select id="lvSel">
+        <option value="">등급 전체</option>
+        <option value="1">1급</option>
+        <option value="2">2급</option>
+        <option value="0">등급 없음</option>
+      </select>
+      <select id="shareSel">
+        <option value="">공유 전체</option>
+        <option value="y">다른 연표와 공유</option>
+        <option value="n">이 연표에만</option>
+      </select>
+      <span class="sp" style="flex:1 1 auto"></span>
+      <span class="ct-muted" id="count"></span>
+    </div>
+
+    <div class="ct-board" id="board"><p class="ct-empty">불러오는 중…</p></div>
+  </div>
+</div>
+
+<div class="ct-modal" id="saveModal" hidden>
+  <div class="box ct">
+    <h3>저장할 내용</h3>
+    <div id="diffBox"></div>
+    <label style="font-size:13px;font-weight:800;display:block;margin:10px 0 6px">왜 바꿨는지 (판 기록에 남습니다)</label>
+    <textarea id="why" style="width:100%;min-height:76px"></textarea>
+    <p class="ct-hint" style="margin:12px 0 14px">
+      사건 문서를 바로 고칩니다. 종이(발행본)에 나가는 것은 다음 발행 때입니다.
+    </p>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="ct-btn" id="saveCancel">취소</button>
+      <button class="ct-btn pri" id="saveGo">저장</button>
+    </div>
+  </div>
+</div>
+
+    </main>
+  </div>
+</div>
+<script src="../admin-common.js"></script>
+<script src="./timeline_common.js"></script>
+<script>
+(function () {
+  'use strict';
+  var T = window.TLAdmin, $ = function (id) { return document.getElementById(id); };
+  var shown = 80;
+
+  T.guard();
+  $('tlSel').innerHTML = T.list.map(function (x) {
+    return '<option value="' + x.key + '">' + T.esc(x.name) + '</option>'; }).join('') +
+    '<option value="cjk">한중일 비교 (전용 화면)</option>';
+  var want = sessionStorage.getItem('tlAdminTl') || 'kr';
+  $('tlSel').value = T.of(want) ? want : 'kr';
+  load();
+
+  function load() {
+    var tl = $('tlSel').value;
+    if (tl === 'cjk') { T.go(T.cjkUrl); return; }
+    sessionStorage.setItem('tlAdminTl', tl);
+    $('stat').textContent = '불러오는 중…';
+    $('board').innerHTML = '<p class="ct-empty">사건을 불러오는 중…</p>';
+    T.load(tl).then(function (r) {
+      $('stat').textContent = T.of(tl).name + ' 사건 ' + r.mine + '건' +
+        (r.draft ? ' · 저장 안 한 고침 ' + r.draft + '건' : '');
+      fillYears();
+      shown = 80;
+      draw();
+      mark();
+    }).catch(function (e) { $('stat').textContent = '오류: ' + e.message; });
+  }
+
+  function fillYears() {
+    var ys = T.rows().map(function (d) { return T.ymd(T.view(d, T.tl).year)[0]; }).filter(Boolean);
+    if (!ys.length) { $('yrSel').innerHTML = '<option value="">시대 전체</option>'; return; }
+    var lo = Math.floor(Math.min.apply(null, ys) / 10) * 10, hi = Math.max.apply(null, ys);
+    var out = ['<option value="">시대 전체</option>'];
+    for (var y = lo; y <= hi; y += 10) out.push('<option value="' + y + '">' + y + '년대</option>');
+    $('yrSel').innerHTML = out.join('');
+  }
+
+  function rows() {
+    var q = $('q').value.trim(), yr = $('yrSel').value, lv = $('lvSel').value, sh = $('shareSel').value;
+    return T.rows().filter(function (d) {
+      var v = T.view(d, T.tl), y = T.ymd(v.year)[0];
+      if (q && v.name.indexOf(q) < 0) return false;
+      if (yr && !(y >= +yr && y < +yr + 10)) return false;
+      if (lv === '0' && d.tier) return false;
+      if (lv && lv !== '0' && String(d.tier || '') !== lv) return false;
+      var shared = (d.timelines || []).length > 1;
+      if (sh === 'y' && !shared) return false;
+      if (sh === 'n' && shared) return false;
+      return true;
+    });
+  }
+
+  function draw() {
+    var list = rows();
+    $('count').textContent = '사건 ' + T.rows().length + '건 · 보이는 줄 ' + list.length;
+    if (!list.length) { $('board').innerHTML = '<p class="ct-empty">조건에 맞는 사건이 없습니다.</p>'; return; }
+    var h = '<div class="ct-row ct-head"><span>해</span><span>등급</span><span>사건</span><span style="text-align:right">표시</span></div>';
+    list.slice(0, shown).forEach(function (d) {
+      var v = T.view(d, T.tl), q = T.ymd(v.year);
+      var tags = '';
+      if (d.exam >= 3) tags += '<span class="ct-tag lv1">수험 A+</span>';
+      else if (d.exam >= 2) tags += '<span class="ct-tag lv2">수험 A</span>';
+      else if (d.exam >= 1) tags += '<span class="ct-tag">수험</span>';
+      if (v.important) tags += '<span class="ct-tag">굵게</span>';
+      if (d.category) tags += '<span class="ct-tag">' + T.esc(d.category) + '</span>';
+      var tls = (d.timelines || []);
+      tags += tls.length > 1 ? '<span class="ct-tag db">공유 ' + T.esc(tls.join('·')) + '</span>'
+                             : '<span class="ct-tag none">이 연표만</span>';
+      h += '<div class="ct-row" data-id="' + T.esc(d.id) + '">' +
+        '<span class="ct-yr">' + q[0] + (q[1] ? '.' + q[1] : '') + '</span>' +
+        '<span class="ct-mk' + (d.tier ? '' : ' none') + '"' +
+          (d.tier === 1 ? ' style="background:#b3261e"' : d.tier === 2 ? ' style="background:#9a6a10"' : '') + '>' +
+          (d.tier ? d.tier : '·') + '</span>' +
+        '<span><span class="ct-nm' + (v.important ? ' big' : '') + '">' + T.esc(v.name) + '</span>' +
+          '<span class="ct-sub">' + T.esc((d.factions || []).join(' · ')) +
+          (v.memo ? ' · 설명 있음' : ' · 설명 없음') +
+          (v.over.name || v.over.memo || v.over.year ? ' · 이 연표 전용값 있음' : '') + '</span></span>' +
+        '<span class="ct-tags">' + tags + '</span></div>';
+    });
+    if (list.length > shown) h += '<button class="ct-more" id="more">더 보기 (' + (list.length - shown) + '건 남음)</button>';
+    $('board').innerHTML = h;
+    var m = $('more');
+    if (m) m.onclick = function () { shown += 160; draw(); };
+  }
+
+  $('board').addEventListener('click', function (e) {
+    var row = e.target.closest('.ct-row[data-id]');
+    if (row) T.go('./timeline_edit.html?tl=' + encodeURIComponent(T.tl) + '&id=' + encodeURIComponent(row.dataset.id));
+  });
+  $('tlSel').addEventListener('change', function () {
+    if (T.dirty().length && !confirm('저장하지 않은 고침이 있습니다. 연표를 바꾸면 사라집니다. 계속할까요?')) {
+      $('tlSel').value = T.tl; return;
+    }
+    T.clearDraft(); load();
+  });
+  ['q', 'yrSel', 'lvSel', 'shareSel'].forEach(function (id) {
+    $(id).addEventListener('input', function () { shown = 80; draw(); });
+    $(id).addEventListener('change', function () { shown = 80; draw(); });
+  });
+  $('btnReset').addEventListener('click', function () {
+    if (T.dirty().length && !confirm('저장하지 않은 고침이 모두 사라집니다. 되돌릴까요?')) return;
+    T.clearDraft(); window.__tlLeaving = true; location.reload();
+  });
+  function mark() {
+    var n = T.dirty().length;
+    $('dirty').textContent = n ? ('저장 안 한 사건 ' + n + '건') : '';
+    $('btnSave').disabled = !n;
+  }
+  $('btnSave').addEventListener('click', function () {
+    var h = '<table class="ct-diff"><thead><tr><th style="width:200px">무엇</th><th>이전</th><th>이후</th></tr></thead><tbody>';
+    T.dirty().forEach(function (id) {
+      T.diff(id).forEach(function (q) {
+        h += '<tr><td>' + T.esc(T.docs[id].name) + ' — ' + T.esc(q.w) + '</td><td class="a">' +
+          T.esc(q.a) + '</td><td class="b">' + T.esc(q.b) + '</td></tr>';
+      });
+    });
+    $('diffBox').innerHTML = h + '</tbody></table>';
+    $('saveModal').hidden = false;
+  });
+  $('saveCancel').addEventListener('click', function () { $('saveModal').hidden = true; });
+  $('saveGo').addEventListener('click', function () {
+    var why = $('why').value.trim();
+    if (!why) { alert('왜 바꿨는지 한 줄 적어 주세요.'); return; }
+    var btn = this; btn.disabled = true;
+    T.save(why).then(function (r) {
+      $('saveModal').hidden = true; $('why').value = '';
+      $('stat').textContent = '저장했습니다 — 사건 ' + r.n + '건';
+      mark(); draw();
+    }).catch(function (e) { alert('저장하지 못했습니다: ' + e.message); })
+      .then(function () { btn.disabled = false; });
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') $('saveModal').hidden = true; });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>사건 고치기 · 연표 관리</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link rel="stylesheet" href="../admin.css" />
+<link rel="stylesheet" href="./cjk_timeline.css" />
+</head>
+<body>
+<div class="admin-shell">
+  <div id="admin-header-slot"></div>
+  <div class="admin-main">
+    <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+    <main class="admin-content">
+
+<div class="ct">
+  <div class="ct-bar">
+    <button class="ct-btn sm" id="btnBack">← 목록</button>
+    <div>
+      <div id="title" style="font-size:15px;font-weight:900;letter-spacing:-.3px">사건</div>
+      <div class="ct-crumb" id="crumb"></div>
+    </div>
+    <span id="dirty" class="ct-dirty"></span>
+    <span class="sp"></span>
+    <button class="ct-btn pri" id="btnSave" disabled>저장</button>
+  </div>
+
+  <div class="ct-wrap">
+    <div class="ct-two">
+      <div>
+        <section class="ct-card">
+          <h3>사실 — 어느 연표에서나 같은 것</h3>
+          <div class="in ct-f">
+            <label>사건 이름</label><input type="text" id="fName" />
+            <label>해 · 달 · 일</label>
+            <div class="row">
+              <input type="number" id="fY" style="width:104px" placeholder="해" />
+              <select id="fM" style="width:96px"></select>
+              <select id="fD" style="width:96px"></select>
+              <span class="ct-muted" id="fRaw"></span>
+            </div>
+            <label>나라</label><input type="text" id="fFac" placeholder="쉼표로 나눈다 — 조선, 청" />
+            <label class="wide">설명</label>
+            <textarea class="wide" id="fMemo" style="min-height:120px"></textarea>
+          </div>
+        </section>
+
+        <section class="ct-card">
+          <h3>종이에 보이는 법 — 이 연표 전체에 걸리는 값</h3>
+          <div class="in ct-f">
+            <label>등급</label>
+            <div class="row">
+              <select id="fTier" style="width:190px">
+                <option value="">없음</option>
+                <option value="1">1급 — 장마다 셋</option>
+                <option value="2">2급 — 해마다 두셋</option>
+              </select>
+              <label class="chk"><input type="checkbox" id="fImp" /> 굵게(큰 줄기)</label>
+            </div>
+            <label>갈래</label>
+            <select id="fCat" style="width:190px"></select>
+            <label>짧은 이름</label>
+            <input type="text" id="fShort" placeholder="종이가 좁을 때만 쓰는 이름" />
+            <label id="lbExam">수험</label>
+            <select id="fExam" style="width:220px">
+              <option value="0">아님</option>
+              <option value="1">필수</option>
+              <option value="2">최빈출(A)</option>
+              <option value="3">형광(A+)</option>
+            </select>
+            <label id="lbCal">역법</label>
+            <select id="fCal" style="width:190px">
+              <option value="">안 씀(1896년 뒤)</option>
+              <option value="L">음력</option>
+              <option value="S">양력</option>
+            </select>
+          </div>
+        </section>
+
+        <section class="ct-card">
+          <h3>연표마다 다르게 — 적으면 그 연표에서만 바뀝니다</h3>
+          <div class="in" id="byBox"></div>
+        </section>
+      </div>
+
+      <div>
+        <section class="ct-card ct-prev">
+          <h3>미리보기</h3>
+          <div class="ct-prevbar">
+            <select id="pageSel"></select>
+            <button class="ct-btn sm" id="btnWide">크게 보기</button>
+            <button class="ct-btn sm" id="btnFocus">이 사건 자리로</button>
+            <span class="ct-muted" id="prevStat"></span>
+          </div>
+          <iframe id="frame" title="연표 미리보기"></iframe>
+        </section>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="ct-modal" id="saveModal" hidden>
+  <div class="box ct">
+    <h3>저장할 내용</h3>
+    <div id="diffBox"></div>
+    <label style="font-size:13px;font-weight:800;display:block;margin:10px 0 6px">왜 바꿨는지</label>
+    <textarea id="why" style="width:100%;min-height:76px"></textarea>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button class="ct-btn" id="saveCancel">취소</button>
+      <button class="ct-btn pri" id="saveGo">저장</button>
+    </div>
+  </div>
+</div>
+
+    </main>
+  </div>
+</div>
+<script src="../admin-common.js"></script>
+<script src="./timeline_common.js"></script>
+<script>
+(function () {
+  'use strict';
+  var T = window.TLAdmin, $ = function (id) { return document.getElementById(id); };
+  var P = new URLSearchParams(location.search);
+  var tl = P.get('tl') || 'kr', id = P.get('id') || '';
+  var doc = null, page = 0, timer = null, POST = null, ready = false;
+  var listUrl = './timeline_manage.html';
+  var CATS = ['', '경제', '권력', '대외', '문화', '재난', '저항', '군부'];
+
+  T.guard();
+  $('fM').innerHTML = '<option value="0">달 모름</option>' +
+    [1,2,3,4,5,6,7,8,9,10,11,12].map(function (m) { return '<option value="' + m + '">' + m + '월</option>'; }).join('');
+  $('fD').innerHTML = '<option value="0">일 모름</option>' +
+    Array.from({ length: 31 }, function (_, i) { return '<option value="' + (i + 1) + '">' + (i + 1) + '일</option>'; }).join('');
+  $('fCat').innerHTML = CATS.map(function (c) {
+    return '<option value="' + c + '">' + (c || '없음') + '</option>'; }).join('');
+  $('frame').src = './poster_timeline_preview.html?tl=' + encodeURIComponent(tl);
+
+  T.load(tl).then(function () {
+    doc = T.docs[id];
+    if (!doc) { alert('그 사건을 찾지 못했습니다. 목록으로 돌아갑니다.'); T.go(listUrl); return; }
+    fill();
+  }).catch(function (e) { $('crumb').textContent = '오류: ' + e.message; });
+
+  function fill() {
+    var v = T.view(doc, tl), q = T.ymd(v.year);
+    $('title').textContent = v.name;
+    $('crumb').textContent = (T.of(tl) || {}).name + ' · ' + v.year + ' · ' + (doc.factions || []).join(' · ');
+    $('fName').value = doc.name || '';
+    $('fY').value = q[0] || '';
+    $('fM').value = String(q[1] || 0);
+    $('fD').value = String(q[2] || 0);
+    $('fRaw').textContent = '자료값 ' + (doc.birth_year || '');
+    $('fFac').value = (doc.factions || []).join(', ');
+    $('fMemo').value = doc.memo || '';
+    $('fTier').value = doc.tier ? String(doc.tier) : '';
+    $('fImp').checked = !!doc.important;
+    $('fCat').value = doc.category || '';
+    $('fShort').value = doc.short || '';
+    $('fExam').value = String(doc.exam || 0);
+    $('fCal').value = doc.cal || '';
+    var def = T.of(tl) || {};
+    ['lbExam', 'fExam'].forEach(function (k) { $(k).style.display = def.exam ? '' : 'none'; });
+    ['lbCal', 'fCal'].forEach(function (k) { $(k).style.display = def.cal ? '' : 'none'; });
+    byBox();
+    mark();
+    if (ready) { push(); }
+  }
+
+  /* 연표마다 다르게 — 이 사건이 실리는 연표마다 한 묶음씩 */
+  function byBox() {
+    var tls = (doc.timelines || []).slice();
+    if (!tls.length) tls = [tl];
+    $('byBox').innerHTML = tls.map(function (k) {
+      var o = (doc.by_tl || {})[k] || {};
+      var nm = (T.of(k) || { name: k === 'cjk' ? '한중일 비교' : k }).name;
+      return '<div class="ct-doc"><div class="hd"><b>' + T.esc(nm) + '</b>' +
+        (k === tl ? '<span class="ct-tag db">지금 보는 연표</span>' : '') + '</div>' +
+        '<div class="ct-f">' +
+          '<label>이름</label><input type="text" data-by="' + k + '" data-f="name" value="' + T.esc(o.name || '') +
+            '" placeholder="비우면 공통 이름(' + T.esc(doc.name || '') + ')">' +
+          '<label>설명</label><textarea data-by="' + k + '" data-f="memo" style="min-height:70px" ' +
+            'placeholder="비우면 공통 설명">' + T.esc(o.memo || '') + '</textarea>' +
+          '<label>해</label><input type="text" data-by="' + k + '" data-f="year" value="' + T.esc(o.year || '') +
+            '" placeholder="비우면 공통 해(' + T.esc(doc.birth_year || '') + ')">' +
+          '<label>굵게</label><select data-by="' + k + '" data-f="important">' +
+            '<option value="">공통값 따름</option>' +
+            '<option value="1"' + (o.important === true ? ' selected' : '') + '>굵게</option>' +
+            '<option value="0"' + (o.important === false ? ' selected' : '') + '>보통</option></select>' +
+        '</div></div>';
+    }).join('');
+  }
+  $('byBox').addEventListener('input', onBy);
+  $('byBox').addEventListener('change', onBy);
+  function onBy(e) {
+    var t = e.target, k = t.dataset.by, f = t.dataset.f;
+    if (!k || !f) return;
+    doc.by_tl = doc.by_tl || {};
+    doc.by_tl[k] = doc.by_tl[k] || {};
+    if (f === 'important') {
+      if (t.value === '') delete doc.by_tl[k].important;
+      else doc.by_tl[k].important = t.value === '1';
+    } else if (t.value.trim()) doc.by_tl[k][f] = t.value.trim();
+    else delete doc.by_tl[k][f];
+    if (!Object.keys(doc.by_tl[k]).length) delete doc.by_tl[k];
+    after();
+  }
+
+  /* 공통 칸 */
+  ['fName', 'fY', 'fM', 'fD', 'fFac', 'fMemo', 'fTier', 'fImp', 'fCat', 'fShort', 'fExam', 'fCal']
+    .forEach(function (k) {
+      $(k).addEventListener('input', pull);
+      $(k).addEventListener('change', pull);
+    });
+  function pull() {
+    doc.name = $('fName').value.trim() || doc.name;
+    doc.birth_year = T.ymdTxt(+$('fY').value, +$('fM').value, +$('fD').value) || doc.birth_year;
+    doc.factions = $('fFac').value.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+    doc.memo = $('fMemo').value;
+    if ($('fTier').value) doc.tier = +$('fTier').value; else delete doc.tier;
+    doc.important = $('fImp').checked;
+    if ($('fCat').value) doc.category = $('fCat').value; else delete doc.category;
+    if ($('fShort').value.trim()) doc.short = $('fShort').value.trim(); else delete doc.short;
+    if (+$('fExam').value) doc.exam = +$('fExam').value; else delete doc.exam;
+    if ($('fCal').value) doc.cal = $('fCal').value; else delete doc.cal;
+    after();
+  }
+  function after() {
+    var v = T.view(doc, tl);
+    $('title').textContent = v.name;
+    $('crumb').textContent = (T.of(tl) || {}).name + ' · ' + v.year + ' · ' + (doc.factions || []).join(' · ');
+    $('fRaw').textContent = '자료값 ' + (doc.birth_year || '');
+    T.saveDraft(); mark(); push();
+  }
+
+  /* ── 미리보기 ── */
+  addEventListener('message', function (e) {
+    if (!e.data) return;
+    if (e.data.post === 'ready') {
+      POST = $('frame').contentWindow.POST;
+      ready = true;
+      $('pageSel').innerHTML = POST.pages().map(function (p) {
+        return '<option value="' + p.i + '">' + p.label + '</option>'; }).join('');
+      if (doc) {
+        var y = T.ymd(T.view(doc, tl).year)[0];
+        var hit = POST.pages().find(function (p) { return y >= p.a && y <= p.b; });
+        page = hit ? hit.i : 0;
+        $('pageSel').value = String(page);
+        push();
+      }
+    }
+    if (e.data.post === 'drawn') $('prevStat').textContent = '';
+    if (e.data.post === 'error') $('prevStat').textContent = '미리보기 오류';
+  });
+  function push() {
+    if (!ready || !POST) return;
+    clearTimeout(timer);
+    timer = setTimeout(function () {
+      $('prevStat').textContent = '그리는 중…';
+      try { POST.apply(T.events(), page); } catch (e) { $('prevStat').textContent = '오류: ' + e.message; }
+    }, 400);
+  }
+  $('pageSel').addEventListener('change', function () { page = +this.value; push(); });
+  $('btnWide').addEventListener('click', function () {
+    var w = document.querySelector('.ct-two').classList.toggle('wide');
+    this.textContent = w ? '나란히 보기' : '크게 보기';
+  });
+  $('btnFocus').addEventListener('click', function () {
+    try { POST.focus(T.ymd(T.view(doc, tl).year)[0]); } catch (e) {}
+  });
+
+  /* ── 저장 ── */
+  function mark() {
+    var n = T.dirty().length;
+    $('dirty').textContent = n ? ('저장 안 한 사건 ' + n + '건') : '';
+    $('btnSave').disabled = !n;
+  }
+  $('btnBack').addEventListener('click', function () { T.go(listUrl); });
+  $('btnSave').addEventListener('click', function () {
+    var h = '<table class="ct-diff"><thead><tr><th style="width:200px">무엇</th><th>이전</th><th>이후</th></tr></thead><tbody>';
+    T.dirty().forEach(function (k) {
+      T.diff(k).forEach(function (q) {
+        h += '<tr><td>' + T.esc(T.docs[k].name) + ' — ' + T.esc(q.w) + '</td><td class="a">' +
+          T.esc(q.a) + '</td><td class="b">' + T.esc(q.b) + '</td></tr>';
+      });
+    });
+    $('diffBox').innerHTML = h + '</tbody></table>';
+    $('saveModal').hidden = false;
+  });
+  $('saveCancel').addEventListener('click', function () { $('saveModal').hidden = true; });
+  $('saveGo').addEventListener('click', function () {
+    var why = $('why').value.trim();
+    if (!why) { alert('왜 바꿨는지 한 줄 적어 주세요.'); return; }
+    var btn = this; btn.disabled = true;
+    T.save(why).then(function (r) {
+      $('saveModal').hidden = true; $('why').value = '';
+      $('crumb').textContent = '저장했습니다 — 사건 ' + r.n + '건';
+      mark();
+    }).catch(function (e) { alert('저장하지 못했습니다: ' + e.message); })
+      .then(function () { btn.disabled = false; });
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') $('saveModal').hidden = true; });
+})();
+</script>
+</body>
+</html>

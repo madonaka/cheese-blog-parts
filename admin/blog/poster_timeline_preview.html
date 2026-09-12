@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>포스터 연표 미리보기 (관리자용)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!--
+  한국 근현대사 · 중국 근현대사 · 일본 근현대사 · 북한 연표의 미리보기 틀.
+  주소 뒤에 ?tl=kr|cn|jp|nk 를 붙이면 그 연표의 **발행본 그림 코드**를 그대로 불러다 쓴다.
+  관리 화면이 window.POST.apply(사건목록, 장) 로 자료를 밀어 넣으면
+  발행본과 같은 코드로 다시 그린다(reindexData 로 색인을 다시 짠다).
+-->
+<style>
+  html,body{margin:0;height:100%;background:#efece4;font-family:'Noto Sans KR',system-ui,sans-serif;overflow:hidden}
+  #bar{position:absolute;left:0;right:0;top:0;height:38px;display:flex;align-items:center;gap:6px;
+       padding:0 10px;background:#fff;border-bottom:1px solid #e3e7ec;font-size:12px;color:#6b7684;z-index:5}
+  #bar button{font:inherit;font-size:12px;font-weight:800;border:1px solid #e3e7ec;background:#fff;
+              border-radius:8px;padding:4px 9px;cursor:pointer;color:#33404d}
+  #bar button:hover{background:#f6f8fa}
+  #bar b{font-variant-numeric:tabular-nums;min-width:46px;text-align:center;color:#33404d}
+  #bar .sp{flex:1 1 auto}
+  #stage{position:absolute;inset:38px 0 0;overflow:auto;cursor:grab;background:#efece4;overscroll-behavior:contain}
+  #stage.drag{cursor:grabbing}
+  #pad{padding:12px}
+  #err{margin:12px;padding:11px 13px;border:1px solid #f0c2c2;border-radius:10px;background:#fff6f6;
+       color:#a3352b;font-size:13px;line-height:1.6;display:none}
+  /* 발행본 화면 요소는 걷고 종이만 남긴다 */
+  .kmt .eras,.kmt .zoom-top,.kmt .zoom-dock,.kmt .zoom-nav{display:none !important}
+  .kmt .zoom{position:static !important;display:block !important;background:transparent !important}
+  .kmt .zoom-scroll{overflow:visible !important;cursor:default !important}
+  .kmt .zoom-inner{margin:0 !important}
+  .kmt .a4{box-shadow:0 8px 26px rgba(0,0,0,.22)}
+</style>
+</head>
+<body>
+<div id="bar">
+  <button type="button" id="zOutB">−</button><b id="pct">100%</b><button type="button" id="zInB">+</button>
+  <button type="button" id="zFitB">폭 맞춤</button><button type="button" id="zOneB">100%</button>
+  <span class="sp"></span><span id="tip">끌어서 옮기고, Ctrl+휠로 확대</span>
+</div>
+<div id="stage"><div id="pad">
+  <div id="err"></div>
+  <div id="host"></div>
+</div></div>
+<script>
+(function () {
+  'use strict';
+  var TL = new URLSearchParams(location.search).get('tl') || 'kr';
+  var FILE = { kr: 'modern', cn: 'cn', jp: 'jp', nk: 'nk' }[TL] || 'modern';
+  var BASE = 'https://plus.cheesehistory.com/korean/';
+  var TITLE = { kr: '한국 근현대사 연표', cn: '중국 근현대사 연표', jp: '일본 근현대사 연표', nk: '북한 연표' }[TL];
+
+  /* 발행본 쪽 마크업 — 그림 코드가 이 자리들을 찾는다 */
+  document.getElementById('host').innerHTML =
+    '<div class="kmt"><div class="wrap">' +
+      '<section class="eras"><div class="era-grid" id="eraOpen"></div><ul id="eraSoon"></ul></section>' +
+      '<div class="zoom" id="zoomview">' +
+        '<div class="zoom-top"><span class="zoom-tag"></span><div class="zoom-banner">' +
+          '<div class="zb-sub" id="zbSub"></div><div class="zb-title">' + TITLE + '</div>' +
+          '<div class="zb-foot"><span id="zbDate"></span></div></div>' +
+          '<button class="zoom-x" data-close></button></div>' +
+        '<div class="zoom-scroll" id="zoomScroll"><div class="zoom-inner" id="zoomInner"></div></div>' +
+        '<button class="zoom-nav prev" data-prev></button><button class="zoom-nav next" data-next></button>' +
+        '<div class="zoom-dock"><div class="zd-group zd-exam">' +
+          '<button type="button" data-examtoggle aria-pressed="false"><b id="examCnt"></b></button></div>' +
+          '<div class="zd-group zd-zoom"><button data-zout></button><span class="zc-val" id="zcVal"></span>' +
+          '<button data-zin></button><button data-zreset></button></div></div>' +
+      '</div>' +
+      '<div class="etl-info-modal" id="evtModal" hidden><div class="etl-info-card">' +
+        '<button type="button" class="etl-info-close" data-evtclose></button>' +
+        '<div class="etl-info-meta" id="evtMeta"></div><h3 class="etl-info-title" id="evtTitle"></h3>' +
+        '<div class="etl-info-body" id="evtBody"></div></div></div>' +
+    '</div></div>';
+
+  function css(href) {
+    var l = document.createElement('link');
+    l.rel = 'stylesheet'; l.href = href;
+    document.head.appendChild(l);
+  }
+  function js(src) {
+    return new Promise(function (res, rej) {
+      var s = document.createElement('script');
+      s.src = src; s.onload = res; s.onerror = function () { rej(new Error(src)); };
+      document.body.appendChild(s);
+    });
+  }
+  css(BASE + FILE + '-timeline.css');
+
+  var stage = document.getElementById('stage'), pct = document.getElementById('pct');
+  var scale = 1, fitScale = 1, curPage = 0;
+  function paper() { return document.querySelector('#zoomInner .a4'); }
+  function put(s) {
+    var a4 = paper(); if (!a4) return;
+    var w = a4.offsetWidth || 1750, h = a4.offsetHeight || 2475;
+    scale = Math.max(0.05, Math.min(3, s));
+    a4.style.transformOrigin = 'top left';
+    a4.style.transform = 'scale(' + scale + ')';
+    var inner = document.getElementById('zoomInner');
+    inner.style.width = (w * scale) + 'px';
+    inner.style.height = (h * scale) + 'px';
+    pct.textContent = Math.round(scale / (fitScale || 1) * 100) + '%';
+  }
+  function fit(keep) {
+    var a4 = paper(); if (!a4) return;
+    fitScale = Math.max(0.05, (stage.clientWidth - 26) / (a4.offsetWidth || 1750));
+    put(keep ? scale : fitScale);
+  }
+  var drag = null;
+  stage.addEventListener('pointerdown', function (e) {
+    if (e.button !== 0) return;
+    drag = { x: e.clientX, y: e.clientY, l: stage.scrollLeft, t: stage.scrollTop };
+    stage.setPointerCapture(e.pointerId); stage.classList.add('drag');
+  });
+  stage.addEventListener('pointermove', function (e) {
+    if (!drag) return;
+    stage.scrollLeft = drag.l - (e.clientX - drag.x);
+    stage.scrollTop = drag.t - (e.clientY - drag.y);
+  });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (t) {
+    stage.addEventListener(t, function () { drag = null; stage.classList.remove('drag'); });
+  });
+  stage.addEventListener('wheel', function (e) {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    var r = stage.getBoundingClientRect();
+    var mx = e.clientX - r.left + stage.scrollLeft, my = e.clientY - r.top + stage.scrollTop;
+    var before = scale;
+    put(scale * (e.deltaY < 0 ? 1.12 : 1 / 1.12));
+    var k = scale / before;
+    stage.scrollLeft = mx * k - (e.clientX - r.left);
+    stage.scrollTop = my * k - (e.clientY - r.top);
+  }, { passive: false });
+  stage.addEventListener('dblclick', function () { put(scale > fitScale * 1.2 ? fitScale : 1); });
+  document.getElementById('zInB').onclick = function () { put(scale * 1.25); };
+  document.getElementById('zOutB').onclick = function () { put(scale / 1.25); };
+  document.getElementById('zFitB').onclick = function () { fit(false); };
+  document.getElementById('zOneB').onclick = function () { put(1); };
+  addEventListener('resize', function () { fit(scale > fitScale * 1.05); });
+
+  js(BASE + FILE + '-timeline-data.js').then(function () {
+    return js(BASE + FILE + '-timeline.js');
+  }).then(function () {
+    if (typeof window.reindexData !== 'function' || typeof goPage !== 'function') {
+      throw new Error('이 연표의 그림 코드가 아직 자료 다시 읽기를 못 합니다.');
+    }
+    window.POST = {
+      tl: TL,
+      pages: function () {
+        var out = [];
+        for (var i = 0; i < PAGE_COUNT; i++) {
+          var r = pageRange(i);
+          out.push({ i: i, a: r[0], b: r[1], label: r[0] + '~' + r[1] });
+        }
+        return out;
+      },
+      /* 발행본 자료 그대로 — 관리 화면이 처음 견줄 때 쓴다 */
+      events: function () { return JSON.parse(JSON.stringify(DATA.events || [])); },
+      apply: function (events, page) {
+        if (events) { DATA.events = events; window.reindexData(); }
+        this.show(page == null ? curPage : page);
+      },
+      show: function (page) {
+        var keep = curPage === page ? scale : null, l = stage.scrollLeft, t = stage.scrollTop;
+        curPage = Math.max(0, Math.min(PAGE_COUNT - 1, page | 0));
+        goPage(curPage);
+        openZoom();
+        requestAnimationFrame(function () {
+          fit(true);
+          if (keep) { put(keep); stage.scrollLeft = l; stage.scrollTop = t; }
+          else put(fitScale);
+          parent.postMessage({ post: 'drawn', page: curPage }, '*');
+        });
+      },
+      focus: function (year) {
+        var a4 = paper(); if (!a4) return;
+        var r = pageRange(curPage);
+        if (!(year >= r[0] && year <= r[1])) return;
+        var f = (year - r[0]) / Math.max(1, r[1] - r[0]);
+        stage.scrollTop = Math.max(0, a4.offsetHeight * scale * f - stage.clientHeight / 2);
+      },
+    };
+    parent.postMessage({ post: 'ready', tl: TL }, '*');
+  }).catch(function (e) {
+    var el = document.getElementById('err');
+    el.style.display = 'block';
+    el.textContent = '그림 코드를 불러오지 못했습니다 — ' + e.message;
+    parent.postMessage({ post: 'error', message: e.message }, '*');
+  });
+})();
+</script>
+</body>
+</html>
