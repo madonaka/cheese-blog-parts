@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>한중일 연표 미리보기 (관리자용)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!--
+  관리 화면(cjk_timeline_manage.html)이 iframe 으로 띄우는 미리보기다.
+  발행본과 **같은 그림 코드**를 그대로 불러다 쓴다 — 미리보기와 종이가 다르면 미리보기를 볼 까닭이 없다.
+    /korean/cjk-timeline-data.js  자료(EDITIONS)
+    /korean/cjk-timeline.js       그리기
+  관리 화면은 window.CJK.read() 로 자료를 읽고, window.CJK.apply() 로 고친 자료를 밀어 넣는다.
+-->
+<link rel="stylesheet" href="https://plus.cheesehistory.com/korean/cjk-timeline.css?v=20260912b">
+<style>
+  html,body{margin:0;background:#f4f1ea;font-family:'Noto Sans KR',system-ui,sans-serif}
+  /* 종이만 보여 준다 — 카드 · 장 고르는 줄 · 설명은 관리 화면 쪽에 있다 */
+  .kmt .wrap,.kmt .zoom-bar,.kmt .zoom-dock,.kmt .zoom-nav{display:none !important}
+  .kmt .zoomview{position:static !important;display:block !important;background:transparent !important;z-index:auto !important}
+  .kmt .zoom-scroll{overflow:visible !important;cursor:default !important}
+  .kmt .zoom-inner{margin:0 !important}
+  .kmt .a4{box-shadow:0 6px 20px rgba(0,0,0,.18)}
+  #err{display:none;margin:14px;padding:12px 14px;border:1px solid #f0c2c2;border-radius:10px;
+       background:#fff6f6;color:#a3352b;font-size:13px;line-height:1.6}
+</style>
+</head>
+<body>
+<div id="err"></div>
+<div class="kmt">
+  <div class="wrap">
+    <div class="bar"><span class="seg-lb">장</span><div class="seg" id="segSheet"></div></div>
+    <div class="grid" id="grid"></div>
+  </div>
+  <div class="zoomview is-on" id="zoomview">
+    <div class="zoom-bar">
+      <button type="button" id="zClose">✕</button>
+      <b id="zTitle"></b><span id="zRange"></span><span id="zPageNo"></span>
+      <span class="sp"></span><span id="zSlack" hidden></span>
+    </div>
+    <div class="zoom-scroll" id="zScroll"><div class="zoom-inner" id="zInner"></div></div>
+    <button type="button" class="zoom-nav prev" id="zPrev">‹</button>
+    <button type="button" class="zoom-nav next" id="zNext">›</button>
+    <div class="zoom-dock"><div class="zd">
+      <button type="button" id="zOut">−</button><i id="zPct">100%</i>
+      <button type="button" id="zIn">+</button><button type="button" id="zFit">⤢</button>
+    </div></div>
+  </div>
+  <div class="etl-info-modal" id="evtModal" hidden>
+    <div class="etl-info-card"><button type="button" class="etl-info-close" data-evtclose>✕</button>
+      <div class="etl-info-meta" id="evtMeta"></div><h3 class="etl-info-title" id="evtTitle"></h3>
+      <div class="etl-info-body" id="evtBody"></div></div>
+  </div>
+</div>
+
+<script src="https://plus.cheesehistory.com/korean/cjk-timeline-data.js?v=20260912e"></script>
+<script src="https://plus.cheesehistory.com/korean/cjk-timeline.js?v=20260912e"></script>
+<script>
+(function () {
+  'use strict';
+  var ready = typeof EDITIONS !== 'undefined' && typeof openPage === 'function';
+  if (!ready) {
+    var e = document.getElementById('err');
+    e.style.display = 'block';
+    e.textContent = '연표 그림 코드를 불러오지 못했습니다. plus.cheesehistory.com 이 열려 있는지 확인해 주세요.';
+    return;
+  }
+
+  /* 판을 강제로 다시 물린다 — useEdition 은 같은 판이면 그냥 돌아간다 */
+  function reload(i) {
+    useEdition(i === 0 ? 1 : 0);
+    useEdition(i);
+  }
+
+  window.CJK = {
+    /* 관리 화면이 자료를 읽어 간다 — 그림 코드가 이미 정규화(기원전 +1 등)해 둔 값 그대로다 */
+    read: function () {
+      return JSON.parse(JSON.stringify(EDITIONS.map(function (e) {
+        return { key: e.key, cent: e.cent, y0: e.y0, y1: e.y1, book: e.book, desc: e.desc,
+                 lanes: e.lanes, eras: e.eras, bars: e.bars, rulers_on: e.rulers_on,
+                 ev: e.ev, links: e.links, sync: e.sync, notes: e.notes, memo: e.memo };
+      })));
+    },
+    /* 장 목록 — 관리 화면의 장 고르개가 쓴다 */
+    sheets: function () {
+      return SHEETS.map(function (h, i) {
+        return { i: i, label: h.label, cent: h.cent, ed: h.ed, y0: h.y0, y1: h.y1 };
+      });
+    },
+    /* 고친 자료를 밀어 넣고 그 장을 다시 그린다 */
+    apply: function (ed, page) {
+      var i = EDITIONS.findIndex(function (e) { return e.key === ed.key; });
+      if (i < 0) return false;
+      ['cent','y0','y1','book','desc','lanes','eras','bars','rulers_on','ev','links','sync','notes','memo']
+        .forEach(function (k) { if (k in ed) EDITIONS[i][k] = ed[k]; });
+      reload(i);
+      this.show(page);
+      return true;
+    },
+    show: function (page) {
+      var p = Math.max(0, Math.min(SHEETS.length - 1, page | 0));
+      openPage(p);
+      /* 종이를 관리 화면 폭에 맞춘다 */
+      var a4 = document.getElementById('a4');
+      if (a4) {
+        var s = (document.documentElement.clientWidth - 24) / a4.offsetWidth;
+        a4.style.transform = 'scale(' + Math.min(1, s) + ')';
+        var inner = document.getElementById('zInner');
+        inner.style.width = (a4.offsetWidth * Math.min(1, s)) + 'px';
+        inner.style.height = (a4.offsetHeight * Math.min(1, s)) + 'px';
+      }
+      parent.postMessage({ cjk: 'drawn', page: p }, '*');
+    },
+  };
+  addEventListener('resize', function () { window.CJK.show(st.page); });
+  parent.postMessage({ cjk: 'ready' }, '*');
+})();
+</script>
+</body>
+</html>
