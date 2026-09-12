@@ -397,6 +397,25 @@
                     .slice(0, 300),
                   by: window.CHEESE_ADMIN_LOGIN_ID || '', created_at: now } });
       })
+      .then(function () {
+        /* 판 기록 페이지(/korean/timeline-changelog)가 읽는 공개 기록.
+           관리창 안쪽 기록(timeline_changes)에는 내부 메모가 섞이므로 그쪽은 닫아 두고,
+           독자에게 보일 말만 여기에 옮겨 적는다. */
+        var name = function (e) { return e.y + (e.m ? '.' + e.m : '') + ' ' + e.n; };
+        var line = function (w, arr) {
+          if (!arr.length) return null;
+          var head = arr.slice(0, 12).join(' · ');
+          return { w: w + ' ' + arr.length + '건', a: '', b: head + (arr.length > 12 ? ' 외 ' + (arr.length - 12) + '건' : ''), why: '' };
+        };
+        var items = [line('새로 실은 사건', d.add.map(name)),
+                     line('고친 사건', d.set.map(name)),
+                     line('뺀 사건', d.del.map(function (k) { return k.replace(/\|/g, ' · '); }))]
+                    .filter(Boolean);
+        if (items.length) items[0].why = why || '';
+        return T.db({ action: 'create', collection: 'timeline_changelog',
+          data: { tl: T.tl, book: (T.of(T.tl) || {}).name || T.tl, when: now.slice(0, 10),
+                  ed: '관리창 발행', items: items, created_at: now } });
+      })
       .then(function () { return body; });
   };
 
