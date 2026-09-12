@@ -79,6 +79,11 @@
             </div>
             <label></label>
             <span class="ct-muted" id="hlHint" style="font-size:12px"></span>
+            <label id="lbMark">마크</label>
+            <div class="row" id="rwMark">
+              <select id="fMark" style="width:230px"></select>
+              <span class="ct-muted" style="font-size:12px">비워 두면 종이가 사건 이름을 보고 알아서 붙입니다</span>
+            </div>
             <label>짧은 이름</label>
             <input type="text" id="fShort" placeholder="종이가 좁을 때만 쓰는 이름" />
             <label id="lbExam">수험</label>
@@ -151,7 +156,7 @@
   </div>
 </div>
 <script src="../admin-common.js"></script>
-<script src="./timeline_common.js?v=20260912d"></script>
+<script src="./timeline_common.js?v=20260912e"></script>
 <script>
 (function () {
   'use strict';
@@ -173,6 +178,10 @@
     [1,2,3,4,5,6,7,8,9,10,11,12].map(function (m) { return '<option value="' + m + '">' + m + '월</option>'; }).join('');
   $('fD').innerHTML = '<option value="0">일 모름</option>' +
     Array.from({ length: 31 }, function (_, i) { return '<option value="' + (i + 1) + '">' + (i + 1) + '일</option>'; }).join('');
+  var MARKS = (T.of(tl) || {}).marks || [];
+  $('fMark').innerHTML = '<option value="">자동 (종이가 정함)</option>' +
+    MARKS.map(function (q) { return '<option value="' + q[0] + '">' + T.esc(q[1]) + '</option>'; }).join('') +
+    (MARKS.length ? '<option value="none">마크 없음 (자동도 막는다)</option>' : '');
   $('fCat').innerHTML = CATS.map(function (c) {
     return '<option value="' + c + '">' + (c || '없음') + '</option>'; }).join('');
   $('frame').src = './poster_timeline_preview.html?tl=' + encodeURIComponent(tl);
@@ -206,6 +215,8 @@
     $('fTier').value = String(('tier' in ov ? ov.tier : doc.tier) || '');
     $('fImp').checked = !!v.important;
     $('fCat').value = ('category' in ov ? ov.category : doc.category) || '';
+    $('fMark').value = (('mark' in ov) ? ov.mark : doc.mark) || '';
+    ['lbMark', 'rwMark'].forEach(function (k) { $(k).style.display = MARKS.length ? '' : 'none'; });
     $('fShort').value = doc.short || '';
     $('fExam').value = String(doc.exam || 0);
     $('fCal').value = doc.cal || '';
@@ -362,7 +373,7 @@
   }
 
   /* 공통 칸 */
-  ['fName', 'fY', 'fM', 'fD', 'fMemo', 'fTier', 'fImp', 'fCat', 'fShort', 'fExam', 'fCal']
+  ['fName', 'fY', 'fM', 'fD', 'fMemo', 'fTier', 'fImp', 'fCat', 'fMark', 'fShort', 'fExam', 'fCal']
     .forEach(function (k) {
       $(k).addEventListener('input', pull);
       $(k).addEventListener('change', pull);
@@ -383,6 +394,14 @@
       if ($('fCat').value) doc.category = $('fCat').value; else delete doc.category;
     }
     doc.important = $('fImp').checked;
+    /* 마크도 등급 · 갈래와 같은 규칙 — 이 연표에만 따로 적어 둔 값이 있으면 그쪽을 고친다 */
+    var cur = ('mark' in ov) ? ov.mark : doc.mark;
+    var known = !cur || cur === 'none' || MARKS.some(function (q) { return q[0] === cur; });
+    if (MARKS.length && (known || $('fMark').value)) {   // 다른 연표의 마크는 건드리지 않는다
+      if ('mark' in ov) doc.by_tl[tl].mark = $('fMark').value;
+      else if ($('fMark').value) doc.mark = $('fMark').value;
+      else delete doc.mark;
+    }
     if ($('fShort').value.trim()) doc.short = $('fShort').value.trim(); else delete doc.short;
     if (+$('fExam').value) doc.exam = +$('fExam').value; else delete doc.exam;
     if ($('fCal').value) doc.cal = $('fCal').value; else delete doc.cal;

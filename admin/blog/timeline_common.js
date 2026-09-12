@@ -15,10 +15,21 @@
 
   var T = {
     list: [
-      { key: 'kr', name: '한국 근현대사', col: 'learn_characters', span: '1860~오늘', exam: true, cal: true },
+      /* marks — 그 연표 그림 코드의 MARK_ART_FN 에 있는 것만 적는다(없는 이름을 보내면 마크가 안 그려진다).
+         적어 두지 않은 연표는 관리창에서 마크를 못 고른다 — 종이 쪽에 e.mk 를 넣어야 열린다. */
+      { key: 'kr', name: '한국 근현대사', col: 'learn_characters', span: '1860~오늘', exam: true, cal: true,
+        marks: [['tg', '태극 — 독립운동 · 우리 쪽 일'], ['uk', '일장기 — 일제가 한 일'],
+                ['nk', '북한기 — 북한 도발'], ['uni', '한반도 — 남북 화해'],
+                ['demo', '횃불 — 민주화운동'], ['undong', '학생 · 재야'], ['teuk', '특별검사'],
+                ['pres', '대통령 선거'], ['as', '총선'], ['local', '지방선거'], ['chin', '친일 단체']] },
       { key: 'cn', name: '중국 근현대사', col: 'timeline_events', span: '1840~오늘' },
       { key: 'jp', name: '일본 근현대사', col: 'timeline_events', span: '1820~오늘' },
-      { key: 'nk', name: '북한', col: 'timeline_events', span: '1945~오늘', left: true },
+      { key: 'nk', name: '북한', col: 'timeline_events', span: '1945~오늘', left: true,
+        marks: [['tg', '태극 — 남한 쪽 일'], ['uk', '일장기 — 일제가 한 일'],
+                ['nk', '북한기 — 북한 도발'], ['uni', '한반도 — 남북 함께'],
+                ['sk', '남한의 북한 관련'], ['hab', '좌우 합작'],
+                ['sha', '상해파'], ['sov', '소련파'], ['yan', '연안파'], ['man', '만주파'],
+                ['gap', '갑산파'], ['hwa', '화요파'], ['seo', '서울파'], ['buk', '북풍파'], ['mll', 'ML파']] },
     ],
     cjkUrl: './cjk_timeline_manage.html',
     docs: {},        // id → 문서(고치는 것)
@@ -83,6 +94,11 @@
       if (d.short && d.short !== v.name) e.s = d.short;
     }
     if (def.left && (('left' in o) ? o.left : d.left)) e.L = true;
+    /* 마크는 그 연표가 아는 이름일 때만 싣는다 — 다른 연표의 마크가 섞여 들어오면 종이에 안 그려진다.
+       'none' 은 「마크 없음」을 못박는 것(종이가 이름으로 자동으로 붙이는 것을 막는다). */
+    var mk = ('mark' in o) ? o.mark : d.mark;
+    if (mk && (def.marks || []).some(function (q) { return q[0] === mk; })) e.mk = mk;
+    else if (mk === 'none') e.mk = 'none';
     return e;
   };
 
