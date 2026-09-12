@@ -21,6 +21,7 @@
     <span id="dirty" class="ct-dirty"></span>
     <span class="sp"></span>
     <span id="stat" class="ct-muted">불러오는 중…</span>
+    <button class="ct-btn" id="btnNew">＋ 새 사건</button>
     <button class="ct-btn" id="btnReset">되돌리기</button>
     <button class="ct-btn pri" id="btnSave" disabled>저장</button>
   </div>
@@ -44,6 +45,7 @@
       <span class="ct-muted" id="count"></span>
     </div>
 
+    <div id="gone"></div>
     <div class="ct-board" id="board"><p class="ct-empty">불러오는 중…</p></div>
   </div>
 </div>
@@ -112,6 +114,7 @@
     var q = $('q').value.trim(), yr = $('yrSel').value, lv = $('lvSel').value, sh = $('shareSel').value;
     return T.rows().filter(function (d) {
       var v = T.view(d, T.tl), y = T.ymd(v.year)[0];
+      if (T.orig[d.id] !== JSON.stringify(d)) return true;   // 저장 안 한 것은 늘 보인다
       if (q && v.name.indexOf(q) < 0) return false;
       if (yr && !(y >= +yr && y < +yr + 10)) return false;
       if (lv === '0' && d.tier) return false;
@@ -124,6 +127,7 @@
   }
 
   function draw() {
+    drawGone();
     var list = rows();
     $('count').textContent = '사건 ' + T.rows().length + '건 · 보이는 줄 ' + list.length;
     if (!list.length) { $('board').innerHTML = '<p class="ct-empty">조건에 맞는 사건이 없습니다.</p>'; return; }
@@ -139,6 +143,8 @@
       var tls = (d.timelines || []);
       tags += tls.length > 1 ? '<span class="ct-tag db">공유 ' + T.esc(tls.join('·')) + '</span>'
                              : '<span class="ct-tag none">이 연표만</span>';
+      if (T.isNew(d.id)) tags += '<span class="ct-tag lv1">새 사건</span>';
+      else if (T.orig[d.id] !== JSON.stringify(d)) tags += '<span class="ct-tag lv2">고침</span>';
       h += '<div class="ct-row" data-id="' + T.esc(d.id) + '">' +
         '<span class="ct-yr">' + q[0] + (q[1] ? '.' + q[1] : '') + '</span>' +
         '<span class="ct-mk' + (d.tier ? '' : ' none') + '"' +
@@ -155,6 +161,31 @@
     var m = $('more');
     if (m) m.onclick = function () { shown += 160; draw(); };
   }
+
+  /* 빼겠다고 표시해 둔 것 — 저장 전에는 여기서 되돌릴 수 있다 */
+  function drawGone() {
+    var g = T.removedList();
+    if (!g.length) { $('gone').innerHTML = ''; return; }
+    $('gone').innerHTML = '<div class="ct-doc"><div class="hd"><b>뺀다고 표시한 사건 ' + g.length + '건</b>' +
+      '<span class="ct-muted">저장해야 DB 에 반영됩니다</span></div>' +
+      g.map(function (q) {
+        return '<div class="ct-row"><span class="ct-yr">' + T.esc((q.doc.birth_year || '').slice(0, 7)) + '</span>' +
+          '<span class="ct-mk none">·</span>' +
+          '<span><span class="ct-nm" style="text-decoration:line-through">' + T.esc(q.doc.name || q.id) + '</span>' +
+          '<span class="ct-sub">' + (q.mode === 'doc' ? '문서째 지움' : '이 연표에서만 뺌') + '</span></span>' +
+          '<span style="text-align:right"><button class="ct-btn sm" data-back="' + T.esc(q.id) + '">되돌리기</button></span></div>';
+      }).join('') + '</div>';
+  }
+  $('gone').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-back]');
+    if (!b) return;
+    T.restore(b.dataset.back);
+    draw(); mark();
+  });
+
+  $('btnNew').addEventListener('click', function () {
+    T.go('./timeline_edit.html?tl=' + encodeURIComponent(T.tl) + '&new=1');
+  });
 
   $('board').addEventListener('click', function (e) {
     var row = e.target.closest('.ct-row[data-id]');
@@ -180,6 +211,13 @@
     $('btnSave').disabled = !n;
   }
   $('btnSave').addEventListener('click', function () {
+    var bad = T.check();
+    if (bad) {
+      alert(bad.why + '\n먼저 그 사건을 열어 채워 주세요.');
+      T.go('./timeline_edit.html?tl=' + encodeURIComponent(T.tl) + '&id=' + encodeURIComponent(bad.id) +
+        (T.isNew(bad.id) ? '&new=1' : ''));
+      return;
+    }
     var h = '<table class="ct-diff"><thead><tr><th style="width:200px">무엇</th><th>이전</th><th>이후</th></tr></thead><tbody>';
     T.dirty().forEach(function (id) {
       T.diff(id).forEach(function (q) {
