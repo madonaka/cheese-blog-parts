@@ -20,6 +20,7 @@
     <div>
       <div id="title" style="font-size:15px;font-weight:900;letter-spacing:-.3px">사건</div>
       <div class="ct-crumb" id="crumb"></div>
+      <div class="ct-crumb" id="who" style="opacity:.75"></div>
     </div>
     <span id="dirty" class="ct-dirty"></span>
     <span class="sp"></span>
@@ -62,7 +63,12 @@
               <label class="chk"><input type="checkbox" id="fImp" /> 굵게(큰 줄기)</label>
             </div>
             <label>갈래</label>
-            <select id="fCat" style="width:190px"></select>
+            <div class="row">
+              <select id="fCat" style="width:190px"></select>
+              <span id="hlChip" class="ct-tag none" style="min-width:110px;text-align:center">종이에 표시 없음</span>
+            </div>
+            <label></label>
+            <span class="ct-muted" id="hlHint" style="font-size:12px"></span>
             <label>짧은 이름</label>
             <input type="text" id="fShort" placeholder="종이가 좁을 때만 쓰는 이름" />
             <label id="lbExam">수험</label>
@@ -144,7 +150,13 @@
   var tl = P.get('tl') || 'kr', id = P.get('id') || '';
   var doc = null, page = 0, timer = null, POST = null, ready = false;
   var listUrl = './timeline_manage.html';
-  var CATS = ['', '경제', '권력', '대외', '문화', '재난', '저항', '군부'];
+  /* 종이의 「마크」 = 등급 + 갈래다. 갈래가 형광 색을 정하고, 1급이면 그 위에 주황이 덮는다.
+     색과 갈래 이름은 각 연표 그림 코드의 HL_COLOR 를 그대로 옮긴 것이다 — 여기서 지어내지 말 것.
+     **등급과 갈래를 둘 다 골라야** 종이에 칠해진다(하나만 골라 두면 아무 표시도 안 난다). */
+  var HL = { '권력': '#ffe27a', '저항': '#f8b8cf', '대외': '#8fcdf0',
+             '경제': '#a6dd93', '문화': '#cfb0ef', '재난': '#cfd4da', '군부': '#c2b280' };
+  var CRIT = '#ffb08a';                                  // 1급은 갈래 색 대신 이 색으로 칠한다
+  var CATS = ['', '권력', '저항', '대외', '경제', '문화', '재난'].concat(tl === 'cn' ? ['군부'] : []);
 
   T.guard();
   $('fM').innerHTML = '<option value="0">달 모름</option>' +
@@ -179,9 +191,11 @@
     $('fRaw').textContent = '자료값 ' + (doc.birth_year || '');
     $('fFac').value = (doc.factions || []).join(', ');
     $('fMemo').value = doc.memo || '';
-    $('fTier').value = doc.tier ? String(doc.tier) : '';
-    $('fImp').checked = !!doc.important;
-    $('fCat').value = doc.category || '';
+    /* 등급 · 갈래는 이 연표에 따로 적어 둔 값이 있으면 그것을 보여 준다(종이가 그 값으로 그려진다) */
+    var ov = (doc.by_tl || {})[tl] || {};
+    $('fTier').value = String(('tier' in ov ? ov.tier : doc.tier) || '');
+    $('fImp').checked = !!v.important;
+    $('fCat').value = ('category' in ov ? ov.category : doc.category) || '';
     $('fShort').value = doc.short || '';
     $('fExam').value = String(doc.exam || 0);
     $('fCal').value = doc.cal || '';
@@ -190,8 +204,42 @@
     ['lbCal', 'fCal'].forEach(function (k) { $(k).style.display = def.cal ? '' : 'none'; });
     tlBox();
     byBox();
+    hlChip();
+    who();
     mark();
     if (ready) { push(); }
+  }
+
+  /* 지금 고른 등급 · 갈래가 종이에서 어떤 색으로 나오는지 그대로 보여 준다 */
+  function hlChip() {
+    var ov = (doc.by_tl || {})[tl] || {}, chip = $('hlChip'), hint = $('hlHint');
+    var t = ('tier' in ov ? ov.tier : doc.tier), c = ('category' in ov ? ov.category : doc.category);
+    if (t && c) {
+      chip.className = 'ct-tag';
+      chip.style.background = (String(t) === '1') ? CRIT : (HL[c] || '#eef2f7');
+      chip.style.color = '#2b2318';
+      chip.textContent = t + '급 · ' + c;
+      hint.textContent = String(t) === '1'
+        ? '1급은 갈래 색 대신 주황으로 칠하고 이름도 빨갛게 나옵니다.'
+        : '사건 이름 뒤에 이 색으로 형광이 칠해집니다.';
+    } else {
+      chip.className = 'ct-tag none';
+      chip.style.background = '';
+      chip.style.color = '';
+      chip.textContent = '종이에 표시 없음';
+      hint.textContent = (t || c)
+        ? '등급과 갈래를 둘 다 골라야 칠해집니다 — 지금은 ' + (t ? '갈래가' : '등급이') + ' 비어 있습니다.'
+        : '등급과 갈래를 고르면 종이에서 형광으로 칠해집니다.';
+    }
+  }
+
+  /* 이 사건이 어느 문서인지 · 어느 연표들이 함께 쓰는지 */
+  function who() {
+    var tls = (doc.timelines || []).map(function (k) {
+      return (T.of(k) || { name: k === 'cjk' ? '한중일 비교' : k }).name; });
+    $('who').textContent = '문서 ' + doc.id + ' · ' + (doc._col || '') +
+      ' · 함께 쓰는 연표 ' + (tls.join(' · ') || '없음') +
+      (T.isNew(id) ? ' · 아직 DB 에 없음' : '');
   }
 
   function crumb() {
@@ -275,9 +323,17 @@
     doc.birth_year = T.ymdTxt(+$('fY').value, +$('fM').value, +$('fD').value);
     doc.factions = $('fFac').value.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
     doc.memo = $('fMemo').value;
-    if ($('fTier').value) doc.tier = +$('fTier').value; else delete doc.tier;
+    /* 이 연표에만 따로 적어 둔 등급 · 갈래가 이미 있으면 그쪽을 고친다(다른 연표를 건드리지 않는다).
+       없으면 공통값을 고친다 — 굳이 새 전용값을 만들지 않는다. */
+    var ov = (doc.by_tl || {})[tl] || {};
+    if ('tier' in ov || 'category' in ov) {
+      doc.by_tl[tl].tier = $('fTier').value ? +$('fTier').value : '';
+      doc.by_tl[tl].category = $('fCat').value || '';
+    } else {
+      if ($('fTier').value) doc.tier = +$('fTier').value; else delete doc.tier;
+      if ($('fCat').value) doc.category = $('fCat').value; else delete doc.category;
+    }
     doc.important = $('fImp').checked;
-    if ($('fCat').value) doc.category = $('fCat').value; else delete doc.category;
     if ($('fShort').value.trim()) doc.short = $('fShort').value.trim(); else delete doc.short;
     if (+$('fExam').value) doc.exam = +$('fExam').value; else delete doc.exam;
     if ($('fCal').value) doc.cal = $('fCal').value; else delete doc.cal;
@@ -288,6 +344,7 @@
     $('title').textContent = v.name || (T.isNew(id) ? '새 사건' : '');
     crumb();
     $('fRaw').textContent = '자료값 ' + (doc.birth_year || '');
+    hlChip(); who();
     T.saveDraft(); mark(); push();
   }
 
