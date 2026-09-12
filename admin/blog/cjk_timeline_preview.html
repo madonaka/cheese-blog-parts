@@ -5,55 +5,79 @@
 <title>한중일 연표 미리보기 (관리자용)</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!--
-  관리 화면(cjk_timeline_manage.html)이 iframe 으로 띄우는 미리보기다.
-  발행본과 **같은 그림 코드**를 그대로 불러다 쓴다 — 미리보기와 종이가 다르면 미리보기를 볼 까닭이 없다.
+  관리 화면이 iframe 으로 띄우는 미리보기다. 발행본과 **같은 그림 코드**를 그대로 불러다 쓴다.
     /korean/cjk-timeline-data.js  자료(EDITIONS)
     /korean/cjk-timeline.js       그리기
-  관리 화면은 window.CJK.read() 로 자료를 읽고, window.CJK.apply() 로 고친 자료를 밀어 넣는다.
+  보는 법은 여기서 따로 만든다 — 끌어서 이동 · 휠로 확대 · 폭 맞춤 · 두 번 눌러 오가기.
+  관리 화면은 window.CJK.read() · sheets() · apply() · show() 를 쓴다.
 -->
 <link rel="stylesheet" href="https://plus.cheesehistory.com/korean/cjk-timeline.css?v=20260912b">
 <style>
-  html,body{margin:0;background:#f4f1ea;font-family:'Noto Sans KR',system-ui,sans-serif}
-  /* 종이만 보여 준다 — 카드 · 장 고르는 줄 · 설명은 관리 화면 쪽에 있다 */
+  html,body{margin:0;height:100%;background:#efece4;font-family:'Noto Sans KR',system-ui,sans-serif;overflow:hidden}
+  /* 발행본 화면 요소는 걷고 종이만 남긴다 */
   .kmt .wrap,.kmt .zoom-bar,.kmt .zoom-dock,.kmt .zoom-nav{display:none !important}
   .kmt .zoomview{position:static !important;display:block !important;background:transparent !important;z-index:auto !important}
-  .kmt .zoom-scroll{overflow:visible !important;cursor:default !important}
+  .kmt .zoom-scroll{overflow:visible !important}
   .kmt .zoom-inner{margin:0 !important}
-  .kmt .a4{box-shadow:0 6px 20px rgba(0,0,0,.18)}
-  #err{display:none;margin:14px;padding:12px 14px;border:1px solid #f0c2c2;border-radius:10px;
-       background:#fff6f6;color:#a3352b;font-size:13px;line-height:1.6}
+  .kmt .a4{box-shadow:0 8px 26px rgba(0,0,0,.22)}
+
+  #stage{position:absolute;inset:38px 0 0;overflow:auto;cursor:grab;
+         overscroll-behavior:contain;-webkit-overflow-scrolling:touch;background:#efece4}
+  #stage.drag{cursor:grabbing}
+  #pad{padding:12px}
+  /* 조작 줄 — 위에 붙여 둔다 */
+  #bar{position:absolute;left:0;right:0;top:0;height:38px;display:flex;align-items:center;gap:6px;
+       padding:0 10px;background:#fff;border-bottom:1px solid #e3e7ec;font-size:12px;color:#6b7684}
+  #bar button{font:inherit;font-size:12px;font-weight:800;border:1px solid #e3e7ec;background:#fff;
+              border-radius:8px;padding:4px 9px;cursor:pointer;color:#33404d}
+  #bar button:hover{background:#f6f8fa}
+  #bar b{font-variant-numeric:tabular-nums;min-width:46px;text-align:center;color:#33404d}
+  #bar .sp{flex:1 1 auto}
+  #err{margin:12px;padding:11px 13px;border:1px solid #f0c2c2;border-radius:10px;background:#fff6f6;
+       color:#a3352b;font-size:13px;line-height:1.6;display:none}
 </style>
 </head>
 <body>
-<div id="err"></div>
-<div class="kmt">
-  <div class="wrap">
-    <div class="bar"><span class="seg-lb">장</span><div class="seg" id="segSheet"></div></div>
-    <div class="grid" id="grid"></div>
-  </div>
-  <div class="zoomview is-on" id="zoomview">
-    <div class="zoom-bar">
-      <button type="button" id="zClose">✕</button>
-      <b id="zTitle"></b><span id="zRange"></span><span id="zPageNo"></span>
-      <span class="sp"></span><span id="zSlack" hidden></span>
-    </div>
-    <div class="zoom-scroll" id="zScroll"><div class="zoom-inner" id="zInner"></div></div>
-    <button type="button" class="zoom-nav prev" id="zPrev">‹</button>
-    <button type="button" class="zoom-nav next" id="zNext">›</button>
-    <div class="zoom-dock"><div class="zd">
-      <button type="button" id="zOut">−</button><i id="zPct">100%</i>
-      <button type="button" id="zIn">+</button><button type="button" id="zFit">⤢</button>
-    </div></div>
-  </div>
-  <div class="etl-info-modal" id="evtModal" hidden>
-    <div class="etl-info-card"><button type="button" class="etl-info-close" data-evtclose>✕</button>
-      <div class="etl-info-meta" id="evtMeta"></div><h3 class="etl-info-title" id="evtTitle"></h3>
-      <div class="etl-info-body" id="evtBody"></div></div>
-  </div>
+<div id="bar">
+  <button type="button" id="zOutB" title="줄이기">−</button>
+  <b id="pct">100%</b>
+  <button type="button" id="zInB" title="키우기">+</button>
+  <button type="button" id="zFitB" title="폭에 맞추기">폭 맞춤</button>
+  <button type="button" id="zOneB" title="실제 크기">100%</button>
+  <span class="sp"></span>
+  <span id="tip">끌어서 옮기고, 휠로 오르내립니다 · Ctrl+휠로 확대</span>
 </div>
+<div id="stage"><div id="pad">
+  <div id="err"></div>
+  <div class="kmt">
+    <div class="wrap">
+      <div class="bar"><span class="seg-lb">장</span><div class="seg" id="segSheet"></div></div>
+      <div class="grid" id="grid"></div>
+    </div>
+    <div class="zoomview is-on" id="zoomview">
+      <div class="zoom-bar">
+        <button type="button" id="zClose">✕</button>
+        <b id="zTitle"></b><span id="zRange"></span><span id="zPageNo"></span>
+        <span class="sp"></span><span id="zSlack" hidden></span>
+      </div>
+      <div class="zoom-scroll" id="zScroll"><div class="zoom-inner" id="zInner"></div></div>
+      <button type="button" class="zoom-nav prev" id="zPrev">‹</button>
+      <button type="button" class="zoom-nav next" id="zNext">›</button>
+      <div class="zoom-dock"><div class="zd">
+        <button type="button" id="zOut">−</button><i id="zPct">100%</i>
+        <button type="button" id="zIn">+</button><button type="button" id="zFit">⤢</button>
+      </div></div>
+    </div>
+    <div class="etl-info-modal" id="evtModal" hidden>
+      <div class="etl-info-card"><button type="button" class="etl-info-close" data-evtclose>✕</button>
+        <div class="etl-info-meta" id="evtMeta"></div><h3 class="etl-info-title" id="evtTitle"></h3>
+        <div class="etl-info-body" id="evtBody"></div></div>
+    </div>
+  </div>
+</div></div>
 
-<script src="https://plus.cheesehistory.com/korean/cjk-timeline-data.js?v=20260912e"></script>
-<script src="https://plus.cheesehistory.com/korean/cjk-timeline.js?v=20260912e"></script>
+<script src="https://plus.cheesehistory.com/korean/cjk-timeline-data.js?v=20260912f"></script>
+<script src="https://plus.cheesehistory.com/korean/cjk-timeline.js?v=20260912f"></script>
 <script>
 (function () {
   'use strict';
@@ -64,15 +88,73 @@
     e.textContent = '연표 그림 코드를 불러오지 못했습니다. plus.cheesehistory.com 이 열려 있는지 확인해 주세요.';
     return;
   }
+  var stage = document.getElementById('stage');
+  var pct = document.getElementById('pct');
+  var scale = 1, fitScale = 1, curPage = 0;
 
-  /* 판을 강제로 다시 물린다 — useEdition 은 같은 판이면 그냥 돌아간다 */
-  function reload(i) {
-    useEdition(i === 0 ? 1 : 0);
-    useEdition(i);
+  function paper() { return document.getElementById('a4'); }
+  function put(s) {
+    var a4 = paper(); if (!a4) return;
+    var w = a4.offsetWidth || 1750, h = a4.offsetHeight || 2475;
+    scale = Math.max(0.05, Math.min(3, s));
+    a4.style.transformOrigin = 'top left';
+    a4.style.transform = 'scale(' + scale + ')';
+    var inner = document.getElementById('zInner');
+    inner.style.width = (w * scale) + 'px';
+    inner.style.height = (h * scale) + 'px';
+    pct.textContent = Math.round(scale / (fitScale || 1) * 100) + '%';
+  }
+  function fit(keep) {
+    var a4 = paper(); if (!a4) return;
+    var w = a4.offsetWidth || 1750;
+    fitScale = Math.max(0.05, (stage.clientWidth - 26) / w);
+    if (!keep) put(fitScale);
+    else put(scale);
   }
 
+  /* ── 끌어서 옮기기 ── */
+  var drag = null;
+  stage.addEventListener('pointerdown', function (e) {
+    if (e.button !== 0) return;
+    drag = { x: e.clientX, y: e.clientY, l: stage.scrollLeft, t: stage.scrollTop };
+    stage.setPointerCapture(e.pointerId);
+    stage.classList.add('drag');
+  });
+  stage.addEventListener('pointermove', function (e) {
+    if (!drag) return;
+    stage.scrollLeft = drag.l - (e.clientX - drag.x);
+    stage.scrollTop = drag.t - (e.clientY - drag.y);
+  });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (t) {
+    stage.addEventListener(t, function () { drag = null; stage.classList.remove('drag'); });
+  });
+  /* Ctrl + 휠 = 확대. 가리키는 자리를 붙잡고 키운다 */
+  stage.addEventListener('wheel', function (e) {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    var r = stage.getBoundingClientRect();
+    var mx = e.clientX - r.left + stage.scrollLeft, my = e.clientY - r.top + stage.scrollTop;
+    var before = scale;
+    put(scale * (e.deltaY < 0 ? 1.12 : 1 / 1.12));
+    var k = scale / before;
+    stage.scrollLeft = mx * k - (e.clientX - r.left);
+    stage.scrollTop = my * k - (e.clientY - r.top);
+  }, { passive: false });
+  /* 두 번 누르면 폭 맞춤 ↔ 실제 크기 */
+  stage.addEventListener('dblclick', function () { put(scale > fitScale * 1.2 ? fitScale : 1); });
+
+  document.getElementById('zInB').onclick = function () { put(scale * 1.25); };
+  document.getElementById('zOutB').onclick = function () { put(scale / 1.25); };
+  document.getElementById('zFitB').onclick = function () { fit(false); };
+  document.getElementById('zOneB').onclick = function () { put(1); };
+
+  var ro = window.ResizeObserver ? new ResizeObserver(function () { fit(scale > fitScale * 1.05); }) : null;
+  if (ro) ro.observe(stage);
+  addEventListener('resize', function () { fit(scale > fitScale * 1.05); });
+
+  function reload(i) { useEdition(i === 0 ? 1 : 0); useEdition(i); }
+
   window.CJK = {
-    /* 관리 화면이 자료를 읽어 간다 — 그림 코드가 이미 정규화(기원전 +1 등)해 둔 값 그대로다 */
     read: function () {
       return JSON.parse(JSON.stringify(EDITIONS.map(function (e) {
         return { key: e.key, cent: e.cent, y0: e.y0, y1: e.y1, book: e.book, desc: e.desc,
@@ -80,13 +162,11 @@
                  ev: e.ev, links: e.links, sync: e.sync, notes: e.notes, memo: e.memo };
       })));
     },
-    /* 장 목록 — 관리 화면의 장 고르개가 쓴다 */
     sheets: function () {
       return SHEETS.map(function (h, i) {
         return { i: i, label: h.label, cent: h.cent, ed: h.ed, y0: h.y0, y1: h.y1 };
       });
     },
-    /* 고친 자료를 밀어 넣고 그 장을 다시 그린다 */
     apply: function (ed, page) {
       var i = EDITIONS.findIndex(function (e) { return e.key === ed.key; });
       if (i < 0) return false;
@@ -97,21 +177,28 @@
       return true;
     },
     show: function (page) {
-      var p = Math.max(0, Math.min(SHEETS.length - 1, page | 0));
-      openPage(p);
-      /* 종이를 관리 화면 폭에 맞춘다 */
-      var a4 = document.getElementById('a4');
-      if (a4) {
-        var s = (document.documentElement.clientWidth - 24) / a4.offsetWidth;
-        a4.style.transform = 'scale(' + Math.min(1, s) + ')';
-        var inner = document.getElementById('zInner');
-        inner.style.width = (a4.offsetWidth * Math.min(1, s)) + 'px';
-        inner.style.height = (a4.offsetHeight * Math.min(1, s)) + 'px';
-      }
-      parent.postMessage({ cjk: 'drawn', page: p }, '*');
+      var keepScale = curPage === page ? scale : null;   // 같은 장을 다시 그릴 때는 보던 배율·자리를 지킨다
+      var l = stage.scrollLeft, t = stage.scrollTop;
+      curPage = Math.max(0, Math.min(SHEETS.length - 1, page | 0));
+      openPage(curPage);
+      requestAnimationFrame(function () {
+        fit(true);
+        if (keepScale) { put(keepScale); stage.scrollLeft = l; stage.scrollTop = t; }
+        else put(fitScale);
+        parent.postMessage({ cjk: 'drawn', page: curPage }, '*');
+      });
+    },
+    /* 사건 하나를 가운데로 — 상세 페이지에서 고치는 사건이 어디 있는지 보여 준다 */
+    focus: function (year) {
+      var a4 = paper(); if (!a4) return;
+      var svg = a4.querySelector('.a4-body');
+      if (!svg) return;
+      var h = SHEETS[curPage];
+      if (!h || !(year >= h.y0 && year < h.y1)) return;
+      var r = (year - h.y0) / (h.y1 - h.y0);
+      stage.scrollTop = Math.max(0, (a4.offsetHeight * scale) * r - stage.clientHeight / 2);
     },
   };
-  addEventListener('resize', function () { window.CJK.show(st.page); });
   parent.postMessage({ cjk: 'ready' }, '*');
 })();
 </script>
