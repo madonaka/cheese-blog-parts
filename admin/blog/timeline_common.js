@@ -18,7 +18,7 @@
       { key: 'kr', name: '한국 근현대사', col: 'learn_characters', span: '1860~오늘', exam: true, cal: true },
       { key: 'cn', name: '중국 근현대사', col: 'timeline_events', span: '1840~오늘' },
       { key: 'jp', name: '일본 근현대사', col: 'timeline_events', span: '1820~오늘' },
-      { key: 'nk', name: '북한', col: 'timeline_events', span: '1945~오늘' },
+      { key: 'nk', name: '북한', col: 'timeline_events', span: '1945~오늘', left: true },
     ],
     cjkUrl: './cjk_timeline_manage.html',
     docs: {},        // id → 문서(고치는 것)
@@ -65,41 +65,68 @@
     };
   };
 
-  /* 사건 문서 → 포스터 그림 코드가 먹는 줄 */
+  /* 사건 문서 → 포스터 그림 코드가 먹는 줄.
+     **구운 종이와 똑같은 꼴이어야 한다** — 발행(덧칠)이 종이와 이 줄을 그대로 견주기 때문이다.
+     한국 종이만 날 · 역법 · 수험 · 짧은 이름을 싣고, 북한 종이만 왼쪽 표시(L)를 싣는다. */
   T.toEvent = function (d, tl) {
+    var def = T.of(tl) || {}, o = (d.by_tl || {})[tl] || {};
     var v = T.view(d, tl), q = T.ymd(v.year);
-    var e = { y: q[0], m: q[1], d: q[2], n: v.name, i: v.important, memo: v.memo,
-              hl: (d.tier && d.category) ? String(d.tier) + d.category : '' };
-    if (d.cal) e.cal = d.cal;
-    if (d.exam >= 1) e.x = 1;
-    if (d.exam >= 2) e.xr = 1;
-    if (d.exam >= 3) e.xt = 1;
-    if (d.short && d.short !== v.name) e.s = d.short;
+    /* 등급 · 갈래도 by_tl 이 먼저다 — 생성기(rebuild_poster.py)와 같은 차례라야 견줄 수 있다 */
+    var tier = ('tier' in o) ? o.tier : d.tier, cat = ('category' in o) ? o.category : d.category;
+    var e = { y: q[0], m: q[1], n: v.name, i: v.important, memo: v.memo,
+              hl: (tier && cat) ? String(tier) + cat : '' };
+    if (def.cal) { e.d = q[2]; e.cal = d.cal || ''; }
+    if (def.exam) {
+      if (d.exam >= 1) e.x = 1;
+      if (d.exam >= 2) e.xr = 1;
+      if (d.exam >= 3) e.xt = 1;
+      if (d.short && d.short !== v.name) e.s = d.short;
+    }
+    if (def.left && (('left' in o) ? o.left : d.left)) e.L = true;
     return e;
   };
 
-  /* ── 자료 읽기 ── */
+  /* 사건 줄 하나를 가리키는 열쇠 — 해 | 달 | 이름(띄어쓰기 뺌).
+     생성기(rebuild_poster.py)와 종이의 덧칠(timeline-live.js)이 쓰는 것과 같다. */
+  T.liveKey = function (e) { return e.y + '|' + (e.m || 0) + '|' + String(e.n || '').replace(/\s/g, ''); };
+  /* 견줄 때 칸 차례가 달라도 같게 보이도록 한 줄로 굳힌다 */
+  var ORDER = ['y', 'm', 'd', 'n', 'i', 'memo', 'hl', 'cal', 'x', 'xr', 'xt', 's', 'L'];
+  T.canon = function (e) {
+    var o = {};
+    ORDER.forEach(function (k) { if (e[k] !== undefined) o[k] = e[k]; });
+    return JSON.stringify(o);
+  };
+
+  /* ── 자료 읽기 ──
+     사건은 두 모음에 나뉘어 산다 — **둘 다 읽어야 한다.**
+     중국 · 일본 · 북한 종이에도 한국사와 겹치는 사건이 실리는데(크로스워크 313건),
+     그 문서는 learn_characters 에 있다. 한쪽만 읽으면 그 사건들이 목록에서 통째로 빠진다. */
   T.load = function (tl) {
     T.tl = tl;
     var def = T.of(tl);
-    return T.db({ action: 'get', collection: def.col }).then(function (r) {
-      var all = r.data || r.docs || [];
+    var cols = ['timeline_events', 'learn_characters'];
+    return Promise.all(cols.map(function (c) {
+      return T.db({ action: 'get', collection: c }).then(function (r) {
+        return (r.data || r.docs || []).map(function (d) { d._col = c; return d; });
+      });
+    })).then(function (parts) {
+      var all = parts[0].concat(parts[1]);
       T.allIds = all.map(function (d) { return d.id; });
       var mine = all.filter(function (d) {
-        return (d.type ? d.type === 'event' : true) && (d.timelines || []).indexOf(tl) >= 0;
+        return d.type === 'event' && (d.timelines || []).indexOf(tl) >= 0;
       });
       mine.sort(function (a, b) { return String(a.birth_year).localeCompare(String(b.birth_year)); });
       T.docs = {};
       T.orig = {};
       T.removed = {};
-      mine.forEach(function (d) { d._col = def.col; T.docs[d.id] = d; T.orig[d.id] = JSON.stringify(d); });
+      mine.forEach(function (d) { T.docs[d.id] = d; T.orig[d.id] = JSON.stringify(d); });
       T.ids = mine.map(function (d) { return d.id; });
       var draft = T.readDraft(), back = 0;
       if (draft.tl === tl) {
         Object.keys(draft.docs || {}).forEach(function (id) {
           var q = draft.docs[id];
           if (!q) return;
-          q._col = def.col;
+          q._col = q._col || (T.docs[id] && T.docs[id]._col) || def.col;
           if (T.docs[id]) { T.docs[id] = q; back++; }
           else if (q._new) { T.docs[id] = q; T.ids.unshift(id); back++; }
         });
@@ -294,6 +321,57 @@
                 created_at: new Date().toISOString() } })
         .then(function () { return { n: ids.length }; });
     }).then(function (r) { T.clearDraft(); return r; });
+  };
+
+  /* ── 발행 ──────────────────────────────────────────────
+     종이(발행본 `<연표>-timeline-data.js`)는 미리 구운 파일이라 DB 를 고쳐도 안 바뀐다.
+     발행은 **구운 종이와 DB 의 차이**만 `timeline_live/{연표}` 에 적는다.
+     종이 페이지의 timeline-live.js 가 그 차이를 읽어 덧씌운다 — 다시 굽거나 배포하지 않아도 된다.
+     차이는 늘 「구운 종이 기준」으로 다시 셈해 통째로 덮어쓴다(앞서 발행한 것이 쌓이지 않는다). */
+  T.delta = function (paper) {
+    var mine = T.events(), A = {}, B = {}, add = [], set = [], del = [];
+    (paper || []).forEach(function (e) { A[T.liveKey(e)] = e; });
+    mine.forEach(function (e) { B[T.liveKey(e)] = e; });
+    Object.keys(B).forEach(function (k) {
+      if (!A[k]) add.push(B[k]);
+      else if (T.canon(A[k]) !== T.canon(B[k])) set.push(B[k]);
+    });
+    Object.keys(A).forEach(function (k) { if (!B[k]) del.push(k); });
+    return { add: add, set: set, del: del };
+  };
+
+  T.publish = function (d, why) {
+    var json = JSON.stringify({ add: d.add, set: d.set, del: d.del });
+    if (json.length > 700000)
+      return Promise.reject(new Error('차이가 너무 커서(' + Math.round(json.length / 1024) +
+        'KB) 덧칠로 낼 수 없습니다. 종이를 다시 구워야 합니다.'));
+    var body = { tl: T.tl, rev: new Date().toISOString(), why: why || '',
+                 n_add: d.add.length, n_set: d.set.length, n_del: d.del.length,
+                 json: json, by: window.CHEESE_ADMIN_LOGIN_ID || '' };
+    return T.db({ action: 'set', collection: 'timeline_live', id: T.tl, data: body })
+      .then(function () { return body; });
+  };
+
+  /* 발행본(구운 종이)의 사건을 읽어 온다 — 숨은 틀에 발행본 그림 코드를 띄워 물어본다 */
+  T.paper = function (tl) {
+    return new Promise(function (res, rej) {
+      var f = document.createElement('iframe');
+      f.style.cssText = 'position:absolute;width:1px;height:1px;left:-9999px;top:0;border:0';
+      f.src = './poster_timeline_preview.html?tl=' + encodeURIComponent(tl);
+      var n = 0, timer = setInterval(function () {
+        var w = f.contentWindow;
+        if (w && w.POST && w.POST.events) {
+          clearInterval(timer);
+          var ev = w.POST.events();
+          f.remove();
+          res(ev);
+        } else if (++n > 120) {
+          clearInterval(timer); f.remove();
+          rej(new Error('발행본을 불러오지 못했습니다.'));
+        }
+      }, 250);
+      document.body.appendChild(f);
+    });
   };
 
   window.TLAdmin = T;

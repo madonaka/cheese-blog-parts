@@ -24,6 +24,7 @@
     <button class="ct-btn" id="btnNew">＋ 새 사건</button>
     <button class="ct-btn" id="btnReset">되돌리기</button>
     <button class="ct-btn pri" id="btnSave" disabled>저장</button>
+    <button class="ct-btn" id="btnPub">발행</button>
   </div>
 
   <div class="ct-wrap">
@@ -50,6 +51,22 @@
   </div>
 </div>
 
+<div class="ct-modal" id="pubModal" hidden>
+  <div class="box ct">
+    <h3>사이트에 내보냅니다</h3>
+    <div id="pubBox"></div>
+    <label style="font-size:13px;font-weight:800;display:block;margin:10px 0 6px">무엇을 냈는지 (기록에 남습니다)</label>
+    <textarea id="pubWhy" style="width:100%;min-height:60px"></textarea>
+    <p class="ct-hint" style="margin:12px 0 14px">
+      구운 종이와 DB 의 차이만 내보냅니다. 독자가 새로고침하면 바로 보입니다.
+    </p>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="ct-btn" id="pubCancel">취소</button>
+      <button class="ct-btn pri" id="pubGo">내보낸다</button>
+    </div>
+  </div>
+</div>
+
 <div class="ct-modal" id="saveModal" hidden>
   <div class="box ct">
     <h3>저장할 내용</h3>
@@ -70,7 +87,7 @@
   </div>
 </div>
 <script src="../admin-common.js"></script>
-<script src="./timeline_common.js?v=20260912b"></script>
+<script src="./timeline_common.js?v=20260912c"></script>
 <script>
 (function () {
   'use strict';
@@ -183,6 +200,47 @@
     draw(); mark();
   });
 
+  /* ── 발행 — 구운 종이와 DB 의 차이를 사이트에 내보낸다 ── */
+  var pubDelta = null;
+  $('btnPub').addEventListener('click', function () {
+    if (T.dirty().length) { alert('저장하지 않은 고침이 있습니다. 먼저 저장해 주세요.'); return; }
+    var btn = this;
+    btn.disabled = true; btn.textContent = '견주는 중…';
+    T.paper(T.tl).then(function (paper) {
+      pubDelta = T.delta(paper);
+      var d = pubDelta, n = d.add.length + d.set.length + d.del.length;
+      var h = '<p class="ct-hint" style="margin:0 0 10px">구운 종이 ' + paper.length +
+        '건 ↔ DB ' + T.events().length + '건</p>';
+      if (!n) h += '<p class="ct-empty">달라진 것이 없습니다. 내보낼 것이 없습니다.</p>';
+      else {
+        h += '<table class="ct-diff"><thead><tr><th style="width:110px">무엇</th><th>사건</th></tr></thead><tbody>';
+        d.add.slice(0, 40).forEach(function (e) {
+          h += '<tr><td class="b">새로</td><td>' + e.y + (e.m ? '.' + e.m : '') + ' ' + T.esc(e.n) + '</td></tr>'; });
+        d.set.slice(0, 40).forEach(function (e) {
+          h += '<tr><td>고침</td><td>' + e.y + (e.m ? '.' + e.m : '') + ' ' + T.esc(e.n) + '</td></tr>'; });
+        d.del.slice(0, 40).forEach(function (k) {
+          h += '<tr><td class="a">뺌</td><td>' + T.esc(k.replace(/\|/g, ' · ')) + '</td></tr>'; });
+        h += '</tbody></table>';
+        if (n > 120) h += '<p class="ct-hint">차이가 ' + n + '건입니다 — 이쯤 쌓이면 종이를 다시 굽는 편이 낫습니다.</p>';
+      }
+      $('pubBox').innerHTML = h;
+      $('pubGo').disabled = !n;
+      $('pubModal').hidden = false;
+    }).catch(function (e) { alert('발행본을 읽지 못했습니다: ' + e.message); })
+      .then(function () { btn.disabled = false; btn.textContent = '발행'; });
+  });
+  $('pubCancel').addEventListener('click', function () { $('pubModal').hidden = true; });
+  $('pubGo').addEventListener('click', function () {
+    var why = $('pubWhy').value.trim();
+    if (!why) { alert('무엇을 냈는지 한 줄 적어 주세요.'); return; }
+    var btn = this; btn.disabled = true;
+    T.publish(pubDelta, why).then(function (r) {
+      $('pubModal').hidden = true; $('pubWhy').value = '';
+      $('stat').textContent = '사이트에 냈습니다 — 새로 ' + r.n_add + ' · 고침 ' + r.n_set + ' · 뺌 ' + r.n_del;
+    }).catch(function (e) { alert('내보내지 못했습니다: ' + e.message); })
+      .then(function () { btn.disabled = false; });
+  });
+
   $('btnNew').addEventListener('click', function () {
     T.go('./timeline_edit.html?tl=' + encodeURIComponent(T.tl) + '&new=1');
   });
@@ -240,7 +298,10 @@
     }).catch(function (e) { alert('저장하지 못했습니다: ' + e.message); })
       .then(function () { btn.disabled = false; });
   });
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') $('saveModal').hidden = true; });
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    $('saveModal').hidden = true; $('pubModal').hidden = true;
+  });
 })();
 </script>
 </body>
