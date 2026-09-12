@@ -441,7 +441,7 @@
           return { w: w + ' ' + arr.length + '건', a: '', b: head + (arr.length > 12 ? ' 외 ' + (arr.length - 12) + '건' : ''), why: '' };
         };
         var items = [line('새로 실은 사건', nw.add.map(name)),
-                     line('고친 사건', nw.set.map(name)),
+                     line('수정한 사건', nw.set.map(name)),
                      line('제외한 사건', nw.del.map(function (k) { return k.replace(/\|/g, ' · '); }))]
                     .filter(Boolean);
         if (items.length) items[0].why = why || '';
