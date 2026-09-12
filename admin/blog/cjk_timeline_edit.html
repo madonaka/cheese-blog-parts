@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>사건 고치기 · 한중일 비교 연표</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link rel="stylesheet" href="../admin.css" />
+<link rel="stylesheet" href="./cjk_timeline.css" />
+</head>
+<body>
+<div class="admin-shell">
+  <div id="admin-header-slot"></div>
+  <div class="admin-main">
+    <aside id="admin-menu-slot" class="admin-sidebar"></aside>
+    <main class="admin-content">
+
+<div class="ct">
+  <div class="ct-bar">
+    <button class="ct-btn sm" id="btnBack">← 목록</button>
+    <div>
+      <div id="title" style="font-size:15px;font-weight:900;letter-spacing:-.3px">사건</div>
+      <div class="ct-crumb" id="crumb"></div>
+    </div>
+    <span id="dirty" class="ct-dirty"></span>
+    <span class="sp"></span>
+    <button class="ct-btn bad sm" id="btnDel">이 사건 지우기</button>
+    <button class="ct-btn pri" id="btnSave" disabled>저장</button>
+  </div>
+
+  <div class="ct-wrap">
+    <div class="ct-two">
+      <div>
+        <section class="ct-card">
+          <h3>사실 — 어느 연표에서나 같은 것</h3>
+          <div class="in ct-f">
+            <label>사건 이름</label><input type="text" id="fName" />
+            <label>해 · 달</label>
+            <div class="row">
+              <input type="number" id="fYear" style="width:110px" />
+              <select id="fMonth" style="width:104px"></select>
+              <span class="ct-muted" id="fRaw"></span>
+            </div>
+            <label class="wide">설명 <span class="ct-muted">— 종이에서 누르면 뜨는 글</span></label>
+            <textarea class="wide" id="fMemo" style="min-height:120px"></textarea>
+          </div>
+        </section>
+
+        <section class="ct-card">
+          <h3>이 연표(한중일)에서만 — 보이는 법</h3>
+          <div class="in ct-f">
+            <label>칸</label><select id="fLane"></select>
+            <label>표식(나라)</label><select id="fBar"></select>
+            <label>등급</label>
+            <div class="row">
+              <select id="fLv" style="width:190px">
+                <option value="">없음 — 나라별 연표에만</option>
+                <option value="1">1급 — 장마다 셋</option>
+                <option value="2">2급 — 해마다 두셋</option>
+              </select>
+              <label class="chk"><input type="checkbox" id="fImp" /> 굵게(큰 줄기)</label>
+            </div>
+            <label>앞줄과 묶기</label>
+            <div class="row">
+              <select id="fJoin" style="width:150px">
+                <option value="">따로 쓴다</option>
+                <option value=",">, 로 이어 쓴다</option>
+                <option value="/">/ 로 이어 쓴다</option>
+              </select>
+              <span class="ct-muted" id="fJoinHint"></span>
+            </div>
+            <label>짧은 이름</label>
+            <input type="text" id="fShort" placeholder="종이가 좁을 때만 쓰는 이름 (비우면 사건 이름 그대로)" />
+          </div>
+        </section>
+
+        <section class="ct-card">
+          <h3>다른 연표와 함께 쓰는 사건</h3>
+          <div class="in" id="docBox"><p class="ct-muted">불러오는 중…</p></div>
+        </section>
+      </div>
+
+      <div>
+        <section class="ct-card ct-prev">
+          <h3>미리보기</h3>
+          <div class="ct-prevbar">
+            <select id="sheetSel"></select>
+            <span class="ct-muted" id="prevStat"></span>
+          </div>
+          <iframe id="frame" src="./cjk_timeline_preview.html" title="연표 미리보기"></iframe>
+        </section>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="ct-modal" id="saveModal" hidden>
+  <div class="box ct">
+    <h3>저장할 내용</h3>
+    <div id="diffBox"></div>
+    <label style="font-size:13px;font-weight:800;display:block;margin:10px 0 6px">왜 바꿨는지 (판 기록에 남습니다)</label>
+    <textarea id="why" style="width:100%;min-height:76px"></textarea>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button class="ct-btn" id="saveCancel">취소</button>
+      <button class="ct-btn pri" id="saveGo">저장</button>
+    </div>
+  </div>
+</div>
+
+    </main>
+  </div>
+</div>
+<script src="../admin-common.js"></script>
+<script src="./cjk_timeline_common.js"></script>
+<script>
+(function () {
+  'use strict';
+  var A = window.CJKAdmin, $ = function (id) { return document.getElementById(id); };
+  var P = new URLSearchParams(location.search);
+  var edKey = P.get('ed') || '', idx = +(P.get('i') || 0);
+  var ed = null, ev = null, page = 0, timer = null, CJK = null;
+  var listUrl = './cjk_timeline_manage.html';
+
+  A.guard();
+  $('fMonth').innerHTML = '<option value="0">달 모름</option>' +
+    [1,2,3,4,5,6,7,8,9,10,11,12].map(function (m) { return '<option value="' + m + '">' + m + '월</option>'; }).join('');
+
+  A.load($('frame')).then(function () {
+    CJK = $('frame').contentWindow.CJK;
+    ed = A.edOf(edKey) || A.eds[0];
+    ev = (ed.ev || [])[idx];
+    if (!ev) { alert('그 사건을 찾지 못했습니다. 목록으로 돌아갑니다.'); A.go(listUrl); return; }
+    fill();
+    draw();
+  }).catch(function (err) { $('crumb').textContent = '오류: ' + err.message; });
+
+  function fill() {
+    var ym = A.ym(ev.y);
+    $('title').textContent = ev.n;
+    $('crumb').textContent = ed.cent + ' · ' + A.laneName(ed, ev.c) + ' · ' + A.yrTxt(ev.y);
+    $('fName').value = ev.n;
+    $('fYear').value = ym[0];
+    $('fMonth').value = String(ym[1]);
+    $('fRaw').textContent = '자료값 ' + ev.y;
+    $('fMemo').value = (ed.memo || {})[ev.n] || '';
+    $('fLane').innerHTML = (ed.lanes || []).map(function (L) {
+      return '<option value="' + L.key + '"' + (L.key === ev.c ? ' selected' : '') + '>' +
+        A.esc(L.name || L.key) + '</option>'; }).join('');
+    $('fBar').innerHTML = '<option value="">없음</option>' + A.barChoices(ed).map(function (q) {
+      return '<option value="' + A.esc(q.id) + '"' + (q.id === ev.s ? ' selected' : '') + '>' +
+        A.esc((q.b.tag ? '[' + q.b.tag + '] ' : '') + q.b.n + ' · ' + q.lane) + '</option>'; }).join('');
+    $('fLv').value = ev.lv ? String(ev.lv) : '';
+    $('fImp').checked = !!ev.i;
+    $('fJoin').value = ev.j || '';
+    $('fShort').value = ev.short || '';
+    var prev = ed.ev[idx - 1];
+    $('fJoinHint').textContent = prev ? ('앞줄: ' + prev.n) : '앞에 줄이 없습니다';
+    var mine = A.sheetsOf(ed.key);
+    $('sheetSel').innerHTML = mine.map(function (h) {
+      return '<option value="' + h.i + '">' + A.esc(h.label) + '</option>'; }).join('');
+    page = A.sheetOfYear(ed.key, ev.y);
+    $('sheetSel').value = String(page);
+    docs();
+    mark();
+  }
+
+  /* 함께 쓰는 사건 문서 — 연표별 덮어쓰기 */
+  function docs() {
+    var box = $('docBox');
+    if (!ev.db || !ev.db.length) {
+      box.innerHTML = '<p class="ct-hint">이 사건은 한중일 연표에만 있습니다. ' +
+        '한국사 · 중국사 · 일본사 연표와 같이 쓰려면 사건 문서로 올려야 합니다(다음 판에서 단추를 답니다).</p>';
+      return;
+    }
+    box.innerHTML = '<p class="ct-muted">사건 문서를 불러오는 중…</p>';
+    Promise.all(ev.db.map(function (id) {
+      return A.loadDoc(id).then(function (d) { return [id, d]; })
+        .catch(function (e) { return [id, { _err: e.message }]; });
+    })).then(function (list) {
+      box.innerHTML = list.map(function (q) { return card(q[0], q[1]); }).join('');
+    });
+  }
+  function card(id, d) {
+    if (d._err) return '<p class="ct-muted">' + A.esc(id) + ' — 불러오지 못했습니다(' + A.esc(d._err) + ')</p>';
+    var tls = d.timelines || [], by = d.by_tl || {}, mine = by[A.TL] || {};
+    var others = tls.filter(function (t) { return t !== A.TL; });
+    return '<div class="ct-doc">' +
+      '<div class="hd"><b>' + A.esc(d.name || id) + '</b>' +
+        '<span class="ct-tag">' + A.esc(String(d.birth_year || '')) + '</span>' +
+        '<span class="ct-tag db">' + A.esc(id) + '</span>' +
+        '<span class="ct-muted">실리는 연표 ' + (tls.length ? A.esc(tls.join(' · ')) : '없음') + '</span></div>' +
+      (others.length ? '<p class="ct-muted" style="margin:0 0 9px">' + others.map(function (t) {
+          var o = by[t] || {};
+          return A.esc(t) + ' → ' + A.esc(o.name || d.name || '') +
+            (o.important !== undefined ? (o.important ? ' (굵게)' : ' (보통)') : '');
+        }).join('  /  ') + '</p>' : '') +
+      '<div class="ct-f">' +
+        '<label>이 연표 이름</label><input type="text" data-doc="' + A.esc(id) + '" data-df="name" value="' +
+          A.esc(mine.name || '') + '" placeholder="비우면 공통 이름(' + A.esc(d.name || '') + ')">' +
+        '<label>이 연표 설명</label><textarea data-doc="' + A.esc(id) + '" data-df="memo" style="min-height:74px" ' +
+          'placeholder="비우면 공통 설명">' + A.esc(mine.memo || '') + '</textarea>' +
+        '<label>이 연표 해</label><input type="text" data-doc="' + A.esc(id) + '" data-df="year" value="' +
+          A.esc(mine.year || '') + '" placeholder="비우면 공통 해(' + A.esc(String(d.birth_year || '')) + ')">' +
+      '</div></div>';
+  }
+  $('docBox').addEventListener('input', function (e) {
+    var t = e.target, id = t.dataset.doc;
+    if (!id || !A.docs[id]) return;
+    var d = A.docs[id];
+    d.by_tl = d.by_tl || {};
+    d.by_tl[A.TL] = d.by_tl[A.TL] || {};
+    if (t.value.trim()) d.by_tl[A.TL][t.dataset.df] = t.value.trim();
+    else delete d.by_tl[A.TL][t.dataset.df];
+    A.saveDraft(); mark();
+  });
+
+  /* ── 고치면 바로 자료에 넣고 다시 그린다 ── */
+  function pull() {
+    var oldName = ev.n, nm = $('fName').value.trim() || ev.n;
+    if (ed.memo && ed.memo[oldName] !== undefined && oldName !== nm) {
+      ed.memo[nm] = ed.memo[oldName]; delete ed.memo[oldName];
+    }
+    ev.n = nm;
+    ev.y = A.y(+$('fYear').value, +$('fMonth').value);
+    ev.c = $('fLane').value;
+    if ($('fBar').value) ev.s = $('fBar').value; else delete ev.s;
+    if ($('fLv').value) ev.lv = +$('fLv').value; else delete ev.lv;
+    if ($('fImp').checked) ev.i = 1; else delete ev.i;
+    if ($('fJoin').value) ev.j = $('fJoin').value; else delete ev.j;
+    if ($('fShort').value.trim()) ev.short = $('fShort').value.trim(); else delete ev.short;
+    ed.memo = ed.memo || {};
+    if ($('fMemo').value.trim()) ed.memo[nm] = $('fMemo').value.trim(); else delete ed.memo[nm];
+    $('title').textContent = ev.n;
+    $('crumb').textContent = ed.cent + ' · ' + A.laneName(ed, ev.c) + ' · ' + A.yrTxt(ev.y);
+    $('fRaw').textContent = '자료값 ' + ev.y;
+    A.saveDraft(); mark(); draw();
+  }
+  ['fName', 'fYear', 'fMonth', 'fMemo', 'fLane', 'fBar', 'fLv', 'fImp', 'fJoin', 'fShort'].forEach(function (id) {
+    $(id).addEventListener('input', pull);
+    $(id).addEventListener('change', pull);
+  });
+
+  function draw() {
+    clearTimeout(timer);
+    timer = setTimeout(function () {
+      if (!CJK) return;
+      $('prevStat').textContent = '그리는 중…';
+      try { CJK.apply(A.clone(ed), page); } catch (e) { $('prevStat').textContent = '오류: ' + e.message; }
+    }, 350);
+  }
+  addEventListener('message', function (e) {
+    if (e.data && e.data.cjk === 'drawn') $('prevStat').textContent = '';
+  });
+  $('sheetSel').addEventListener('change', function () { page = +this.value; draw(); });
+
+  /* ── 저장 · 지우기 · 나가기 ── */
+  function mark() {
+    var n = A.dirtyCount();
+    $('dirty').textContent = n ? ('저장 안 한 고침 ' + n + '곳') : '';
+    $('btnSave').disabled = !n;
+  }
+  $('btnBack').addEventListener('click', function () { A.go(listUrl); });
+  $('btnDel').addEventListener('click', function () {
+    if (!confirm('이 사건을 종이에서 지울까요?\n\n' + ev.n)) return;
+    ed.ev.splice(idx, 1);
+    A.saveDraft();
+    A.go(listUrl);
+  });
+  $('btnSave').addEventListener('click', function () {
+    var h = '';
+    A.dirtyEds().forEach(function (e) {
+      var items = A.diff(e.key);
+      h += '<h4 style="margin:10px 0 4px;font-size:13px">' + A.esc(e.cent) + ' <span class="ct-muted">(' + items.length + '곳)</span></h4>' +
+        '<table class="ct-diff"><thead><tr><th style="width:120px">무엇</th><th>이전</th><th>이후</th></tr></thead><tbody>' +
+        items.slice(0, 200).map(function (q) {
+          return '<tr><td>' + A.esc(q.w) + '</td><td class="a">' + A.esc(q.a || '') + '</td><td class="b">' + A.esc(q.b || '') + '</td></tr>';
+        }).join('') + '</tbody></table>';
+    });
+    A.dirtyDocs().forEach(function (id) {
+      A.docDiff(id).forEach(function (q) {
+        h += '<table class="ct-diff"><tbody><tr><td>' + A.esc(A.docs[id].name || id) + ' — ' + A.esc(q.w) +
+          '</td><td class="a">' + A.esc(q.a) + '</td><td class="b">' + A.esc(q.b) + '</td></tr></tbody></table>';
+      });
+    });
+    $('diffBox').innerHTML = h || '<p class="ct-muted">바뀐 곳을 찾지 못했습니다.</p>';
+    $('saveModal').hidden = false;
+  });
+  $('saveCancel').addEventListener('click', function () { $('saveModal').hidden = true; });
+  $('saveGo').addEventListener('click', function () {
+    var why = $('why').value.trim();
+    if (!why) { alert('왜 바꿨는지 한 줄 적어 주세요. 판 기록에 들어갑니다.'); return; }
+    var btn = this; btn.disabled = true;
+    A.save(why).then(function (r) {
+      $('saveModal').hidden = true; $('why').value = '';
+      $('crumb').textContent = '저장했습니다 — 판 ' + r.eds + ' · 사건 문서 ' + r.docs;
+      mark();
+    }).catch(function (err) { alert('저장하지 못했습니다: ' + err.message); })
+      .then(function () { btn.disabled = false; });
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') $('saveModal').hidden = true; });
+})();
+</script>
+</body>
+</html>
