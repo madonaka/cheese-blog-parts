@@ -17,7 +17,7 @@
     list: [
       /* marks — 그 연표 그림 코드의 MARK_ART_FN 에 있는 것만 적는다(없는 이름을 보내면 마크가 안 그려진다).
          적어 두지 않은 연표는 관리창에서 마크를 못 고른다 — 종이 쪽에 e.mk 를 넣어야 열린다. */
-      { key: 'kr', name: '한국 근현대사', book: '한국근현대', col: 'learn_characters', span: '1860~오늘', exam: true, cal: true, detail: true,
+      { key: 'kr', name: '한국 근현대사', book: '한국근현대', col: 'learn_characters', span: '1860~오늘', exam: true, cal: true, detail: false,   // 최하위 — 보여 줄 상세 페이지를 다시 짤 때까지 꺼 둔다
         marks: [['tg', '태극 — 독립운동 · 우리 쪽 일'], ['uk', '일장기 — 일제가 한 일'],
                 ['nk', '북한기 — 북한 도발'], ['uni', '한반도 — 남북 화해'],
                 ['demo', '횃불 — 민주화운동'], ['undong', '학생 · 재야'], ['teuk', '특별검사'],
