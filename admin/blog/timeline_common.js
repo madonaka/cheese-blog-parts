@@ -17,7 +17,7 @@
     list: [
       /* marks — 그 연표 그림 코드의 MARK_ART_FN 에 있는 것만 적는다(없는 이름을 보내면 마크가 안 그려진다).
          적어 두지 않은 연표는 관리창에서 마크를 못 고른다 — 종이 쪽에 e.mk 를 넣어야 열린다. */
-      { key: 'kr', name: '한국 근현대사', book: '한국근현대', col: 'learn_characters', span: '1860~오늘', exam: true, cal: true,
+      { key: 'kr', name: '한국 근현대사', book: '한국근현대', col: 'learn_characters', span: '1860~오늘', exam: true, cal: true, detail: true,
         marks: [['tg', '태극 — 독립운동 · 우리 쪽 일'], ['uk', '일장기 — 일제가 한 일'],
                 ['nk', '북한기 — 북한 도발'], ['uni', '한반도 — 남북 화해'],
                 ['demo', '횃불 — 민주화운동'], ['undong', '학생 · 재야'], ['teuk', '특별검사'],
@@ -179,8 +179,16 @@
     return T.ids.filter(function (id) { return T.docs[id] && !T.removed[id]; })
       .map(function (id) { return T.docs[id]; });
   };
+  /* 최하위(detail_only) — 연표 포스터에서는 빼고 연도별 상세 연표(/korean/year)에만 싣는다.
+     지금은 한국 근현대사(detail: true)만 쓴다. 연표별 값(by_tl)이 있으면 그것이 먼저다. */
+  T.detailOnly = function (d, tl) {
+    var o = (d.by_tl || {})[tl] || {};
+    return !!(('detail_only' in o) ? o.detail_only : d.detail_only);
+  };
   T.events = function () {
-    return T.rows().map(function (d) { return T.toEvent(d, T.tl); })
+    var def = T.of(T.tl) || {};
+    return T.rows().filter(function (d) { return !(def.detail && T.detailOnly(d, T.tl)); })
+      .map(function (d) { return T.toEvent(d, T.tl); })
       .filter(function (e) { return e.y && e.n; })
       .sort(function (a, b) { return a.y - b.y || (a.m || 0) - (b.m || 0) || (a.d || 0) - (b.d || 0); });
   };
@@ -269,6 +277,8 @@
       if ((a[q[0]] || '') !== (b[q[0]] || ''))
         out.push({ w: q[1], a: String(a[q[0]] || '(없음)'), b: String(b[q[0]] || '(없음)') });
     });
+    if (!!a.detail_only !== !!b.detail_only)
+      out.push({ w: '최하위(상세 연표에만)', a: a.detail_only ? '켬' : '끔', b: b.detail_only ? '켬' : '끔' });
     if ((a.steps || []).join('|') !== (b.steps || []).join('|'))
       out.push({ w: '경과', a: (a.steps || []).length + '줄', b: (b.steps || []).length + '줄' });
     if ((a.factions || []).join(' · ') !== (b.factions || []).join(' · '))
@@ -312,6 +322,7 @@
                  factions: d.factions || [],
                  important: !!d.important, timelines: d.timelines || [], by_tl: d.by_tl || {} };
     if ((d.steps || []).length) body.steps = d.steps;
+    if ('detail_only' in d) body.detail_only = !!d.detail_only;
     ['tier', 'category', 'exam', 'short', 'mark', 'cal'].forEach(function (f) {
       if (d[f] !== undefined && d[f] !== '') body[f] = d[f];
     });
