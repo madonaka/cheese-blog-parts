@@ -806,7 +806,8 @@
                                 <p style="margin: 6px 0 0; font-size: 0.85rem; color: var(--text-sub); font-weight: 500;">
                                     <i class="fas fa-info-circle" style="margin-right: 4px;"></i>
                                     끌어서 자리를 옮기거나 번호를 고쳐 차례를 바꿉니다. 번호는 <b>보이는 항목끼리만</b> 세고, 숨긴 항목은 아래에 접어 둡니다.
-                                    대분류 아래에 <b>묶음</b>을 만들면 드롭다운 안에서 소제목으로 묶여 보입니다 (예: 추가 학습 &gt; 동아시아 &gt; 한국근현대사).
+                                    대분류 아래에 <b>묶음</b>을 만들면 드롭다운 안에서 소제목으로 묶여 보입니다 (예: 추가 학습 &gt; 동아시아 &gt; 한국근현대사).<br>
+                                    <b>숨김(눈 아이콘)</b>은 메뉴에서 감출 뿐 아니라 <b>주소를 직접 쳐서 들어와도 404로 보냅니다.</b> 숨김을 풀면 다시 열립니다.
                                 </p>
                             </div>
                             <div style="display: flex; gap: 10px;">
@@ -2138,6 +2139,42 @@
             }).filter(Boolean).join('\n');
         }
 
+        /* 주소를 견주기 좋은 꼴로 다듬는다. 이 사이트는 cleanUrls 라 .html 이 떨어진다.
+           물음표 뒤(?country=korean)는 남긴다 — 같은 파일을 값으로 갈라 쓰는 메뉴가 있다. */
+        function navUrlKey(u) {
+            var v = (u || '').trim();
+            if (!v || v.charAt(0) === '#' || /^(https?:|javascript:|mailto:|tel:)/i.test(v)) return null;
+            var q = '';
+            var i = v.indexOf('?');
+            if (i >= 0) { q = v.slice(i); v = v.slice(0, i); }
+            var h = v.indexOf('#');
+            if (h >= 0) v = v.slice(0, h);
+            v = v.replace(/\/index\.html?$/i, '/').replace(/\.html?$/i, '');
+            if (v.length > 1) v = v.replace(/\/+$/, '');
+            return (v || '/') + q;
+        }
+
+        /* 숨긴 쪽 주소와 살아 있는 쪽 주소를 따로 모은다.
+           손님 화면(header.html)이 이 목록으로 주소를 직접 친 사람을 404 로 보낸다. */
+        function navGateLists() {
+            var blocked = [], allowed = [];
+            (function walk(list, offAbove) {
+                (list || []).forEach(function (n) {
+                    var off = offAbove || !!n.hidden;   // 위가 숨겨졌으면 아래도 같이 닫힌다
+                    if (!n.group) {
+                        var k = navUrlKey(n.url);
+                        if (k && k !== '/') (off ? blocked : allowed).push(k);
+                    }
+                    walk(n.children, off);
+                });
+            })(navTree, false);
+            var uniq = function (a) { return a.filter(function (v, i) { return a.indexOf(v) === i; }); };
+            allowed = uniq(allowed);
+            // 같은 주소가 양쪽에 있으면 살아 있는 쪽이 이긴다 (한 주소를 여러 번 걸어 둔 메뉴가 있다)
+            blocked = uniq(blocked).filter(function (k) { return allowed.indexOf(k) < 0; });
+            return { blocked: blocked, allowed: allowed };
+        }
+
         function generateNavHTML() {
             const tops = navTree.filter(n => !n.hidden);
             let html = '\n';
@@ -2181,9 +2218,15 @@
                     data: { version: 1, items: navTree, updatedAt: new Date().toISOString() }
                 });
 
+                var gate = navGateLists();
                 await safeFetchDB({
                     action: 'set', collection: 'store_main_content', id: 'nav_html_cache',
-                    data: { html: generateNavHTML(), updatedAt: new Date().toISOString() }
+                    data: {
+                        html: generateNavHTML(),
+                        blocked: gate.blocked,   // 숨긴 쪽 — 주소를 직접 쳐도 404 로 보낸다
+                        allowed: gate.allowed,   // 살아 있는 쪽 — 겹치면 이쪽이 이긴다
+                        updatedAt: new Date().toISOString()
+                    }
                 });
 
                 navDirty = false;
