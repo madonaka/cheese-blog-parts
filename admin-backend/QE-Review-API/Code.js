@@ -13,6 +13,19 @@ const SHEET_NAME_REVIEWS = "QE_Reviews";      // 검수 프로젝트 목록 시�
 const SHEET_NAME_COMMENTS = "QE_Comments";    // 개별 지적사항 시트
 
 /**
+ * ⚡ [최초 1회 실행 필수] 권한 승인 및 시트/드라이브 초기화 함수
+ * 
+ * 구글 Apps Script 에디터 상단 메뉴에서 [initAuthAndSetup]을 선택하고 [실행] 버튼을 누르세요.
+ * 구글의 [권한 검토] > [고급] > [안전하지 않은 페이지로 이동] > [허용]을 완료해야
+ * 스프레드시트와 구글 드라이브 접근 차단(Failed to fetch)이 풀립니다!
+ */
+function initAuthAndSetup() {
+  const folder = getOrCreateFolder();
+  const sheets = getOrCreateSheets();
+  Logger.log("✅ 권한 승인 및 초기화 완료! 생성된 드라이브 폴더: " + folder.getName());
+}
+
+/**
  * 전용 구글 드라이브 폴더 가져오기 (없으면 자동 생성)
  */
 function getOrCreateFolder() {
