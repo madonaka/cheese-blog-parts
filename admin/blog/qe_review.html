@@ -658,9 +658,24 @@
           <i data-lucide="eye-off" class="w-4 h-4 text-amber-400 animate-pulse"></i>
           <span id="peekMarkersBannerText">원본 확인 중 (손을 떼면 핀 복귀 / 단축키: H)</span>
         </div>
+
+        <!-- DRIVE SYNC TOAST (구글 드라이브 동기화 안내 토스트) -->
+        <div id="driveSyncToast" class="no-print hidden fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-1.5 rounded-full bg-slate-950/95 text-emerald-300 border border-emerald-500/70 shadow-2xl backdrop-blur flex items-center gap-2 text-xs font-bold select-none transition-all">
+          <i id="driveSyncIcon" data-lucide="cloud-upload" class="w-4 h-4 text-emerald-400"></i>
+          <span id="driveSyncText">구글 드라이브 동기화 중...</span>
+        </div>
         
         <!-- STAGE OUTER WRAPPER (스케일된 실제 너비/높이를 가져 정확한 스크롤 영역과 완벽한 중앙 정렬을 제공) -->
         <div id="stageOuter" class="relative inline-block text-left transition-all duration-75 select-none" style="margin: 20px auto;">
+          <!-- DRIVE FILE LOADING OVERLAY (다른 기기에서 처음 열었을 때 드라이브 다운로드 안내) -->
+          <div id="driveLoadingOverlay" class="hidden absolute inset-0 z-30 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center text-center p-6 select-none rounded-lg">
+            <div class="w-14 h-14 rounded-2xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center mb-3">
+              <i data-lucide="cloud-download" class="w-7 h-7 animate-bounce"></i>
+            </div>
+            <h3 class="text-sm font-bold text-white mb-1">구글 드라이브에서 시안을 불러오는 중...</h3>
+            <p class="text-xs text-slate-400 max-w-sm">컴퓨터에서 업로드된 원본 시안을 모바일/타 기기로 안전하게 가져와 동기화하고 있습니다.</p>
+          </div>
+
           <!-- STAGE WRAPPER (원본 해상도 크기 유지, 좌상단 기준 transform scale) -->
           <div id="stageWrapper" class="relative shadow-2xl rounded-lg overflow-hidden border border-slate-800 bg-white" style="transform-origin: 0 0;">
             <canvas id="pdfCanvas" class="block"></canvas>
@@ -875,9 +890,14 @@
         <input type="url" id="gasUrlInput" placeholder="https://script.google.com/macros/s/.../exec" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500" />
       </div>
 
-      <div class="bg-slate-950/60 p-3 rounded-lg border border-slate-800 text-[11px] text-slate-400 space-y-1">
-        <div class="font-semibold text-slate-300">💡 백엔드 코드 위치:</div>
-        <div>프로젝트의 <code class="text-emerald-400 font-mono">admin-backend/QE-Review-API/Code.js</code> 파일을 복사하여 구글 시트의 Apps Script에 붙여넣고 [웹 앱으로 배포]하시면 됩니다.</div>
+      <div class="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800 text-[11px] text-slate-300 space-y-2">
+        <div class="font-bold text-emerald-400 flex items-center gap-1.5">
+          <i data-lucide="cloud" class="w-4 h-4"></i>
+          <span>컴퓨터 ↔ 스마트폰 시안 자동 연동 (구글 드라이브)</span>
+        </div>
+        <div class="leading-relaxed text-slate-400">
+          프로젝트의 <code class="text-indigo-300 font-mono">admin-backend/QE-Review-API/Code.js</code> 코드를 구글 시트 Apps Script에 붙여넣고 [배포 > 새 배포 > 웹 앱 (모든 사용자 접근)]으로 배포하시면, **시안이 구글 드라이브에 자동 보관되어 컴퓨터에서 올린 시안을 휴대폰에서도 즉시 열 수 있습니다.**
+        </div>
       </div>
 
       <div class="flex items-center justify-end gap-2 pt-2">
@@ -1122,7 +1142,9 @@
     isPeeking: false,     // 일시 엿보기(Hold) 중인지 여부
     commentDisplayMode: localStorage.getItem('cheese_qe_comment_display_mode') || 'sidebar', // 'sidebar' (우측 패널) | 'memo' (핀 말풍선 메모)
     sidebarCollapsed: false, // 데스크톱 사이드바 접힘 여부
-    gasUrl: localStorage.getItem('cheese_qe_gas_url') || ''
+    gasUrl: localStorage.getItem('cheese_qe_gas_url') || '',
+    driveFileId: null, // 구글 드라이브 파일 고유 ID (기기 간 시안 공유의 핵심)
+    isUploadingToDrive: false
   };
 
   const TAG_CONFIG = {
@@ -1238,7 +1260,11 @@
     filterTabs: document.querySelectorAll('.filter-tab'),
     btnPeekMarkers: document.getElementById('btnPeekMarkers'),
     headerPeekMarkersBtn: document.getElementById('headerPeekMarkersBtn'),
-    peekMarkersBanner: document.getElementById('peekMarkersBanner')
+    peekMarkersBanner: document.getElementById('peekMarkersBanner'),
+    driveSyncToast: document.getElementById('driveSyncToast'),
+    driveSyncText: document.getElementById('driveSyncText'),
+    driveSyncIcon: document.getElementById('driveSyncIcon'),
+    driveLoadingOverlay: document.getElementById('driveLoadingOverlay')
   };
 
   // 모바일 코멘트 서랍(Drawer) 제어 함수들 (전역 노출)
@@ -2009,15 +2035,17 @@
     // 2. Google Sheets API 연동되어 있으면 클라우드에서 최신 목록 가져오기
     if (state.gasUrl) {
       try {
-        const res = await fetch(`${state.gasUrl}?mode=list`);
+        const res = await fetch(`${state.gasUrl}?action=list`);
         const data = await res.json();
-        if (data.ok && Array.isArray(data.list)) {
-          // 기존 로컬 폴더 매핑 보존 병합
-          const merged = data.list.map(r => {
+        const incomingList = data.reviews || data.list;
+        if (data.ok && Array.isArray(incomingList)) {
+          // 기존 로컬 폴더 매핑 및 driveFileId 보존 병합
+          const merged = incomingList.map(r => {
             const localMatch = state.savedReviews.find(lr => lr.id === r.id);
             return {
               ...r,
-              folderId: r.folderId || localMatch?.folderId || 'root'
+              folderId: r.folderId || localMatch?.folderId || 'root',
+              driveFileId: r.driveFileId || localMatch?.driveFileId || ''
             };
           });
           state.savedReviews = merged;
@@ -2650,9 +2678,154 @@
       });
 
     } else {
-      // IndexedDB에 실제 파일이 없는 경우 (샘플 시안이거나 브라우저 캐시 삭제됨)
-      generateMockupCanvas(state.docName);
+      // IndexedDB에 실제 파일이 없는 경우 (다른 컴퓨터/모바일에서 처음 열었을 때!)
+      const projectSummary = state.savedReviews.find(r => r.id === reviewId);
+      const driveFileId = state.driveFileId || projectSummary?.driveFileId;
+
+      if (driveFileId && state.gasUrl) {
+        if (el.driveLoadingOverlay) el.driveLoadingOverlay.classList.remove('hidden');
+        showDriveSyncToast('구글 드라이브에서 시안 다운로드 중...', true);
+
+        try {
+          const fileRes = await fetch(`${state.gasUrl}?action=getFile&fileId=${encodeURIComponent(driveFileId)}`);
+          const fileData = await fileRes.json();
+
+          if (fileData.ok && fileData.dataUrl) {
+            const isPdf = (fileData.mimeType && fileData.mimeType.includes('pdf')) || (fileData.fileName && fileData.fileName.toLowerCase().endsWith('.pdf'));
+
+            if (isPdf) {
+              state.docType = 'pdf';
+              el.pdfCanvas.classList.remove('hidden');
+              el.docImage.classList.add('hidden');
+
+              const base64Str = fileData.dataUrl.split(',')[1];
+              const binaryStr = atob(base64Str);
+              const bytes = new Uint8Array(binaryStr.length);
+              for (let i = 0; i < binaryStr.length; i++) {
+                bytes[i] = binaryStr.charCodeAt(i);
+              }
+
+              await saveFileToDB(reviewId, {
+                docType: 'pdf',
+                fileName: fileData.fileName,
+                fileData: bytes.buffer
+              });
+
+              pdfjsLib.getDocument(bytes).promise.then(pdf => {
+                state.pdfDoc = pdf;
+                state.totalPages = pdf.numPages;
+                state.currentPage = 1;
+                el.totalPageNum.textContent = state.totalPages;
+                state.scale = null;
+                renderPdfPage();
+              });
+            } else {
+              state.docType = 'image';
+              state.totalPages = 1;
+              state.currentPage = 1;
+              el.totalPageNum.textContent = 1;
+              el.currentPageNum.textContent = 1;
+              el.prevPageBtn.disabled = true;
+              el.nextPageBtn.disabled = true;
+              el.pdfCanvas.classList.add('hidden');
+              el.docImage.classList.remove('hidden');
+
+              await saveFileToDB(reviewId, {
+                docType: 'image',
+                fileName: fileData.fileName,
+                dataUrl: fileData.dataUrl
+              });
+
+              el.docImage.onload = () => {
+                state.naturalWidth = el.docImage.naturalWidth;
+                state.naturalHeight = el.docImage.naturalHeight;
+                el.stageWrapper.style.width = state.naturalWidth + 'px';
+                el.stageWrapper.style.height = state.naturalHeight + 'px';
+                zoomFitWidth();
+                renderMarkers();
+              };
+              el.docImage.src = fileData.dataUrl;
+            }
+
+            showDriveSyncToast('구글 드라이브 시안 동기화 완료!', false, 3000);
+          } else {
+            console.warn('Drive file fetch error:', fileData.error);
+            generateMockupCanvas(state.docName);
+          }
+        } catch (err) {
+          console.warn('Drive file fetch network failed:', err);
+          generateMockupCanvas(state.docName);
+        } finally {
+          if (el.driveLoadingOverlay) el.driveLoadingOverlay.classList.add('hidden');
+        }
+      } else {
+        // 드라이브 파일 ID가 없는 경우
+        generateMockupCanvas(state.docName);
+      }
     }
+  }
+
+  // ==========================================
+  // GOOGLE DRIVE SYNC HELPERS
+  // ==========================================
+  let driveSyncToastTimer = null;
+  function showDriveSyncToast(msg, isSpin = false, autoHideMs = 0) {
+    if (!el.driveSyncToast) return;
+    if (driveSyncToastTimer) {
+      clearTimeout(driveSyncToastTimer);
+      driveSyncToastTimer = null;
+    }
+    if (el.driveSyncText) el.driveSyncText.textContent = msg;
+    if (el.driveSyncIcon) {
+      el.driveSyncIcon.className = isSpin ? 'w-4 h-4 text-emerald-400 animate-spin' : 'w-4 h-4 text-emerald-400';
+    }
+    el.driveSyncToast.classList.remove('hidden');
+    if (autoHideMs > 0) {
+      driveSyncToastTimer = setTimeout(() => {
+        el.driveSyncToast.classList.add('hidden');
+        driveSyncToastTimer = null;
+      }, autoHideMs);
+    }
+  }
+
+  async function uploadFileToDrive(reviewId, file, base64Data) {
+    if (!state.gasUrl) return null;
+
+    state.isUploadingToDrive = true;
+    showDriveSyncToast('구글 드라이브에 시안 동기화 중...', true);
+
+    try {
+      const mimeType = file.type || (file.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/png');
+      const payload = {
+        mode: 'uploadFile',
+        reviewId: reviewId,
+        fileName: file.name,
+        mimeType: mimeType,
+        fileBase64: base64Data
+      };
+
+      const res = await fetch(state.gasUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.ok && data.driveFileId) {
+        state.driveFileId = data.driveFileId;
+        syncToStorage();
+        showDriveSyncToast('구글 드라이브 동기화 완료! (모바일/타 기기 즉시 연동)', false, 3500);
+        return data.driveFileId;
+      } else {
+        console.warn('Drive upload failed:', data.error);
+        showDriveSyncToast('드라이브 업로드 실패: ' + (data.error || '오류'), false, 3500);
+      }
+    } catch (err) {
+      console.warn('Drive upload network error:', err);
+      showDriveSyncToast('드라이브 연동 통신 오류 (로컬에는 보관됨)', false, 3000);
+    } finally {
+      state.isUploadingToDrive = false;
+    }
+    return null;
   }
 
   // ==========================================
@@ -2661,6 +2834,7 @@
   function openFileInViewer(file) {
     state.docName = file.name;
     state.scale = null; // 새 파일 오픈 시 너비 맞춤으로 초기화
+    state.driveFileId = null; // 새 파일 업로드 시 초기화
     const isNew = state.currentView === 'dashboard' || !state.reviewId;
     if (isNew) {
       state.reviewId = 'REV_' + Date.now();
@@ -2693,6 +2867,13 @@
           el.totalPageNum.textContent = state.totalPages;
           renderPdfPage();
         });
+
+        // 백그라운드 구글 드라이브 업로드 (Base64 변환 후 전송)
+        const b64Reader = new FileReader();
+        b64Reader.onload = () => {
+          uploadFileToDrive(state.reviewId, file, b64Reader.result);
+        };
+        b64Reader.readAsDataURL(file);
       };
       reader.readAsArrayBuffer(file);
     } else {
@@ -2726,6 +2907,9 @@
           renderMarkers();
         };
         el.docImage.src = dataUrl;
+
+        // 백그라운드 구글 드라이브 업로드 (PC ↔ 모바일 공유 핵심)
+        uploadFileToDrive(state.reviewId, file, dataUrl);
       };
       reader.readAsDataURL(file);
     }
@@ -4070,6 +4254,7 @@
 
     const existing = index.find(x => x.id === state.reviewId);
     const folderId = existing?.folderId || state.currentFolderId || 'root';
+    const driveFileId = state.driveFileId || existing?.driveFileId || '';
 
     const projectSummary = {
       id: state.reviewId,
@@ -4080,6 +4265,7 @@
       totalComments: total,
       resolvedCount: resolvedCount,
       author: window.CHEESE_ADMIN_DISPLAY_NAME || '검수 담당자',
+      driveFileId: driveFileId,
       updatedAt: nowStr
     };
 
@@ -4108,6 +4294,7 @@
 
     const currentMatch = state.savedReviews.find(r => r.id === state.reviewId);
     const folderId = currentMatch?.folderId || state.currentFolderId || 'root';
+    const driveFileId = state.driveFileId || currentMatch?.driveFileId || '';
 
     const payload = {
       mode: 'save',
@@ -4116,6 +4303,7 @@
       folderId: folderId,
       pageCount: state.totalPages || 1,
       author: window.CHEESE_ADMIN_DISPLAY_NAME || '검수 담당자',
+      driveFileId: driveFileId,
       comments: state.comments
     };
 
