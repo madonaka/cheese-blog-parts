@@ -1,0 +1,4252 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>QE 문서·시안 검수 센터 · Cheese Admin</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  
+  <!-- 관리자 공통 인증 토큰 유지 -->
+  <script>
+    if (!sessionStorage.getItem('cheese_admin_token')) {
+      sessionStorage.setItem('cheese_admin_token', 'dev_guest_token');
+      sessionStorage.setItem('cheese_admin_login_id', 'admin');
+      sessionStorage.setItem('cheese_admin_display_name', '검수 담당자');
+      sessionStorage.setItem('cheese_admin_role', 'ADMIN');
+    }
+    window.CHEESE_ADMIN_ACTIVE_PAGE = "qe_review";
+    window.CHEESE_ADMIN_PAGE_SUBTITLE = "QE 문서·시안 검수기";
+  </script>
+  <!-- admin-common.js 로드 -->
+  <script src="../admin-common.js"></script>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- PDF.js CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  </script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;500;600;700;800;900&display=swap');
+    
+    * {
+      box-sizing: border-box;
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    /* 관리자 기본 사이드바/헤더를 숨기고 전체 화면 사용 */
+    #admin-header-slot,
+    #admin-menu-slot,
+    .admin-header,
+    .admin-sidebar,
+    .admin-side-nav {
+      display: none !important;
+    }
+
+    html, body {
+      margin: 0 !important;
+      padding: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      overflow: hidden !important;
+      background-color: #090d16;
+      color: #f1f5f9;
+    }
+
+    .admin-shell, .admin-main, .admin-content {
+      margin: 0 !important;
+      padding: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      max-width: 100vw !important;
+      max-height: 100vh !important;
+      border: none !important;
+      background: #090d16 !important;
+      display: flex !important;
+      flex-direction: column !important;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 4px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+
+    /* ========================================== */
+    /* ========================================== */
+    /* 위치보기(Focus) 시 타겟 레이더 & 바운스 애니메이션 (1~2초 후 자동 소멸) */
+    /* ========================================== */
+    @keyframes radar-ripple {
+      0% {
+        transform: translate(-50%, -50%) scale(0.6);
+        opacity: 1;
+        border-width: 4px;
+      }
+      40% {
+        opacity: 0.85;
+      }
+      100% {
+        transform: translate(-50%, -50%) scale(4.5);
+        opacity: 0;
+        border-width: 1px;
+      }
+    }
+
+    @keyframes pin-bounce-drop {
+      0% { transform: translate(-50%, -50%) scale(0.4); opacity: 0; }
+      35% { transform: translate(-50%, -50%) scale(2.2); opacity: 1; }
+      55% { transform: translate(-50%, -50%) scale(0.9); }
+      75% { transform: translate(-50%, -50%) scale(1.2); }
+      90% { transform: translate(-50%, -50%) scale(0.98); }
+      100% { transform: translate(-50%, -50%) scale(1.0); }
+    }
+
+    @keyframes target-neon-glow {
+      0% {
+        filter: drop-shadow(0 0 6px rgba(251, 191, 36, 1)) drop-shadow(0 0 16px rgba(245, 158, 11, 0.9));
+      }
+      40% {
+        filter: drop-shadow(0 0 16px rgba(244, 63, 94, 1)) drop-shadow(0 0 30px rgba(239, 68, 68, 0.9));
+      }
+      100% {
+        filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+      }
+    }
+
+    @keyframes tooltip-float-in {
+      0% { transform: translate(-50%, 8px) scale(0.7); opacity: 0; }
+      15% { transform: translate(-50%, -8px) scale(1.05); opacity: 1; }
+      65% { transform: translate(-50%, -6px) scale(1.0); opacity: 1; }
+      100% { transform: translate(-50%, -14px) scale(0.9); opacity: 0; }
+    }
+
+    @keyframes box-glow-pulse {
+      0% { box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.8), 0 0 25px rgba(245, 158, 11, 0.5); }
+      50% { box-shadow: 0 0 0 6px rgba(244, 63, 94, 0.9), 0 0 35px rgba(244, 63, 94, 0.6); }
+      100% { box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.3); }
+    }
+
+    .radar-ring {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 60px;
+      height: 60px;
+      border-radius: 9999px;
+      border: 3px solid #f59e0b;
+      pointer-events: none;
+      animation: radar-ripple 1.3s cubic-bezier(0.1, 0.7, 0.1, 1) 1 forwards;
+    }
+    .radar-ring-2 {
+      animation-delay: 0.25s;
+      border-color: #f43f5e;
+    }
+    .radar-ring-3 {
+      animation-delay: 0.5s;
+      border-color: #6366f1;
+    }
+
+    .pin-super-focused {
+      animation: pin-bounce-drop 0.85s cubic-bezier(0.34, 1.56, 0.64, 1) forwards, target-neon-glow 1.8s ease-in-out 1 forwards !important;
+      z-index: 50 !important;
+    }
+
+    .box-super-focused {
+      animation: box-glow-pulse 1.8s ease-in-out 1 forwards !important;
+      z-index: 45 !important;
+    }
+
+    .pin-target-tooltip {
+      position: absolute;
+      bottom: 100%;
+      left: 50%;
+      margin-bottom: 12px;
+      pointer-events: none;
+      animation: tooltip-float-in 1.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      z-index: 60;
+      white-space: nowrap;
+    }
+
+    .box-selection {
+      border: 2px dashed #3b82f6;
+      background-color: rgba(59, 130, 246, 0.15);
+      position: absolute;
+      pointer-events: none;
+    }
+
+    #overlayLayer {
+      transition: opacity 0.12s ease-out;
+    }
+
+    /* Alt 키 누름 시 마커 고스트 반투명 모드 (원본 텍스트 투과 확인) */
+    body.alt-pressed .comment-pin,
+    body.alt-pressed .comment-box {
+      opacity: 0.12 !important;
+      transition: opacity 0.12s ease-out;
+    }
+
+    @media print {
+      .no-print { display: none !important; }
+      .print-only { display: block !important; }
+      body { background: white !important; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="admin-shell">
+  <!-- 더미 슬롯 (admin-common.js 에러 방지용) -->
+  <div id="admin-header-slot" style="display:none;"></div>
+  <div id="admin-menu-slot" style="display:none;"></div>
+
+  <!-- ========================================================================= -->
+  <!-- 1. 관리 화면 (저장된 검수 프로젝트 목록 관리 뷰) : VIEW_DASHBOARD -->
+  <!-- ========================================================================= -->
+  <div id="viewDashboard" class="flex-1 flex flex-col h-screen overflow-hidden">
+    <!-- 대시보드 상단 헤더 바 (모바일 반응형 최적화) -->
+    <header class="h-14 bg-slate-950/90 backdrop-blur border-b border-slate-800 px-3 sm:px-6 flex items-center justify-between shrink-0">
+      <div class="flex items-center gap-2 sm:gap-4 min-w-0">
+        <!-- 나가기 버튼 (관리자 대시보드로 복귀) -->
+        <a href="/admin/dashboard/new_dashboard.html" class="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 transition shrink-0" title="Cheese Admin 대시보드로 돌아가기">
+          <i data-lucide="arrow-left" class="w-4 h-4"></i>
+          <span class="hidden sm:inline">나가기</span>
+        </a>
+
+        <div class="w-px h-5 bg-slate-800 shrink-0"></div>
+
+        <div class="flex items-center gap-2 min-w-0">
+          <div class="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-emerald-600 flex items-center justify-center text-white font-bold shadow-md shadow-emerald-600/30 shrink-0">
+            <i data-lucide="check-check" class="w-4 h-4 sm:w-5 sm:h-5"></i>
+          </div>
+          <div class="min-w-0">
+            <div class="flex items-center gap-2">
+              <h1 class="font-bold text-xs sm:text-sm tracking-tight text-white truncate">QE 검수 센터</h1>
+              <span class="hidden md:flex text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-semibold border border-emerald-500/30 items-center gap-1 shrink-0">
+                <i data-lucide="sheet" class="w-3 h-3"></i> 구글 시트 연동
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 우측 액션 (모바일에서 버튼 간격 및 텍스트 최적화) -->
+      <div class="flex items-center gap-1.5 sm:gap-3 shrink-0">
+        <button id="dashboardRefreshBtn" class="flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 transition" title="목록 새로고침">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+          <span class="hidden md:inline">새로고침</span>
+        </button>
+
+        <button id="dashboardSettingsBtn" class="p-1.5 sm:px-3 sm:py-1.5 rounded-lg text-xs font-medium bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 transition flex items-center gap-1" title="구글 시트 연동 설정">
+          <i data-lucide="settings" class="w-3.5 h-3.5 text-slate-400"></i>
+          <span class="hidden md:inline">설정</span>
+        </button>
+
+        <button id="btnNewReviewFromDash" class="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-600/20 transition">
+          <i data-lucide="plus" class="w-4 h-4"></i>
+          <span>새 검수</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- 대시보드 본문 영역 (모바일 패딩 최적화) -->
+    <div class="flex-1 overflow-y-auto p-3 sm:p-6 md:p-8 custom-scrollbar max-w-7xl w-full mx-auto space-y-5 sm:space-y-8">
+      
+      <!-- 상단 요약 통계 & 새 검수 빠른 시작 배너 (클릭 시 해당 조건으로 즉시 필터링, 모바일 2열 정렬) -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
+        <!-- 1. 전체 검수 문서 -->
+        <div id="statCardAll" onclick="setDashFilter('all')" role="button" tabindex="0" class="stat-card-btn p-3 sm:p-5 rounded-xl sm:rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-blue-500/70 hover:bg-slate-800/90 transition-all cursor-pointer flex items-center justify-between group shadow-sm select-none">
+          <div class="flex items-center gap-2.5 sm:gap-4 min-w-0">
+            <div class="w-9 h-9 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center shrink-0 group-hover:scale-110 transition">
+              <i data-lucide="folder-check" class="w-4 h-4 sm:w-6 sm:h-6"></i>
+            </div>
+            <div class="min-w-0">
+              <div class="text-[11px] sm:text-xs text-slate-400 font-medium truncate group-hover:text-blue-300 transition">전체 문서</div>
+              <div id="statTotalDocs" class="text-lg sm:text-2xl font-bold text-white mt-0.5">0</div>
+            </div>
+          </div>
+          <span class="hidden md:inline text-[10px] text-slate-500 group-hover:text-blue-400 transition font-medium shrink-0">전체보기 →</span>
+        </div>
+
+        <!-- 2. 진행 중인 문서 -->
+        <div id="statCardActive" onclick="setDashFilter('in_progress')" role="button" tabindex="0" class="stat-card-btn p-3 sm:p-5 rounded-xl sm:rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-amber-500/70 hover:bg-slate-800/90 transition-all cursor-pointer flex items-center justify-between group shadow-sm select-none">
+          <div class="flex items-center gap-2.5 sm:gap-4 min-w-0">
+            <div class="w-9 h-9 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center shrink-0 group-hover:scale-110 transition">
+              <i data-lucide="clock" class="w-4 h-4 sm:w-6 sm:h-6"></i>
+            </div>
+            <div class="min-w-0">
+              <div class="text-[11px] sm:text-xs text-slate-400 font-medium truncate group-hover:text-amber-300 transition">진행 중</div>
+              <div id="statActiveDocs" class="text-lg sm:text-2xl font-bold text-amber-400 mt-0.5">0</div>
+            </div>
+          </div>
+          <span class="hidden md:inline text-[10px] text-slate-500 group-hover:text-amber-400 transition font-medium shrink-0">보기 →</span>
+        </div>
+
+        <!-- 3. 검수 완료 문서 -->
+        <div id="statCardCompleted" onclick="setDashFilter('completed')" role="button" tabindex="0" class="stat-card-btn p-3 sm:p-5 rounded-xl sm:rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-emerald-500/70 hover:bg-slate-800/90 transition-all cursor-pointer flex items-center justify-between group shadow-sm select-none">
+          <div class="flex items-center gap-2.5 sm:gap-4 min-w-0">
+            <div class="w-9 h-9 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-110 transition">
+              <i data-lucide="check-circle" class="w-4 h-4 sm:w-6 sm:h-6"></i>
+            </div>
+            <div class="min-w-0">
+              <div class="text-[11px] sm:text-xs text-slate-400 font-medium truncate group-hover:text-emerald-300 transition">검수 완료</div>
+              <div id="statCompletedDocs" class="text-lg sm:text-2xl font-bold text-emerald-400 mt-0.5">0</div>
+            </div>
+          </div>
+          <span class="hidden md:inline text-[10px] text-slate-500 group-hover:text-emerald-400 transition font-medium shrink-0">보기 →</span>
+        </div>
+
+        <!-- 4. 총 미해결 지적사항 -->
+        <div id="statCardOpen" onclick="setDashFilter('unresolved_issues')" role="button" tabindex="0" class="stat-card-btn p-3 sm:p-5 rounded-xl sm:rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-rose-500/70 hover:bg-slate-800/90 transition-all cursor-pointer flex items-center justify-between group shadow-sm select-none">
+          <div class="flex items-center gap-2.5 sm:gap-4 min-w-0">
+            <div class="w-9 h-9 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl bg-rose-500/10 text-rose-400 flex items-center justify-center shrink-0 group-hover:scale-110 transition">
+              <i data-lucide="alert-triangle" class="w-4 h-4 sm:w-6 sm:h-6"></i>
+            </div>
+            <div class="min-w-0">
+              <div class="text-[11px] sm:text-xs text-slate-400 font-medium truncate group-hover:text-rose-300 transition">미해결 지적</div>
+              <div id="statOpenIssues" class="text-lg sm:text-2xl font-bold text-rose-400 mt-0.5">0</div>
+            </div>
+          </div>
+          <span class="hidden md:inline text-[10px] text-slate-500 group-hover:text-rose-400 transition font-medium shrink-0">필터링 →</span>
+        </div>
+      </div>
+
+      <!-- 새 문서 드래그앤드롭 업로드 박스 -->
+      <div id="dashDropZone" class="border-2 border-dashed border-slate-800 hover:border-indigo-500/80 bg-slate-950/40 hover:bg-slate-900/40 rounded-2xl p-8 text-center transition cursor-pointer group">
+        <input type="file" id="dashFileInput" accept="image/*,application/pdf" class="hidden">
+        <div class="w-14 h-14 rounded-2xl bg-indigo-600/10 text-indigo-400 group-hover:scale-110 flex items-center justify-center mx-auto mb-3 transition border border-indigo-500/20">
+          <i data-lucide="upload-cloud" class="w-7 h-7"></i>
+        </div>
+        <h3 class="text-base font-bold text-white mb-1">검수할 새 PDF 문서 또는 이미지를 이곳에 드래그하세요</h3>
+        <p class="text-xs text-slate-400 mb-4">PDF, PNG, JPG, WebP 파일을 즉시 불러와 핀 코멘트 검수를 시작합니다.</p>
+        <div class="flex items-center justify-center gap-3">
+          <button onclick="document.getElementById('dashFileInput').click()" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow transition flex items-center gap-2">
+            <i data-lucide="file-up" class="w-4 h-4"></i>
+            내 파일 선택하기
+          </button>
+          <button onclick="openSampleInViewer()" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition flex items-center gap-2">
+            <i data-lucide="sparkles" class="w-4 h-4 text-amber-400"></i>
+            샘플 시안으로 체험
+          </button>
+        </div>
+      </div>
+
+      <!-- 저장된 검수 문서 및 폴더 관리 섹션 -->
+      <div class="space-y-4">
+        
+        <!-- 상단 헤더: 타이틀, 새 폴더 버튼, 검색 & 필터 (모바일 반응형 flex-col / flex-row) -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 pb-2 border-b border-slate-800/80">
+          <div>
+            <h2 class="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+              <i data-lucide="folder-tree" class="w-4 h-4 sm:w-5 sm:h-5 text-indigo-400"></i>
+              <span>검수 프로젝트 디렉토리</span>
+            </h2>
+            <p class="text-[11px] sm:text-xs text-slate-400 mt-0.5">상위/하위 폴더를 생성하여 프로젝트 문서를 체계적으로 분류·관리하세요.</p>
+          </div>
+
+          <!-- 새 폴더 생성 버튼 & 검색 & 필터 -->
+          <div class="flex flex-wrap items-center gap-2">
+            <button id="btnCreateFolder" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20 transition shrink-0">
+              <i data-lucide="folder-plus" class="w-4 h-4"></i>
+              <span>새 폴더</span>
+            </button>
+
+            <div class="relative flex-1 sm:flex-initial min-w-[130px]">
+              <i data-lucide="search" class="w-4 h-4 absolute left-3 top-2 text-slate-500"></i>
+              <input type="text" id="dashSearchInput" placeholder="검색 (폴더/문서명)..." class="w-full sm:w-44 bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+            </div>
+
+            <div class="flex items-center bg-slate-900 border border-slate-800 rounded-xl p-0.5 text-xs overflow-x-auto custom-scrollbar shrink-0 max-w-full">
+              <button class="dash-filter-btn active px-2.5 sm:px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-slate-800 text-white whitespace-nowrap" data-filter="all">전체</button>
+              <button class="dash-filter-btn px-2.5 sm:px-3 py-1.5 rounded-lg text-[11px] font-semibold text-slate-400 hover:text-white whitespace-nowrap" data-filter="in_progress">진행 중</button>
+              <button class="dash-filter-btn px-2.5 sm:px-3 py-1.5 rounded-lg text-[11px] font-semibold text-slate-400 hover:text-white whitespace-nowrap" data-filter="completed">완료</button>
+              <button class="dash-filter-btn px-2.5 sm:px-3 py-1.5 rounded-lg text-[11px] font-semibold text-slate-400 hover:text-white whitespace-nowrap" data-filter="unresolved_issues">미해결</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 브레드크럼(Breadcrumbs) 네비게이션 경로 바 -->
+        <div class="flex items-center justify-between bg-slate-950/60 border border-slate-800/80 rounded-xl px-3 sm:px-4 py-2 sm:py-2.5">
+          <div id="dashBreadcrumbs" class="flex items-center gap-1.5 text-xs font-medium text-slate-300 overflow-x-auto custom-scrollbar whitespace-nowrap">
+            <!-- 동적 브레드크럼 링크 -->
+          </div>
+
+          <!-- 현재 폴더 액션 (루트가 아닐 때 이름 변경 / 삭제) -->
+          <div id="currentFolderActions" class="hidden flex items-center gap-1 shrink-0 ml-2">
+            <button onclick="openRenameCurrentFolderModal()" class="px-2 py-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 text-[11px] flex items-center gap-1 transition" title="현재 폴더 이름 변경">
+              <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
+              <span class="hidden md:inline">이름 변경</span>
+            </button>
+            <button onclick="deleteCurrentFolder()" class="px-2 py-1 text-slate-400 hover:text-rose-400 rounded-lg hover:bg-slate-800 text-[11px] flex items-center gap-1 transition" title="현재 폴더 삭제">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+              <span class="hidden md:inline">폴더 삭제</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 검수 프로젝트 디렉토리 & 문서 목록 (반응형: 데스크탑 테이블 뷰 + 모바일 카드 리스트 뷰) -->
+        <div class="space-y-2">
+          <div class="flex items-center justify-between text-xs font-semibold text-slate-400 px-1">
+            <span class="flex items-center gap-2 min-w-0">
+              <i data-lucide="list" class="w-4 h-4 text-indigo-400 shrink-0"></i>
+              <span class="truncate">디렉토리 및 검수 목록 (<span id="dashTotalItemCount">0</span>)</span>
+              <span id="dashActiveFilterBadge" class="hidden text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 truncate max-w-[160px]">전체</span>
+            </span>
+            <span class="hidden md:inline text-[11px] text-slate-500 font-normal">행을 클릭하면 폴더로 이동하거나 검수 문서를 엽니다</span>
+          </div>
+
+          <div class="bg-slate-900/90 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+            
+            <!-- 1. 데스크탑 전용 와이드 테이블 뷰 (768px 이상, 최소 너비 780px 보장으로 절대 세로 찌그러짐 방지) -->
+            <div class="hidden md:block overflow-x-auto custom-scrollbar">
+              <table class="w-full text-left border-collapse min-w-[780px]">
+                <thead>
+                  <tr class="border-b border-slate-800 bg-slate-950/70 text-[11px] font-semibold text-slate-400 select-none whitespace-nowrap">
+                    <th class="py-3 px-4 w-12 text-center">구분</th>
+                    <th class="py-3 px-4 min-w-[240px]">폴더 / 문서명</th>
+                    <th class="py-3 px-4 w-28 text-center">상태</th>
+                    <th class="py-3 px-4 w-56">지적사항 현황 (해결 / 전체)</th>
+                    <th class="py-3 px-4 w-28">작성·검수자</th>
+                    <th class="py-3 px-4 w-32">최종 수정일</th>
+                    <th class="py-3 px-4 w-40 text-right pr-5">관리</th>
+                  </tr>
+                </thead>
+                <tbody id="dashTableBody" class="divide-y divide-slate-800/60 text-xs">
+                  <!-- 동적 데스크탑 행들 -->
+                </tbody>
+              </table>
+            </div>
+
+            <!-- 2. 모바일 전용 컴팩트 카드 리스트 뷰 (768px 미만 스마트폰 화면에 완벽히 최적화) -->
+            <div id="dashMobileList" class="block md:hidden divide-y divide-slate-800/60 p-2 space-y-2">
+              <!-- 동적 모바일 카드들 -->
+            </div>
+
+            <!-- 빈 상태 안내 -->
+            <div id="dashEmptyState" class="hidden py-16 text-center text-slate-500 text-xs">
+              <div class="w-12 h-12 rounded-2xl bg-slate-950 text-slate-600 flex items-center justify-center mx-auto mb-3 border border-slate-800">
+                <i data-lucide="folder-search" class="w-6 h-6 text-slate-500"></i>
+              </div>
+              <p class="font-medium text-slate-300 text-sm mb-1" id="dashEmptyTitle">저장된 항목이 없습니다</p>
+              <p class="text-[11px] text-slate-500" id="dashEmptyDesc">새 폴더를 만들거나 PDF/이미지를 업로드하세요.</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+
+  <!-- ========================================================================= -->
+  <!-- 2. 문서 검수 전체화면 뷰어 (전체화면 풀 작업 공간) : VIEW_VIEWER -->
+  <!-- ========================================================================= -->
+  <div id="viewViewer" class="flex-1 flex flex-col h-screen overflow-hidden hidden">
+    
+    <!-- 뷰어 상단 툴바 (화면 비율 최적화 & 모바일 반응형 정렬) -->
+    <header class="no-print h-14 bg-slate-950/95 backdrop-blur border-b border-slate-800 px-2.5 sm:px-4 flex items-center justify-between shrink-0 z-30 select-none">
+      
+      <!-- 좌측: 목록으로 돌아가기 & 문서 제목 -->
+      <div class="flex items-center gap-1.5 sm:gap-3 min-w-0">
+        <!-- 검수 목록으로 돌아가기 -->
+        <button id="btnBackToDashboard" class="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition shrink-0" title="저장 목록 관리 화면으로 이동">
+          <i data-lucide="layout-grid" class="w-4 h-4 text-indigo-400"></i>
+          <span class="hidden xs:inline">목록</span>
+        </button>
+
+        <div class="w-px h-4 sm:h-5 bg-slate-800 shrink-0"></div>
+
+        <div class="min-w-0 flex items-center gap-1.5 sm:gap-2">
+          <span class="w-2 h-2 rounded-full bg-emerald-500 shrink-0" title="상태 정상"></span>
+          <h2 id="docTitle" class="text-xs font-bold text-white truncate max-w-[100px] xs:max-w-[140px] sm:max-w-[200px] lg:max-w-md" title="문서 제목">샘플 문서</h2>
+          <span id="storageStatusBadge" class="hidden sm:inline-flex text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium shrink-0">
+            자동 저장됨
+          </span>
+        </div>
+      </div>
+
+      <!-- 중앙: 페이지 네비게이션 & 줌 컨트롤 (100% 기준 확대/축소 및 화면 맞춤) -->
+      <div class="flex items-center gap-1 sm:gap-1.5 bg-slate-900 border border-slate-800/80 rounded-xl p-0.5 sm:p-1 shrink-0">
+        <!-- 이전/다음 페이지 -->
+        <button id="prevPageBtn" title="이전 페이지" class="p-1 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white disabled:opacity-25 transition">
+          <i data-lucide="chevron-left" class="w-3.5 h-3.5 sm:w-4 sm:h-4"></i>
+        </button>
+        <span class="text-[11px] sm:text-xs font-semibold px-0.5 sm:px-1 text-slate-300 whitespace-nowrap">
+          <span id="currentPageNum">1</span>/<span id="totalPageNum">1</span>
+        </span>
+        <button id="nextPageBtn" title="다음 페이지" class="p-1 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white disabled:opacity-25 transition">
+          <i data-lucide="chevron-right" class="w-3.5 h-3.5 sm:w-4 sm:h-4"></i>
+        </button>
+
+        <div class="w-px h-3.5 sm:h-4 bg-slate-800 mx-0.5"></div>
+
+        <!-- 축소 버튼 (-) -->
+        <button id="zoomOutBtn" title="축소 (Ctrl + 휠 아래)" class="p-1 sm:p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition">
+          <i data-lucide="minus" class="w-3 sm:w-3.5 h-3 sm:h-3.5"></i>
+        </button>
+
+        <!-- 원본 100% 리셋 버튼 (핵심: 클릭 시 100% 복귀) -->
+        <button id="zoom100Btn" title="클릭 시 원본 100% 크기로 리셋" class="px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-lg text-[11px] sm:text-xs font-mono font-bold bg-slate-800 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-slate-700 hover:border-indigo-500 transition min-w-[46px] sm:min-w-[58px] text-center shadow-inner">
+          <span id="zoomLabel">100%</span>
+        </button>
+
+        <!-- 확대 버튼 (+) -->
+        <button id="zoomInBtn" title="확대 (Ctrl + 휠 위)" class="p-1 sm:p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition">
+          <i data-lucide="plus" class="w-3 sm:w-3.5 h-3 sm:h-3.5"></i>
+        </button>
+
+        <div class="hidden sm:block w-px h-4 bg-slate-800 mx-1"></div>
+
+        <!-- 너비 맞춤 버튼 (디폴트 뷰 & 빠른 클릭 가능) -->
+        <button id="zoomFitWidthBtn" title="화면 가로 너비에 맞추기" class="flex items-center gap-1 px-1.5 sm:px-2 py-1 hover:bg-slate-800 rounded-lg text-[11px] font-medium text-slate-400 hover:text-white transition">
+          <i data-lucide="move-horizontal" class="w-3.5 h-3.5"></i>
+          <span class="hidden xs:inline">너비맞춤</span>
+        </button>
+
+        <!-- 전체 맞춤 버튼 (모바일에서는 숨김) -->
+        <button id="zoomFitPageBtn" title="화면 전체에 맞추기" class="hidden sm:flex items-center gap-1 px-2 py-1 hover:bg-slate-800 rounded-lg text-[11px] font-medium text-slate-400 hover:text-white transition">
+          <i data-lucide="maximize-2" class="w-3.5 h-3.5"></i>
+          <span>전체맞춤</span>
+        </button>
+
+        <div class="w-px h-4 bg-slate-800 mx-1"></div>
+
+        <!-- 핀 일시 숨기기 헤더 버튼 (누르고 있으면 원본 보기 / 단축키 H) -->
+        <button id="headerPeekMarkersBtn" title="핀 일시 숨기기 (누르고 있으면 원본 보기 / 단축키: H)" class="flex items-center gap-1 px-1.5 sm:px-2 py-1 hover:bg-slate-800 rounded-lg text-[11px] font-medium text-slate-400 hover:text-white transition select-none">
+          <span class="btn-icon"><i data-lucide="eye" class="w-3.5 h-3.5 text-indigo-400"></i></span>
+          <span class="hidden md:inline btn-label">핀 숨기기</span>
+        </button>
+      </div>
+
+      <!-- 우측: 액션 도구들 (모바일 반응형 최적화 + 모바일 코멘트 토글 버튼) -->
+      <div class="flex items-center gap-1 sm:gap-2 shrink-0">
+        <input type="file" id="viewerFileInput" accept="image/*,application/pdf" class="hidden">
+        
+        <!-- 모바일 전용 코멘트 서랍 토글 버튼 (화면 폭 768px 미만에서 노출) -->
+        <button id="btnToggleMobileComments" onclick="toggleCommentDrawer()" class="md:hidden flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white shadow transition" title="지적 코멘트 목록 열기/닫기">
+          <i data-lucide="message-square" class="w-3.5 h-3.5"></i>
+          <span class="hidden xs:inline text-[11px]">코멘트</span>
+          <span id="mobileCommentCountBadge" class="px-1.5 py-0.2 rounded-full bg-white/20 text-[10px] font-extrabold">0</span>
+        </button>
+
+        <button id="viewerOpenFileBtn" class="hidden md:flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 transition" title="파일 교체">
+          <i data-lucide="upload" class="w-3.5 h-3.5 text-indigo-400"></i>
+          <span class="hidden md:inline">파일 교체</span>
+        </button>
+
+        <!-- 구글 시트에 저장 버튼 (강조) -->
+        <button id="sheetsSaveBtn" class="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-700 hover:bg-emerald-600 text-white shadow transition" title="구글 시트에 즉시 동기화 저장">
+          <i data-lucide="cloud-upload" class="w-3.5 h-3.5"></i>
+          <span class="hidden sm:inline">시트에 저장</span>
+          <span class="sm:hidden text-[11px]">저장</span>
+        </button>
+
+        <button id="exportReportBtn" class="hidden md:flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 transition" title="인쇄 / PDF 리포트 생성">
+          <i data-lucide="printer" class="w-3.5 h-3.5 text-slate-400"></i>
+          <span class="hidden md:inline">리포트</span>
+        </button>
+
+        <button id="viewerSettingsBtn" class="hidden sm:flex p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 transition" title="구글 시트 연동 설정">
+          <i data-lucide="settings" class="w-4 h-4"></i>
+        </button>
+
+        <div class="w-px h-4 sm:h-5 bg-slate-800 mx-0.5"></div>
+
+        <!-- 최종 나가기 버튼 (대시보드로 완전 탈출) -->
+        <a href="/admin/dashboard/new_dashboard.html" class="flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-lg text-xs font-medium bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 transition" title="관리자 시스템 홈으로 나가기">
+          <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
+          <span class="hidden xs:inline">종료</span>
+        </a>
+      </div>
+    </header>
+
+    <!-- 뷰어 작업 본체 (오버레이 + 우측 패널) -->
+    <div class="flex-1 flex overflow-hidden relative">
+
+      <!-- 플로팅 마킹 도구함 (좌상단, 모바일 마진 최적화) -->
+      <div class="no-print absolute top-2 left-2 sm:top-4 sm:left-6 z-20 bg-slate-950/90 backdrop-blur border border-slate-800 rounded-xl p-1 sm:p-1.5 shadow-2xl flex items-center gap-1 sm:gap-1.5 max-w-[calc(100vw-16px)] overflow-x-auto custom-scrollbar">
+        <div class="flex items-center bg-slate-900 rounded-lg p-0.5 border border-slate-800/80 shrink-0">
+          <button id="modePanBtn" class="tool-mode-btn active flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-md text-xs font-medium bg-indigo-600 text-white transition" data-mode="pan" title="화면 자유 이동 (마우스로 잡아당기기)">
+            <i data-lucide="hand" class="w-3.5 h-3.5"></i>
+            <span class="hidden sm:inline">이동 (드래그)</span>
+            <span class="sm:hidden">이동</span>
+          </button>
+          <button id="modePinBtn" class="tool-mode-btn flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-md text-xs font-medium text-slate-400 hover:text-slate-200 transition" data-mode="pin" title="클릭하여 핀 꽂기">
+            <i data-lucide="map-pin" class="w-3.5 h-3.5"></i>
+            <span>핀</span>
+          </button>
+          <button id="modeBoxBtn" class="tool-mode-btn flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-md text-xs font-medium text-slate-400 hover:text-slate-200 transition" data-mode="box" title="영역 드래그 지정">
+            <i data-lucide="crop" class="w-3.5 h-3.5"></i>
+            <span>영역</span>
+          </button>
+        </div>
+
+        <div class="w-px h-5 bg-slate-800 mx-0.5 shrink-0"></div>
+
+        <!-- 핀 일시 숨기기 플로팅 버튼 (Hold / Click / 단축키 H) -->
+        <button id="btnPeekMarkers" class="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 hover:border-slate-700 transition shrink-0 select-none active:scale-95" title="핀 일시 숨기기 (누르고 있으면 원본 보기 / 단축키: H)">
+          <span class="btn-icon"><i data-lucide="eye" class="w-3.5 h-3.5 text-indigo-400"></i></span>
+          <span id="peekMarkersLabel" class="btn-label">핀 숨기기</span>
+          <span class="text-[10px] text-slate-500 font-mono hidden sm:inline">(H)</span>
+        </button>
+
+        <div class="hidden sm:block w-px h-5 bg-slate-800 mx-1 shrink-0"></div>
+
+        <span class="hidden sm:inline text-[11px] text-slate-400 font-medium px-1 shrink-0">기본유형:</span>
+        <div class="hidden sm:flex items-center gap-1 shrink-0" id="tagSelector">
+          <button data-type="error" class="tag-btn active px-2 py-1 rounded text-[11px] font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/40 flex items-center gap-1">
+            <span class="w-2 h-2 rounded-full bg-rose-500"></span> 수정
+          </button>
+          <button data-type="warning" class="tag-btn px-2 py-1 rounded text-[11px] font-semibold bg-slate-900 text-slate-400 border border-transparent hover:border-slate-700 flex items-center gap-1">
+            <span class="w-2 h-2 rounded-full bg-amber-500"></span> 검토
+          </button>
+          <button data-type="typo" class="tag-btn px-2 py-1 rounded text-[11px] font-semibold bg-slate-900 text-slate-400 border border-transparent hover:border-slate-700 flex items-center gap-1">
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span> 오탈자
+          </button>
+          <button data-type="info" class="tag-btn px-2 py-1 rounded text-[11px] font-semibold bg-slate-900 text-slate-400 border border-transparent hover:border-slate-700 flex items-center gap-1">
+            <span class="w-2 h-2 rounded-full bg-blue-500"></span> 메모
+          </button>
+        </div>
+
+        <div class="w-px h-5 bg-slate-800 mx-1"></div>
+        <span class="text-[10px] text-slate-400 hidden xl:inline-block px-1">💡 마우스 <strong>우클릭</strong>으로 어디서든 코멘트 메뉴 호출</span>
+      </div>
+
+      <!-- 우클릭 빠른 마킹 컨텍스트 메뉴 -->
+      <div id="quickContextMenu" class="fixed z-50 bg-slate-950/95 backdrop-blur-md border border-slate-700 rounded-xl p-1.5 shadow-2xl w-48 hidden select-none text-xs">
+        <div class="px-2.5 py-1 text-[10px] font-bold text-slate-400 border-b border-slate-800 mb-1 flex items-center justify-between">
+          <span>여기에 코멘트 남기기</span>
+          <span class="text-[9px] text-indigo-400 font-semibold">우클릭</span>
+        </div>
+        <button class="ctx-tag-btn w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-slate-800 text-slate-200 text-left transition" data-type="error">
+          <span class="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0"></span>
+          <span class="font-medium text-rose-300">🔴 수정 요청 핀</span>
+        </button>
+        <button class="ctx-tag-btn w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-slate-800 text-slate-200 text-left transition" data-type="warning">
+          <span class="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0"></span>
+          <span class="font-medium text-amber-300">🟡 검토 필요 핀</span>
+        </button>
+        <button class="ctx-tag-btn w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-slate-800 text-slate-200 text-left transition" data-type="typo">
+          <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0"></span>
+          <span class="font-medium text-emerald-300">🟢 오탈자 지적 핀</span>
+        </button>
+        <button class="ctx-tag-btn w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-slate-800 text-slate-200 text-left transition" data-type="info">
+          <span class="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0"></span>
+          <span class="font-medium text-blue-300">🔵 단순 메모 / 질문</span>
+        </button>
+        <div class="border-t border-slate-800 my-1"></div>
+        <button id="ctxStartBoxBtn" class="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-slate-800 text-slate-300 text-left transition">
+          <i data-lucide="crop" class="w-3.5 h-3.5 text-indigo-400 shrink-0"></i>
+          <span>🔲 영역 박스 그리기</span>
+        </button>
+      </div>
+
+      <!-- 캔버스/이미지 메인 뷰어 스크롤 영역 (flex 제거, text-center 기반 자동 중앙 정렬) -->
+      <main id="viewerContainer" class="flex-1 bg-slate-900/40 overflow-auto p-6 relative custom-scrollbar text-center">
+        
+        <!-- PEEK MARKERS BANNER (핀 일시 숨김 안내 배너) -->
+        <div id="peekMarkersBanner" class="no-print hidden fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-1.5 rounded-full bg-slate-950/95 text-amber-300 border border-amber-500/70 shadow-2xl backdrop-blur flex items-center gap-2 text-xs font-bold select-none pointer-events-none transition-all">
+          <i data-lucide="eye-off" class="w-4 h-4 text-amber-400 animate-pulse"></i>
+          <span id="peekMarkersBannerText">원본 확인 중 (손을 떼면 핀 복귀 / 단축키: H)</span>
+        </div>
+        
+        <!-- STAGE OUTER WRAPPER (스케일된 실제 너비/높이를 가져 정확한 스크롤 영역과 완벽한 중앙 정렬을 제공) -->
+        <div id="stageOuter" class="relative inline-block text-left transition-all duration-75 select-none" style="margin: 20px auto;">
+          <!-- STAGE WRAPPER (원본 해상도 크기 유지, 좌상단 기준 transform scale) -->
+          <div id="stageWrapper" class="relative shadow-2xl rounded-lg overflow-hidden border border-slate-800 bg-white" style="transform-origin: 0 0;">
+            <canvas id="pdfCanvas" class="block"></canvas>
+            <img id="docImage" class="block max-w-none hidden" alt="시안 이미지" />
+
+            <!-- INTERACTION OVERLAY LAYER -->
+            <div id="overlayLayer" class="absolute inset-0 cursor-crosshair"></div>
+          </div>
+        </div>
+
+        <!-- COMMENT POPOVER (모바일 반응형 너비 최적화) -->
+        <div id="commentInputPopover" class="no-print absolute z-40 bg-slate-900 border border-slate-700 rounded-xl p-3 shadow-2xl w-[calc(100vw-32px)] sm:w-80 max-w-[360px] hidden backdrop-blur-md">
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span id="popoverBadge" class="w-5 h-5 rounded-full bg-rose-500 text-white text-[11px] font-bold flex items-center justify-center">1</span>
+              <span id="popoverTypeLabel" class="text-xs font-semibold text-rose-400">수정 요청</span>
+              <span class="text-[10px] text-slate-400 ml-1">by <span id="popoverAuthorLabel" class="text-indigo-300 font-semibold">검수자</span></span>
+            </div>
+            <button id="cancelPopoverBtn" class="text-slate-400 hover:text-slate-200 p-1">
+              <i data-lucide="x" class="w-4 h-4"></i>
+            </button>
+          </div>
+          <textarea id="commentTextInput" rows="3" placeholder="지적사항이나 수정 내용을 입력하세요 (Ctrl+Enter로 등록)" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 custom-scrollbar resize-none"></textarea>
+          <div class="flex items-center justify-end gap-2 mt-2">
+            <button id="submitCommentBtn" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold shadow transition">
+              등록하기
+            </button>
+          </div>
+        </div>
+
+        <!-- 엑셀 스타일 지적 메모 팝오버 (마커 클릭 시 해당 위치에 말풍선 형태로 즉시 노출) -->
+        <div id="markerMemoPopover" class="no-print fixed z-45 bg-slate-950/95 border-2 border-amber-400/90 rounded-2xl p-3.5 shadow-2xl w-[calc(100vw-32px)] sm:w-84 max-w-[340px] hidden backdrop-blur-md text-left select-text ring-4 ring-amber-400/20">
+          <!-- 상단 헤더: 엑셀 메모 느낌의 헤더 바 & 마커 번호 & 유형 & 작성자 & 조작 -->
+          <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span id="memoBadge" class="w-5 h-5 rounded-full bg-rose-500 text-white text-[11px] font-bold flex items-center justify-center">1</span>
+              <span id="memoTypeLabel" class="text-xs font-semibold text-rose-400">수정 요청</span>
+              <span class="text-[10px] text-slate-400">by <span id="memoAuthor" class="text-indigo-300 font-semibold">작성자</span></span>
+            </div>
+            <div class="flex items-center gap-1">
+              <!-- 해결/미해결 토글 버튼 -->
+              <button id="memoResolveBtn" class="p-1 text-slate-400 hover:text-emerald-400 rounded-lg hover:bg-slate-800 transition" title="해결 여부 토글">
+                <i data-lucide="circle" class="w-4 h-4" id="memoResolveIcon"></i>
+              </button>
+              <button onclick="hideMarkerMemo()" class="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition" title="메모 닫기">
+                <i data-lucide="x" class="w-4 h-4"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- 지적 내용 본문 (엑셀 메모 카드 본문) -->
+          <div id="memoText" class="text-xs text-slate-100 leading-relaxed max-h-36 overflow-y-auto custom-scrollbar whitespace-pre-wrap break-words bg-slate-900/60 p-2.5 rounded-xl border border-slate-800/80">
+            지적사항 내용
+          </div>
+
+          <!-- 작성 시간 및 서랍 보기 링크 -->
+          <div class="mt-2 text-[10px] text-slate-400 flex items-center justify-between">
+            <span id="memoTime">2026-09-22 00:00</span>
+            <button onclick="openDrawerWithComment()" class="text-indigo-400 hover:text-indigo-300 font-semibold flex items-center gap-0.5 hover:underline">
+              <span>서랍에서 보기</span>
+              <i data-lucide="arrow-up-right" class="w-3 h-3"></i>
+            </button>
+          </div>
+
+          <!-- 답변(스레드) 목록 영역 -->
+          <div id="memoRepliesContainer" class="mt-2.5 pt-2 border-t border-slate-800 space-y-1.5 max-h-32 overflow-y-auto custom-scrollbar hidden">
+            <!-- 동적 답변 아이템들 -->
+          </div>
+
+          <!-- 인라인 즉시 답변 입력창 -->
+          <div class="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center gap-1.5">
+            <input type="text" id="memoReplyInput" placeholder="답변 입력 (Enter)..." class="flex-1 bg-slate-900 border border-slate-800 focus:border-indigo-500 rounded-lg px-2.5 py-1 text-[11px] text-slate-200 placeholder-slate-500 focus:outline-none transition" />
+            <button id="memoReplySubmitBtn" class="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold shrink-0 shadow transition">
+              답변
+            </button>
+          </div>
+        </div>
+
+        <!-- 모바일 전용 플로팅 코멘트 서랍 열기 버튼 (FAB: 화면 우하단에서 원터치로 지적 목록 호출) -->
+        <button id="btnMobileFabComments" onclick="openCommentDrawer()" class="md:hidden fixed bottom-5 right-5 z-20 flex items-center gap-2 px-3.5 py-2.5 rounded-full bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-bold text-xs shadow-2xl border border-indigo-400/40 transition-all">
+          <i data-lucide="message-square" class="w-4 h-4"></i>
+          <span>지적 목록</span>
+          <span id="fabCommentCount" class="px-1.5 py-0.5 rounded-full bg-white/25 text-[10px] font-extrabold">0</span>
+        <!-- 데스크톱 전용 사이드바 다시 열기 플로팅 버튼 (사이드바 접힘 시 노출) -->
+        <button id="btnExpandSidebar" onclick="toggleSidebarCollapse()" class="hidden no-print fixed top-16 right-4 z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-950/95 hover:bg-slate-900 border border-slate-700 text-slate-200 hover:text-white text-xs font-semibold shadow-2xl backdrop-blur transition active:scale-95" title="코멘트 사이드바 열기">
+          <i data-lucide="panel-right-open" class="w-4 h-4 text-indigo-400"></i>
+          <span>코멘트 패널 열기</span>
+        </button>
+      </main>
+
+      <!-- 모바일 코멘트 드로어 뒷배경 딤(Dim) 오버레이 -->
+      <div id="commentDrawerBackdrop" onclick="closeCommentDrawer()" class="fixed inset-0 bg-black/70 z-35 hidden md:hidden backdrop-blur-xs transition-opacity duration-300"></div>
+
+      <!-- 우측: 코멘트 목록 사이드바 (데스크탑: 우측 고정 / 모바일: 슬라이드오버 서랍 드로어) -->
+      <aside id="commentsSidebar" class="no-print fixed inset-y-0 right-0 z-40 w-[88vw] sm:w-96 md:w-80 lg:w-96 max-w-[420px] transform translate-x-full md:relative md:translate-x-0 transition-transform duration-300 ease-in-out bg-slate-950 border-l border-slate-800 flex flex-col shrink-0 shadow-2xl md:shadow-none h-full">
+        <!-- 사이드바 상단 헤더 -->
+        <div class="p-3.5 border-b border-slate-800 flex items-center justify-between">
+          <div>
+            <h3 class="text-xs font-bold text-slate-200 tracking-tight flex items-center gap-2">
+              검수 코멘트 목록
+              <span id="commentCountBadge" class="px-1.5 py-0.5 text-[10px] rounded-full bg-indigo-500/20 text-indigo-400 font-bold">0</span>
+            </h3>
+            <div class="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
+              <span>내 ID:</span>
+              <button onclick="changeCurrentUserName()" class="text-indigo-300 hover:text-indigo-200 font-semibold flex items-center gap-0.5 hover:underline" title="클릭하여 검수자/답변자 아이디 변경">
+                <span id="currentReviewerBadge">검수자</span>
+                <i data-lucide="edit-3" class="w-2.5 h-2.5"></i>
+              </button>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="text-right">
+              <span id="progressText" class="text-xs font-bold text-emerald-400">0%</span>
+              <span class="text-[10px] text-slate-500 block">완료율</span>
+            </div>
+            <!-- 데스크톱 전용 사이드바 접기 버튼 -->
+            <button id="btnCollapseSidebar" onclick="toggleSidebarCollapse()" class="hidden md:flex p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition" title="사이드바 접기 (시안 넓게 보기)">
+              <i data-lucide="panel-right-close" class="w-4 h-4"></i>
+            </button>
+            <!-- 모바일 전용 드로어 닫기 [X] 버튼 -->
+            <button id="btnCloseCommentDrawer" onclick="closeCommentDrawer()" class="md:hidden ml-1 p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition" title="코멘트 서랍 닫기">
+              <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="w-full bg-slate-900 h-1">
+          <div id="progressBar" class="bg-emerald-500 h-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+
+        <!-- 코멘트 표시 방식 선택 바 (데스크톱: 우측 패널 vs 핀 메모) -->
+        <div class="px-3 py-1.5 bg-slate-950 border-b border-slate-800/80 flex items-center justify-between text-[11px] select-none">
+          <span class="text-slate-400 font-medium flex items-center gap-1">
+            <i data-lucide="layout" class="w-3 h-3 text-indigo-400"></i>
+            <span>핀 클릭 시:</span>
+          </span>
+          <div class="flex items-center bg-slate-900 p-0.5 rounded-lg border border-slate-800 text-[10px]">
+            <button id="btnModeSidebar" onclick="setCommentDisplayMode('sidebar')" class="comment-display-mode-btn px-2 py-0.5 rounded font-semibold bg-indigo-600 text-white transition flex items-center gap-1" title="핀 클릭 시 우측 패널로 포커스 (시안 가림 없음)">
+              <i data-lucide="sidebar" class="w-3 h-3"></i>
+              <span>우측 패널</span>
+            </button>
+            <button id="btnModeMemo" onclick="setCommentDisplayMode('memo')" class="comment-display-mode-btn px-2 py-0.5 rounded font-semibold text-slate-400 hover:text-white transition flex items-center gap-1" title="핀 클릭 시 핀 옆에 엑셀 말풍선 메모 팝업">
+              <i data-lucide="message-square" class="w-3 h-3"></i>
+              <span>말풍선 메모</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="px-3 py-2 border-b border-slate-800/80 flex items-center justify-between gap-1 text-xs">
+          <div class="flex items-center gap-1 bg-slate-900 p-0.5 rounded-lg border border-slate-800">
+            <button class="filter-tab active px-2.5 py-1 rounded text-[11px] font-medium bg-slate-800 text-white" data-filter="all">전체</button>
+            <button class="filter-tab px-2.5 py-1 rounded text-[11px] font-medium text-slate-400 hover:text-white" data-filter="open">진행 중</button>
+            <button class="filter-tab px-2.5 py-1 rounded text-[11px] font-medium text-slate-400 hover:text-white" data-filter="resolved">해결됨</button>
+          </div>
+          <button id="clearAllBtn" title="현재 문서의 모든 코멘트 비우기" class="text-[11px] text-slate-500 hover:text-rose-400 p-1">
+            초기화
+          </button>
+        </div>
+
+        <div id="commentsList" class="flex-1 overflow-y-auto p-3 space-y-2.5 custom-scrollbar">
+          <div id="emptyListState" class="h-64 flex flex-col items-center justify-center text-center p-6 text-slate-500">
+            <i data-lucide="message-square-dashed" class="w-10 h-10 mb-2 opacity-40"></i>
+            <p class="text-xs font-medium text-slate-400">등록된 지적사항이 없습니다.</p>
+            <p class="text-[11px] text-slate-600 mt-1">화면을 클릭하여 코멘트를 남겨보세요.</p>
+          </div>
+        </div>
+
+        <div class="p-3 border-t border-slate-800/80 bg-slate-900/40 text-[11px] flex items-center justify-between text-slate-400">
+          <div class="flex items-center gap-3">
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-rose-500"></span> <span id="statErrorCount">0</span></span>
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-amber-500"></span> <span id="statWarningCount">0</span></span>
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> <span id="statTypoCount">0</span></span>
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-blue-500"></span> <span id="statInfoCount">0</span></span>
+          </div>
+          <button id="copySummaryBtn" class="text-slate-400 hover:text-indigo-400 font-medium flex items-center gap-1">
+            <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+            텍스트 복사
+          </button>
+        </div>
+      </aside>
+
+    </div>
+  </div>
+
+</div>
+
+
+<!-- ========================================================================= -->
+  <!-- MODALS (설정, 출력 등) -->
+<!-- ========================================================================= -->
+
+<!-- 구글 시트 연동 설정 모달 -->
+<div id="settingsModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+  <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-sm font-bold text-white flex items-center gap-2">
+        <i data-lucide="file-spreadsheet" class="w-5 h-5 text-emerald-400"></i>
+        구글 스프레드시트 연동 설정 (비용 0원)
+      </h3>
+      <button onclick="document.getElementById('settingsModal').classList.add('hidden')" class="text-slate-400 hover:text-white">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+    </div>
+
+    <p class="text-xs text-slate-300 mb-3 leading-relaxed">
+      구글 스프레드시트의 <code class="text-indigo-300">확장 프로그램 > Apps Script</code>에 배포된 <strong>웹 앱(Web App) URL</strong>을 입력하세요.
+    </p>
+
+    <div class="space-y-4">
+      <div>
+        <label class="block text-[11px] font-semibold text-slate-400 mb-1">Google Apps Script Web App URL</label>
+        <input type="url" id="gasUrlInput" placeholder="https://script.google.com/macros/s/.../exec" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500" />
+      </div>
+
+      <div class="bg-slate-950/60 p-3 rounded-lg border border-slate-800 text-[11px] text-slate-400 space-y-1">
+        <div class="font-semibold text-slate-300">💡 백엔드 코드 위치:</div>
+        <div>프로젝트의 <code class="text-emerald-400 font-mono">admin-backend/QE-Review-API/Code.js</code> 파일을 복사하여 구글 시트의 Apps Script에 붙여넣고 [웹 앱으로 배포]하시면 됩니다.</div>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-2">
+        <button onclick="document.getElementById('settingsModal').classList.add('hidden')" class="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-xs hover:bg-slate-700">취소</button>
+        <button id="saveGasUrlBtn" class="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow">저장하기</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 인쇄 / 리포트 모달 -->
+<div id="exportModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+  <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-sm font-bold text-white flex items-center gap-2">
+        <i data-lucide="printer" class="w-4 h-4 text-emerald-400"></i>
+        검수 결과 출력
+      </h3>
+      <button onclick="document.getElementById('exportModal').classList.add('hidden')" class="text-slate-400 hover:text-white">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+    </div>
+    
+    <div class="space-y-3">
+      <button onclick="printReport()" class="w-full flex items-center justify-between p-3.5 rounded-xl bg-slate-800 hover:bg-slate-700/80 border border-slate-700 text-left transition">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center">
+            <i data-lucide="printer" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <div class="text-xs font-semibold text-white">인쇄 / PDF 보고서 생성</div>
+            <div class="text-[11px] text-slate-400">체크리스트가 표 형태로 정리된 리포트 출력</div>
+          </div>
+        </div>
+        <i data-lucide="chevron-right" class="w-4 h-4 text-slate-500"></i>
+      </button>
+
+      <button onclick="exportJson()" class="w-full flex items-center justify-between p-3.5 rounded-xl bg-slate-800 hover:bg-slate-700/80 border border-slate-700 text-left transition">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+            <i data-lucide="download" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <div class="text-xs font-semibold text-white">JSON 백업 다운로드</div>
+            <div class="text-[11px] text-slate-400">오프라인 보관용 원본 JSON 파일</div>
+          </div>
+        </div>
+        <i data-lucide="chevron-right" class="w-4 h-4 text-slate-500"></i>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- 새 폴더 생성 / 이름 변경 모달 -->
+<div id="folderModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+  <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-6 shadow-2xl">
+    <div class="flex items-center justify-between mb-4">
+      <h3 id="folderModalTitle" class="text-sm font-bold text-white flex items-center gap-2">
+        <i data-lucide="folder-plus" class="w-4 h-4 text-indigo-400"></i>
+        <span>새 폴더 만들기</span>
+      </h3>
+      <button onclick="closeFolderModal()" class="text-slate-400 hover:text-white">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+    </div>
+    
+    <div class="space-y-4">
+      <div>
+        <label class="block text-[11px] font-semibold text-slate-400 mb-1">폴더 이름</label>
+        <input type="text" id="folderNameInput" placeholder="예: 2026 연표 프로젝트, 1분기 시안" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500" />
+      </div>
+      <input type="hidden" id="folderModalMode" value="create" />
+      <input type="hidden" id="folderModalTargetId" value="" />
+
+      <div class="flex items-center justify-end gap-2 pt-2">
+        <button onclick="closeFolderModal()" class="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-xs hover:bg-slate-700">취소</button>
+        <button id="btnSubmitFolderModal" class="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs shadow">저장</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 문서 폴더 이동 모달 -->
+<div id="moveFolderModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+  <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="text-sm font-bold text-white flex items-center gap-2">
+        <i data-lucide="folder-input" class="w-4 h-4 text-amber-400"></i>
+        <span>문서 폴더 이동</span>
+      </h3>
+      <button onclick="closeMoveModal()" class="text-slate-400 hover:text-white">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+    </div>
+
+    <p class="text-xs text-slate-300 mb-3" id="moveModalDocTitle">이동할 대상을 선택하세요:</p>
+
+    <!-- 폴더 선택 트리 목록 -->
+    <div id="moveModalFolderList" class="max-h-60 overflow-y-auto space-y-1.5 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800 custom-scrollbar mb-4">
+      <!-- 동적 폴더 옵션 목록 -->
+    </div>
+
+    <input type="hidden" id="moveTargetReviewId" value="" />
+
+    <div class="flex items-center justify-end gap-2 pt-2">
+      <button onclick="closeMoveModal()" class="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-xs hover:bg-slate-700">취소</button>
+      <button id="btnConfirmMove" class="px-4 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs shadow">이 위치로 이동</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ========================================================================= -->
+<!-- JAVASCRIPT APP LOGIC -->
+<!-- ========================================================================= -->
+<script>
+  // ==========================================
+  // INDEXEDDB FILE STORAGE (무제한 로컬 파일 영구 보관소)
+  // ==========================================
+  const FILE_DB_NAME = 'CheeseQE_FileStore';
+  const FILE_DB_VERSION = 1;
+  const FILE_STORE_NAME = 'files';
+
+  function openFileDB() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(FILE_DB_NAME, FILE_DB_VERSION);
+      req.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains(FILE_STORE_NAME)) {
+          db.createObjectStore(FILE_STORE_NAME, { keyPath: 'id' });
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function saveFileToDB(reviewId, fileData) {
+    try {
+      const db = await openFileDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(FILE_STORE_NAME, 'readwrite');
+        const store = tx.objectStore(FILE_STORE_NAME);
+        store.put({ id: reviewId, ...fileData, savedAt: Date.now() });
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (err) {
+      console.warn('IndexedDB saveFile error:', err);
+      return false;
+    }
+  }
+
+  async function getFileFromDB(reviewId) {
+    try {
+      const db = await openFileDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(FILE_STORE_NAME, 'readonly');
+        const store = tx.objectStore(FILE_STORE_NAME);
+        const req = store.get(reviewId);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+      });
+    } catch (err) {
+      console.warn('IndexedDB getFile error:', err);
+      return null;
+    }
+  }
+
+  async function deleteFileFromDB(reviewId) {
+    try {
+      const db = await openFileDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(FILE_STORE_NAME, 'readwrite');
+        const store = tx.objectStore(FILE_STORE_NAME);
+        store.delete(reviewId);
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (err) {
+      console.warn('IndexedDB deleteFile error:', err);
+    }
+  }
+
+  // ==========================================
+  // CURRENT USER / REVIEWER AUTH
+  // ==========================================
+  function getCurrentUser() {
+    const custom = localStorage.getItem('cheese_qe_current_user');
+    if (custom && custom.trim()) return custom.trim();
+
+    const loginId = sessionStorage.getItem('cheese_admin_login_id') || localStorage.getItem('cheese_admin_login_id') || window.CHEESE_ADMIN_LOGIN_ID || '';
+    const displayName = sessionStorage.getItem('cheese_admin_display_name') || localStorage.getItem('cheese_admin_display_name') || window.CHEESE_ADMIN_DISPLAY_NAME || '';
+
+    if (displayName && loginId) return `${displayName} (${loginId})`;
+    if (loginId) return loginId;
+    if (displayName) return displayName;
+    return '검수자';
+  }
+
+  function changeCurrentUserName() {
+    const current = getCurrentUser();
+    const next = prompt('현재 검수자/답변자 아이디(또는 이름)를 입력하세요:', current);
+    if (next !== null && next.trim()) {
+      localStorage.setItem('cheese_qe_current_user', next.trim());
+      updateCurrentUserBadge();
+      renderCommentsList();
+    }
+  }
+
+  function updateCurrentUserBadge() {
+    const badge = document.getElementById('currentReviewerBadge');
+    if (badge) badge.textContent = getCurrentUser();
+    const popAuthor = document.getElementById('popoverAuthorLabel');
+    if (popAuthor) popAuthor.textContent = getCurrentUser();
+  }
+
+  // App State
+  const state = {
+    currentView: 'dashboard', // 'dashboard' | 'viewer'
+    currentFolderId: 'root', // 현재 위치한 폴더 ID ('root' 또는 'f_...')
+    folders: [], // [{ id, name, parentId, createdAt }]
+    savedReviews: [], // [{ id, title, folderId, pageCount, status, totalComments, resolvedCount, author, updatedAt, comments }]
+    reviewId: 'REV_' + Date.now(),
+    docName: '무제 문서',
+    docType: null, // 'image' | 'pdf'
+    pdfDoc: null,
+    currentPage: 1,
+    totalPages: 1,
+    scale: 1.0,
+    toolMode: 'pan', // 'pan' (기본: 자유 이동) | 'pin' (핀) | 'box' (영역)
+    currentTag: 'error',
+    filter: 'all',
+    dashFilter: 'all',
+    comments: [],
+    isDrawingBox: false,
+    boxStart: { x: 0, y: 0 },
+    pendingCommentCoords: null,
+    contextMenuCoords: null,
+    activeCommentId: null,
+    markersHidden: false, // 핀 숨김 상태 여부
+    isPeeking: false,     // 일시 엿보기(Hold) 중인지 여부
+    commentDisplayMode: localStorage.getItem('cheese_qe_comment_display_mode') || 'sidebar', // 'sidebar' (우측 패널) | 'memo' (핀 말풍선 메모)
+    sidebarCollapsed: false, // 데스크톱 사이드바 접힘 여부
+    gasUrl: localStorage.getItem('cheese_qe_gas_url') || ''
+  };
+
+  const TAG_CONFIG = {
+    error: { label: '수정 요청', color: '#f43f5e', bg: 'bg-rose-500', text: 'text-rose-400', border: 'border-rose-500' },
+    warning: { label: '검토 필요', color: '#f59e0b', bg: 'bg-amber-500', text: 'text-amber-400', border: 'border-amber-500' },
+    typo: { label: '오탈자', color: '#10b981', bg: 'bg-emerald-500', text: 'text-emerald-400', border: 'border-emerald-500' },
+    info: { label: '메모/질문', color: '#3b82f6', bg: 'bg-blue-500', text: 'text-blue-400', border: 'border-blue-500' }
+  };
+
+  // DOM Elements
+  const el = {
+    viewDashboard: document.getElementById('viewDashboard'),
+    viewViewer: document.getElementById('viewViewer'),
+    btnBackToDashboard: document.getElementById('btnBackToDashboard'),
+    btnNewReviewFromDash: document.getElementById('btnNewReviewFromDash'),
+    dashboardRefreshBtn: document.getElementById('dashboardRefreshBtn'),
+    dashboardSettingsBtn: document.getElementById('dashboardSettingsBtn'),
+    dashFileInput: document.getElementById('dashFileInput'),
+    dashDropZone: document.getElementById('dashDropZone'),
+    dashSearchInput: document.getElementById('dashSearchInput'),
+    dashReviewGrid: document.getElementById('dashReviewGrid'),
+    dashFilterButtons: document.querySelectorAll('.dash-filter-btn'),
+    statTotalDocs: document.getElementById('statTotalDocs'),
+    statActiveDocs: document.getElementById('statActiveDocs'),
+    statCompletedDocs: document.getElementById('statCompletedDocs'),
+    statOpenIssues: document.getElementById('statOpenIssues'),
+
+    // Stat Cards (Filters)
+    statCardAll: document.getElementById('statCardAll'),
+    statCardActive: document.getElementById('statCardActive'),
+    statCardCompleted: document.getElementById('statCardCompleted'),
+    statCardOpen: document.getElementById('statCardOpen'),
+
+    // Table & Mobile Board Elements
+    dashTableBody: document.getElementById('dashTableBody'),
+    dashMobileList: document.getElementById('dashMobileList'),
+    dashEmptyState: document.getElementById('dashEmptyState'),
+    dashEmptyTitle: document.getElementById('dashEmptyTitle'),
+    dashEmptyDesc: document.getElementById('dashEmptyDesc'),
+    dashTotalItemCount: document.getElementById('dashTotalItemCount'),
+    dashActiveFilterBadge: document.getElementById('dashActiveFilterBadge'),
+
+    // Folder Directory Elements
+    btnCreateFolder: document.getElementById('btnCreateFolder'),
+    dashBreadcrumbs: document.getElementById('dashBreadcrumbs'),
+    currentFolderActions: document.getElementById('currentFolderActions'),
+    folderModal: document.getElementById('folderModal'),
+    folderModalTitle: document.getElementById('folderModalTitle'),
+    folderNameInput: document.getElementById('folderNameInput'),
+    folderModalMode: document.getElementById('folderModalMode'),
+    folderModalTargetId: document.getElementById('folderModalTargetId'),
+    btnSubmitFolderModal: document.getElementById('btnSubmitFolderModal'),
+    moveFolderModal: document.getElementById('moveFolderModal'),
+    moveModalDocTitle: document.getElementById('moveModalDocTitle'),
+    moveModalFolderList: document.getElementById('moveModalFolderList'),
+    moveTargetReviewId: document.getElementById('moveTargetReviewId'),
+    btnConfirmMove: document.getElementById('btnConfirmMove'),
+
+    // Viewer Elements
+    docTitle: document.getElementById('docTitle'),
+    prevPageBtn: document.getElementById('prevPageBtn'),
+    nextPageBtn: document.getElementById('nextPageBtn'),
+    currentPageNum: document.getElementById('currentPageNum'),
+    totalPageNum: document.getElementById('totalPageNum'),
+    zoomInBtn: document.getElementById('zoomInBtn'),
+    zoomOutBtn: document.getElementById('zoomOutBtn'),
+    zoom100Btn: document.getElementById('zoom100Btn'),
+    zoomFitWidthBtn: document.getElementById('zoomFitWidthBtn'),
+    zoomFitPageBtn: document.getElementById('zoomFitPageBtn'),
+    zoomLabel: document.getElementById('zoomLabel'),
+    viewerContainer: document.getElementById('viewerContainer'),
+    stageOuter: document.getElementById('stageOuter'),
+    stageWrapper: document.getElementById('stageWrapper'),
+    pdfCanvas: document.getElementById('pdfCanvas'),
+    docImage: document.getElementById('docImage'),
+    overlayLayer: document.getElementById('overlayLayer'),
+    commentInputPopover: document.getElementById('commentInputPopover'),
+    popoverBadge: document.getElementById('popoverBadge'),
+    popoverTypeLabel: document.getElementById('popoverTypeLabel'),
+    commentTextInput: document.getElementById('commentTextInput'),
+    submitCommentBtn: document.getElementById('submitCommentBtn'),
+    cancelPopoverBtn: document.getElementById('cancelPopoverBtn'),
+    commentsList: document.getElementById('commentsList'),
+    emptyListState: document.getElementById('emptyListState'),
+    commentCountBadge: document.getElementById('commentCountBadge'),
+    commentsSidebar: document.getElementById('commentsSidebar'),
+    commentDrawerBackdrop: document.getElementById('commentDrawerBackdrop'),
+    btnToggleMobileComments: document.getElementById('btnToggleMobileComments'),
+    mobileCommentCountBadge: document.getElementById('mobileCommentCountBadge'),
+    fabCommentCount: document.getElementById('fabCommentCount'),
+    btnMobileFabComments: document.getElementById('btnMobileFabComments'),
+    btnCloseCommentDrawer: document.getElementById('btnCloseCommentDrawer'),
+    progressText: document.getElementById('progressText'),
+    progressBar: document.getElementById('progressBar'),
+    clearAllBtn: document.getElementById('clearAllBtn'),
+    copySummaryBtn: document.getElementById('copySummaryBtn'),
+    exportReportBtn: document.getElementById('exportReportBtn'),
+    exportModal: document.getElementById('exportModal'),
+    viewerOpenFileBtn: document.getElementById('viewerOpenFileBtn'),
+    viewerFileInput: document.getElementById('viewerFileInput'),
+    viewerSettingsBtn: document.getElementById('viewerSettingsBtn'),
+    sheetsSaveBtn: document.getElementById('sheetsSaveBtn'),
+    settingsModal: document.getElementById('settingsModal'),
+    gasUrlInput: document.getElementById('gasUrlInput'),
+    saveGasUrlBtn: document.getElementById('saveGasUrlBtn'),
+    modePanBtn: document.getElementById('modePanBtn'),
+    modePinBtn: document.getElementById('modePinBtn'),
+    modeBoxBtn: document.getElementById('modeBoxBtn'),
+    quickContextMenu: document.getElementById('quickContextMenu'),
+    ctxStartBoxBtn: document.getElementById('ctxStartBoxBtn'),
+    ctxTagButtons: document.querySelectorAll('.ctx-tag-btn'),
+    tagButtons: document.querySelectorAll('.tag-btn'),
+    filterTabs: document.querySelectorAll('.filter-tab'),
+    btnPeekMarkers: document.getElementById('btnPeekMarkers'),
+    headerPeekMarkersBtn: document.getElementById('headerPeekMarkersBtn'),
+    peekMarkersBanner: document.getElementById('peekMarkersBanner')
+  };
+
+  // 모바일 코멘트 서랍(Drawer) 제어 함수들 (전역 노출)
+  function openCommentDrawer() {
+    const sb = document.getElementById('commentsSidebar');
+    const bd = document.getElementById('commentDrawerBackdrop');
+    if (sb) sb.classList.remove('translate-x-full');
+    if (bd) bd.classList.remove('hidden');
+  }
+
+  function closeCommentDrawer() {
+    const sb = document.getElementById('commentsSidebar');
+    const bd = document.getElementById('commentDrawerBackdrop');
+    if (sb) sb.classList.add('translate-x-full');
+    if (bd) bd.classList.add('hidden');
+  }
+
+  function toggleCommentDrawer() {
+    const sb = document.getElementById('commentsSidebar');
+    if (sb && sb.classList.contains('translate-x-full')) {
+      openCommentDrawer();
+    } else {
+      closeCommentDrawer();
+    }
+  }
+
+  window.openCommentDrawer = openCommentDrawer;
+  window.closeCommentDrawer = closeCommentDrawer;
+  window.toggleCommentDrawer = toggleCommentDrawer;
+
+  // 핀/마커 토글 함수 (클릭 시 100% 확실하게 보였다 숨겼다 전환)
+  function toggleMarkersVisibility() {
+    const nextVisible = state.markersHidden; // 현재 숨김(true)이면 보이기(true)로, 현재 보임(false)이면 숨기기(false)로
+    setMarkersVisibility(nextVisible, false);
+  }
+
+  // 핀/마커 일시 숨김 및 토글 제어 함수 (Hold / Click / 단축키 H)
+  function setMarkersVisibility(visible, isPeek = false) {
+    state.markersHidden = !visible;
+    const overlay = el.overlayLayer;
+    const memo = document.getElementById('markerMemoPopover');
+    const toast = el.peekMarkersBanner;
+
+    if (!visible) {
+      if (overlay) {
+        overlay.style.opacity = '0';
+        overlay.style.pointerEvents = 'none';
+      }
+      if (memo && !memo.classList.contains('hidden')) {
+        memo.dataset.wasVisible = 'true';
+        memo.style.opacity = '0';
+        memo.style.pointerEvents = 'none';
+      }
+      if (toast) {
+        toast.classList.remove('hidden');
+        const bannerText = document.getElementById('peekMarkersBannerText');
+        if (bannerText) {
+          bannerText.textContent = isPeek
+            ? '원본 확인 중 (손을 떼면 핀 복귀 / 단축키: H)'
+            : '핀 숨김 상태 (버튼을 누르면 핀 다시 표시)';
+        }
+      }
+      updatePeekButtonsUI(false);
+    } else {
+      if (overlay) {
+        overlay.style.opacity = '1';
+        overlay.style.pointerEvents = 'auto';
+      }
+      if (memo && memo.dataset.wasVisible === 'true') {
+        memo.style.opacity = '1';
+        memo.style.pointerEvents = 'auto';
+        delete memo.dataset.wasVisible;
+      }
+      if (toast) {
+        toast.classList.add('hidden');
+      }
+      updatePeekButtonsUI(true);
+    }
+  }
+
+  // 핀 숨김/보이기 버튼 UI 업데이트 함수 (안전한 아이콘 & 라벨 갱신)
+  function updatePeekButtonsUI(visible) {
+    const btns = [document.getElementById('btnPeekMarkers'), document.getElementById('headerPeekMarkersBtn')];
+    btns.forEach(btn => {
+      if (!btn) return;
+      const label = btn.querySelector('.btn-label');
+      const iconSpan = btn.querySelector('.btn-icon');
+
+      if (!visible) {
+        btn.classList.add('bg-amber-500/20', 'text-amber-300', 'border-amber-500/50');
+        btn.classList.remove('bg-slate-900', 'text-slate-300', 'text-slate-400');
+        if (label) label.textContent = '핀 보이기';
+        if (iconSpan) {
+          iconSpan.innerHTML = '<i data-lucide="eye-off" class="w-3.5 h-3.5 text-amber-400"></i>';
+        }
+      } else {
+        btn.classList.remove('bg-amber-500/20', 'text-amber-300', 'border-amber-500/50');
+        btn.classList.add('bg-slate-900', 'text-slate-300');
+        if (label) label.textContent = '핀 숨기기';
+        if (iconSpan) {
+          iconSpan.innerHTML = '<i data-lucide="eye" class="w-3.5 h-3.5 text-indigo-400"></i>';
+        }
+      }
+    });
+    lucide.createIcons();
+  }
+
+  window.toggleMarkersVisibility = toggleMarkersVisibility;
+  window.setMarkersVisibility = setMarkersVisibility;
+
+  // 코멘트 표시 모드 전환 ('sidebar' = 우측 패널 | 'memo' = 핀 말풍선 메모)
+  function setCommentDisplayMode(mode) {
+    state.commentDisplayMode = mode;
+    localStorage.setItem('cheese_qe_comment_display_mode', mode);
+
+    const btnSidebar = document.getElementById('btnModeSidebar');
+    const btnMemo = document.getElementById('btnModeMemo');
+
+    if (btnSidebar && btnMemo) {
+      if (mode === 'sidebar') {
+        btnSidebar.classList.add('bg-indigo-600', 'text-white');
+        btnSidebar.classList.remove('text-slate-400');
+        btnMemo.classList.remove('bg-indigo-600', 'text-white');
+        btnMemo.classList.add('text-slate-400');
+      } else {
+        btnMemo.classList.add('bg-indigo-600', 'text-white');
+        btnMemo.classList.remove('text-slate-400');
+        btnSidebar.classList.remove('bg-indigo-600', 'text-white');
+        btnSidebar.classList.add('text-slate-400');
+      }
+    }
+
+    // 우측 패널 모드로 전환 시, 화면에 떠 있던 메모 말풍선 닫기 (시안 가림 방지)
+    if (mode === 'sidebar' && window.innerWidth >= 768) {
+      hideMarkerMemo();
+    }
+    lucide.createIcons();
+  }
+
+  // 데스크톱 사이드바 접기/펼치기 토글
+  function toggleSidebarCollapse() {
+    state.sidebarCollapsed = !state.sidebarCollapsed;
+    const sb = el.commentsSidebar;
+    const expandBtn = document.getElementById('btnExpandSidebar');
+
+    if (state.sidebarCollapsed) {
+      sb.classList.add('md:hidden');
+      if (expandBtn) expandBtn.classList.remove('hidden');
+    } else {
+      sb.classList.remove('md:hidden');
+      if (expandBtn) expandBtn.classList.add('hidden');
+    }
+    // 너비 맞춤 상태 유지
+    if (state.isFitWidthMode) {
+      setTimeout(zoomFitWidth, 50);
+    }
+    lucide.createIcons();
+  }
+
+  window.setCommentDisplayMode = setCommentDisplayMode;
+  window.toggleSidebarCollapse = toggleSidebarCollapse;
+
+  // Initialization
+  function init() {
+    lucide.createIcons();
+    loadFolders();
+    bindEvents();
+    loadDashboardData();
+    el.gasUrlInput.value = state.gasUrl;
+    updateCurrentUserBadge();
+    setToolMode('pan');
+    setCommentDisplayMode(state.commentDisplayMode);
+  }
+
+  // Switch View: 'dashboard' | 'viewer'
+  function switchView(viewName) {
+    state.currentView = viewName;
+    if (viewName === 'dashboard') {
+      el.viewDashboard.classList.remove('hidden');
+      el.viewViewer.classList.add('hidden');
+      loadDashboardData();
+    } else {
+      el.viewDashboard.classList.add('hidden');
+      el.viewViewer.classList.remove('hidden');
+      // 모바일에서 뷰어 진입 시 서랍은 닫힌 상태로 시작 (시안 100% 온전히 보장)
+      if (window.innerWidth < 768) {
+        closeCommentDrawer();
+      }
+      setTimeout(() => {
+        if (!state.scale) zoomFitWidth();
+        else setScale(state.scale);
+      }, 50);
+    }
+    lucide.createIcons();
+  }
+
+  // Event Listeners
+  function bindEvents() {
+    // Dashboard Navigation
+    el.btnBackToDashboard.addEventListener('click', () => switchView('dashboard'));
+    el.btnNewReviewFromDash.addEventListener('click', () => el.dashFileInput.click());
+    el.dashboardRefreshBtn.addEventListener('click', () => loadDashboardData(true));
+    el.dashboardSettingsBtn.addEventListener('click', () => el.settingsModal.classList.remove('hidden'));
+    el.viewerSettingsBtn.addEventListener('click', () => el.settingsModal.classList.remove('hidden'));
+
+    // File selection
+    el.dashFileInput.addEventListener('change', (e) => {
+      if (e.target.files.length > 0) openFileInViewer(e.target.files[0]);
+    });
+    el.viewerOpenFileBtn.addEventListener('click', () => el.viewerFileInput.click());
+    el.viewerFileInput.addEventListener('change', (e) => {
+      if (e.target.files.length > 0) openFileInViewer(e.target.files[0]);
+    });
+
+    // Dropzone on Dashboard
+    el.dashDropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      el.dashDropZone.classList.add('border-indigo-500', 'bg-indigo-950/20');
+    });
+    el.dashDropZone.addEventListener('dragleave', () => {
+      el.dashDropZone.classList.remove('border-indigo-500', 'bg-indigo-950/20');
+    });
+    el.dashDropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      el.dashDropZone.classList.remove('border-indigo-500', 'bg-indigo-950/20');
+      if (e.dataTransfer.files.length > 0) {
+        openFileInViewer(e.dataTransfer.files[0]);
+      }
+    });
+
+    // Search & Filter in Dashboard
+    el.dashSearchInput.addEventListener('input', renderDashboardList);
+    el.dashFilterButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        setDashFilter(btn.dataset.filter);
+      });
+    });
+
+    // Viewer Navigation & Zoom Controls
+    el.prevPageBtn.addEventListener('click', () => changePage(-1));
+    el.nextPageBtn.addEventListener('click', () => changePage(1));
+    
+    // 확대 / 축소 / 100% 리셋 / 화면 맞춤
+    el.zoomInBtn.addEventListener('click', () => { state.isFitWidthMode = false; setScale(state.scale + 0.10); });
+    el.zoomOutBtn.addEventListener('click', () => { state.isFitWidthMode = false; setScale(state.scale - 0.10); });
+    el.zoom100Btn.addEventListener('click', () => { state.isFitWidthMode = false; setScale(1.0); });
+    el.zoomFitWidthBtn.addEventListener('click', zoomFitWidth);
+    el.zoomFitPageBtn.addEventListener('click', zoomFitPage);
+
+    // Ctrl + 마우스 휠 줌 (Figma/Adobe 스타일)
+    el.viewerContainer.addEventListener('wheel', (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        state.isFitWidthMode = false;
+        const delta = e.deltaY < 0 ? 0.10 : -0.10;
+        setScale(state.scale + delta);
+      }
+    }, { passive: false });
+
+    // 창 크기 변경 시 디폴트 너비 맞춤 모드 자동 유지 (화면 회전, 브라우저 리사이즈 대응)
+    window.addEventListener('resize', () => {
+      if (state.currentView === 'viewer' && state.isFitWidthMode) {
+        zoomFitWidth();
+      }
+    });
+
+    // 핀 잠깐 숨기기(Hold) 및 클릭 토글 핸들러 등록
+    function attachPeekEvents(btn) {
+      if (!btn) return;
+      let pressTimer = null;
+      let isHoldingPeek = false;
+
+      const handleStart = () => {
+        isHoldingPeek = false;
+        // 핀이 보이는 상태일 때만 350ms 이상 길게 누르면 임시 엿보기 발동
+        if (!state.markersHidden) {
+          pressTimer = setTimeout(() => {
+            isHoldingPeek = true;
+            state.isPeeking = true;
+            setMarkersVisibility(false, true);
+          }, 350);
+        }
+      };
+
+      const handleEnd = (e) => {
+        clearTimeout(pressTimer);
+        if (isHoldingPeek) {
+          // 길게 누르고 있다가 손을 뗀 경우 -> 원본 복원
+          state.isPeeking = false;
+          setMarkersVisibility(true, false);
+          isHoldingPeek = false;
+        } else {
+          // 일반적인 클릭/탭 (350ms 미만) -> 100% 확실한 토글!
+          toggleMarkersVisibility();
+        }
+      };
+
+      const handleCancel = () => {
+        clearTimeout(pressTimer);
+        if (isHoldingPeek) {
+          state.isPeeking = false;
+          setMarkersVisibility(true, false);
+          isHoldingPeek = false;
+        }
+      };
+
+      btn.addEventListener('mousedown', handleStart);
+      btn.addEventListener('mouseup', handleEnd);
+      btn.addEventListener('mouseleave', handleCancel);
+
+      btn.addEventListener('touchstart', (e) => {
+        handleStart();
+      }, { passive: true });
+
+      btn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        handleEnd(e);
+      });
+
+      btn.addEventListener('touchcancel', handleCancel);
+    }
+
+    attachPeekEvents(el.btnPeekMarkers);
+    attachPeekEvents(el.headerPeekMarkersBtn);
+
+    // 단축키: H 키(Hide / Peek) 누르고 있으면 잠깐 숨김, 손 떼면 복귀!
+    window.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
+      if (state.currentView !== 'viewer') return;
+
+      // H 키 또는 한글 'ㅗ'
+      if (e.code === 'KeyH' || e.key === 'h' || e.key === 'H' || e.key === 'ㅗ') {
+        if (!state.isPeeking) {
+          state.isPeeking = true;
+          setMarkersVisibility(false, true);
+        }
+      }
+
+      // Alt 키 누르면 마커 반투명 고스트 모드 (원본과 번호 동시 확인)
+      if (e.key === 'Alt') {
+        document.body.classList.add('alt-pressed');
+      }
+    });
+
+    window.addEventListener('keyup', (e) => {
+      if (e.code === 'KeyH' || e.key === 'h' || e.key === 'H' || e.key === 'ㅗ') {
+        state.isPeeking = false;
+        if (!state.markersHidden) {
+          setMarkersVisibility(true);
+        }
+      }
+
+      if (e.key === 'Alt') {
+        document.body.classList.remove('alt-pressed');
+      }
+    });
+
+    window.addEventListener('blur', () => {
+      document.body.classList.remove('alt-pressed');
+      if (state.isPeeking) {
+        state.isPeeking = false;
+        if (!state.markersHidden) setMarkersVisibility(true);
+      }
+    });
+
+    // 마우스 패닝(드래그 이동) & 우클릭 메뉴 & 핀/박스 인터랙션 초기화
+    setupInteractionEvents();
+
+    // Modes & Tags
+    if (el.modePanBtn) el.modePanBtn.addEventListener('click', () => setToolMode('pan'));
+    el.modePinBtn.addEventListener('click', () => setToolMode('pin'));
+    el.modeBoxBtn.addEventListener('click', () => setToolMode('box'));
+
+    // 우클릭 빠른 마킹 컨텍스트 메뉴 버튼 이벤트
+    if (el.ctxTagButtons) {
+      el.ctxTagButtons.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (!state.contextMenuCoords) return;
+          const type = btn.dataset.type;
+          state.currentTag = type;
+          el.quickContextMenu.classList.add('hidden');
+          showPopoverAt({
+            page: state.contextMenuCoords.page,
+            type: type,
+            xRatio: state.contextMenuCoords.xRatio,
+            yRatio: state.contextMenuCoords.yRatio,
+            widthRatio: null,
+            heightRatio: null,
+            clientX: state.contextMenuCoords.clientX,
+            clientY: state.contextMenuCoords.clientY
+          });
+        });
+      });
+    }
+
+    if (el.ctxStartBoxBtn) {
+      el.ctxStartBoxBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        el.quickContextMenu.classList.add('hidden');
+        setToolMode('box');
+      });
+    }
+
+    // 문서 클릭 또는 ESC 누를 때 우클릭 컨텍스트 메뉴 닫기
+    window.addEventListener('click', (e) => {
+      if (el.quickContextMenu && !el.quickContextMenu.contains(e.target)) {
+        el.quickContextMenu.classList.add('hidden');
+      }
+    });
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        if (el.quickContextMenu) el.quickContextMenu.classList.add('hidden');
+      }
+    });
+
+    el.tagButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        el.tagButtons.forEach(b => {
+          b.classList.remove('active', 'bg-rose-500/20', 'bg-amber-500/20', 'bg-emerald-500/20', 'bg-blue-500/20', 'border-rose-500/40', 'border-amber-500/40', 'border-emerald-500/40', 'border-blue-500/40');
+          b.classList.add('bg-slate-900', 'text-slate-400', 'border-transparent');
+        });
+        const type = btn.dataset.type;
+        state.currentTag = type;
+        state.currentTag = type;
+        btn.classList.add('active');
+        btn.classList.remove('bg-slate-900', 'text-slate-400', 'border-transparent');
+        if (type === 'error') btn.classList.add('bg-rose-500/20', 'text-rose-300', 'border-rose-500/40');
+        if (type === 'warning') btn.classList.add('bg-amber-500/20', 'text-amber-300', 'border-amber-500/40');
+        if (type === 'typo') btn.classList.add('bg-emerald-500/20', 'text-emerald-300', 'border-emerald-500/40');
+        if (type === 'info') btn.classList.add('bg-blue-500/20', 'text-blue-300', 'border-blue-500/40');
+      });
+    });
+
+    // Comment Popover
+    el.submitCommentBtn.addEventListener('click', savePendingComment);
+    el.cancelPopoverBtn.addEventListener('click', hidePopover);
+    el.commentTextInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        savePendingComment();
+      } else if (e.key === 'Escape') {
+        hidePopover();
+      }
+    });
+
+    // Filter in Viewer
+    el.filterTabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        el.filterTabs.forEach(t => {
+          t.classList.remove('active', 'bg-slate-800', 'text-white');
+          t.classList.add('text-slate-400');
+        });
+        tab.classList.add('active', 'bg-slate-800', 'text-white');
+        tab.classList.remove('text-slate-400');
+        state.filter = tab.dataset.filter;
+        renderCommentsList();
+      });
+    });
+
+    // Utilities
+    el.clearAllBtn.addEventListener('click', () => {
+      if (confirm('현재 문서의 모든 코멘트를 삭제하시겠습니까?')) {
+        state.comments = [];
+        syncToStorage();
+        renderMarkers();
+        renderCommentsList();
+      }
+    });
+
+    el.copySummaryBtn.addEventListener('click', copySummaryToClipboard);
+    el.exportReportBtn.addEventListener('click', () => el.exportModal.classList.remove('hidden'));
+
+    // Google Sheets Integration
+    el.saveGasUrlBtn.addEventListener('click', () => {
+      state.gasUrl = el.gasUrlInput.value.trim();
+      localStorage.setItem('cheese_qe_gas_url', state.gasUrl);
+      el.settingsModal.classList.add('hidden');
+      alert('구글 스프레드시트 Web App URL이 저장되었습니다!');
+      loadDashboardData(true);
+    });
+
+    el.sheetsSaveBtn.addEventListener('click', saveCurrentReviewToSheets);
+
+    // Folder Directory Events
+    if (el.btnCreateFolder) el.btnCreateFolder.addEventListener('click', openCreateFolderModal);
+    if (el.btnSubmitFolderModal) el.btnSubmitFolderModal.addEventListener('click', submitFolderModal);
+    if (el.folderNameInput) el.folderNameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitFolderModal(); });
+    if (el.btnConfirmMove) el.btnConfirmMove.addEventListener('click', confirmMoveReview);
+  }
+
+  // ==========================================
+  // DASHBOARD / PROJECT LIST MANAGEMENT
+  // ==========================================
+  // FOLDER & DIRECTORY MANAGEMENT
+  // ==========================================
+  function loadFolders() {
+    try {
+      state.folders = JSON.parse(localStorage.getItem('cheese_qe_folders') || '[]');
+    } catch(e) {
+      state.folders = [];
+    }
+  }
+
+  function saveFolders() {
+    localStorage.setItem('cheese_qe_folders', JSON.stringify(state.folders));
+  }
+
+  // 브레드크럼(경로 표시줄) 렌더링
+  function renderBreadcrumbs() {
+    if (!el.dashBreadcrumbs) return;
+
+    if (state.currentFolderId === 'root') {
+      el.dashBreadcrumbs.innerHTML = `
+        <span class="flex items-center gap-1.5 text-indigo-400 font-bold cursor-default px-1 py-0.5 rounded">
+          <i data-lucide="home" class="w-3.5 h-3.5"></i>
+          <span>홈 (전체 루트)</span>
+        </span>
+      `;
+      if (el.currentFolderActions) el.currentFolderActions.classList.add('hidden');
+    } else {
+      // 상위 경로 체인 역추적
+      const chain = [];
+      let cur = state.folders.find(f => f.id === state.currentFolderId);
+      while (cur) {
+        chain.unshift(cur);
+        cur = (cur.parentId && cur.parentId !== 'root') ? state.folders.find(f => f.id === cur.parentId) : null;
+      }
+
+      let html = `
+        <button onclick="navigateToFolder('root')" class="flex items-center gap-1 text-slate-400 hover:text-indigo-300 font-medium px-1.5 py-0.5 rounded hover:bg-slate-800 transition">
+          <i data-lucide="home" class="w-3.5 h-3.5"></i>
+          <span>홈</span>
+        </button>
+      `;
+
+      chain.forEach((folder, idx) => {
+        const isLast = idx === chain.length - 1;
+        html += `<i data-lucide="chevron-right" class="w-3.5 h-3.5 text-slate-600 shrink-0"></i>`;
+        if (isLast) {
+          html += `
+            <span class="flex items-center gap-1.5 text-amber-300 font-bold px-2 py-0.5 rounded bg-slate-900 border border-slate-800">
+              <i data-lucide="folder-open" class="w-3.5 h-3.5 text-amber-400"></i>
+              <span>${escapeHtml(folder.name)}</span>
+            </span>
+          `;
+        } else {
+          html += `
+            <button onclick="navigateToFolder('${folder.id}')" class="flex items-center gap-1 text-slate-400 hover:text-amber-300 font-medium px-1.5 py-0.5 rounded hover:bg-slate-800 transition">
+              <i data-lucide="folder" class="w-3.5 h-3.5 text-amber-400/70"></i>
+              <span>${escapeHtml(folder.name)}</span>
+            </button>
+          `;
+        }
+      });
+
+      el.dashBreadcrumbs.innerHTML = html;
+      if (el.currentFolderActions) el.currentFolderActions.classList.remove('hidden');
+    }
+    lucide.createIcons();
+  }
+
+  function navigateToFolder(folderId) {
+    state.currentFolderId = folderId || 'root';
+    renderBreadcrumbs();
+    renderDashboardList();
+  }
+
+  // 폴더 모달 (생성/수정)
+  function openCreateFolderModal() {
+    el.folderModalTitle.innerHTML = `<i data-lucide="folder-plus" class="w-4 h-4 text-indigo-400"></i><span>새 폴더 만들기</span>`;
+    el.folderModalMode.value = 'create';
+    el.folderModalTargetId.value = '';
+    el.folderNameInput.value = '';
+    el.folderModal.classList.remove('hidden');
+    el.folderNameInput.focus();
+    lucide.createIcons();
+  }
+
+  function closeFolderModal() {
+    el.folderModal.classList.add('hidden');
+  }
+
+  function openRenameFolderModal(folderId) {
+    const folder = state.folders.find(f => f.id === folderId);
+    if (!folder) return;
+    el.folderModalTitle.innerHTML = `<i data-lucide="edit-2" class="w-4 h-4 text-amber-400"></i><span>폴더 이름 변경</span>`;
+    el.folderModalMode.value = 'rename';
+    el.folderModalTargetId.value = folderId;
+    el.folderNameInput.value = folder.name;
+    el.folderModal.classList.remove('hidden');
+    el.folderNameInput.focus();
+    lucide.createIcons();
+  }
+
+  function openRenameCurrentFolderModal() {
+    if (state.currentFolderId !== 'root') {
+      openRenameFolderModal(state.currentFolderId);
+    }
+  }
+
+  function submitFolderModal() {
+    const name = el.folderNameInput.value.trim();
+    if (!name) {
+      alert('폴더 이름을 입력하세요.');
+      return;
+    }
+
+    const mode = el.folderModalMode.value;
+    if (mode === 'create') {
+      const newFolder = {
+        id: 'f_' + Date.now(),
+        name: name,
+        parentId: state.currentFolderId || 'root',
+        createdAt: new Date().toISOString().slice(0, 10)
+      };
+      state.folders.push(newFolder);
+    } else if (mode === 'rename') {
+      const targetId = el.folderModalTargetId.value;
+      const folder = state.folders.find(f => f.id === targetId);
+      if (folder) folder.name = name;
+    }
+
+    saveFolders();
+    closeFolderModal();
+    renderBreadcrumbs();
+    renderDashboardList();
+  }
+
+  function deleteFolder(folderId) {
+    const folder = state.folders.find(f => f.id === folderId);
+    if (!folder) return;
+
+    if (!confirm(`"${folder.name}" 폴더를 삭제하시겠습니까?\n(폴더 안의 문서와 하위 폴더는 상위 경로로 안전하게 보존·이동됩니다.)`)) {
+      return;
+    }
+
+    const parent = folder.parentId || 'root';
+
+    // 1. 소속 문서들을 상위 폴더로 이동
+    state.savedReviews.forEach(r => {
+      if (r.folderId === folderId) {
+        r.folderId = parent;
+      }
+    });
+    localStorage.setItem('cheese_qe_projects_index', JSON.stringify(state.savedReviews));
+
+    // 2. 하위 폴더들의 부모를 상위 폴더로 이동
+    state.folders.forEach(f => {
+      if (f.parentId === folderId) {
+        f.parentId = parent;
+      }
+    });
+
+    // 3. 폴더 목록에서 제거
+    state.folders = state.folders.filter(f => f.id !== folderId);
+    saveFolders();
+
+    // 4. 현재 위치가 삭제된 폴더인 경우 상위로 이동
+    if (state.currentFolderId === folderId) {
+      state.currentFolderId = parent;
+    }
+
+    renderBreadcrumbs();
+    renderDashboardList();
+  }
+
+  function deleteCurrentFolder() {
+    if (state.currentFolderId !== 'root') {
+      deleteFolder(state.currentFolderId);
+    }
+  }
+
+  // ==========================================
+  // MOVE DOCUMENT MODAL
+  // ==========================================
+  function openMoveModal(reviewId) {
+    const review = state.savedReviews.find(r => r.id === reviewId);
+    if (!review) return;
+
+    el.moveTargetReviewId.value = reviewId;
+    el.moveModalDocTitle.textContent = `"${review.title}" 문서를 이동할 대상 폴더를 선택하세요:`;
+
+    const currentDocFolderId = review.folderId || 'root';
+
+    let html = `
+      <label class="flex items-center gap-2.5 p-2 rounded-lg hover:bg-slate-800/80 cursor-pointer transition ${currentDocFolderId === 'root' ? 'bg-indigo-950/40 border border-indigo-500/40' : ''}">
+        <input type="radio" name="moveTargetRadio" value="root" class="text-indigo-600 focus:ring-0" ${currentDocFolderId === 'root' ? 'checked' : ''} />
+        <i data-lucide="home" class="w-4 h-4 text-indigo-400"></i>
+        <span class="text-xs text-white font-medium">홈 (전체 루트)</span>
+        ${currentDocFolderId === 'root' ? '<span class="text-[10px] text-indigo-300 ml-auto font-semibold">(현재 위치)</span>' : ''}
+      </label>
+    `;
+
+    function buildFolderOptions(parentId, depth = 1) {
+      const children = state.folders.filter(f => (f.parentId || 'root') === parentId);
+      children.forEach(f => {
+        const isCurrent = currentDocFolderId === f.id;
+        const indent = '&nbsp;&nbsp;'.repeat(depth);
+        html += `
+          <label class="flex items-center gap-2.5 p-2 rounded-lg hover:bg-slate-800/80 cursor-pointer transition ${isCurrent ? 'bg-indigo-950/40 border border-indigo-500/40' : ''}">
+            <span class="text-slate-600 select-none font-mono text-[11px]">${indent}└</span>
+            <input type="radio" name="moveTargetRadio" value="${f.id}" class="text-indigo-600 focus:ring-0" ${isCurrent ? 'checked' : ''} />
+            <i data-lucide="folder" class="w-4 h-4 text-amber-400"></i>
+            <span class="text-xs text-white font-medium">${escapeHtml(f.name)}</span>
+            ${isCurrent ? '<span class="text-[10px] text-indigo-300 ml-auto font-semibold">(현재 위치)</span>' : ''}
+          </label>
+        `;
+        buildFolderOptions(f.id, depth + 1);
+      });
+    }
+
+    buildFolderOptions('root', 1);
+
+    el.moveModalFolderList.innerHTML = html;
+    el.moveFolderModal.classList.remove('hidden');
+    lucide.createIcons();
+  }
+
+  function closeMoveModal() {
+    el.moveFolderModal.classList.add('hidden');
+  }
+
+  function confirmMoveReview() {
+    const reviewId = el.moveTargetReviewId.value;
+    const selectedRadio = document.querySelector('input[name="moveTargetRadio"]:checked');
+    if (!selectedRadio || !reviewId) return;
+
+    const targetFolderId = selectedRadio.value;
+    const review = state.savedReviews.find(r => r.id === reviewId);
+    if (!review) return;
+
+    review.folderId = targetFolderId;
+
+    // 로컬 인덱스 및 상세 저장
+    localStorage.setItem('cheese_qe_projects_index', JSON.stringify(state.savedReviews));
+    const detailKey = `cheese_qe_detail_${reviewId}`;
+    try {
+      const detail = JSON.parse(localStorage.getItem(detailKey) || '{}');
+      detail.folderId = targetFolderId;
+      localStorage.setItem(detailKey, JSON.stringify(detail));
+    } catch(e) {}
+
+    closeMoveModal();
+    renderDashboardList();
+
+    const targetName = targetFolderId === 'root' ? '홈 (루트)' : (state.folders.find(f => f.id === targetFolderId)?.name || '선택 폴더');
+    alert(`"${review.title}" 문서가 [${targetName}] 폴더로 이동되었습니다.`);
+  }
+
+  // ==========================================
+  // DASHBOARD / PROJECT LIST MANAGEMENT
+  // ==========================================
+  async function loadDashboardData(forceFetch = false) {
+    loadFolders();
+
+    // 1. LocalStorage에서 먼저 로드 (초고속 즉시 표시)
+    let localIndex = [];
+    try {
+      localIndex = JSON.parse(localStorage.getItem('cheese_qe_projects_index') || '[]');
+    } catch (e) {
+      localIndex = [];
+    }
+
+    state.savedReviews = localIndex;
+    renderDashboardList();
+    updateStats();
+
+    // 2. Google Sheets API 연동되어 있으면 클라우드에서 최신 목록 가져오기
+    if (state.gasUrl) {
+      try {
+        const res = await fetch(`${state.gasUrl}?mode=list`);
+        const data = await res.json();
+        if (data.ok && Array.isArray(data.list)) {
+          // 기존 로컬 폴더 매핑 보존 병합
+          const merged = data.list.map(r => {
+            const localMatch = state.savedReviews.find(lr => lr.id === r.id);
+            return {
+              ...r,
+              folderId: r.folderId || localMatch?.folderId || 'root'
+            };
+          });
+          state.savedReviews = merged;
+          localStorage.setItem('cheese_qe_projects_index', JSON.stringify(merged));
+          renderDashboardList();
+          updateStats();
+        }
+      } catch (err) {
+        console.warn('Google Sheets fetch failed, using local index:', err);
+      }
+    }
+  }
+
+  // 특정 폴더(및 재귀 하위 폴더)에 속한 모든 문서의 지적사항 건수 및 해결 건수(n/n) 집계
+  function getFolderStats(folderId) {
+    const subFolderIds = [];
+    function collectSubFolders(parentId) {
+      state.folders.forEach(f => {
+        if (f.parentId === parentId) {
+          subFolderIds.push(f.id);
+          collectSubFolders(f.id);
+        }
+      });
+    }
+    subFolderIds.push(folderId);
+    collectSubFolders(folderId);
+
+    const docs = state.savedReviews.filter(r => subFolderIds.includes(r.folderId || 'root'));
+    const docCount = docs.length;
+    const totalComments = docs.reduce((sum, r) => sum + (r.totalComments || 0), 0);
+    const resolvedCount = docs.reduce((sum, r) => sum + (r.resolvedCount || 0), 0);
+    const openIssues = Math.max(0, totalComments - resolvedCount);
+    const percent = totalComments > 0 ? Math.round((resolvedCount / totalComments) * 100) : 0;
+
+    return { docCount, totalComments, resolvedCount, openIssues, percent };
+  }
+
+  // 상단 요약 통계 카드 & 필터 탭 클릭 시 대시보드 목록 즉시 필터링
+  function setDashFilter(filterType) {
+    state.dashFilter = filterType;
+
+    // 1. 상단 4대 통계 카드 활성 하이라이트 동기화
+    const cards = [
+      { id: 'statCardAll', filter: 'all', border: 'border-blue-500', ring: 'ring-blue-500/40', bg: 'bg-blue-950/20' },
+      { id: 'statCardActive', filter: 'in_progress', border: 'border-amber-500', ring: 'ring-amber-500/40', bg: 'bg-amber-950/20' },
+      { id: 'statCardCompleted', filter: 'completed', border: 'border-emerald-500', ring: 'ring-emerald-500/40', bg: 'bg-emerald-950/20' },
+      { id: 'statCardOpen', filter: 'unresolved_issues', border: 'border-rose-500', ring: 'ring-rose-500/40', bg: 'bg-rose-950/20' }
+    ];
+
+    cards.forEach(c => {
+      const cardEl = document.getElementById(c.id);
+      if (!cardEl) return;
+      if (c.filter === filterType) {
+        cardEl.classList.add(c.border, 'ring-2', c.ring, c.bg);
+        cardEl.classList.remove('border-slate-800', 'bg-slate-900/80');
+      } else {
+        cardEl.classList.remove(c.border, 'ring-2', c.ring, c.bg);
+        cardEl.classList.add('border-slate-800', 'bg-slate-900/80');
+      }
+    });
+
+    // 2. 우측 상단 필터 탭 버튼 동기화
+    if (el.dashFilterButtons) {
+      el.dashFilterButtons.forEach(btn => {
+        if (btn.dataset.filter === filterType) {
+          btn.classList.add('active', 'bg-slate-800', 'text-white');
+          btn.classList.remove('text-slate-400');
+        } else {
+          btn.classList.remove('active', 'bg-slate-800', 'text-white');
+          btn.classList.add('text-slate-400');
+        }
+      });
+    }
+
+    // 3. 필터 안내 뱃지 업데이트
+    if (el.dashActiveFilterBadge) {
+      if (filterType === 'all') {
+        el.dashActiveFilterBadge.classList.add('hidden');
+      } else {
+        el.dashActiveFilterBadge.classList.remove('hidden');
+        let label = '';
+        if (filterType === 'in_progress') label = '진행 중인 문서만 보기';
+        else if (filterType === 'completed') label = '검수 완료된 문서만 보기';
+        else if (filterType === 'unresolved_issues') label = '미해결 지적사항 있는 문서만 보기';
+        el.dashActiveFilterBadge.textContent = label;
+      }
+    }
+
+    renderDashboardList();
+  }
+  window.setDashFilter = setDashFilter;
+
+  function updateStats() {
+    const total = state.savedReviews.length;
+    const completed = state.savedReviews.filter(r => r.status === 'completed' || (r.totalComments > 0 && r.resolvedCount === r.totalComments)).length;
+    const active = total - completed;
+    const openIssues = state.savedReviews.reduce((sum, r) => sum + Math.max(0, (r.totalComments || 0) - (r.resolvedCount || 0)), 0);
+
+    el.statTotalDocs.textContent = total;
+    el.statActiveDocs.textContent = active;
+    el.statCompletedDocs.textContent = completed;
+    el.statOpenIssues.textContent = openIssues;
+
+    // 현재 활성화된 카드 테두리 유지
+    setDashFilter(state.dashFilter || 'all');
+  }
+
+  // ==========================================
+  // DASHBOARD LIST (게시판 형태 테이블 렌더러)
+  // ==========================================
+  function renderDashboardList() {
+    renderBreadcrumbs();
+    const q = (el.dashSearchInput.value || '').trim().toLowerCase();
+    const filter = state.dashFilter || 'all';
+
+    // 1. 하위 폴더 필터링
+    let childFolders = [];
+    if (q) {
+      childFolders = state.folders.filter(f => (f.name || '').toLowerCase().includes(q));
+    } else {
+      childFolders = state.folders.filter(f => (f.parentId || 'root') === state.currentFolderId);
+    }
+
+    // 2. 검수 문서 필터링
+    let filteredReviews = state.savedReviews.filter(r => {
+      const matchQ = (r.title || '').toLowerCase().includes(q);
+      const isDone = r.status === 'completed' || (r.totalComments > 0 && r.resolvedCount === r.totalComments);
+      const openCount = Math.max(0, (r.totalComments || 0) - (r.resolvedCount || 0));
+      const inCurrentFolder = q ? true : ((r.folderId || 'root') === state.currentFolderId);
+
+      if (!inCurrentFolder) return false;
+      if (!matchQ) return false;
+
+      if (filter === 'in_progress') return !isDone;
+      if (filter === 'completed') return isDone;
+      if (filter === 'unresolved_issues') return openCount > 0;
+      return true;
+    });
+
+    if (el.dashTotalItemCount) {
+      el.dashTotalItemCount.textContent = childFolders.length + filteredReviews.length;
+    }
+
+    if (!el.dashTableBody) return;
+
+    let rowsHtml = '';
+    let mobileHtml = '';
+    const hasParent = state.currentFolderId !== 'root' && !q;
+
+    // A. 상위 폴더 바로가기 (현재 위치가 루트가 아닐 때 최상단 표시)
+    if (hasParent) {
+      const curFolder = state.folders.find(f => f.id === state.currentFolderId);
+      const parentId = curFolder ? (curFolder.parentId || 'root') : 'root';
+      
+      // 1) 데스크탑 테이블 행
+      rowsHtml += `
+        <tr onclick="navigateToFolder('${parentId}')" class="hover:bg-slate-800/60 transition cursor-pointer group bg-slate-950/40 select-none">
+          <td class="py-3 px-4 text-center whitespace-nowrap">
+            <div class="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center mx-auto group-hover:scale-110 transition">
+              <i data-lucide="corner-left-up" class="w-4 h-4"></i>
+            </div>
+          </td>
+          <td class="py-3 px-4 min-w-[220px]">
+            <div class="flex items-center gap-2">
+              <span class="font-bold text-slate-300 group-hover:text-amber-300 transition text-sm">..</span>
+              <span class="text-xs text-slate-500 font-medium">(상위 폴더로 이동)</span>
+            </div>
+          </td>
+          <td class="py-3 px-4 text-center whitespace-nowrap">
+            <span class="text-[10px] px-2 py-0.5 rounded-full font-medium text-slate-500 bg-slate-900 border border-slate-800">상위 이동</span>
+          </td>
+          <td class="py-3 px-4 text-slate-600 text-xs whitespace-nowrap">-</td>
+          <td class="py-3 px-4 text-slate-600 text-xs whitespace-nowrap">-</td>
+          <td class="py-3 px-4 text-slate-600 text-xs whitespace-nowrap">-</td>
+          <td class="py-3 px-4 text-right pr-5 whitespace-nowrap" onclick="event.stopPropagation()">
+            <button onclick="navigateToFolder('${parentId}')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold transition inline-flex items-center gap-1 shadow-sm">
+              <i data-lucide="corner-left-up" class="w-3 h-3 text-amber-400"></i>
+              <span>상위로</span>
+            </button>
+          </td>
+        </tr>
+      `;
+
+      // 2) 모바일 전용 카드
+      mobileHtml += `
+        <div onclick="navigateToFolder('${parentId}')" class="p-3 rounded-xl bg-slate-950/60 border border-slate-800 hover:bg-slate-800/80 active:bg-slate-800 flex items-center justify-between cursor-pointer transition select-none">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <div class="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center shrink-0">
+              <i data-lucide="corner-left-up" class="w-4 h-4"></i>
+            </div>
+            <div class="min-w-0">
+              <div class="font-bold text-slate-200 text-xs flex items-center gap-1.5">
+                <span class="text-amber-400 text-sm">..</span>
+                <span class="text-slate-400 text-[11px] font-normal">상위 폴더로 이동</span>
+              </div>
+            </div>
+          </div>
+          <span class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 text-[11px] font-medium flex items-center gap-1 shrink-0 border border-slate-700/60">
+            <i data-lucide="corner-left-up" class="w-3 h-3 text-amber-400"></i>
+            <span>상위로</span>
+          </span>
+        </div>
+      `;
+    }
+
+    // B. 하위 폴더 행들 (데스크탑 + 모바일)
+    childFolders.forEach(f => {
+      const fStats = getFolderStats(f.id);
+
+      // 1) 데스크탑 테이블 행
+      rowsHtml += `
+        <tr onclick="navigateToFolder('${f.id}')" class="hover:bg-slate-800/60 transition cursor-pointer group select-none">
+          <td class="py-3 px-4 text-center whitespace-nowrap">
+            <div class="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center mx-auto group-hover:scale-110 transition">
+              <i data-lucide="folder" class="w-4 h-4"></i>
+            </div>
+          </td>
+          <td class="py-3 px-4 min-w-[220px]">
+            <div class="flex items-center gap-2">
+              <h4 class="font-bold text-white group-hover:text-amber-300 transition text-xs truncate max-w-[280px]" title="${escapeHtml(f.name)}">
+                ${escapeHtml(f.name)}
+              </h4>
+            </div>
+            <div class="text-[11px] text-slate-400 mt-0.5 flex items-center gap-2">
+              <span class="text-amber-400/90 font-medium whitespace-nowrap">📁 하위 폴더</span>
+              <span>•</span>
+              <span class="whitespace-nowrap">문서 ${fStats.docCount}건</span>
+              ${fStats.openIssues > 0 ? `<span class="text-rose-400 font-semibold whitespace-nowrap">• 미해결 지적 ${fStats.openIssues}건</span>` : ''}
+            </div>
+          </td>
+          <td class="py-3 px-4 text-center whitespace-nowrap">
+            ${fStats.docCount === 0 ? `
+              <span class="text-[10px] px-2 py-0.5 rounded-full font-medium text-slate-500 bg-slate-950 border border-slate-800">비어 있음</span>
+            ` : (fStats.openIssues === 0 && fStats.totalComments > 0 ? `
+              <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">완료됨</span>
+            ` : `
+              <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">진행 중</span>
+            `)}
+          </td>
+          <td class="py-3 px-4 whitespace-nowrap">
+            ${fStats.totalComments > 0 ? `
+              <div class="space-y-1 min-w-[180px] max-w-[220px]">
+                <div class="flex items-center justify-between text-[11px]">
+                  <span class="font-bold text-slate-200">해결 ${fStats.resolvedCount} / 총 ${fStats.totalComments}건</span>
+                  <span class="text-[10px] font-semibold text-amber-400">${fStats.percent}%</span>
+                </div>
+                <div class="w-full bg-slate-950 rounded-full h-1.5 overflow-hidden border border-slate-800/80">
+                  <div class="h-full rounded-full transition-all ${fStats.openIssues === 0 ? 'bg-emerald-500' : 'bg-amber-500'}" style="width: ${fStats.percent}%"></div>
+                </div>
+                <div class="text-[10px] pt-0.5 flex items-center gap-1">
+                  ${fStats.openIssues > 0 ? `
+                    <span class="px-1.5 py-0.2 rounded font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">미해결 ${fStats.openIssues}건</span>
+                  ` : `
+                    <span class="px-1.5 py-0.2 rounded font-semibold bg-emerald-500/20 text-emerald-300">모두 해결</span>
+                  `}
+                </div>
+              </div>
+            ` : `
+              <span class="text-slate-500 text-[11px]">지적사항 없음</span>
+            `}
+          </td>
+          <td class="py-3 px-4 text-slate-400 text-[11px] whitespace-nowrap">
+            <span class="px-2 py-0.5 rounded bg-slate-950 text-slate-400 border border-slate-800 text-[10px]">디렉토리</span>
+          </td>
+          <td class="py-3 px-4 text-slate-400 text-[11px] whitespace-nowrap">
+            ${f.createdAt || '-'}
+          </td>
+          <td class="py-3 px-4 text-right pr-5 whitespace-nowrap" onclick="event.stopPropagation()">
+            <div class="flex items-center justify-end gap-1">
+              <button onclick="openRenameFolderModal('${f.id}')" class="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-700/80 transition" title="폴더 이름 변경">
+                <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
+              </button>
+              <button onclick="deleteFolder('${f.id}')" class="p-1.5 text-slate-400 hover:text-rose-400 rounded-lg hover:bg-slate-700/80 transition" title="폴더 삭제">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+          </td>
+        </tr>
+      `;
+
+      // 2) 모바일 전용 카드
+      mobileHtml += `
+        <div onclick="navigateToFolder('${f.id}')" class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 hover:border-slate-700 active:bg-slate-800 transition flex flex-col gap-2.5 cursor-pointer select-none">
+          <div class="flex items-start justify-between gap-2">
+            <div class="flex items-center gap-2.5 min-w-0">
+              <div class="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center shrink-0">
+                <i data-lucide="folder" class="w-4 h-4"></i>
+              </div>
+              <div class="min-w-0">
+                <h4 class="text-xs font-bold text-white truncate" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</h4>
+                <span class="text-[10px] text-slate-400 font-medium">📁 하위 폴더 • 문서 ${fStats.docCount}건</span>
+              </div>
+            </div>
+            <div class="shrink-0">
+              ${fStats.docCount === 0 ? `
+                <span class="text-[10px] px-2 py-0.5 rounded-full font-medium text-slate-500 bg-slate-950 border border-slate-800">비어 있음</span>
+              ` : (fStats.openIssues === 0 && fStats.totalComments > 0 ? `
+                <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">완료됨</span>
+              ` : `
+                <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">진행 중</span>
+              `)}
+            </div>
+          </div>
+
+          ${fStats.totalComments > 0 ? `
+            <div class="bg-slate-950/70 p-2.5 rounded-lg border border-slate-800/80 space-y-1.5">
+              <div class="flex items-center justify-between text-[11px]">
+                <span class="text-slate-300 font-bold">지적사항: 해결 ${fStats.resolvedCount} / 총 ${fStats.totalComments}건</span>
+                <span class="text-amber-400 font-semibold text-[10px]">${fStats.percent}%</span>
+              </div>
+              <div class="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden border border-slate-800">
+                <div class="h-full rounded-full transition-all ${fStats.openIssues === 0 ? 'bg-emerald-500' : 'bg-amber-500'}" style="width: ${fStats.percent}%"></div>
+              </div>
+              <div class="flex items-center justify-between text-[10px] pt-0.5">
+                ${fStats.openIssues > 0 ? `
+                  <span class="text-rose-400 font-bold">미해결 지적 ${fStats.openIssues}건</span>
+                ` : `
+                  <span class="text-emerald-400 font-medium">모든 지적 해결됨</span>
+                `}
+                <span class="text-slate-500">${f.createdAt || '-'}</span>
+              </div>
+            </div>
+          ` : `
+            <div class="flex items-center justify-between text-[10px] text-slate-500 px-0.5">
+              <span>지적사항 없음</span>
+              <span>${f.createdAt || '-'}</span>
+            </div>
+          `}
+
+          <div class="flex items-center justify-end gap-1.5 pt-1 border-t border-slate-800/60" onclick="event.stopPropagation()">
+            <button onclick="openRenameFolderModal('${f.id}')" class="px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-medium flex items-center gap-1 transition">
+              <i data-lucide="edit-2" class="w-3 h-3"></i>
+              <span>이름변경</span>
+            </button>
+            <button onclick="deleteFolder('${f.id}')" class="px-2.5 py-1 rounded-md bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-[10px] font-medium border border-rose-500/20 flex items-center gap-1 transition">
+              <i data-lucide="trash-2" class="w-3 h-3"></i>
+              <span>삭제</span>
+            </button>
+          </div>
+        </div>
+      `;
+    });
+
+    // C. 검수 문서 행들 (데스크탑 + 모바일)
+    filteredReviews.forEach(r => {
+      const isDone = r.status === 'completed' || (r.totalComments > 0 && r.resolvedCount === r.totalComments);
+      const totalComments = r.totalComments || 0;
+      const resolvedCount = r.resolvedCount || 0;
+      const openCount = Math.max(0, totalComments - resolvedCount);
+      const percent = totalComments > 0 ? Math.round((resolvedCount / totalComments) * 100) : 0;
+      const folderName = r.folderId && r.folderId !== 'root' ? (state.folders.find(f => f.id === r.folderId)?.name || '하위 폴더') : '홈';
+
+      // 1) 데스크탑 테이블 행
+      rowsHtml += `
+        <tr onclick="resumeReviewProject('${r.id}')" class="hover:bg-slate-800/60 transition cursor-pointer group select-none">
+          <td class="py-3 px-4 text-center whitespace-nowrap">
+            <div class="w-8 h-8 rounded-lg ${isDone ? 'bg-emerald-500/10 text-emerald-400' : 'bg-indigo-500/10 text-indigo-400'} flex items-center justify-center mx-auto group-hover:scale-110 transition">
+              <i data-lucide="${isDone ? 'check-circle' : 'file-text'}" class="w-4 h-4"></i>
+            </div>
+          </td>
+          <td class="py-3 px-4 min-w-[220px]">
+            <h4 class="font-bold text-white group-hover:text-indigo-300 transition text-xs truncate max-w-[280px]" title="${escapeHtml(r.title)}">
+              ${escapeHtml(r.title)}
+            </h4>
+            <div class="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1.5">
+              <span class="text-indigo-400/90 font-medium whitespace-nowrap">📁 ${escapeHtml(folderName)}</span>
+              <span>•</span>
+              <span class="whitespace-nowrap">${r.pageCount || 1}p</span>
+            </div>
+          </td>
+          <td class="py-3 px-4 text-center whitespace-nowrap">
+            <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold shrink-0 ${isDone ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'}">
+              ${isDone ? '검수 완료' : '진행 중'}
+            </span>
+          </td>
+          <td class="py-3 px-4 whitespace-nowrap">
+            ${totalComments > 0 ? `
+              <div class="space-y-1 min-w-[180px] max-w-[220px]">
+                <div class="flex items-center justify-between text-[11px]">
+                  <span class="font-bold ${isDone ? 'text-emerald-400' : 'text-slate-200'}">해결 ${resolvedCount} / 총 ${totalComments}건</span>
+                  <span class="text-[10px] font-semibold ${isDone ? 'text-emerald-400' : 'text-indigo-300'}">${percent}%</span>
+                </div>
+                <div class="w-full bg-slate-950 rounded-full h-1.5 overflow-hidden border border-slate-800/80">
+                  <div class="h-full rounded-full transition-all ${isDone ? 'bg-emerald-500' : 'bg-indigo-500'}" style="width: ${percent}%"></div>
+                </div>
+                <div class="text-[10px] pt-0.5 flex items-center gap-1">
+                  ${openCount > 0 ? `
+                    <span class="px-1.5 py-0.2 rounded font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">미해결 ${openCount}건</span>
+                  ` : `
+                    <span class="px-1.5 py-0.2 rounded font-semibold bg-emerald-500/20 text-emerald-300">모두 해결</span>
+                  `}
+                </div>
+              </div>
+            ` : `
+              <span class="text-slate-500 text-[11px]">지적사항 없음 (0/0)</span>
+            `}
+          </td>
+          <td class="py-3 px-4 text-slate-300 text-[11px] truncate max-w-[120px] whitespace-nowrap" title="${escapeHtml(r.author || '검수자')}">
+            ${escapeHtml(r.author || '관리자')}
+          </td>
+          <td class="py-3 px-4 text-slate-400 text-[11px] whitespace-nowrap">
+            ${r.updatedAt || '최근'}
+          </td>
+          <td class="py-3 px-4 text-right pr-5 whitespace-nowrap" onclick="event.stopPropagation()">
+            <div class="flex items-center justify-end gap-1.5">
+              <button onclick="openMoveModal('${r.id}')" class="p-1.5 text-slate-400 hover:text-amber-400 rounded-lg hover:bg-slate-700/80 transition" title="다른 폴더로 이동">
+                <i data-lucide="folder-input" class="w-3.5 h-3.5"></i>
+              </button>
+              <button onclick="deleteReviewProject('${r.id}', '${escapeHtml(r.title)}')" class="p-1.5 text-slate-400 hover:text-rose-400 rounded-lg hover:bg-slate-700/80 transition" title="삭제">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+              </button>
+              <button onclick="resumeReviewProject('${r.id}')" class="px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs shadow transition inline-flex items-center gap-1">
+                <span>검수 열기</span>
+                <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+          </td>
+        </tr>
+      `;
+
+      // 2) 모바일 전용 카드
+      mobileHtml += `
+        <div onclick="resumeReviewProject('${r.id}')" class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 hover:border-slate-700 active:bg-slate-800 transition flex flex-col gap-2.5 cursor-pointer select-none">
+          <div class="flex items-start justify-between gap-2">
+            <div class="flex items-center gap-2.5 min-w-0">
+              <div class="w-8 h-8 rounded-lg ${isDone ? 'bg-emerald-500/10 text-emerald-400' : 'bg-indigo-500/10 text-indigo-400'} flex items-center justify-center shrink-0">
+                <i data-lucide="${isDone ? 'check-circle' : 'file-text'}" class="w-4 h-4"></i>
+              </div>
+              <div class="min-w-0">
+                <h4 class="text-xs font-bold text-white truncate" title="${escapeHtml(r.title)}">${escapeHtml(r.title)}</h4>
+                <div class="text-[10px] text-slate-400 font-medium flex items-center gap-1.5 mt-0.5">
+                  <span class="text-indigo-400/90">📁 ${escapeHtml(folderName)}</span>
+                  <span>•</span>
+                  <span>${r.pageCount || 1}p</span>
+                  <span>•</span>
+                  <span>${escapeHtml(r.author || '관리자')}</span>
+                </div>
+              </div>
+            </div>
+            <div class="shrink-0">
+              <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold ${isDone ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'}">
+                ${isDone ? '검수 완료' : '진행 중'}
+              </span>
+            </div>
+          </div>
+
+          <div class="bg-slate-950/70 p-2.5 rounded-lg border border-slate-800/80 space-y-1.5">
+            ${totalComments > 0 ? `
+              <div class="flex items-center justify-between text-[11px]">
+                <span class="font-bold ${isDone ? 'text-emerald-400' : 'text-slate-200'}">해결 ${resolvedCount} / 총 ${totalComments}건</span>
+                <span class="text-[10px] font-semibold ${isDone ? 'text-emerald-400' : 'text-indigo-300'}">${percent}%</span>
+              </div>
+              <div class="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden border border-slate-800">
+                <div class="h-full rounded-full transition-all ${isDone ? 'bg-emerald-500' : 'bg-indigo-500'}" style="width: ${percent}%"></div>
+              </div>
+              <div class="flex items-center justify-between text-[10px] pt-0.5">
+                ${openCount > 0 ? `
+                  <span class="text-rose-400 font-bold flex items-center gap-1">
+                    <i data-lucide="alert-circle" class="w-3 h-3"></i>
+                    미해결 지적 ${openCount}건 남아있음
+                  </span>
+                ` : `
+                  <span class="text-emerald-400 font-medium flex items-center gap-1">
+                    <i data-lucide="check" class="w-3 h-3"></i>
+                    모든 지적 해결 완료
+                  </span>
+                `}
+                <span class="text-slate-500">${r.updatedAt || '최근'}</span>
+              </div>
+            ` : `
+              <div class="flex items-center justify-between text-[11px] text-slate-400">
+                <span>지적사항 없음 (0/0)</span>
+                <span class="text-slate-500 text-[10px]">${r.updatedAt || '최근'}</span>
+              </div>
+            `}
+          </div>
+
+          <div class="flex items-center justify-end gap-1.5 pt-1 border-t border-slate-800/60" onclick="event.stopPropagation()">
+            <button onclick="openMoveModal('${r.id}')" class="px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-medium flex items-center gap-1 transition">
+              <i data-lucide="folder-input" class="w-3 h-3"></i>
+              <span>이동</span>
+            </button>
+            <button onclick="deleteReviewProject('${r.id}', '${escapeHtml(r.title)}')" class="px-2.5 py-1 rounded-md bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-[10px] font-medium border border-rose-500/20 flex items-center gap-1 transition">
+              <i data-lucide="trash-2" class="w-3 h-3"></i>
+              <span>삭제</span>
+            </button>
+            <button onclick="resumeReviewProject('${r.id}')" class="px-3 py-1 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-semibold shadow-sm flex items-center gap-1 transition">
+              <span>검수 열기</span>
+              <i data-lucide="arrow-right" class="w-3 h-3"></i>
+            </button>
+          </div>
+        </div>
+      `;
+    });
+
+    el.dashTableBody.innerHTML = rowsHtml;
+    if (el.dashMobileList) el.dashMobileList.innerHTML = mobileHtml;
+
+    // 빈 상태 표시 여부
+    if (el.dashEmptyState) {
+      if (!hasParent && childFolders.length === 0 && filteredReviews.length === 0) {
+        el.dashEmptyState.classList.remove('hidden');
+        if (q) {
+          el.dashEmptyTitle.textContent = `"${q}" 검색 결과가 없습니다`;
+          el.dashEmptyDesc.textContent = '다른 검색어로 검색해보세요.';
+        } else if (filter !== 'all') {
+          el.dashEmptyTitle.textContent = '조건에 일치하는 문서가 없습니다';
+          el.dashEmptyDesc.textContent = '상단의 다른 필터 카드를 클릭하거나 "전체"를 선택하세요.';
+        } else {
+          el.dashEmptyTitle.textContent = '저장된 항목이 없습니다';
+          el.dashEmptyDesc.textContent = '상단에서 새 문서를 드래그하여 업로드하거나 "새 폴더"를 생성하세요.';
+        }
+      } else {
+        el.dashEmptyState.classList.add('hidden');
+      }
+    }
+
+    lucide.createIcons();
+  }
+
+  // 삭제 프로젝트
+  async function deleteReviewProject(reviewId, title) {
+    if (!confirm(`"${title}" 검수 프로젝트를 삭제하시겠습니까?`)) return;
+
+    // 로컬 인덱스 및 상세 제거
+    state.savedReviews = state.savedReviews.filter(r => r.id !== reviewId);
+    localStorage.setItem('cheese_qe_projects_index', JSON.stringify(state.savedReviews));
+    localStorage.removeItem(`cheese_qe_detail_${reviewId}`);
+
+    // IndexedDB 파일 삭제
+    await deleteFileFromDB(reviewId);
+
+    renderDashboardList();
+    updateStats();
+
+    // 구글 시트에서 삭제
+    if (state.gasUrl) {
+      try {
+        await fetch(state.gasUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ mode: 'delete', id: reviewId })
+        });
+      } catch (err) {
+        console.warn('Google Sheets delete failed:', err);
+      }
+    }
+  }
+
+  // 기존 프로젝트 이어하기 (실제 원본 파일 복원!)
+  async function resumeReviewProject(reviewId) {
+    // 1. 로컬 스토리지에서 먼저 확인
+    const localDetail = localStorage.getItem(`cheese_qe_detail_${reviewId}`);
+    if (localDetail) {
+      try {
+        const parsed = JSON.parse(localDetail);
+        state.reviewId = parsed.id || reviewId;
+        state.docName = parsed.title || '검수 문서';
+        state.comments = parsed.comments || [];
+        state.totalPages = parsed.pageCount || 1;
+        state.currentPage = 1;
+      } catch (e) {
+        console.warn(e);
+      }
+    }
+
+    // 2. 구글 시트에서 상세 가져오기 시도
+    if (state.gasUrl) {
+      try {
+        const res = await fetch(`${state.gasUrl}?mode=get&id=${encodeURIComponent(reviewId)}`);
+        const data = await res.json();
+        if (data.ok && data.review) {
+          state.reviewId = data.review.id;
+          state.docName = data.review.title;
+          state.comments = data.review.comments || [];
+          state.totalPages = data.review.pageCount || 1;
+          state.currentPage = 1;
+        }
+      } catch (err) {
+        console.warn('Sheets fetch error, fallback to local', err);
+      }
+    }
+
+    // 문서 타이틀 반영
+    el.docTitle.textContent = state.docName;
+    renderCommentsList();
+
+    // 뷰어로 전환
+    switchView('viewer');
+
+    // 3. IndexedDB에서 저장된 실제 원본 파일(이미지 또는 PDF) 복원!
+    const fileRecord = await getFileFromDB(reviewId);
+
+    if (fileRecord && fileRecord.docType === 'image' && fileRecord.dataUrl) {
+      // 실제 원본 이미지 복원!
+      state.docType = 'image';
+      state.totalPages = 1;
+      state.currentPage = 1;
+      el.totalPageNum.textContent = 1;
+      el.currentPageNum.textContent = 1;
+      el.prevPageBtn.disabled = true;
+      el.nextPageBtn.disabled = true;
+      el.pdfCanvas.classList.add('hidden');
+      el.docImage.classList.remove('hidden');
+
+      el.docImage.onload = () => {
+        state.naturalWidth = el.docImage.naturalWidth;
+        state.naturalHeight = el.docImage.naturalHeight;
+        el.stageWrapper.style.width = state.naturalWidth + 'px';
+        el.stageWrapper.style.height = state.naturalHeight + 'px';
+        zoomFitWidth();
+        renderMarkers();
+      };
+      el.docImage.src = fileRecord.dataUrl;
+
+    } else if (fileRecord && fileRecord.docType === 'pdf' && fileRecord.fileData) {
+      // 실제 원본 PDF 복원!
+      state.docType = 'pdf';
+      el.pdfCanvas.classList.remove('hidden');
+      el.docImage.classList.add('hidden');
+
+      const typedarray = new Uint8Array(fileRecord.fileData);
+      pdfjsLib.getDocument(typedarray).promise.then(pdf => {
+        state.pdfDoc = pdf;
+        state.totalPages = pdf.numPages;
+        state.currentPage = 1;
+        el.totalPageNum.textContent = state.totalPages;
+        state.scale = null;
+        renderPdfPage();
+      });
+
+    } else {
+      // IndexedDB에 실제 파일이 없는 경우 (샘플 시안이거나 브라우저 캐시 삭제됨)
+      generateMockupCanvas(state.docName);
+    }
+  }
+
+  // ==========================================
+  // VIEWER & DOCUMENT WORKSPACE
+  // ==========================================
+  function openFileInViewer(file) {
+    state.docName = file.name;
+    state.scale = null; // 새 파일 오픈 시 너비 맞춤으로 초기화
+    const isNew = state.currentView === 'dashboard' || !state.reviewId;
+    if (isNew) {
+      state.reviewId = 'REV_' + Date.now();
+      state.comments = [];
+      state.currentPage = 1;
+    }
+
+    el.docTitle.textContent = file.name;
+    switchView('viewer');
+
+    if (file.type === 'application/pdf') {
+      state.docType = 'pdf';
+      el.pdfCanvas.classList.remove('hidden');
+      el.docImage.classList.add('hidden');
+      const reader = new FileReader();
+      reader.onload = async function() {
+        const typedarray = new Uint8Array(this.result);
+
+        // IndexedDB에 실제 PDF 파일 영구 저장!
+        await saveFileToDB(state.reviewId, {
+          docType: 'pdf',
+          fileName: file.name,
+          fileData: this.result
+        });
+
+        pdfjsLib.getDocument(typedarray).promise.then(pdf => {
+          state.pdfDoc = pdf;
+          state.totalPages = pdf.numPages;
+          state.currentPage = 1;
+          el.totalPageNum.textContent = state.totalPages;
+          renderPdfPage();
+        });
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      state.docType = 'image';
+      state.totalPages = 1;
+      state.currentPage = 1;
+      el.totalPageNum.textContent = 1;
+      el.currentPageNum.textContent = 1;
+      el.prevPageBtn.disabled = true;
+      el.nextPageBtn.disabled = true;
+      el.pdfCanvas.classList.add('hidden');
+      el.docImage.classList.remove('hidden');
+
+      const reader = new FileReader();
+      reader.onload = async function(e) {
+        const dataUrl = e.target.result;
+
+        // IndexedDB에 실제 이미지 파일 영구 저장!
+        await saveFileToDB(state.reviewId, {
+          docType: 'image',
+          fileName: file.name,
+          dataUrl: dataUrl
+        });
+
+        el.docImage.onload = () => {
+          state.naturalWidth = el.docImage.naturalWidth;
+          state.naturalHeight = el.docImage.naturalHeight;
+          el.stageWrapper.style.width = state.naturalWidth + 'px';
+          el.stageWrapper.style.height = state.naturalHeight + 'px';
+          zoomFitWidth();
+          renderMarkers();
+        };
+        el.docImage.src = dataUrl;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    syncToStorage();
+    renderCommentsList();
+  }
+
+  function openSampleInViewer() {
+    state.docName = '샘플_랜딩페이지_시안_v1.png';
+    state.reviewId = 'REV_SAMPLE_001';
+    state.docType = 'image';
+    state.totalPages = 1;
+    state.currentPage = 1;
+    state.scale = null; // 디폴트 너비 맞춤 초기화
+    el.docTitle.textContent = state.docName;
+    el.totalPageNum.textContent = 1;
+    el.currentPageNum.textContent = 1;
+
+    state.comments = [
+      {
+        id: 1,
+        page: 1,
+        type: 'error',
+        xRatio: 0.50,
+        yRatio: 0.19,
+        widthRatio: null,
+        heightRatio: null,
+        text: '메인 헤드라인 폰트 사이즈를 48px로 확대하고 볼드 처리해주세요.',
+        resolved: false,
+        createdAt: '2026-09-21 19:15'
+      },
+      {
+        id: 2,
+        page: 1,
+        type: 'typo',
+        xRatio: 0.50,
+        yRatio: 0.23,
+        widthRatio: null,
+        heightRatio: null,
+        text: '영문 대소문자 확인: "Cheese Timeline" 표기 일관성 유지',
+        resolved: true,
+        createdAt: '2026-09-21 19:18'
+      },
+      {
+        id: 3,
+        page: 1,
+        type: 'warning',
+        xRatio: 0.10,
+        yRatio: 0.34,
+        widthRatio: 0.80,
+        heightRatio: 0.33,
+        text: '시안 그래픽 영역에 실제 고해상도 연표 캡처본을 배치해야 합니다.',
+        resolved: false,
+        createdAt: '2026-09-21 19:22'
+      }
+    ];
+
+    switchView('viewer');
+    generateMockupCanvas(state.docName);
+    syncToStorage();
+    renderCommentsList();
+  }
+
+  function generateMockupCanvas(title) {
+    el.pdfCanvas.classList.add('hidden');
+    el.docImage.classList.remove('hidden');
+
+    const sCanvas = document.createElement('canvas');
+    sCanvas.width = 1000;
+    sCanvas.height = 1350;
+    const ctx = sCanvas.getContext('2d');
+
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(0, 0, 1000, 1350);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, 1000, 80);
+    ctx.fillStyle = '#10b981';
+    ctx.beginPath();
+    ctx.arc(60, 40, 16, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#0f172a';
+    ctx.font = 'bold 22px sans-serif';
+    ctx.fillText('Cheese History Pro', 90, 48);
+
+    ctx.fillStyle = '#0f172a';
+    ctx.font = 'bold 44px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(title || '검수 시안 뷰어', 500, 200);
+    ctx.fillStyle = '#10b981';
+    ctx.fillText('Cheese Timeline & Issues', 500, 260);
+
+    ctx.fillStyle = '#64748b';
+    ctx.font = '18px sans-serif';
+    ctx.fillText('동아시아 연표와 사건 총정리를 하나의 플랫폼에서 검수합니다.', 500, 310);
+
+    ctx.fillStyle = '#10b981';
+    ctx.beginPath();
+    ctx.roundRect(390, 360, 220, 56, 12);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 18px sans-serif';
+    ctx.fillText('지금 체험하기 →', 500, 395);
+
+    ctx.fillStyle = '#e2e8f0';
+    ctx.beginPath();
+    ctx.roundRect(100, 460, 800, 440, 16);
+    ctx.fill();
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '16px sans-serif';
+    ctx.fillText('[ 검수 대상 그래픽 시안 영역 ]', 500, 690);
+
+    el.docImage.onload = () => {
+      state.naturalWidth = 1000;
+      state.naturalHeight = 1350;
+      el.stageWrapper.style.width = '1000px';
+      el.stageWrapper.style.height = '1350px';
+      zoomFitWidth();
+      renderMarkers();
+    };
+    el.docImage.src = sCanvas.toDataURL('image/png');
+  }
+
+  function renderPdfPage() {
+    if (!state.pdfDoc) return;
+    el.currentPageNum.textContent = state.currentPage;
+    el.prevPageBtn.disabled = state.currentPage <= 1;
+    el.nextPageBtn.disabled = state.currentPage >= state.totalPages;
+
+    state.pdfDoc.getPage(state.currentPage).then(page => {
+      const viewport = page.getViewport({ scale: 1.5 });
+      state.naturalWidth = viewport.width;
+      state.naturalHeight = viewport.height;
+      el.pdfCanvas.width = viewport.width;
+      el.pdfCanvas.height = viewport.height;
+      el.stageWrapper.style.width = viewport.width + 'px';
+      el.stageWrapper.style.height = viewport.height + 'px';
+
+      const renderContext = {
+        canvasContext: el.pdfCanvas.getContext('2d'),
+        viewport: viewport
+      };
+      page.render(renderContext).promise.then(() => {
+        if (!state.scale) zoomFitWidth();
+        else setScale(state.scale);
+        renderMarkers();
+      });
+    });
+  }
+
+  function changePage(delta) {
+    if (state.docType !== 'pdf' || !state.pdfDoc) return;
+    const next = state.currentPage + delta;
+    if (next >= 1 && next <= state.totalPages) {
+      state.currentPage = next;
+      renderPdfPage();
+      renderMarkers();
+    }
+  }
+
+  function setToolMode(mode) {
+    state.toolMode = mode;
+    if (el.modePanBtn) {
+      el.modePanBtn.classList.toggle('bg-indigo-600', mode === 'pan');
+      el.modePanBtn.classList.toggle('text-white', mode === 'pan');
+      el.modePanBtn.classList.toggle('text-slate-400', mode !== 'pan');
+    }
+    el.modePinBtn.classList.toggle('bg-indigo-600', mode === 'pin');
+    el.modePinBtn.classList.toggle('text-white', mode === 'pin');
+    el.modePinBtn.classList.toggle('text-slate-400', mode !== 'pin');
+
+    el.modeBoxBtn.classList.toggle('bg-indigo-600', mode === 'box');
+    el.modeBoxBtn.classList.toggle('text-white', mode === 'box');
+    el.modeBoxBtn.classList.toggle('text-slate-400', mode !== 'box');
+
+    // 커서 스타일 동적 반영
+    if (el.overlayLayer) {
+      if (mode === 'pan') {
+        el.overlayLayer.style.cursor = 'grab';
+        el.viewerContainer.style.cursor = 'grab';
+      } else if (mode === 'box') {
+        el.overlayLayer.style.cursor = 'crosshair';
+        el.viewerContainer.style.cursor = 'default';
+      } else {
+        el.overlayLayer.style.cursor = 'crosshair';
+        el.viewerContainer.style.cursor = 'default';
+      }
+    }
+  }
+
+  // 100% 기준 배율 조정 함수
+  function setScale(newScale) {
+    state.scale = Math.max(0.1, Math.min(4.0, Math.round(newScale * 100) / 100));
+    
+    const naturalW = state.naturalWidth || el.stageWrapper.offsetWidth || 1000;
+    const naturalH = state.naturalHeight || el.stageWrapper.offsetHeight || 1350;
+
+    // 1. stageWrapper: 원본 해상도 고정 + CSS transform scale 적용 (좌상단 기준)
+    el.stageWrapper.style.width = `${naturalW}px`;
+    el.stageWrapper.style.height = `${naturalH}px`;
+    el.stageWrapper.style.transform = `scale(${state.scale})`;
+    el.stageWrapper.style.transformOrigin = '0 0';
+
+    // 2. stageOuter: 스케일된 크기와 1:1로 일치시켜 부모 스크롤과 중앙 정렬 형성
+    if (el.stageOuter) {
+      el.stageOuter.style.width = `${Math.round(naturalW * state.scale)}px`;
+      el.stageOuter.style.height = `${Math.round(naturalH * state.scale)}px`;
+    }
+
+    el.zoomLabel.textContent = `${Math.round(state.scale * 100)}%`;
+
+    // 100%일 때 버튼 강조 표시
+    if (Math.round(state.scale * 100) === 100) {
+      el.zoom100Btn.classList.add('ring-2', 'ring-indigo-500', 'bg-indigo-600', 'text-white');
+      el.zoom100Btn.classList.remove('bg-slate-800', 'text-indigo-300');
+    } else {
+      el.zoom100Btn.classList.remove('ring-2', 'ring-indigo-500', 'bg-indigo-600', 'text-white');
+      el.zoom100Btn.classList.add('bg-slate-800', 'text-indigo-300');
+    }
+
+    // 마커 역스케일 업데이트 (시안 배율에 상관없이 항상 선명한 핀/배지 크기 보장!)
+    updateMarkerScale();
+  }
+
+  // 마커 역스케일 동적 업데이트 함수 (축소/확대 시에도 화면상에서 일정한 36~40px 핀 크기 유지!)
+  function updateMarkerScale() {
+    const currentScale = state.scale || 1.0;
+    // 축소 시 최대 3.5배까지 역보정, 확대 시 최소 0.65배로 축소하여 화면상 완벽한 물리 크기 유지
+    const invScale = Math.max(0.65, Math.min(3.5, 1 / currentScale));
+
+    // 모든 핀(원숫자) 마커 업데이트
+    document.querySelectorAll('.comment-pin').forEach(pin => {
+      const isFocused = pin.classList.contains('pin-super-focused');
+      const focusMultiplier = isFocused ? 1.15 : 1.0;
+      pin.style.transform = `translate(-50%, -50%) scale(${invScale * focusMultiplier})`;
+      pin.style.transformOrigin = 'center center';
+    });
+
+    // 모든 박스(영역) 마커 좌상단 배지 업데이트
+    document.querySelectorAll('.box-badge-wrapper').forEach(badge => {
+      const isFocused = badge.querySelector('.pin-super-focused');
+      const focusMultiplier = isFocused ? 1.15 : 1.0;
+      badge.style.transform = `scale(${invScale * focusMultiplier})`;
+      badge.style.transformOrigin = '0 0';
+    });
+  }
+
+  // 가로 너비에 맞추기 (모바일 16px 여백, PC 48px 여백 최적화)
+  function zoomFitWidth() {
+    state.isFitWidthMode = true;
+    const isMobile = window.innerWidth < 768;
+    const padding = isMobile ? 16 : 48;
+    const containerW = (el.viewerContainer && el.viewerContainer.clientWidth > 100)
+      ? (el.viewerContainer.clientWidth - padding)
+      : (window.innerWidth - (isMobile ? 16 : 380));
+    const naturalW = state.naturalWidth || (el.stageWrapper ? el.stageWrapper.offsetWidth : 1000) || 1000;
+    const calculatedScale = Math.min(3.0, Math.max(0.1, containerW / naturalW));
+    setScale(calculatedScale);
+  }
+
+  // 화면 전체에 쏙 들어가게 맞추기
+  function zoomFitPage() {
+    state.isFitWidthMode = false;
+    const isMobile = window.innerWidth < 768;
+    const padding = isMobile ? 16 : 48;
+    const containerW = (el.viewerContainer && el.viewerContainer.clientWidth > 100)
+      ? (el.viewerContainer.clientWidth - padding)
+      : (window.innerWidth - (isMobile ? 16 : 380));
+    const containerH = (el.viewerContainer && el.viewerContainer.clientHeight > 100)
+      ? (el.viewerContainer.clientHeight - padding)
+      : (window.innerHeight - 120);
+    const naturalW = state.naturalWidth || el.stageWrapper.offsetWidth || 1000;
+    const naturalH = state.naturalHeight || el.stageWrapper.offsetHeight || 1350;
+    const calculatedScale = Math.min(2.0, Math.max(0.1, Math.min(containerW / naturalW, containerH / naturalH)));
+    setScale(calculatedScale);
+  }
+
+  // 마우스 패닝(자유 이동) & 우클릭 메뉴 & 핀/박스 오버레이 인터랙션 통합 핸들러
+  function setupInteractionEvents() {
+    let isMouseDown = false;
+    let isDragging = false;
+    let startX = 0;
+    let startY = 0;
+    let startScrollLeft = 0;
+    let startScrollTop = 0;
+    let spacePressed = false;
+    let tempBoxEl = null;
+
+    // 스페이스바 누르면 언제든 즉시 손 도구(패닝) 커서 활성화
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+        spacePressed = true;
+        el.viewerContainer.style.cursor = 'grab';
+        if (el.overlayLayer) el.overlayLayer.style.cursor = 'grab';
+      }
+    });
+
+    window.addEventListener('keyup', (e) => {
+      if (e.code === 'Space') {
+        spacePressed = false;
+        setToolMode(state.toolMode);
+      }
+    });
+
+    // 1. 공통 우클릭/더블탭 퀵 컨텍스트 메뉴 표시 함수
+    function openContextMenuAt(clientX, clientY) {
+      const overlayRect = el.overlayLayer.getBoundingClientRect();
+      // 이미지 오버레이 내부 비율 좌표 계산
+      const clickX = (clientX - overlayRect.left) / state.scale;
+      const clickY = (clientY - overlayRect.top) / state.scale;
+      const stageW = el.overlayLayer.offsetWidth || 1000;
+      const stageH = el.overlayLayer.offsetHeight || 1350;
+
+      const xRatio = Math.max(0, Math.min(1, clickX / stageW));
+      const yRatio = Math.max(0, Math.min(1, clickY / stageH));
+
+      state.contextMenuCoords = {
+        page: state.currentPage,
+        xRatio,
+        yRatio,
+        clientX: clientX,
+        clientY: clientY
+      };
+
+      // 윈도우 뷰포트 내에 컨텍스트 메뉴 위치 계산
+      const menuWidth = 200;
+      const menuHeight = 240;
+      let left = clientX + 6;
+      let top = clientY + 6;
+
+      if (left + menuWidth > window.innerWidth) {
+        left = clientX - menuWidth - 6;
+      }
+      if (top + menuHeight > window.innerHeight) {
+        top = clientY - menuHeight - 6;
+      }
+
+      el.quickContextMenu.style.left = `${Math.max(10, left)}px`;
+      el.quickContextMenu.style.top = `${Math.max(10, top)}px`;
+      el.quickContextMenu.classList.remove('hidden');
+
+      hidePopover();
+      hideMarkerMemo();
+    }
+
+    // 마우스 우클릭(Context Menu) 처리
+    const handleContextMenu = (e) => {
+      e.preventDefault(); // 브라우저 기본 메뉴 차단
+      openContextMenuAt(e.clientX, e.clientY);
+    };
+
+    el.overlayLayer.addEventListener('contextmenu', handleContextMenu);
+    el.viewerContainer.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      // 오버레이 바깥 빈 배경에서 우클릭한 경우 메뉴만 닫거나 무시
+      if (!el.overlayLayer.contains(e.target) && e.target !== el.overlayLayer) {
+        if (el.quickContextMenu) el.quickContextMenu.classList.add('hidden');
+      }
+    });
+
+    // 2. 마우스 다운 (좌클릭 or 휠클릭)
+    el.viewerContainer.addEventListener('mousedown', (e) => {
+      if (e.button === 2) return; // 우클릭은 contextmenu에서 처리
+
+      // 이미 존재하는 마커 핀, 박스, 팝업, 컨텍스트 메뉴, 지적 메모 팝오버 클릭 시 무시
+      if (e.target.closest('.comment-pin') || e.target.closest('.comment-box') || e.target.closest('#commentInputPopover') || e.target.closest('#markerMemoPopover') || e.target.closest('#quickContextMenu')) {
+        return;
+      }
+
+      // 빈 캔버스 클릭 시 열려있던 엑셀 메모 팝오버 닫기
+      hideMarkerMemo();
+
+      // 열려있던 퀵 컨텍스트 메뉴 닫기
+      if (el.quickContextMenu && !el.quickContextMenu.contains(e.target)) {
+        el.quickContextMenu.classList.add('hidden');
+      }
+
+      isMouseDown = true;
+      isDragging = false;
+      startX = e.clientX;
+      startY = e.clientY;
+      startScrollLeft = el.viewerContainer.scrollLeft;
+      startScrollTop = el.viewerContainer.scrollTop;
+
+      // 박스 그리기 모드일 때
+      if (state.toolMode === 'box' && !spacePressed && e.button === 0 && (e.target === el.overlayLayer || el.overlayLayer.contains(e.target))) {
+        const overlayRect = el.overlayLayer.getBoundingClientRect();
+        const clickX = (e.clientX - overlayRect.left) / state.scale;
+        const clickY = (e.clientY - overlayRect.top) / state.scale;
+        state.isDrawingBox = true;
+        state.boxStart = { x: clickX, y: clickY, clientX: e.clientX, clientY: e.clientY };
+
+        tempBoxEl = document.createElement('div');
+        tempBoxEl.className = 'box-selection';
+        tempBoxEl.style.left = `${clickX}px`;
+        tempBoxEl.style.top = `${clickY}px`;
+        tempBoxEl.style.width = '0px';
+        tempBoxEl.style.height = '0px';
+        el.overlayLayer.appendChild(tempBoxEl);
+      } else {
+        // pan 모드이거나 스페이스바 또는 휠 클릭 시 커서 즉시 변경
+        if (state.toolMode === 'pan' || spacePressed || e.button === 1) {
+          el.viewerContainer.style.cursor = 'grabbing';
+          if (el.overlayLayer) el.overlayLayer.style.cursor = 'grabbing';
+        }
+      }
+    });
+
+    // 3. 마우스 이동 (패닝 또는 박스 그리기)
+    window.addEventListener('mousemove', (e) => {
+      if (!isMouseDown) return;
+
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      const dist = Math.hypot(dx, dy);
+
+      if (dist > 5) {
+        isDragging = true;
+      }
+
+      // 박스 그리기 처리
+      if (state.toolMode === 'box' && state.isDrawingBox && tempBoxEl) {
+        const overlayRect = el.overlayLayer.getBoundingClientRect();
+        const currentX = (e.clientX - overlayRect.left) / state.scale;
+        const currentY = (e.clientY - overlayRect.top) / state.scale;
+
+        const left = Math.min(state.boxStart.x, currentX);
+        const top = Math.min(state.boxStart.y, currentY);
+        const width = Math.abs(currentX - state.boxStart.x);
+        const height = Math.abs(currentY - state.boxStart.y);
+
+        tempBoxEl.style.left = `${left}px`;
+        tempBoxEl.style.top = `${top}px`;
+        tempBoxEl.style.width = `${width}px`;
+        tempBoxEl.style.height = `${height}px`;
+        return;
+      }
+
+      // 화면 패닝(이동):
+      // 기본 pan 모드이거나, 스페이스바를 눌렀거나, 휠 클릭이거나,
+      // pin 모드에서도 마우스를 5px 이상 드래그했을 때 자연스럽게 이동!
+      if (state.toolMode === 'pan' || spacePressed || e.button === 1 || isDragging) {
+        el.viewerContainer.scrollLeft = startScrollLeft - dx;
+        el.viewerContainer.scrollTop = startScrollTop - dy;
+        el.viewerContainer.style.cursor = 'grabbing';
+        if (el.overlayLayer) el.overlayLayer.style.cursor = 'grabbing';
+      }
+    });
+
+    // 4. 마우스 업
+    window.addEventListener('mouseup', (e) => {
+      if (!isMouseDown) return;
+      isMouseDown = false;
+
+      // 커서 복구
+      if (spacePressed) {
+        el.viewerContainer.style.cursor = 'grab';
+        if (el.overlayLayer) el.overlayLayer.style.cursor = 'grab';
+      } else {
+        setToolMode(state.toolMode);
+      }
+
+      // 박스 그리기 완료 처리
+      if (state.toolMode === 'box' && state.isDrawingBox) {
+        state.isDrawingBox = false;
+        const overlayRect = el.overlayLayer.getBoundingClientRect();
+        const currentX = (e.clientX - overlayRect.left) / state.scale;
+        const currentY = (e.clientY - overlayRect.top) / state.scale;
+
+        const left = Math.min(state.boxStart.x, currentX);
+        const top = Math.min(state.boxStart.y, currentY);
+        const width = Math.abs(currentX - state.boxStart.x);
+        const height = Math.abs(currentY - state.boxStart.y);
+
+        if (tempBoxEl) {
+          tempBoxEl.remove();
+          tempBoxEl = null;
+        }
+
+        const stageWidth = el.overlayLayer.offsetWidth || 1000;
+        const stageHeight = el.overlayLayer.offsetHeight || 1350;
+
+        if (width > 15 && height > 15) {
+          showPopoverAt({
+            page: state.currentPage,
+            type: state.currentTag,
+            xRatio: left / stageWidth,
+            yRatio: top / stageHeight,
+            widthRatio: width / stageWidth,
+            heightRatio: height / stageHeight,
+            clientX: e.clientX,
+            clientY: e.clientY
+          });
+        }
+        return;
+      }
+
+      // 핀 모드(pin)에서 단순 클릭(5px 미만 이동)일 때만 팝업 생성!
+      // (기본 pan 모드일 때는 클릭해도 코멘트 팝업이 뜨지 않아 오작동 없음!)
+      if (state.toolMode === 'pin' && !isDragging && e.button === 0) {
+        const overlayRect = el.overlayLayer.getBoundingClientRect();
+        if (e.clientX >= overlayRect.left && e.clientX <= overlayRect.right &&
+            e.clientY >= overlayRect.top && e.clientY <= overlayRect.bottom) {
+          const clickX = (e.clientX - overlayRect.left) / state.scale;
+          const clickY = (e.clientY - overlayRect.top) / state.scale;
+          const stageWidth = el.overlayLayer.offsetWidth || 1000;
+          const stageHeight = el.overlayLayer.offsetHeight || 1350;
+
+          showPopoverAt({
+            page: state.currentPage,
+            type: state.currentTag,
+            xRatio: clickX / stageWidth,
+            yRatio: clickY / stageHeight,
+            widthRatio: null,
+            heightRatio: null,
+            clientX: e.clientX,
+            clientY: e.clientY
+          });
+        }
+      }
+    });
+
+    // 5. 모바일 스마트폰 터치 이벤트 지원 (Touch Events & Double Tap)
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let touchDist = 0;
+    let touchIsDragging = false;
+    let touchScrollLeft = 0;
+    let touchScrollTop = 0;
+    let lastTapTime = 0;
+    let lastTapX = 0;
+    let lastTapY = 0;
+
+    el.overlayLayer.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) return;
+      const t = e.touches[0];
+      touchStartX = t.clientX;
+      touchStartY = t.clientY;
+      touchDist = 0;
+      touchIsDragging = false;
+      touchScrollLeft = el.viewerContainer.scrollLeft;
+      touchScrollTop = el.viewerContainer.scrollTop;
+
+      // 열려있던 팝업이나 컨텍스트 메뉴 닫기
+      if (el.quickContextMenu && !el.quickContextMenu.contains(e.target)) {
+        el.quickContextMenu.classList.add('hidden');
+      }
+    }, { passive: true });
+
+    el.overlayLayer.addEventListener('touchmove', (e) => {
+      if (e.touches.length !== 1) return;
+      const t = e.touches[0];
+      const dx = t.clientX - touchStartX;
+      const dy = t.clientY - touchStartY;
+      touchDist = Math.hypot(dx, dy);
+
+      if (touchDist > 10) {
+        touchIsDragging = true;
+      }
+
+      // pan 모드일 때 터치 드래그로 화면 스크롤
+      if (state.toolMode === 'pan') {
+        el.viewerContainer.scrollLeft = touchScrollLeft - dx;
+        el.viewerContainer.scrollTop = touchScrollTop - dy;
+      }
+    }, { passive: true });
+
+    el.overlayLayer.addEventListener('touchend', (e) => {
+      if (touchIsDragging || e.changedTouches.length === 0) return;
+      const t = e.changedTouches[0];
+
+      // 마커나 팝업 클릭 시는 해당 엘리먼트 자체 이벤트에서 처리
+      if (e.target.closest('.comment-pin') || e.target.closest('.comment-box') || e.target.closest('#commentInputPopover') || e.target.closest('#markerMemoPopover') || e.target.closest('#quickContextMenu')) {
+        return;
+      }
+
+      const now = Date.now();
+      const timeDiff = now - lastTapTime;
+      const distDiff = Math.hypot(t.clientX - lastTapX, t.clientY - lastTapY);
+
+      // [핵심] 모바일에서 두 번 빠르게 클릭/탭(Double Tap)하면 마우스 우클릭 메뉴 즉시 호출!
+      if (timeDiff < 380 && distDiff < 40) {
+        lastTapTime = 0;
+        openContextMenuAt(t.clientX, t.clientY);
+        return;
+      }
+
+      // 첫 번째 탭 기록
+      lastTapTime = now;
+      lastTapX = t.clientX;
+      lastTapY = t.clientY;
+
+      // 핀 모드일 때 단일 터치 탭 (이동 거리 10px 미만)이면 코멘트 핀 꽂기!
+      if (state.toolMode === 'pin') {
+        const overlayRect = el.overlayLayer.getBoundingClientRect();
+        if (t.clientX >= overlayRect.left && t.clientX <= overlayRect.right &&
+            t.clientY >= overlayRect.top && t.clientY <= overlayRect.bottom) {
+          const clickX = (t.clientX - overlayRect.left) / state.scale;
+          const clickY = (t.clientY - overlayRect.top) / state.scale;
+          const stageWidth = el.overlayLayer.offsetWidth || 1000;
+          const stageHeight = el.overlayLayer.offsetHeight || 1350;
+
+          showPopoverAt({
+            page: state.currentPage,
+            type: state.currentTag,
+            xRatio: clickX / stageWidth,
+            yRatio: clickY / stageHeight,
+            widthRatio: null,
+            heightRatio: null,
+            clientX: t.clientX,
+            clientY: t.clientY
+          });
+        }
+      }
+    });
+  }
+
+  function showPopoverAt(coords) {
+    state.pendingCommentCoords = coords;
+    const popover = el.commentInputPopover;
+    const config = TAG_CONFIG[coords.type] || TAG_CONFIG.error;
+
+    el.popoverBadge.className = `w-5 h-5 rounded-full ${config.bg} text-white text-[11px] font-bold flex items-center justify-center`;
+    el.popoverBadge.textContent = state.comments.length + 1;
+    el.popoverTypeLabel.textContent = config.label;
+    el.popoverTypeLabel.className = `text-xs font-semibold ${config.text}`;
+
+    const authorLabel = document.getElementById('popoverAuthorLabel');
+    if (authorLabel) authorLabel.textContent = getCurrentUser();
+
+    el.commentTextInput.value = '';
+    popover.classList.remove('hidden');
+
+    const containerRect = el.viewerContainer.getBoundingClientRect();
+    const isMobile = window.innerWidth < 768;
+
+    if (isMobile) {
+      // 모바일 환경: 화면 너비에 맞게 중앙 정렬 및 화면 위/아래 클램핑
+      const popW = Math.min(340, containerRect.width - 24);
+      const left = Math.max(12, (containerRect.width - popW) / 2);
+      let top = coords.clientY - containerRect.top + 16;
+      if (top + 220 > containerRect.height) {
+        top = Math.max(16, containerRect.height - 240);
+      }
+      popover.style.left = `${left}px`;
+      popover.style.top = `${top}px`;
+    } else {
+      let left = coords.clientX - containerRect.left + 20;
+      let top = coords.clientY - containerRect.top;
+
+      if (left + 330 > containerRect.width) left = coords.clientX - containerRect.left - 340;
+      if (top + 200 > containerRect.height) top = containerRect.height - 220;
+
+      popover.style.left = `${Math.max(20, left)}px`;
+      popover.style.top = `${Math.max(20, top)}px`;
+    }
+
+    el.commentTextInput.focus();
+  }
+
+  function hidePopover() {
+    el.commentInputPopover.classList.add('hidden');
+    state.pendingCommentCoords = null;
+  }
+
+  // ==========================================
+  // 엑셀 스타일 지적 메모 팝오버 기능 (Excel-style Memo Tooltip)
+  // ==========================================
+  let currentMemoCommentId = null;
+
+  function showMarkerMemo(comment, targetEl) {
+    currentMemoCommentId = comment.id;
+    const popover = document.getElementById('markerMemoPopover');
+    if (!popover) return;
+
+    hidePopover(); // 새 핀 작성 팝업은 닫음
+
+    const config = TAG_CONFIG[comment.type] || TAG_CONFIG.error;
+
+    // 헤더 및 본문 바인딩
+    const badge = document.getElementById('memoBadge');
+    if (badge) {
+      badge.textContent = comment.id;
+      badge.className = `w-5 h-5 rounded-full text-white text-[11px] font-bold flex items-center justify-center ${comment.resolved ? 'bg-slate-600' : config.bg}`;
+    }
+
+    const typeLabel = document.getElementById('memoTypeLabel');
+    if (typeLabel) {
+      typeLabel.textContent = config.label;
+      typeLabel.className = `text-xs font-semibold ${config.text}`;
+    }
+
+    const authorEl = document.getElementById('memoAuthor');
+    if (authorEl) authorEl.textContent = comment.author || '검수자';
+
+    const timeEl = document.getElementById('memoTime');
+    if (timeEl) timeEl.textContent = comment.createdAt || '';
+
+    const textEl = document.getElementById('memoText');
+    if (textEl) {
+      textEl.textContent = comment.text;
+      textEl.className = `text-xs leading-relaxed max-h-36 overflow-y-auto custom-scrollbar whitespace-pre-wrap break-words bg-slate-900/60 p-2.5 rounded-xl border border-slate-800/80 ${comment.resolved ? 'line-through text-slate-400' : 'text-slate-100'}`;
+    }
+
+    // 해결 여부 토글 버튼
+    const resolveIcon = document.getElementById('memoResolveIcon');
+    const resolveBtn = document.getElementById('memoResolveBtn');
+    if (resolveIcon && resolveBtn) {
+      resolveIcon.setAttribute('data-lucide', comment.resolved ? 'check-circle-2' : 'circle');
+      resolveIcon.className = `w-4 h-4 ${comment.resolved ? 'text-emerald-400' : 'text-slate-400'}`;
+      resolveBtn.title = comment.resolved ? '미해결로 변경' : '해결 완료로 표시';
+      resolveBtn.onclick = (e) => {
+        e.stopPropagation();
+        comment.resolved = !comment.resolved;
+        syncToStorage();
+        renderMarkers();
+        renderCommentsList();
+        showMarkerMemo(comment, targetEl);
+      };
+    }
+
+    // 답변 목록 렌더링
+    const repliesCont = document.getElementById('memoRepliesContainer');
+    const replies = comment.replies || [];
+    if (repliesCont) {
+      if (replies.length > 0) {
+        repliesCont.classList.remove('hidden');
+        repliesCont.innerHTML = replies.map(r => `
+          <div class="bg-slate-900/80 rounded-lg p-2 border border-slate-800 text-[11px]">
+            <div class="flex items-center justify-between text-slate-400 mb-0.5">
+              <span class="font-semibold text-emerald-400 flex items-center gap-1">
+                <i data-lucide="corner-down-right" class="w-3 h-3 text-emerald-500"></i>
+                ${escapeHtml(r.author || '답변자')}
+              </span>
+              <span class="text-[9px] text-slate-500">${r.createdAt || ''}</span>
+            </div>
+            <div class="text-slate-300 pl-4 leading-relaxed break-words">${escapeHtml(r.text)}</div>
+          </div>
+        `).join('');
+      } else {
+        repliesCont.classList.add('hidden');
+        repliesCont.innerHTML = '';
+      }
+    }
+
+    // 인라인 즉시 답변 입력창
+    const replyInput = document.getElementById('memoReplyInput');
+    const replySubmitBtn = document.getElementById('memoReplySubmitBtn');
+    if (replyInput && replySubmitBtn) {
+      replyInput.value = '';
+      replyInput.placeholder = `답변 입력... (내 ID: ${getCurrentUser()})`;
+      
+      const submitMemoReply = () => {
+        const text = replyInput.value.trim();
+        if (!text) return;
+        if (!comment.replies) comment.replies = [];
+
+        const now = new Date();
+        const timeStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+
+        comment.replies.push({
+          id: 'rep_' + Date.now(),
+          author: getCurrentUser(),
+          text: text,
+          createdAt: timeStr
+        });
+
+        syncToStorage();
+        renderCommentsList();
+        showMarkerMemo(comment, targetEl);
+      };
+
+      replySubmitBtn.onclick = (e) => {
+        e.stopPropagation();
+        submitMemoReply();
+      };
+
+      replyInput.onkeydown = (e) => {
+        if (e.key === 'Enter') {
+          e.stopPropagation();
+          submitMemoReply();
+        }
+      };
+    }
+
+    // 팝오버 표시 및 아이콘 재생성
+    popover.classList.remove('hidden');
+    lucide.createIcons();
+
+    // 엑셀 메모 위치 계산: 마커 바로 옆에 붙도록 정밀 배치
+    positionMarkerMemo(comment, targetEl, popover);
+  }
+
+  function positionMarkerMemo(comment, targetEl, popover) {
+    const HEADER_TOP = 64; // 상단 헤더 바(56px) + 여백
+    const popW = Math.min(340, window.innerWidth - 24);
+    const popH = popover.offsetHeight || 220;
+
+    let targetScreenX, targetScreenY;
+
+    if (targetEl && targetEl.getBoundingClientRect) {
+      const rect = targetEl.getBoundingClientRect();
+      targetScreenX = rect.left + rect.width / 2;
+      targetScreenY = rect.top + rect.height / 2;
+    } else {
+      const stageW = el.stageWrapper.offsetWidth;
+      const stageH = el.stageWrapper.offsetHeight;
+      const stageRect = el.stageWrapper.getBoundingClientRect();
+      targetScreenX = stageRect.left + (comment.xRatio * stageW * state.scale);
+      targetScreenY = stageRect.top + (comment.yRatio * stageH * state.scale);
+    }
+
+    const isMobile = window.innerWidth < 768;
+
+    if (isMobile) {
+      // 모바일 환경: 화면 가로 중앙 배치
+      const left = Math.max(12, (window.innerWidth - popW) / 2);
+
+      // 기본적으로 핀 바로 아래쪽에 배치
+      let top = targetScreenY + 22;
+
+      // 만약 핀 아래 공간이 부족해서 화면 밑으로 넘치면
+      if (top + popH > window.innerHeight - 16) {
+        const topAbove = targetScreenY - popH - 22;
+        // 위로 배치할 때 상단 헤더(64px)를 침범하지 않는 경우에만 위로 올림
+        if (topAbove >= HEADER_TOP) {
+          top = topAbove;
+        } else {
+          // 위/아래 모두 좁다면 화면 세로 중앙 안전 구역에 안착
+          top = Math.max(HEADER_TOP, Math.min(window.innerHeight - popH - 16, (window.innerHeight - popH) / 2));
+        }
+      }
+
+      // 최종 상단 헤더 및 하단 안전 마진 클램핑 (절대 헤더 위로 튀지 않음!)
+      top = Math.max(HEADER_TOP, Math.min(window.innerHeight - popH - 16, top));
+
+      popover.style.left = `${left}px`;
+      popover.style.top = `${top}px`;
+    } else {
+      // 데스크탑: 엑셀 메모처럼 핀의 우상단에 척! 붙임
+      let left = targetScreenX + 24;
+      let top = targetScreenY - 20;
+
+      // 우측 벽에 부딪치면 핀의 좌측으로 반전
+      if (left + popW > window.innerWidth - 20) {
+        left = targetScreenX - popW - 24;
+      }
+      // 상단 헤더(64px) 및 하단 벽 클램핑
+      top = Math.max(HEADER_TOP, Math.min(window.innerHeight - popH - 20, top));
+
+      popover.style.left = `${Math.max(16, left)}px`;
+      popover.style.top = `${top}px`;
+    }
+  }
+
+  function hideMarkerMemo() {
+    const popover = document.getElementById('markerMemoPopover');
+    if (popover) popover.classList.add('hidden');
+    currentMemoCommentId = null;
+  }
+
+  function openDrawerWithComment() {
+    hideMarkerMemo();
+    if (window.innerWidth < 768) {
+      openCommentDrawer();
+    }
+    if (currentMemoCommentId) {
+      const card = document.getElementById(`comment-card-${currentMemoCommentId}`);
+      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }
+
+  window.showMarkerMemo = showMarkerMemo;
+  window.hideMarkerMemo = hideMarkerMemo;
+  window.openDrawerWithComment = openDrawerWithComment;
+
+  // 마커(핀/박스) 클릭 시 단일 집중 처리: 사용자가 선택한 모드(우측 패널 vs 말풍선 메모)에 따라 하나만 작동!
+  function handleMarkerClick(comment, targetEl) {
+    const isMobile = window.innerWidth < 768;
+    const isSidebarVisible = !isMobile && !state.sidebarCollapsed;
+    const effectiveMode = isMobile ? 'memo' : (state.commentDisplayMode || 'sidebar');
+
+    if (effectiveMode === 'sidebar' && isSidebarVisible) {
+      // 1. [우측 패널 모드]: 시안 위에는 말풍선 메모를 띄우지 않아 시안 가림 원천 방지!
+      hideMarkerMemo();
+      focusSidebarCard(comment.id);
+    } else {
+      // 2. [말풍선 메모 모드 / 모바일]: 핀 바로 옆에 엑셀 스타일 메모 말풍선 노출
+      showMarkerMemo(comment, targetEl);
+      const card = document.getElementById(`comment-card-${comment.id}`);
+      if (card && isSidebarVisible) {
+        card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }
+  }
+
+  // 우측 사이드바 카드로 스크롤 & 포커스 & 답변 인풋 자동 활성화
+  function focusSidebarCard(commentId) {
+    state.activeCommentId = commentId;
+    renderMarkers(); // 포커스 링 살짝 재생
+    renderCommentsList();
+
+    const card = document.getElementById(`comment-card-${commentId}`);
+    if (card) {
+      card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      // 카드 강조 애니메이션 (선명한 인디고 테두리 & 배경 플래시)
+      card.classList.add('ring-2', 'ring-indigo-500', 'bg-indigo-950/40');
+      setTimeout(() => {
+        card.classList.remove('ring-2', 'ring-indigo-500', 'bg-indigo-950/40');
+      }, 1600);
+
+      // 답변 입력창에 자동 포커스 (원클릭 즉시 답변 작성 가능!)
+      const replyInput = card.querySelector('.reply-input');
+      if (replyInput) {
+        setTimeout(() => replyInput.focus(), 120);
+      }
+    }
+  }
+
+  window.handleMarkerClick = handleMarkerClick;
+  window.focusSidebarCard = focusSidebarCard;
+
+  function savePendingComment() {
+    const text = el.commentTextInput.value.trim();
+    if (!text || !state.pendingCommentCoords) return;
+
+    const newId = state.comments.length > 0 ? Math.max(...state.comments.map(c => c.id)) + 1 : 1;
+    const now = new Date();
+    const timeStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+
+    const comment = {
+      id: newId,
+      page: state.pendingCommentCoords.page,
+      type: state.pendingCommentCoords.type,
+      xRatio: state.pendingCommentCoords.xRatio,
+      yRatio: state.pendingCommentCoords.yRatio,
+      widthRatio: state.pendingCommentCoords.widthRatio,
+      heightRatio: state.pendingCommentCoords.heightRatio,
+      text: text,
+      author: getCurrentUser(), // 현재 로그인 사용자 아이디/이름
+      resolved: false,
+      createdAt: timeStr,
+      replies: [] // 답변(스레드) 목록 초기화
+    };
+
+    state.comments.push(comment);
+    hidePopover();
+    syncToStorage();
+    renderMarkers();
+    renderCommentsList();
+    highlightComment(newId);
+  }
+
+  function renderMarkers() {
+    el.overlayLayer.innerHTML = '';
+    const currentComments = state.comments.filter(c => c.page === state.currentPage);
+    const currentScale = state.scale || 1.0;
+    const invScale = Math.max(0.65, Math.min(3.5, 1 / currentScale));
+
+    currentComments.forEach(c => {
+      const config = TAG_CONFIG[c.type] || TAG_CONFIG.error;
+      const isFocused = state.activeCommentId === c.id;
+
+      if (c.widthRatio && c.heightRatio) {
+        // 박스(영역) 마커
+        const box = document.createElement('div');
+        box.className = `comment-box absolute rounded border-2 transition-all cursor-pointer ${
+          c.resolved ? 'opacity-30 border-slate-400 bg-slate-500/10' : ''
+        } ${isFocused ? 'box-super-focused' : ''}`;
+        box.dataset.id = c.id;
+        box.style.left = `${c.xRatio * 100}%`;
+        box.style.top = `${c.yRatio * 100}%`;
+        box.style.width = `${c.widthRatio * 100}%`;
+        box.style.height = `${c.heightRatio * 100}%`;
+        if (!c.resolved) {
+          box.style.borderColor = isFocused ? '#f59e0b' : config.color;
+          box.style.backgroundColor = isFocused ? `${config.color}25` : `${config.color}15`;
+        }
+
+        let badgeHtml = '';
+        if (isFocused) {
+          badgeHtml = `
+            <div class="relative flex items-center justify-center">
+              <div class="radar-ring"></div>
+              <div class="radar-ring radar-ring-2"></div>
+              <div class="radar-ring radar-ring-3"></div>
+              <div class="w-10 h-10 sm:w-11 sm:h-11 rounded-full text-white text-sm sm:text-base font-black flex items-center justify-center shadow-2xl border-2 border-white pin-super-focused ring-4 ring-amber-400/90 ${c.resolved ? 'bg-slate-600' : config.bg}">
+                <span class="select-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">${c.id}</span>
+              </div>
+              <div class="pin-target-tooltip flex flex-col items-center">
+                <div class="px-2.5 py-1 rounded-lg bg-slate-950 text-white font-bold text-xs shadow-2xl border-2 border-amber-400 flex items-center gap-1.5 backdrop-blur whitespace-nowrap">
+                  <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                  <span class="text-amber-300">📍 #${c.id} ${config.label}</span>
+                </div>
+                <div class="w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[6px] border-t-amber-400"></div>
+              </div>
+            </div>
+          `;
+        } else {
+          badgeHtml = `
+            <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-full text-white text-xs sm:text-sm font-black flex items-center justify-center shadow-xl border-2 border-white cursor-pointer ${c.resolved ? 'bg-slate-500 opacity-90' : config.bg}">
+              <span class="select-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">${c.id}</span>
+            </div>
+          `;
+        }
+
+        box.innerHTML = `
+          <div class="box-badge-wrapper absolute -top-4 -left-4 cursor-pointer z-20" style="transform: scale(${invScale * (isFocused ? 1.15 : 1.0)}); transform-origin: 0 0;">
+            ${badgeHtml}
+          </div>
+        `;
+        box.addEventListener('click', (e) => {
+          e.stopPropagation();
+          handleMarkerClick(c, box);
+        });
+        el.overlayLayer.appendChild(box);
+
+      } else {
+        // 핀(원숫자) 마커: 확실한 크기(지름 36~40px) + 굵고 선명한 폰트 + 역스케일 고정!
+        const pin = document.createElement('div');
+        pin.className = `comment-pin absolute cursor-pointer transition-transform hover:scale-125 z-10 ${
+          isFocused ? 'pin-super-focused z-40' : ''
+        }`;
+        pin.dataset.id = c.id;
+        pin.style.left = `${c.xRatio * 100}%`;
+        pin.style.top = `${c.yRatio * 100}%`;
+        pin.style.transform = `translate(-50%, -50%) scale(${invScale * (isFocused ? 1.15 : 1.0)})`;
+        pin.style.transformOrigin = 'center center';
+
+        pin.innerHTML = `
+          <div class="relative flex items-center justify-center">
+            ${isFocused ? `
+              <div class="radar-ring"></div>
+              <div class="radar-ring radar-ring-2"></div>
+              <div class="radar-ring radar-ring-3"></div>
+            ` : ''}
+            <div class="${
+              isFocused
+                ? 'w-11 h-11 sm:w-12 sm:h-12 text-base sm:text-lg ring-4 ring-amber-400/90'
+                : 'w-9 h-9 sm:w-10 sm:h-10 text-sm sm:text-base'
+            } rounded-full text-white font-black flex items-center justify-center shadow-2xl border-[2.5px] border-white ${
+              c.resolved ? 'bg-slate-500 border-slate-300 opacity-85' : config.bg
+            }">
+              <span class="select-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">${c.id}</span>
+            </div>
+            ${isFocused ? `
+              <div class="pin-target-tooltip flex flex-col items-center">
+                <div class="px-2.5 py-1 rounded-lg bg-slate-950 text-white font-bold text-xs shadow-2xl border-2 border-amber-400 flex items-center gap-1.5 backdrop-blur whitespace-nowrap">
+                  <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                  <span class="text-amber-300">📍 #${c.id} ${config.label}</span>
+                </div>
+                <div class="w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[6px] border-t-amber-400"></div>
+              </div>
+            ` : ''}
+          </div>
+        `;
+
+        pin.addEventListener('click', (e) => {
+          e.stopPropagation();
+          handleMarkerClick(c, pin);
+        });
+        el.overlayLayer.appendChild(pin);
+      }
+    });
+
+    // 현재 핀 숨김 상태와 오버레이 레이어 스타일 일치 유지
+    if (el.overlayLayer) {
+      el.overlayLayer.style.opacity = state.markersHidden ? '0' : '1';
+      el.overlayLayer.style.pointerEvents = state.markersHidden ? 'none' : 'auto';
+    }
+  }
+
+  function renderCommentsList() {
+    const list = el.commentsList;
+    list.innerHTML = '';
+
+    let filtered = state.comments;
+    if (state.filter === 'open') filtered = filtered.filter(c => !c.resolved);
+    else if (state.filter === 'resolved') filtered = filtered.filter(c => c.resolved);
+
+    const total = state.comments.length;
+    const resolvedCount = state.comments.filter(c => c.resolved).length;
+    const percent = total > 0 ? Math.round((resolvedCount / total) * 100) : 0;
+
+    el.commentCountBadge.textContent = total;
+    if (el.mobileCommentCountBadge) el.mobileCommentCountBadge.textContent = total;
+    if (el.fabCommentCount) el.fabCommentCount.textContent = total;
+    el.progressText.textContent = `${percent}%`;
+    el.progressBar.style.width = `${percent}%`;
+
+    document.getElementById('statErrorCount').textContent = state.comments.filter(c => c.type === 'error').length;
+    document.getElementById('statWarningCount').textContent = state.comments.filter(c => c.type === 'warning').length;
+    document.getElementById('statTypoCount').textContent = state.comments.filter(c => c.type === 'typo').length;
+    document.getElementById('statInfoCount').textContent = state.comments.filter(c => c.type === 'info').length;
+
+    if (filtered.length === 0) {
+      list.appendChild(el.emptyListState);
+      return;
+    }
+
+    const currentUser = getCurrentUser();
+
+    filtered.forEach(c => {
+      const config = TAG_CONFIG[c.type] || TAG_CONFIG.error;
+      const isActive = state.activeCommentId === c.id;
+      const authorName = c.author || '검수자';
+      const replies = c.replies || [];
+
+      const card = document.createElement('div');
+      card.id = `comment-card-${c.id}`;
+      card.className = `p-3.5 rounded-xl border transition-all duration-150 cursor-pointer ${
+        isActive 
+          ? 'bg-slate-900 border-indigo-500 shadow-md ring-1 ring-indigo-500/50' 
+          : 'bg-slate-900/70 hover:bg-slate-900 border-slate-800/80 hover:border-slate-700'
+      } ${c.resolved ? 'opacity-70' : ''}`;
+
+      card.innerHTML = `
+        <!-- 상단 헤더: 번호, 태그, 작성자, 조작 버튼 -->
+        <div class="flex items-start justify-between gap-2 mb-2">
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span class="w-5 h-5 rounded-full text-white text-[11px] font-bold flex items-center justify-center ${c.resolved ? 'bg-slate-600' : config.bg}">
+              ${c.id}
+            </span>
+            <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded border ${config.text} border-current/30 bg-white/5">
+              ${config.label}
+            </span>
+            <span class="text-[10px] font-medium text-indigo-300 bg-indigo-950/70 px-1.5 py-0.5 rounded border border-indigo-800/60 flex items-center gap-1" title="지적 작성자">
+              <i data-lucide="user" class="w-2.5 h-2.5"></i>
+              ${escapeHtml(authorName)}
+            </span>
+            ${state.totalPages > 1 ? `<span class="text-[10px] text-slate-500">P.${c.page}</span>` : ''}
+          </div>
+          
+          <div class="flex items-center gap-1">
+            <button title="${c.resolved ? '미해결로 변경' : '해결 완료로 표시'}" class="resolve-btn p-1 rounded text-slate-400 hover:text-emerald-400 transition">
+              <i data-lucide="${c.resolved ? 'check-circle-2' : 'circle'}" class="w-4 h-4 ${c.resolved ? 'text-emerald-400' : ''}"></i>
+            </button>
+            <button title="삭제" class="delete-btn p-1 rounded text-slate-400 hover:text-rose-400 transition">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- 코멘트 지적 내용 -->
+        <p class="text-xs text-slate-200 leading-relaxed break-words ${c.resolved ? 'line-through text-slate-400' : ''}">
+          ${escapeHtml(c.text)}
+        </p>
+
+        <!-- 작성 시간 및 위치 보기 -->
+        <div class="mt-2 text-[10px] text-slate-500 flex items-center justify-between">
+          <span>${c.createdAt}</span>
+          <span class="text-[10px] text-indigo-400/90 hover:text-indigo-300 font-semibold">위치 보기 →</span>
+        </div>
+
+        <!-- 답변(스레드) 목록 영역 -->
+        ${replies.length > 0 ? `
+          <div class="mt-2.5 pt-2 border-t border-slate-800/80 space-y-1.5">
+            ${replies.map(r => `
+              <div class="bg-slate-950/80 rounded-lg p-2 border border-slate-800/70 text-[11px]">
+                <div class="flex items-center justify-between text-slate-400 mb-1">
+                  <span class="font-semibold text-emerald-400 flex items-center gap-1">
+                    <i data-lucide="corner-down-right" class="w-3 h-3 text-emerald-500"></i>
+                    ${escapeHtml(r.author || '답변자')}
+                  </span>
+                  <span class="text-[9px] text-slate-500">${r.createdAt || ''}</span>
+                </div>
+                <div class="text-slate-300 pl-4 leading-relaxed break-words">${escapeHtml(r.text)}</div>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+
+        <!-- 답변 입력 폼 -->
+        <div class="mt-2.5 pt-2 border-t border-slate-800/50 flex items-center gap-1.5" onclick="event.stopPropagation()">
+          <input type="text" placeholder="답변 달기... (내 ID: ${escapeHtml(currentUser)})" class="reply-input flex-1 bg-slate-950 border border-slate-800 focus:border-indigo-500 rounded-lg px-2.5 py-1 text-[11px] text-slate-200 placeholder-slate-500 focus:outline-none transition" />
+          <button class="reply-submit-btn px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold shrink-0 shadow transition">
+            답변
+          </button>
+        </div>
+      `;
+
+      // 카드 클릭 시 해당 위치로 이동
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('.resolve-btn') || e.target.closest('.delete-btn') || e.target.closest('input') || e.target.closest('button')) return;
+        focusCommentLocation(c);
+      });
+
+      // 해결 완료/미해결 토글
+      card.querySelector('.resolve-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        c.resolved = !c.resolved;
+        syncToStorage();
+        renderMarkers();
+        renderCommentsList();
+      });
+
+      // 삭제
+      card.querySelector('.delete-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (confirm(`코멘트 #${c.id}를 삭제하시겠습니까?`)) {
+          state.comments = state.comments.filter(item => item.id !== c.id);
+          syncToStorage();
+          renderMarkers();
+          renderCommentsList();
+        }
+      });
+
+      // 답변 등록 이벤트
+      const replyInput = card.querySelector('.reply-input');
+      const replyBtn = card.querySelector('.reply-submit-btn');
+
+      const submitReply = () => {
+        const text = replyInput.value.trim();
+        if (!text) return;
+        if (!c.replies) c.replies = [];
+
+        const now = new Date();
+        const timeStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+
+        c.replies.push({
+          id: 'rep_' + Date.now(),
+          author: getCurrentUser(),
+          text: text,
+          createdAt: timeStr
+        });
+
+        syncToStorage();
+        renderCommentsList();
+      };
+
+      replyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        submitReply();
+      });
+
+      replyInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.stopPropagation();
+          submitReply();
+        }
+      });
+
+      list.appendChild(card);
+    });
+
+    lucide.createIcons();
+  }
+
+  let activeFocusTimer = null;
+
+  function focusCommentLocation(comment) {
+    if (state.currentPage !== comment.page && state.docType === 'pdf') {
+      state.currentPage = comment.page;
+      renderPdfPage();
+    }
+
+    // 이전 포커스 타이머가 동작 중이면 리셋
+    if (activeFocusTimer) {
+      clearTimeout(activeFocusTimer);
+      activeFocusTimer = null;
+    }
+
+    // 모바일 환경(< 768px)에서는 코멘트 서랍을 자동으로 닫아서 시안 캔버스가 100% 온전히 보이도록 전환!
+    const isMobile = window.innerWidth < 768;
+    if (isMobile) {
+      closeCommentDrawer();
+    }
+
+    // 애니메이션 리셋 후 재시작 (동일 마커 재클릭 시에도 확실하게 파동/바운스 재생)
+    state.activeCommentId = null;
+    renderMarkers();
+
+    // 모바일 서랍 슬라이드 아웃 완료(약 150ms) 시점에 맞추어 부드럽게 스크롤
+    const scrollDelay = isMobile ? 180 : 20;
+
+    setTimeout(() => {
+      state.activeCommentId = comment.id;
+      renderMarkers();
+      renderCommentsList();
+
+      const stageW = el.stageWrapper.offsetWidth;
+      const stageH = el.stageWrapper.offsetHeight;
+      const targetX = (comment.xRatio * stageW) * state.scale;
+      const targetY = (comment.yRatio * stageH) * state.scale;
+
+      // 스크롤 중에는 메모 팝오버를 닫아 이전 위치 잔상이 날아다니지 않도록 함
+      hideMarkerMemo();
+
+      el.viewerContainer.scrollTo({
+        left: Math.max(0, targetX - (el.viewerContainer.clientWidth / 2)),
+        top: Math.max(0, targetY - (el.viewerContainer.clientHeight / 2)),
+        behavior: 'smooth'
+      });
+
+      // 스무스 스크롤이 목표 핀 위치에 안착한 시점(260ms 후):
+      // [말풍선 메모 모드]이거나 모바일/사이드바 접힘 상태일 때만 핀 옆에 말풍선 노출 (우측 패널 열림 시 시안 가림 방지!)
+      setTimeout(() => {
+        const isSidebarVisible = !isMobile && !state.sidebarCollapsed;
+        const effectiveMode = isMobile ? 'memo' : (state.commentDisplayMode || 'sidebar');
+        if (effectiveMode === 'memo' || !isSidebarVisible) {
+          const markerEl = el.overlayLayer.querySelector(`[data-id="${comment.id}"]`);
+          showMarkerMemo(comment, markerEl);
+        }
+      }, 260);
+
+      // [핵심] 파동 링과 번쩍임이 1.8초 동안 위치를 명확히 안내한 뒤,
+      // 자동으로 포커스를 해제하여 시안의 글자/이미지를 가리지 않도록 깨끗하게 복구!
+      activeFocusTimer = setTimeout(() => {
+        state.activeCommentId = null;
+        renderMarkers();
+        activeFocusTimer = null;
+      }, 1800);
+
+    }, scrollDelay);
+  }
+
+  function highlightComment(commentId) {
+    const comment = state.comments.find(c => c.id === commentId);
+    if (comment) {
+      focusCommentLocation(comment);
+      const card = document.getElementById(`comment-card-${commentId}`);
+      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }
+
+  // ==========================================
+  // STORAGE & GOOGLE SHEETS SYNC
+  // ==========================================
+  function syncToStorage() {
+    const now = new Date();
+    const nowStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+    const total = state.comments.length;
+    const resolvedCount = state.comments.filter(c => c.resolved).length;
+    const isDone = total > 0 && total === resolvedCount;
+
+    // 인덱스 목록 갱신
+    let index = [];
+    try {
+      index = JSON.parse(localStorage.getItem('cheese_qe_projects_index') || '[]');
+    } catch(e) { index = []; }
+
+    const existing = index.find(x => x.id === state.reviewId);
+    const folderId = existing?.folderId || state.currentFolderId || 'root';
+
+    const projectSummary = {
+      id: state.reviewId,
+      title: state.docName,
+      folderId: folderId,
+      pageCount: state.totalPages || 1,
+      status: isDone ? 'completed' : 'in_progress',
+      totalComments: total,
+      resolvedCount: resolvedCount,
+      author: window.CHEESE_ADMIN_DISPLAY_NAME || '검수 담당자',
+      updatedAt: nowStr
+    };
+
+    // 상세 저장
+    localStorage.setItem(`cheese_qe_detail_${state.reviewId}`, JSON.stringify({
+      ...projectSummary,
+      comments: state.comments
+    }));
+
+    const foundIdx = index.findIndex(x => x.id === state.reviewId);
+    if (foundIdx >= 0) {
+      index[foundIdx] = projectSummary;
+    } else {
+      index.unshift(projectSummary);
+    }
+    localStorage.setItem('cheese_qe_projects_index', JSON.stringify(index));
+    state.savedReviews = index;
+  }
+
+  async function saveCurrentReviewToSheets() {
+    if (!state.gasUrl) {
+      alert('구글 스프레드시트 Web App URL이 설정되어 있지 않습니다.\n설정(톱니바퀴) 아이콘을 눌러 URL을 먼저 입력해 주세요.');
+      el.settingsModal.classList.remove('hidden');
+      return;
+    }
+
+    const currentMatch = state.savedReviews.find(r => r.id === state.reviewId);
+    const folderId = currentMatch?.folderId || state.currentFolderId || 'root';
+
+    const payload = {
+      mode: 'save',
+      id: state.reviewId,
+      title: state.docName,
+      folderId: folderId,
+      pageCount: state.totalPages || 1,
+      author: window.CHEESE_ADMIN_DISPLAY_NAME || '검수 담당자',
+      comments: state.comments
+    };
+
+    const origHtml = el.sheetsSaveBtn.innerHTML;
+    el.sheetsSaveBtn.disabled = true;
+    el.sheetsSaveBtn.innerHTML = `<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i><span>저장 중...</span>`;
+    lucide.createIcons();
+
+    try {
+      const res = await fetch(state.gasUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.ok) {
+        syncToStorage();
+        alert('구글 스프레드시트에 성공적으로 저장되었습니다!\n(수정일시: ' + data.updatedAt + ')');
+      } else {
+        alert('시트 저장 실패: ' + (data.error || '알 수 없는 오류'));
+      }
+    } catch (err) {
+      alert('구글 스프레드시트 통신 오류: ' + err.message);
+    } finally {
+      el.sheetsSaveBtn.disabled = false;
+      el.sheetsSaveBtn.innerHTML = origHtml;
+      lucide.createIcons();
+    }
+  }
+
+  // Utilities
+  function copySummaryToClipboard() {
+    if (state.comments.length === 0) {
+      alert('복사할 코멘트가 없습니다.');
+      return;
+    }
+    let text = `[QE 검수 리포트] ${state.docName}\n총 지적사항: ${state.comments.length}건 (해결: ${state.comments.filter(c=>c.resolved).length}건)\n\n`;
+    state.comments.forEach(c => {
+      const status = c.resolved ? '[해결됨]' : '[미해결]';
+      const tag = TAG_CONFIG[c.type]?.label || c.type;
+      text += `#${c.id} ${status} [${tag}] ${c.text} (P.${c.page})\n`;
+    });
+    navigator.clipboard.writeText(text).then(() => {
+      alert('검수 코멘트 목록이 클립보드에 복사되었습니다!');
+    });
+  }
+
+  function exportJson() {
+    const exportData = {
+      document: state.docName,
+      reviewId: state.reviewId,
+      exportDate: new Date().toISOString(),
+      totalComments: state.comments.length,
+      comments: state.comments
+    };
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `QE_검수_${state.docName.replace(/\.[^/.]+$/, "")}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function printReport() {
+    el.exportModal.classList.add('hidden');
+    const printWindow = window.open('', '_blank');
+    let tableRows = state.comments.map(c => `
+      <tr style="border-bottom: 1px solid #e2e8f0;">
+        <td style="padding: 10px; font-weight: bold; text-align: center;">#${c.id}</td>
+        <td style="padding: 10px; text-align: center;">
+          <span style="display:inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; background: #f1f5f9;">
+            ${TAG_CONFIG[c.type]?.label || c.type}
+          </span>
+        </td>
+        <td style="padding: 10px; text-align: center;">${c.resolved ? '<span style="color: #10b981; font-weight: bold;">완료</span>' : '<span style="color: #f43f5e; font-weight: bold;">진행중</span>'}</td>
+        <td style="padding: 10px; text-align: center;">P.${c.page}</td>
+        <td style="padding: 10px; line-height: 1.5;">${escapeHtml(c.text)}</td>
+        <td style="padding: 10px; color: #64748b; font-size: 11px; text-align: center;">${c.createdAt}</td>
+      </tr>
+    `).join('');
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>QE 검수 리포트 - ${state.docName}</title>
+        <style>
+          body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; padding: 40px; color: #0f172a; }
+          h1 { margin-bottom: 4px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 24px; font-size: 13px; }
+          th { background: #f8fafc; border-bottom: 2px solid #cbd5e1; padding: 10px; font-size: 12px; }
+          .meta { color: #64748b; font-size: 13px; margin-bottom: 20px; }
+        </style>
+      </head>
+      <body>
+        <h1>문서 검수(QE) 리포트</h1>
+        <div class="meta">
+          문서명: <strong>${state.docName}</strong> | 출력일시: ${new Date().toLocaleString()} | 총 지적건수: ${state.comments.length}건
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th width="50">번호</th>
+              <th width="90">유형</th>
+              <th width="70">상태</th>
+              <th width="60">페이지</th>
+              <th>지적 및 수정 요청 내용</th>
+              <th width="140">작성일시</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tableRows || '<tr><td colspan="6" style="text-align:center; padding:30px; color:#94a3b8;">등록된 코멘트가 없습니다.</td></tr>'}
+          </tbody>
+        </table>
+        <script>
+          window.onload = () => { window.print(); };
+        <\/script>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  window.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
