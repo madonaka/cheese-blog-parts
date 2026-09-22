@@ -1019,8 +1019,8 @@
             <i data-lucide="image-down" class="w-5 h-5"></i>
           </div>
           <div>
-            <div class="text-xs font-semibold text-white">핀 표시된 시안 이미지 저장 (PNG)</div>
-            <div class="text-[11px] text-slate-400">지적 위치가 그려진 시안을 그림 파일로 받습니다</div>
+            <div class="text-xs font-semibold text-white">시안 + 지적 목록 이미지 저장 (PNG)</div>
+            <div class="text-[11px] text-slate-400">핀이 그려진 시안과 번호별 지적 내용을 장으로 나눠 받습니다</div>
           </div>
         </div>
         <i data-lucide="chevron-right" class="w-4 h-4 text-slate-500"></i>
@@ -4757,6 +4757,179 @@
     return pages;
   }
 
+
+  // 캔버스에는 자동 줄바꿈이 없다. 한글은 띄어쓰기가 드물어 글자 단위로 끊는다.
+  function wrapCanvasText(ctx, text, maxWidth) {
+    const lines = [];
+    let line = '';
+    for (const ch of String(text || '')) {
+      if (ch === '\n') { lines.push(line); line = ''; continue; }
+      const test = line + ch;
+      if (ctx.measureText(test).width > maxWidth && line) {
+        lines.push(line);
+        line = ch;
+      } else {
+        line = test;
+      }
+    }
+    if (line) lines.push(line);
+    return lines.length ? lines : [''];
+  }
+
+  // 핀만 찍힌 그림은 무엇을 지적했는지 알 수 없다.
+  // 같은 크기의 둘째 장에 번호별 지적 내용을 적어 함께 내보낸다.
+  function buildCommentSheets(width, height) {
+    const W = Math.max(700, Math.round(width || 1400));
+    const H = Math.max(900, Math.round(height || Math.round(W * 1.414)));
+    const pad = Math.round(W * 0.05);
+    const s = W / 1000; // 글자·간격 기준 배율
+
+    const font = (size, bold) => `${bold ? 'bold ' : ''}${Math.round(size * s)}px "Pretendard", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif`;
+    const sheets = [];
+    let canvas = null;
+    let ctx = null;
+    let y = 0;
+    let sheetNo = 0;
+
+    const newSheet = () => {
+      canvas = document.createElement('canvas');
+      canvas.width = W;
+      canvas.height = H;
+      ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, W, H);
+      sheetNo += 1;
+      y = pad;
+
+      ctx.textBaseline = 'top';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#0f172a';
+      ctx.font = font(30, true);
+      ctx.fillText(sheetNo === 1 ? '검수 지적 목록' : `검수 지적 목록 (${sheetNo})`, pad, y);
+      y += Math.round(40 * s);
+
+      ctx.fillStyle = '#475569';
+      ctx.font = font(17);
+      ctx.fillText(state.docName || '', pad, y);
+      y += Math.round(24 * s);
+
+      const total = state.comments.length;
+      const resolved = state.comments.filter(c => c.resolved).length;
+      ctx.fillStyle = '#64748b';
+      ctx.font = font(15);
+      ctx.fillText(`총 ${total}건 · 해결 ${resolved}건 · 미해결 ${total - resolved}건 · ${new Date().toLocaleString()}`, pad, y);
+      y += Math.round(28 * s);
+
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = Math.max(1, Math.round(2 * s));
+      ctx.beginPath();
+      ctx.moveTo(pad, y);
+      ctx.lineTo(W - pad, y);
+      ctx.stroke();
+      y += Math.round(22 * s);
+
+      sheets.push(canvas);
+    };
+
+    newSheet();
+
+    const marks = [...state.comments].sort((a, b) => (a.page || 1) - (b.page || 1) || a.id - b.id);
+
+    if (marks.length === 0) {
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = font(17);
+      ctx.fillText('등록된 지적사항이 없습니다.', pad, y);
+      return sheets;
+    }
+
+    const radius = Math.round(15 * s);
+    const textLeft = pad + radius * 2 + Math.round(16 * s);
+    const textWidth = W - textLeft - pad;
+    const bodySize = Math.round(17 * s);
+    const lineGap = Math.round(bodySize * 1.5);
+
+    marks.forEach(c => {
+      const config = TAG_CONFIG[c.type] || TAG_CONFIG.error;
+      const color = c.resolved ? '#64748b' : config.color;
+
+      ctx.font = font(17);
+      const bodyLines = wrapCanvasText(ctx, c.text || '(내용 없음)', textWidth);
+      ctx.font = font(14);
+      const replyLines = (c.replies || []).map(rep =>
+        wrapCanvasText(ctx, `${rep.author || '답변'} · ${rep.text || ''}`, textWidth - Math.round(14 * s))
+      );
+
+      const blockHeight = Math.round(26 * s)
+        + bodyLines.length * lineGap
+        + replyLines.reduce((sum, ls) => sum + ls.length * Math.round(bodySize * 1.35) + Math.round(6 * s), 0)
+        + Math.round(26 * s);
+
+      if (y + blockHeight > H - pad) newSheet();
+
+      // 번호 원
+      ctx.beginPath();
+      ctx.arc(pad + radius, y + radius, radius, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.font = font(16, true);
+      ctx.textAlign = 'center';
+      ctx.fillText(String(c.id), pad + radius, y + radius - Math.round(8 * s));
+      ctx.textAlign = 'left';
+
+      // 유형 · 상태 · 작성자 · 쪽
+      ctx.fillStyle = color;
+      ctx.font = font(14, true);
+      const head = `${config.label} · ${c.resolved ? '해결' : '미해결'}`;
+      ctx.fillText(head, textLeft, y + Math.round(2 * s));
+
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = font(13);
+      const headW = ctx.measureText(head).width;
+      ctx.font = font(14, true);
+      const tail = `   ${c.author || '-'} · ${c.createdAt || '-'}${(state.totalPages || 1) > 1 ? ` · ${c.page || 1}쪽` : ''}`;
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = font(13);
+      ctx.fillText(tail, textLeft + headW, y + Math.round(3 * s));
+
+      let ty = y + Math.round(26 * s);
+      ctx.fillStyle = '#0f172a';
+      ctx.font = font(17);
+      bodyLines.forEach(line => {
+        ctx.fillText(line, textLeft, ty);
+        ty += lineGap;
+      });
+
+      replyLines.forEach(lines => {
+        ty += Math.round(6 * s);
+        const barTop = ty;
+        ctx.fillStyle = '#475569';
+        ctx.font = font(14);
+        lines.forEach(line => {
+          ctx.fillText(line, textLeft + Math.round(14 * s), ty);
+          ty += Math.round(bodySize * 1.35);
+        });
+        ctx.strokeStyle = '#cbd5e1';
+        ctx.lineWidth = Math.max(1, Math.round(2 * s));
+        ctx.beginPath();
+        ctx.moveTo(textLeft + Math.round(4 * s), barTop);
+        ctx.lineTo(textLeft + Math.round(4 * s), ty - Math.round(4 * s));
+        ctx.stroke();
+      });
+
+      y = ty + Math.round(14 * s);
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.lineWidth = Math.max(1, Math.round(1.5 * s));
+      ctx.beginPath();
+      ctx.moveTo(pad, y);
+      ctx.lineTo(W - pad, y);
+      ctx.stroke();
+      y += Math.round(14 * s);
+    });
+
+    return sheets;
+  }
+
   function reportRowsHtml(page) {
     const marks = state.comments.filter(c => (c.page || 1) === page);
     if (marks.length === 0) {
@@ -4868,7 +5041,8 @@
     printWindow.document.close();
   }
 
-  // 핀이 박힌 시안을 그림 파일로 바로 받는다 (그대로 클로드에 올려 확인하기 위한 용도)
+  // 핀이 박힌 시안과, 번호별 지적 내용을 적은 장을 함께 그림으로 받는다.
+  // 핀만 있으면 무엇을 지적했는지 알 수 없으므로 둘은 항상 같이 나간다.
   async function exportPinnedImages() {
     el.exportModal.classList.add('hidden');
 
@@ -4885,12 +5059,32 @@
       return;
     }
 
+    // 지적 목록 장은 시안과 같은 크기로 만들어 나란히 보기 좋게 한다
+    const first = await new Promise(resolve => {
+      const im = new Image();
+      im.onload = () => resolve({ w: im.width, h: im.height });
+      im.onerror = () => resolve({ w: 1400, h: 1980 });
+      im.src = usable[0].dataUrl;
+    });
+
+    const files = usable.map(p => ({
+      dataUrl: p.dataUrl,
+      name: `시안${usable.length > 1 ? `_p${p.page}` : ''}`
+    }));
+
+    buildCommentSheets(first.w, first.h).forEach((canvas, idx, arr) => {
+      files.push({
+        dataUrl: canvas.toDataURL('image/png'),
+        name: `지적목록${arr.length > 1 ? `_${idx + 1}` : ''}`
+      });
+    });
+
     const baseName = (state.docName || '검수').replace(/\.[^.]+$/, '');
-    usable.forEach((p, idx) => {
+    files.forEach((f, idx) => {
       setTimeout(() => {
         const link = document.createElement('a');
-        link.href = p.dataUrl;
-        link.download = `${baseName}_검수${usable.length > 1 ? `_p${p.page}` : ''}.png`;
+        link.href = f.dataUrl;
+        link.download = `${baseName}_${String(idx + 1).padStart(2, '0')}_${f.name}.png`;
         document.body.appendChild(link);
         link.click();
         link.remove();
