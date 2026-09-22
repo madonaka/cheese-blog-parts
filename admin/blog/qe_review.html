@@ -3,16 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <title>QE 문서·시안 검수 센터 · Cheese Admin</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   
-  <!-- 관리자 공통 인증 토큰 유지 -->
+  <!-- 관리자 공통 인증 (토큰이 없으면 admin-common.js가 로그인 페이지로 보낸다) -->
   <script>
-    if (!sessionStorage.getItem('cheese_admin_token')) {
-      sessionStorage.setItem('cheese_admin_token', 'dev_guest_token');
-      sessionStorage.setItem('cheese_admin_login_id', 'admin');
-      sessionStorage.setItem('cheese_admin_display_name', '검수 담당자');
-      sessionStorage.setItem('cheese_admin_role', 'ADMIN');
-    }
     window.CHEESE_ADMIN_ACTIVE_PAGE = "qe_review";
     window.CHEESE_ADMIN_PAGE_SUBTITLE = "QE 문서·시안 검수기";
   </script>
@@ -1430,7 +1424,7 @@
   // Initialization
   function init() {
     lucide.createIcons();
-    loadFolders();
+    loadFoldersFromCache();
     bindEvents();
     loadDashboardData();
     el.gasUrlInput.value = state.gasUrl;
@@ -1760,7 +1754,46 @@
   // ==========================================
   // FOLDER & DIRECTORY MANAGEMENT
   // ==========================================
-  function loadFolders() {
+  // ==========================================
+  // GOOGLE SHEETS / DRIVE 통신
+  // 시트와 드라이브가 원본이고 localStorage / IndexedDB 는 캐시다.
+  // ==========================================
+  function hasGas() {
+    return !!(state.gasUrl && state.gasUrl.startsWith('https://script.google.com/'));
+  }
+
+  async function gasGet(params) {
+    if (!hasGas()) return null;
+    const qs = Object.keys(params).map(k => k + '=' + encodeURIComponent(params[k])).join('&');
+    const res = await fetch(state.gasUrl + '?' + qs);
+    return await res.json();
+  }
+
+  async function gasPost(payload) {
+    if (!hasGas()) return null;
+    const res = await fetch(state.gasUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  }
+
+  // 지적사항이 바뀔 때마다 시트로 밀어 올린다.
+  // 저장 버튼을 눌러야만 올라가던 방식은 다른 기기에서 내용이 비어 보였다.
+  let autoSaveTimer = null;
+  function scheduleSheetSync() {
+    if (!hasGas() || !state.reviewId) return;
+    if (autoSaveTimer) clearTimeout(autoSaveTimer);
+    autoSaveTimer = setTimeout(() => {
+      autoSaveTimer = null;
+      pushCurrentReviewToSheets(true);
+    }, 1200);
+  }
+
+  // 폴더 트리도 시트에 둔다. 브라우저에만 두면 폰에서는 폴더가 없어
+  // 그 폴더에 든 문서가 목록에서 통째로 사라진다.
+  function loadFoldersFromCache() {
     try {
       state.folders = JSON.parse(localStorage.getItem('cheese_qe_folders') || '[]');
     } catch(e) {
@@ -1768,8 +1801,22 @@
     }
   }
 
-  function saveFolders() {
+  function cacheFolders() {
     localStorage.setItem('cheese_qe_folders', JSON.stringify(state.folders));
+  }
+
+  async function saveFolders() {
+    cacheFolders();
+    if (!hasGas()) return;
+    try {
+      const data = await gasPost({ mode: 'saveFolders', folders: state.folders });
+      if (!data || !data.ok) {
+        showDriveSyncToast('폴더 동기화 실패: ' + ((data && data.error) || '통신 오류'), false, 4000);
+      }
+    } catch (err) {
+      console.warn('folder sync failed:', err);
+      showDriveSyncToast('폴더 동기화 실패 (네트워크 오류)', false, 4000);
+    }
   }
 
   // 브레드크럼(경로 표시줄) 렌더링
@@ -1904,12 +1951,21 @@
     const parent = folder.parentId || 'root';
 
     // 1. 소속 문서들을 상위 폴더로 이동
+    const movedIds = [];
     state.savedReviews.forEach(r => {
       if (r.folderId === folderId) {
         r.folderId = parent;
+        movedIds.push(r.id);
       }
     });
     localStorage.setItem('cheese_qe_projects_index', JSON.stringify(state.savedReviews));
+
+    if (hasGas()) {
+      movedIds.forEach(id => {
+        gasPost({ mode: 'moveReview', id: id, folderId: parent })
+          .catch(err => console.warn('moveReview sync failed:', err));
+      });
+    }
 
     // 2. 하위 폴더들의 부모를 상위 폴더로 이동
     state.folders.forEach(f => {
@@ -1998,6 +2054,20 @@
 
     review.folderId = targetFolderId;
 
+    // 시트에도 옮겨 적는다 (빠지면 다른 기기에서는 옛 폴더에 그대로 남는다)
+    if (hasGas()) {
+      gasPost({ mode: 'moveReview', id: reviewId, folderId: targetFolderId })
+        .then(data => {
+          if (!data || !data.ok) {
+            showDriveSyncToast('폴더 이동 동기화 실패: ' + ((data && data.error) || '오류'), false, 4000);
+          }
+        })
+        .catch(err => {
+          console.warn('moveReview sync failed:', err);
+          showDriveSyncToast('폴더 이동 동기화 실패 (네트워크 오류)', false, 4000);
+        });
+    }
+
     // 로컬 인덱스 및 상세 저장
     localStorage.setItem('cheese_qe_projects_index', JSON.stringify(state.savedReviews));
     const detailKey = `cheese_qe_detail_${reviewId}`;
@@ -2018,44 +2088,62 @@
   // DASHBOARD / PROJECT LIST MANAGEMENT
   // ==========================================
   async function loadDashboardData(forceFetch = false) {
-    loadFolders();
-
-    // 1. LocalStorage에서 먼저 로드 (초고속 즉시 표시)
-    let localIndex = [];
+    // 1. 캐시로 즉시 그린다 (통신을 기다리는 동안 빈 화면을 보이지 않기 위해)
+    loadFoldersFromCache();
     try {
-      localIndex = JSON.parse(localStorage.getItem('cheese_qe_projects_index') || '[]');
+      state.savedReviews = JSON.parse(localStorage.getItem('cheese_qe_projects_index') || '[]');
     } catch (e) {
-      localIndex = [];
+      state.savedReviews = [];
     }
-
-    state.savedReviews = localIndex;
     renderDashboardList();
     updateStats();
 
-    // 2. Google Sheets API 연동되어 있으면 클라우드에서 최신 목록 가져오기
-    if (state.gasUrl && state.gasUrl.startsWith('https://script.google.com/')) {
-      try {
-        const res = await fetch(`${state.gasUrl}?action=list`);
-        const data = await res.json();
-        const incomingList = data.reviews || data.list;
-        if (data.ok && Array.isArray(incomingList)) {
-          // 기존 로컬 폴더 매핑 및 driveFileId 보존 병합
-          const merged = incomingList.map(r => {
-            const localMatch = state.savedReviews.find(lr => lr.id === r.id);
-            return {
-              ...r,
-              folderId: r.folderId || localMatch?.folderId || 'root',
-              driveFileId: r.driveFileId || localMatch?.driveFileId || ''
-            };
-          });
-          state.savedReviews = merged;
-          localStorage.setItem('cheese_qe_projects_index', JSON.stringify(merged));
-          renderDashboardList();
-          updateStats();
-        }
-      } catch (err) {
-        console.warn('Google Sheets fetch failed, using local index:', err);
+    if (!hasGas()) return;
+
+    // 2. 시트에서 문서 목록과 폴더 트리를 한 번에 받아 화면을 갈아끼운다.
+    //    로컬 값과 병합하지 않는다. 병합하면 이 기기에만 있는 문서가 살아남아
+    //    기기마다 목록이 달라지는 원래 문제로 돌아간다.
+    try {
+      let data = await gasGet({ action: 'bootstrap' });
+
+      // Apps Script 쪽이 아직 옛 버전이면 bootstrap 을 모른다.
+      // 이때는 옛 주소로 한 번 더 물어본다 (폴더는 옛 버전에 아예 없다).
+      if (data && data.ok && !Array.isArray(data.reviews)) {
+        data = await gasGet({ action: 'list' });
       }
+
+      if (!data || !data.ok) {
+        showDriveSyncToast('목록 불러오기 실패: ' + ((data && data.error) || '통신 오류'), false, 4000);
+        return;
+      }
+
+      if (Array.isArray(data.folders)) {
+        state.folders = data.folders;
+        cacheFolders();
+      }
+
+      if (Array.isArray(data.reviews)) {
+        // 없어진 폴더를 가리키는 문서는 어느 폴더에도 안 나와 영영 묻힌다. 홈에 있는 것으로 보여 준다.
+        const knownFolders = state.folders.map(f => f.id);
+        data.reviews.forEach(r => {
+          if (r.folderId && r.folderId !== 'root' && knownFolders.indexOf(r.folderId) === -1) {
+            r.folderId = 'root';
+          }
+        });
+        state.savedReviews = data.reviews;
+        localStorage.setItem('cheese_qe_projects_index', JSON.stringify(data.reviews));
+      }
+
+      // 보고 있던 폴더가 사라졌으면 홈으로 되돌린다
+      if (state.currentFolderId !== 'root' && !state.folders.some(f => f.id === state.currentFolderId)) {
+        state.currentFolderId = 'root';
+      }
+
+      renderDashboardList();
+      updateStats();
+    } catch (err) {
+      console.warn('bootstrap fetch failed, using cache:', err);
+      showDriveSyncToast('시트 연결 실패 - 이 기기에 저장된 목록만 표시합니다', false, 4000);
     }
   }
 
@@ -2582,16 +2670,17 @@
     updateStats();
 
     // 구글 시트에서 삭제
-    if (state.gasUrl) {
+    if (hasGas()) {
       try {
-        await fetch(state.gasUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({ mode: 'delete', id: reviewId })
-        });
+        const data = await gasPost({ mode: 'delete', id: reviewId, deleteDriveFile: true });
+        if (!data || !data.ok) {
+          showDriveSyncToast('시트 삭제 실패: ' + ((data && data.error) || '오류'), false, 4000);
+        }
       } catch (err) {
         console.warn('Google Sheets delete failed:', err);
+        showDriveSyncToast('시트 삭제 실패 (네트워크 오류)', false, 4000);
       }
+      loadDashboardData();
     }
   }
 
@@ -2612,20 +2701,26 @@
       }
     }
 
-    // 2. 구글 시트에서 상세 가져오기 시도
-    if (state.gasUrl && state.gasUrl.startsWith('https://script.google.com/')) {
+    // 2. 시트에서 지적사항을 받아 로컬 값을 덮어쓴다 (시트가 원본)
+    const summary = state.savedReviews.find(r => r.id === reviewId);
+    if (summary) {
+      state.reviewId = summary.id;
+      state.docName = summary.title || state.docName;
+      state.totalPages = summary.pageCount || state.totalPages || 1;
+      state.driveFileId = summary.driveFileId || state.driveFileId;
+      state.currentPage = 1;
+    }
+
+    if (hasGas()) {
       try {
-        const res = await fetch(`${state.gasUrl}?mode=get&id=${encodeURIComponent(reviewId)}`);
-        const data = await res.json();
-        if (data.ok && data.review) {
-          state.reviewId = data.review.id;
-          state.docName = data.review.title;
-          state.comments = data.review.comments || [];
-          state.totalPages = data.review.pageCount || 1;
-          state.currentPage = 1;
+        const data = await gasGet({ action: 'getComments', reviewId: reviewId });
+        if (data && data.ok && Array.isArray(data.comments)) {
+          state.comments = data.comments;
+        } else if (data && !data.ok) {
+          showDriveSyncToast('지적사항 불러오기 실패: ' + (data.error || '오류'), false, 4000);
         }
       } catch (err) {
-        console.warn('Sheets fetch error, fallback to local', err);
+        console.warn('getComments failed, fallback to local', err);
       }
     }
 
@@ -2801,7 +2896,11 @@
         reviewId: reviewId,
         fileName: file.name,
         mimeType: mimeType,
-        fileBase64: base64Data
+        fileBase64: base64Data,
+        title: state.docName || file.name,
+        folderId: state.currentFolderId || 'root',
+        pageCount: state.totalPages || 1,
+        author: window.CHEESE_ADMIN_DISPLAY_NAME || '검수 담당자'
       };
 
       const res = await fetch(state.gasUrl, {
@@ -2868,10 +2967,12 @@
           renderPdfPage();
         });
 
-        // 백그라운드 구글 드라이브 업로드 (Base64 변환 후 전송)
+        // 구글 드라이브 업로드. 끝나야 드라이브 파일 ID가 생기므로
+        // 여기서 기다린 뒤에 시트로 밀어 올린다.
         const b64Reader = new FileReader();
-        b64Reader.onload = () => {
-          uploadFileToDrive(state.reviewId, file, b64Reader.result);
+        b64Reader.onload = async () => {
+          await uploadFileToDrive(state.reviewId, file, b64Reader.result);
+          scheduleSheetSync();
         };
         b64Reader.readAsDataURL(file);
       };
@@ -2908,8 +3009,9 @@
         };
         el.docImage.src = dataUrl;
 
-        // 백그라운드 구글 드라이브 업로드 (PC ↔ 모바일 공유 핵심)
-        uploadFileToDrive(state.reviewId, file, dataUrl);
+        // 구글 드라이브 업로드 (PC ↔ 모바일 공유 핵심)
+        await uploadFileToDrive(state.reviewId, file, dataUrl);
+        scheduleSheetSync();
       };
       reader.readAsDataURL(file);
     }
@@ -4283,14 +4385,19 @@
     }
     localStorage.setItem('cheese_qe_projects_index', JSON.stringify(index));
     state.savedReviews = index;
+
+    scheduleSheetSync();
   }
 
-  async function saveCurrentReviewToSheets() {
-    if (!state.gasUrl || !state.gasUrl.startsWith('https://script.google.com/')) {
+  // silent=true 는 자동 저장. 조용히 올리고 실패할 때만 알린다.
+  async function pushCurrentReviewToSheets(silent) {
+    if (!hasGas()) {
+      if (silent) return false;
       alert('구글 스프레드시트 Web App URL이 설정되어 있지 않거나 올바르지 않습니다.\n\n설정(⚙️) 아이콘을 눌러 배포된 Web App URL을 먼저 입력해 주세요.\n\n※ 아직 Apps Script를 배포하지 않으셨다면,\nadmin-backend/QE-Review-API/Code.js 파일을\n구글 시트의 Apps Script에 붙여넣고 배포해 주세요.');
       el.settingsModal.classList.remove('hidden');
-      return;
+      return false;
     }
+    if (!state.reviewId) return false;
 
     const currentMatch = state.savedReviews.find(r => r.id === state.reviewId);
     const folderId = currentMatch?.folderId || state.currentFolderId || 'root';
@@ -4307,32 +4414,50 @@
       comments: state.comments
     };
 
-    const origHtml = el.sheetsSaveBtn.innerHTML;
-    el.sheetsSaveBtn.disabled = true;
-    el.sheetsSaveBtn.innerHTML = `<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i><span>저장 중...</span>`;
-    lucide.createIcons();
-
-    try {
-      const res = await fetch(state.gasUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json();
-      if (data.ok) {
-        syncToStorage();
-        alert('구글 스프레드시트에 성공적으로 저장되었습니다!\n(수정일시: ' + data.updatedAt + ')');
-      } else {
-        alert('시트 저장 실패: ' + (data.error || '알 수 없는 오류'));
-      }
-    } catch (err) {
-      console.warn('Sheets save error:', err);
-      alert('구글 스프레드시트 연결 실패\n\n가능한 원인:\n① Apps Script가 아직 배포되지 않았음\n② Web App URL이 올바르지 않음\n③ 배포 시 "모든 사용자 접근" 권한이 설정되지 않음\n\n※ 지적사항은 로컬(내 브라우저)에 안전하게 저장되어 있습니다.\n설정(⚙️)에서 URL을 확인해 주세요.');
-    } finally {
-      el.sheetsSaveBtn.disabled = false;
-      el.sheetsSaveBtn.innerHTML = origHtml;
+    let origHtml = null;
+    if (!silent && el.sheetsSaveBtn) {
+      origHtml = el.sheetsSaveBtn.innerHTML;
+      el.sheetsSaveBtn.disabled = true;
+      el.sheetsSaveBtn.innerHTML = `<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i><span>저장 중...</span>`;
       lucide.createIcons();
     }
+
+    try {
+      const data = await gasPost(payload);
+      if (data && data.ok) {
+        if (data.driveFileId && !state.driveFileId) state.driveFileId = data.driveFileId;
+        if (!silent) alert('구글 스프레드시트에 성공적으로 저장되었습니다!\n(수정일시: ' + data.updatedAt + ')');
+        return true;
+      }
+
+      const reason = (data && data.error) || '알 수 없는 오류';
+      if (silent) showDriveSyncToast('자동 저장 실패: ' + reason, false, 4000);
+      else alert('시트 저장 실패: ' + reason);
+      return false;
+    } catch (err) {
+      console.warn('Sheets save error:', err);
+      if (silent) {
+        showDriveSyncToast('자동 저장 실패 - 이 기기에만 보관됨', false, 4000);
+      } else {
+        alert('구글 스프레드시트 연결 실패\n\n가능한 원인:\n① Apps Script가 아직 배포되지 않았음\n② Web App URL이 올바르지 않음\n③ 배포 시 "모든 사용자 접근" 권한이 설정되지 않음\n\n※ 지적사항은 이 브라우저에 보관되어 있습니다.\n설정(⚙️)에서 URL을 확인해 주세요.');
+      }
+      return false;
+    } finally {
+      if (!silent && el.sheetsSaveBtn && origHtml !== null) {
+        el.sheetsSaveBtn.disabled = false;
+        el.sheetsSaveBtn.innerHTML = origHtml;
+        lucide.createIcons();
+      }
+    }
+  }
+
+  // 저장 버튼은 자동 저장을 기다리지 않고 지금 바로 올리고 싶을 때 쓴다
+  async function saveCurrentReviewToSheets() {
+    if (autoSaveTimer) {
+      clearTimeout(autoSaveTimer);
+      autoSaveTimer = null;
+    }
+    await pushCurrentReviewToSheets(false);
   }
 
   // Utilities
