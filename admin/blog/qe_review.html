@@ -332,22 +332,24 @@
         </div>
       </div>
 
-      <!-- 새 문서 드래그앤드롭 업로드 박스 -->
-      <div id="dashDropZone" class="border-2 border-dashed border-slate-800 hover:border-indigo-500/80 bg-slate-950/40 hover:bg-slate-900/40 rounded-2xl p-8 text-center transition cursor-pointer group">
+      <!-- 새 문서 올리기 (끌어다 놓는 자리 겸용, 목록이 먼저 보이도록 한 줄로 둔다) -->
+      <div id="dashDropZone" class="border border-dashed border-slate-800 hover:border-indigo-500/80 bg-slate-950/40 hover:bg-slate-900/40 rounded-xl px-3 py-2.5 flex items-center gap-3 transition">
         <input type="file" id="dashFileInput" accept="image/*,application/pdf" class="hidden">
-        <div class="w-14 h-14 rounded-2xl bg-indigo-600/10 text-indigo-400 group-hover:scale-110 flex items-center justify-center mx-auto mb-3 transition border border-indigo-500/20">
-          <i data-lucide="upload-cloud" class="w-7 h-7"></i>
+        <div class="w-8 h-8 rounded-lg bg-indigo-600/10 text-indigo-400 flex items-center justify-center shrink-0 border border-indigo-500/20">
+          <i data-lucide="upload-cloud" class="w-4 h-4"></i>
         </div>
-        <h3 class="text-base font-bold text-white mb-1">검수할 새 PDF 문서 또는 이미지를 이곳에 드래그하세요</h3>
-        <p class="text-xs text-slate-400 mb-4">PDF, PNG, JPG, WebP 파일을 즉시 불러와 핀 코멘트 검수를 시작합니다.</p>
-        <div class="flex items-center justify-center gap-3">
-          <button onclick="document.getElementById('dashFileInput').click()" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow transition flex items-center gap-2">
-            <i data-lucide="file-up" class="w-4 h-4"></i>
-            내 파일 선택하기
+        <div class="min-w-0 flex-1">
+          <p class="text-xs font-bold text-white truncate">새 시안 올리기</p>
+          <p class="text-[11px] text-slate-400 truncate">PDF · PNG · JPG · WebP — 이 줄에 끌어다 놓아도 됩니다</p>
+        </div>
+        <div class="flex items-center gap-1.5 shrink-0">
+          <button onclick="document.getElementById('dashFileInput').click()" class="px-2.5 sm:px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold shadow transition flex items-center gap-1.5">
+            <i data-lucide="file-up" class="w-3.5 h-3.5"></i>
+            <span>파일 선택</span>
           </button>
-          <button onclick="openSampleInViewer()" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition flex items-center gap-2">
-            <i data-lucide="sparkles" class="w-4 h-4 text-amber-400"></i>
-            샘플 시안으로 체험
+          <button onclick="openSampleInViewer()" class="hidden sm:flex px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold border border-slate-700 transition items-center gap-1.5">
+            <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-400"></i>
+            <span>샘플</span>
           </button>
         </div>
       </div>
@@ -459,6 +461,19 @@
     </div>
   </div>
 
+
+  <!-- 목록 항목 동작 시트 (모바일: 칸의 ⋯ 를 누르면 아래에서 올라온다) -->
+  <div id="rowActionSheet" class="fixed inset-0 z-50 hidden md:hidden">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeRowActions()"></div>
+    <div class="absolute inset-x-0 bottom-0 bg-slate-950 border-t border-slate-800 rounded-t-2xl p-3 pb-7 shadow-2xl">
+      <div class="w-10 h-1 rounded-full bg-slate-700 mx-auto mb-3"></div>
+      <div class="px-1 pb-2.5 mb-1 border-b border-slate-800">
+        <p id="rowActionTitle" class="text-xs font-bold text-white truncate"></p>
+        <p id="rowActionMeta" class="text-[11px] text-slate-400 mt-0.5 truncate"></p>
+      </div>
+      <div id="rowActionButtons" class="space-y-0.5 pt-1"></div>
+    </div>
+  </div>
 
   <!-- ========================================================================= -->
   <!-- 2. 문서 검수 전체화면 뷰어 (전체화면 풀 작업 공간) : VIEW_VIEWER -->
@@ -2294,6 +2309,67 @@
   }
   window.setDashFilter = setDashFilter;
 
+  // 목록 항목의 ⋯ 를 누르면 올라오는 동작 시트.
+  // 칸마다 버튼을 늘어놓으면 높이만 잡아먹으므로 파일 탐색기의 오른쪽 클릭 메뉴처럼 접어 둔다.
+  function openRowActions(kind, id) {
+    const sheet = document.getElementById('rowActionSheet');
+    if (!sheet) return;
+
+    const row = (label, icon, action, danger) => `
+      <button onclick="${action}" class="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-medium transition text-left ${danger ? 'text-rose-300 hover:bg-rose-500/10' : 'text-slate-200 hover:bg-slate-800'}">
+        <i data-lucide="${icon}" class="w-4 h-4 shrink-0 ${danger ? 'text-rose-400' : 'text-slate-400'}"></i>
+        <span>${label}</span>
+      </button>`;
+
+    let title = '';
+    let meta = '';
+    let buttons = '';
+
+    if (kind === 'folder') {
+      const folder = state.folders.find(f => f.id === id);
+      if (!folder) return;
+      const s = getFolderStats(id);
+      title = folder.name;
+      meta = `폴더 · 문서 ${s.docCount}건${s.totalComments > 0 ? ` · 해결 ${s.resolvedCount}/${s.totalComments}` : ''} · ${folder.createdAt || '-'}`;
+      buttons =
+        row('열기', 'folder-open', `closeRowActions(); navigateToFolder('${id}')`) +
+        row('이름 변경', 'edit-2', `closeRowActions(); openRenameFolderModal('${id}')`) +
+        row('폴더 삭제', 'trash-2', `closeRowActions(); deleteFolder('${id}')`, true);
+    } else {
+      const review = state.savedReviews.find(r => r.id === id);
+      if (!review) return;
+      const total = review.totalComments || 0;
+      const resolved = review.resolvedCount || 0;
+      title = review.title;
+      meta = `${review.pageCount || 1}p · ${total > 0 ? `해결 ${resolved}/${total}` : '지적 없음'} · ${review.updatedAt || '-'}`;
+      buttons =
+        row('검수 열기', 'arrow-right', `closeRowActions(); resumeReviewProject('${id}')`) +
+        row('폴더 이동', 'folder-input', `closeRowActions(); openMoveModal('${id}')`) +
+        row('문서 삭제', 'trash-2', `closeRowActions(); deleteReviewFromRow('${id}')`, true);
+    }
+
+    document.getElementById('rowActionTitle').textContent = title;
+    document.getElementById('rowActionMeta').textContent = meta;
+    document.getElementById('rowActionButtons').innerHTML = buttons;
+    sheet.classList.remove('hidden');
+    lucide.createIcons();
+  }
+
+  function closeRowActions() {
+    const sheet = document.getElementById('rowActionSheet');
+    if (sheet) sheet.classList.add('hidden');
+  }
+
+  // 삭제는 제목이 필요한데 따옴표가 섞이면 인라인 onclick 이 깨지므로 여기서 찾아 넘긴다
+  function deleteReviewFromRow(id) {
+    const review = state.savedReviews.find(r => r.id === id);
+    deleteReviewProject(id, review ? review.title : '문서');
+  }
+
+  window.openRowActions = openRowActions;
+  window.closeRowActions = closeRowActions;
+  window.deleteReviewFromRow = deleteReviewFromRow;
+
   function updateStats() {
     const total = state.savedReviews.length;
     const completed = state.savedReviews.filter(r => r.status === 'completed' || (r.totalComments > 0 && r.resolvedCount === r.totalComments)).length;
@@ -2484,63 +2560,17 @@
 
       // 2) 모바일 전용 카드
       mobileHtml += `
-        <div onclick="navigateToFolder('${f.id}')" class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 hover:border-slate-700 active:bg-slate-800 transition flex flex-col gap-2.5 cursor-pointer select-none">
-          <div class="flex items-start justify-between gap-2">
-            <div class="flex items-center gap-2.5 min-w-0">
-              <div class="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center shrink-0">
-                <i data-lucide="folder" class="w-4 h-4"></i>
-              </div>
-              <div class="min-w-0">
-                <h4 class="text-xs font-bold text-white truncate" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</h4>
-                <span class="text-[10px] text-slate-400 font-medium">📁 하위 폴더 • 문서 ${fStats.docCount}건</span>
-              </div>
-            </div>
-            <div class="shrink-0">
-              ${fStats.docCount === 0 ? `
-                <span class="text-[10px] px-2 py-0.5 rounded-full font-medium text-slate-500 bg-slate-950 border border-slate-800">비어 있음</span>
-              ` : (fStats.openIssues === 0 && fStats.totalComments > 0 ? `
-                <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">완료됨</span>
-              ` : `
-                <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">진행 중</span>
-              `)}
-            </div>
+        <div onclick="navigateToFolder('${f.id}')" class="px-3 py-2.5 rounded-xl bg-slate-900/90 border border-slate-800 active:bg-slate-800 transition flex items-center gap-2.5 cursor-pointer select-none">
+          <div class="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center shrink-0">
+            <i data-lucide="folder" class="w-4 h-4"></i>
           </div>
-
-          ${fStats.totalComments > 0 ? `
-            <div class="bg-slate-950/70 p-2.5 rounded-lg border border-slate-800/80 space-y-1.5">
-              <div class="flex items-center justify-between text-[11px]">
-                <span class="text-slate-300 font-bold">지적사항: 해결 ${fStats.resolvedCount} / 총 ${fStats.totalComments}건</span>
-                <span class="text-amber-400 font-semibold text-[10px]">${fStats.percent}%</span>
-              </div>
-              <div class="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden border border-slate-800">
-                <div class="h-full rounded-full transition-all ${fStats.openIssues === 0 ? 'bg-emerald-500' : 'bg-amber-500'}" style="width: ${fStats.percent}%"></div>
-              </div>
-              <div class="flex items-center justify-between text-[10px] pt-0.5">
-                ${fStats.openIssues > 0 ? `
-                  <span class="text-rose-400 font-bold">미해결 지적 ${fStats.openIssues}건</span>
-                ` : `
-                  <span class="text-emerald-400 font-medium">모든 지적 해결됨</span>
-                `}
-                <span class="text-slate-500">${f.createdAt || '-'}</span>
-              </div>
-            </div>
-          ` : `
-            <div class="flex items-center justify-between text-[10px] text-slate-500 px-0.5">
-              <span>지적사항 없음</span>
-              <span>${f.createdAt || '-'}</span>
-            </div>
-          `}
-
-          <div class="flex items-center justify-end gap-1.5 pt-1 border-t border-slate-800/60" onclick="event.stopPropagation()">
-            <button onclick="openRenameFolderModal('${f.id}')" class="px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-medium flex items-center gap-1 transition">
-              <i data-lucide="edit-2" class="w-3 h-3"></i>
-              <span>이름변경</span>
-            </button>
-            <button onclick="deleteFolder('${f.id}')" class="px-2.5 py-1 rounded-md bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-[10px] font-medium border border-rose-500/20 flex items-center gap-1 transition">
-              <i data-lucide="trash-2" class="w-3 h-3"></i>
-              <span>삭제</span>
-            </button>
+          <div class="min-w-0 flex-1">
+            <h4 class="text-xs font-bold text-white truncate" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</h4>
+            <p class="text-[10px] text-slate-400 truncate mt-0.5">문서 ${fStats.docCount}건${fStats.totalComments > 0 ? ` · 해결 ${fStats.resolvedCount}/${fStats.totalComments}` : ''}${fStats.openIssues > 0 ? ` · <span class="text-rose-400 font-semibold">미해결 ${fStats.openIssues}</span>` : ''}</p>
           </div>
+          <button onclick="event.stopPropagation(); openRowActions('folder', '${f.id}')" class="p-1.5 -mr-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition shrink-0" title="더보기">
+            <i data-lucide="more-vertical" class="w-4 h-4"></i>
+          </button>
         </div>
       `;
     });
@@ -2624,75 +2654,17 @@
 
       // 2) 모바일 전용 카드
       mobileHtml += `
-        <div onclick="resumeReviewProject('${r.id}')" class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 hover:border-slate-700 active:bg-slate-800 transition flex flex-col gap-2.5 cursor-pointer select-none">
-          <div class="flex items-start justify-between gap-2">
-            <div class="flex items-center gap-2.5 min-w-0">
-              <div class="w-8 h-8 rounded-lg ${isDone ? 'bg-emerald-500/10 text-emerald-400' : 'bg-indigo-500/10 text-indigo-400'} flex items-center justify-center shrink-0">
-                <i data-lucide="${isDone ? 'check-circle' : 'file-text'}" class="w-4 h-4"></i>
-              </div>
-              <div class="min-w-0">
-                <h4 class="text-xs font-bold text-white truncate" title="${escapeHtml(r.title)}">${escapeHtml(r.title)}</h4>
-                <div class="text-[10px] text-slate-400 font-medium flex items-center gap-1.5 mt-0.5">
-                  <span class="text-indigo-400/90">📁 ${escapeHtml(folderName)}</span>
-                  <span>•</span>
-                  <span>${r.pageCount || 1}p</span>
-                  <span>•</span>
-                  <span>${escapeHtml(r.author || '관리자')}</span>
-                </div>
-              </div>
-            </div>
-            <div class="shrink-0">
-              <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold ${isDone ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'}">
-                ${isDone ? '검수 완료' : '진행 중'}
-              </span>
-            </div>
+        <div onclick="resumeReviewProject('${r.id}')" class="px-3 py-2.5 rounded-xl bg-slate-900/90 border border-slate-800 active:bg-slate-800 transition flex items-center gap-2.5 cursor-pointer select-none">
+          <div class="w-8 h-8 rounded-lg ${isDone ? 'bg-emerald-500/10 text-emerald-400' : 'bg-indigo-500/10 text-indigo-400'} flex items-center justify-center shrink-0">
+            <i data-lucide="${isDone ? 'check-circle' : 'file-text'}" class="w-4 h-4"></i>
           </div>
-
-          <div class="bg-slate-950/70 p-2.5 rounded-lg border border-slate-800/80 space-y-1.5">
-            ${totalComments > 0 ? `
-              <div class="flex items-center justify-between text-[11px]">
-                <span class="font-bold ${isDone ? 'text-emerald-400' : 'text-slate-200'}">해결 ${resolvedCount} / 총 ${totalComments}건</span>
-                <span class="text-[10px] font-semibold ${isDone ? 'text-emerald-400' : 'text-indigo-300'}">${percent}%</span>
-              </div>
-              <div class="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden border border-slate-800">
-                <div class="h-full rounded-full transition-all ${isDone ? 'bg-emerald-500' : 'bg-indigo-500'}" style="width: ${percent}%"></div>
-              </div>
-              <div class="flex items-center justify-between text-[10px] pt-0.5">
-                ${openCount > 0 ? `
-                  <span class="text-rose-400 font-bold flex items-center gap-1">
-                    <i data-lucide="alert-circle" class="w-3 h-3"></i>
-                    미해결 지적 ${openCount}건 남아있음
-                  </span>
-                ` : `
-                  <span class="text-emerald-400 font-medium flex items-center gap-1">
-                    <i data-lucide="check" class="w-3 h-3"></i>
-                    모든 지적 해결 완료
-                  </span>
-                `}
-                <span class="text-slate-500">${r.updatedAt || '최근'}</span>
-              </div>
-            ` : `
-              <div class="flex items-center justify-between text-[11px] text-slate-400">
-                <span>지적사항 없음 (0/0)</span>
-                <span class="text-slate-500 text-[10px]">${r.updatedAt || '최근'}</span>
-              </div>
-            `}
+          <div class="min-w-0 flex-1">
+            <h4 class="text-xs font-bold text-white truncate" title="${escapeHtml(r.title)}">${escapeHtml(r.title)}</h4>
+            <p class="text-[10px] text-slate-400 truncate mt-0.5">${escapeHtml(folderName)} · ${r.pageCount || 1}p · ${totalComments > 0 ? `해결 ${resolvedCount}/${totalComments}` : '지적 없음'}${openCount > 0 ? ` · <span class="text-rose-400 font-semibold">미해결 ${openCount}</span>` : ''}</p>
           </div>
-
-          <div class="flex items-center justify-end gap-1.5 pt-1 border-t border-slate-800/60" onclick="event.stopPropagation()">
-            <button onclick="openMoveModal('${r.id}')" class="px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-medium flex items-center gap-1 transition">
-              <i data-lucide="folder-input" class="w-3 h-3"></i>
-              <span>이동</span>
-            </button>
-            <button onclick="deleteReviewProject('${r.id}', '${escapeHtml(r.title)}')" class="px-2.5 py-1 rounded-md bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-[10px] font-medium border border-rose-500/20 flex items-center gap-1 transition">
-              <i data-lucide="trash-2" class="w-3 h-3"></i>
-              <span>삭제</span>
-            </button>
-            <button onclick="resumeReviewProject('${r.id}')" class="px-3 py-1 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-semibold shadow-sm flex items-center gap-1 transition">
-              <span>검수 열기</span>
-              <i data-lucide="arrow-right" class="w-3 h-3"></i>
-            </button>
-          </div>
+          <button onclick="event.stopPropagation(); openRowActions('review', '${r.id}')" class="p-1.5 -mr-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition shrink-0" title="더보기">
+            <i data-lucide="more-vertical" class="w-4 h-4"></i>
+          </button>
         </div>
       `;
     });
