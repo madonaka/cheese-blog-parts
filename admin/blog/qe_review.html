@@ -1013,6 +1013,19 @@
         <i data-lucide="chevron-right" class="w-4 h-4 text-slate-500"></i>
       </button>
 
+      <button onclick="exportPinnedImages()" class="w-full flex items-center justify-between p-3.5 rounded-xl bg-slate-800 hover:bg-slate-700/80 border border-slate-700 text-left transition">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center">
+            <i data-lucide="image-down" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <div class="text-xs font-semibold text-white">핀 표시된 시안 이미지 저장 (PNG)</div>
+            <div class="text-[11px] text-slate-400">지적 위치가 그려진 시안을 그림 파일로 받습니다</div>
+          </div>
+        </div>
+        <i data-lucide="chevron-right" class="w-4 h-4 text-slate-500"></i>
+      </button>
+
       <button onclick="exportJson()" class="w-full flex items-center justify-between p-3.5 rounded-xl bg-slate-800 hover:bg-slate-700/80 border border-slate-700 text-left transition">
         <div class="flex items-center gap-3">
           <div class="w-9 h-9 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
@@ -4662,65 +4675,231 @@
     URL.revokeObjectURL(url);
   }
 
-  function printReport() {
-    el.exportModal.classList.add('hidden');
-    const printWindow = window.open('', '_blank');
-    let tableRows = state.comments.map(c => `
-      <tr style="border-bottom: 1px solid #e2e8f0;">
-        <td style="padding: 10px; font-weight: bold; text-align: center;">#${c.id}</td>
-        <td style="padding: 10px; text-align: center;">
-          <span style="display:inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; background: #f1f5f9;">
-            ${TAG_CONFIG[c.type]?.label || c.type}
-          </span>
-        </td>
-        <td style="padding: 10px; text-align: center;">${c.resolved ? '<span style="color: #10b981; font-weight: bold;">완료</span>' : '<span style="color: #f43f5e; font-weight: bold;">진행중</span>'}</td>
-        <td style="padding: 10px; text-align: center;">P.${c.page}</td>
-        <td style="padding: 10px; line-height: 1.5;">${escapeHtml(c.text)}</td>
-        <td style="padding: 10px; color: #64748b; font-size: 11px; text-align: center;">${c.createdAt}</td>
-      </tr>
-    `).join('');
+  // 시안 위에 핀을 그려 넣은 그림을 페이지마다 만든다.
+  // 리포트를 PDF 나 그림으로 저장했을 때 어디를 지적했는지 그림만 봐도 알아야 한다.
+  function drawPinsOnCanvas(ctx, width, height, page) {
+    const marks = state.comments.filter(c => (c.page || 1) === page);
+    const radius = Math.max(13, Math.round(Math.min(width, height) * 0.016));
 
-    printWindow.document.write(`
+    marks.forEach(c => {
+      const config = TAG_CONFIG[c.type] || TAG_CONFIG.error;
+      const color = c.resolved ? '#64748b' : config.color;
+      const x = c.xRatio * width;
+      const y = c.yRatio * height;
+
+      if (c.widthRatio && c.heightRatio) {
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = Math.max(2, radius * 0.18);
+        ctx.setLineDash([radius * 0.6, radius * 0.4]);
+        ctx.strokeRect(x, y, c.widthRatio * width, c.heightRatio * height);
+        ctx.restore();
+      }
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.lineWidth = Math.max(2, radius * 0.16);
+      ctx.strokeStyle = '#ffffff';
+      ctx.stroke();
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `bold ${Math.round(radius * 1.15)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(c.id), x, y + radius * 0.05);
+      ctx.restore();
+    });
+  }
+
+  async function buildPinnedPageImages(maxWidth) {
+    const limit = maxWidth || 1400;
+    const pages = [];
+    const pageCount = (state.docType === 'pdf' && state.pdfDoc) ? state.pdfDoc.numPages : 1;
+
+    for (let page = 1; page <= pageCount; page++) {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+
+      if (state.docType === 'pdf' && state.pdfDoc) {
+        const pdfPage = await state.pdfDoc.getPage(page);
+        const base = pdfPage.getViewport({ scale: 1 });
+        const scale = Math.min(2, limit / base.width);
+        const viewport = pdfPage.getViewport({ scale });
+        canvas.width = Math.round(viewport.width);
+        canvas.height = Math.round(viewport.height);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        await pdfPage.render({ canvasContext: ctx, viewport }).promise;
+      } else {
+        const img = el.docImage;
+        if (!img || !img.naturalWidth) continue;
+        const scale = Math.min(1, limit / img.naturalWidth);
+        canvas.width = Math.round(img.naturalWidth * scale);
+        canvas.height = Math.round(img.naturalHeight * scale);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      }
+
+      drawPinsOnCanvas(ctx, canvas.width, canvas.height, page);
+
+      let dataUrl = '';
+      try {
+        dataUrl = canvas.toDataURL('image/png');
+      } catch (err) {
+        console.warn('시안 그림을 만들지 못했습니다:', err);
+      }
+      pages.push({ page, dataUrl });
+    }
+
+    return pages;
+  }
+
+  function reportRowsHtml(page) {
+    const marks = state.comments.filter(c => (c.page || 1) === page);
+    if (marks.length === 0) {
+      return '<tr><td colspan="6" style="text-align:center; padding:26px; color:#94a3b8;">이 페이지에는 지적사항이 없습니다.</td></tr>';
+    }
+
+    return marks.map(c => {
+      const config = TAG_CONFIG[c.type] || TAG_CONFIG.error;
+      const replies = (c.replies || []).map(rep => `
+        <div style="margin-top:6px; padding-left:10px; border-left:2px solid #cbd5e1; color:#475569; font-size:12px;">
+          <strong>${escapeHtml(rep.author || '답변')}</strong> · ${escapeHtml(rep.text || '')}
+        </div>`).join('');
+
+      return `
+      <tr style="border-bottom: 1px solid #e2e8f0; vertical-align: top;">
+        <td style="padding: 10px; text-align: center;">
+          <span style="display:inline-flex; width:22px; height:22px; border-radius:50%; background:${c.resolved ? '#64748b' : config.color}; color:#fff; font-weight:bold; font-size:12px; align-items:center; justify-content:center;">${c.id}</span>
+        </td>
+        <td style="padding: 10px; text-align: center; white-space: nowrap;">
+          <span style="display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:bold; background:#f1f5f9; color:${config.color};">${config.label}</span>
+        </td>
+        <td style="padding: 10px; text-align: center; white-space: nowrap;">${c.resolved ? '<span style="color:#10b981; font-weight:bold;">해결</span>' : '<span style="color:#f43f5e; font-weight:bold;">미해결</span>'}</td>
+        <td style="padding: 10px; line-height: 1.55;">${escapeHtml(c.text)}${replies}</td>
+        <td style="padding: 10px; text-align: center; font-size: 12px; color:#475569; white-space: nowrap;">${escapeHtml(c.author || '-')}</td>
+        <td style="padding: 10px; color: #64748b; font-size: 11px; text-align: center; white-space: nowrap;">${escapeHtml(c.createdAt || '-')}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  async function printReport() {
+    el.exportModal.classList.add('hidden');
+
+    // 창은 먼저 연다. 그림을 다 만든 뒤에 열면 팝업 차단에 걸린다.
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('팝업이 차단되어 리포트를 열지 못했습니다.\n이 사이트의 팝업을 허용해 주세요.');
+      return;
+    }
+    printWindow.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>검수 리포트 만드는 중</title></head><body style="font-family:sans-serif;padding:40px;color:#334155;">시안에 핀을 그려 넣는 중입니다...</body></html>');
+
+    let pages = [];
+    try {
+      pages = await buildPinnedPageImages(1400);
+    } catch (err) {
+      console.warn('리포트 시안 생성 실패:', err);
+    }
+
+    const total = state.comments.length;
+    const resolved = state.comments.filter(c => c.resolved).length;
+
+    const sections = (pages.length ? pages : [{ page: 1, dataUrl: '' }]).map(p => `
+      <section class="page">
+        <h2 class="page-title">${pages.length > 1 ? `${p.page} 페이지` : '검수 시안'}</h2>
+        ${p.dataUrl
+          ? `<img class="shot" src="${p.dataUrl}" alt="핀이 표시된 시안">`
+          : '<p class="nofile">시안 그림을 불러오지 못했습니다. 문서를 연 상태에서 다시 출력해 주세요.</p>'}
+        <table>
+          <thead>
+            <tr>
+              <th width="46">번호</th>
+              <th width="88">유형</th>
+              <th width="62">상태</th>
+              <th>지적 및 수정 요청 내용</th>
+              <th width="110">작성자</th>
+              <th width="120">작성일시</th>
+            </tr>
+          </thead>
+          <tbody>${reportRowsHtml(p.page)}</tbody>
+        </table>
+      </section>`).join('');
+
+    const html = `
       <!DOCTYPE html>
-      <html>
+      <html lang="ko">
       <head>
-        <title>QE 검수 리포트 - ${state.docName}</title>
+        <meta charset="utf-8">
+        <title>QE 검수 리포트 - ${escapeHtml(state.docName)}</title>
         <style>
-          body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; padding: 40px; color: #0f172a; }
-          h1 { margin-bottom: 4px; }
-          table { width: 100%; border-collapse: collapse; margin-top: 24px; font-size: 13px; }
-          th { background: #f8fafc; border-bottom: 2px solid #cbd5e1; padding: 10px; font-size: 12px; }
-          .meta { color: #64748b; font-size: 13px; margin-bottom: 20px; }
+          @page { size: A4; margin: 12mm; }
+          body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; padding: 24px; color: #0f172a; }
+          h1 { margin: 0 0 4px; font-size: 20px; }
+          .meta { color: #475569; font-size: 13px; margin-bottom: 18px; }
+          .meta strong { color: #0f172a; }
+          .page { margin-top: 26px; page-break-inside: avoid; }
+          .page + .page { page-break-before: always; }
+          .page-title { font-size: 14px; margin: 0 0 8px; color: #334155; }
+          .shot { width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; display: block; }
+          .nofile { padding: 24px; text-align: center; color: #94a3b8; border: 1px dashed #cbd5e1; border-radius: 6px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 13px; }
+          th { background: #f8fafc; border-bottom: 2px solid #cbd5e1; padding: 9px; font-size: 12px; text-align: center; }
         </style>
       </head>
       <body>
         <h1>문서 검수(QE) 리포트</h1>
         <div class="meta">
-          문서명: <strong>${state.docName}</strong> | 출력일시: ${new Date().toLocaleString()} | 총 지적건수: ${state.comments.length}건
+          문서명: <strong>${escapeHtml(state.docName)}</strong><br>
+          총 지적 <strong>${total}건</strong> · 해결 <strong>${resolved}건</strong> · 미해결 <strong>${total - resolved}건</strong><br>
+          출력일시: ${new Date().toLocaleString()}
         </div>
-        <table>
-          <thead>
-            <tr>
-              <th width="50">번호</th>
-              <th width="90">유형</th>
-              <th width="70">상태</th>
-              <th width="60">페이지</th>
-              <th>지적 및 수정 요청 내용</th>
-              <th width="140">작성일시</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${tableRows || '<tr><td colspan="6" style="text-align:center; padding:30px; color:#94a3b8;">등록된 코멘트가 없습니다.</td></tr>'}
-          </tbody>
-        </table>
+        ${sections}
         <script>
-          window.onload = () => { window.print(); };
+          window.onload = () => { setTimeout(() => window.print(), 300); };
         <\/script>
       </body>
-      </html>
-    `);
+      </html>`;
+
+    printWindow.document.open();
+    printWindow.document.write(html);
     printWindow.document.close();
   }
+
+  // 핀이 박힌 시안을 그림 파일로 바로 받는다 (그대로 클로드에 올려 확인하기 위한 용도)
+  async function exportPinnedImages() {
+    el.exportModal.classList.add('hidden');
+
+    let pages = [];
+    try {
+      pages = await buildPinnedPageImages(2000);
+    } catch (err) {
+      console.warn('시안 그림 저장 실패:', err);
+    }
+
+    const usable = pages.filter(p => p.dataUrl);
+    if (usable.length === 0) {
+      alert('저장할 시안이 없습니다.\n문서를 연 상태에서 다시 시도해 주세요.');
+      return;
+    }
+
+    const baseName = (state.docName || '검수').replace(/\.[^.]+$/, '');
+    usable.forEach((p, idx) => {
+      setTimeout(() => {
+        const link = document.createElement('a');
+        link.href = p.dataUrl;
+        link.download = `${baseName}_검수${usable.length > 1 ? `_p${p.page}` : ''}.png`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      }, idx * 400);
+    });
+  }
+
+  window.printReport = printReport;
+  window.exportPinnedImages = exportPinnedImages;
 
   function escapeHtml(text) {
     const div = document.createElement('div');
