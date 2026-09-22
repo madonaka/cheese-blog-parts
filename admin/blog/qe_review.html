@@ -426,6 +426,7 @@
             <span class="flex items-center gap-2 min-w-0">
               <i data-lucide="list" class="w-4 h-4 text-indigo-400 shrink-0"></i>
               <span class="truncate">디렉토리 및 검수 목록 (<span id="dashTotalItemCount">0</span>)</span>
+              <span id="dashScopeHint" class="hidden ml-1.5 text-[10px] font-semibold text-indigo-300 shrink-0 whitespace-nowrap">· 전체 폴더에서 찾음</span>
               <span id="dashActiveFilterBadge" class="hidden text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 truncate max-w-[160px]">전체</span>
             </span>
             <span class="hidden md:inline text-[11px] text-slate-500 font-normal">행을 클릭하면 폴더로 이동하거나 검수 문서를 엽니다</span>
@@ -1262,6 +1263,7 @@
     dashEmptyTitle: document.getElementById('dashEmptyTitle'),
     dashEmptyDesc: document.getElementById('dashEmptyDesc'),
     dashTotalItemCount: document.getElementById('dashTotalItemCount'),
+    dashScopeHint: document.getElementById('dashScopeHint'),
     dashActiveFilterBadge: document.getElementById('dashActiveFilterBadge'),
 
     // Folder Directory Elements
@@ -1848,6 +1850,18 @@
 
     el.sheetsSaveBtn.addEventListener('click', saveCurrentReviewToSheets);
 
+    // 다른 기기에서 만든 폴더·문서는 목록을 다시 받아야 보인다.
+    // 목록 화면을 보고 있는 동안에만 주기적으로 받고, 화면을 다시 켜면 바로 한 번 받는다.
+    setInterval(() => {
+      if (document.hidden) return;
+      if (state.currentView !== 'dashboard') return;
+      loadDashboardData();
+    }, 45000);
+
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && state.currentView === 'dashboard') loadDashboardData();
+    });
+
     // Folder Directory Events
     if (el.btnCreateFolder) el.btnCreateFolder.addEventListener('click', openCreateFolderModal);
     if (el.btnSubmitFolderModal) el.btnSubmitFolderModal.addEventListener('click', submitFolderModal);
@@ -2416,11 +2430,16 @@
     const q = (el.dashSearchInput.value || '').trim().toLowerCase();
     const filter = state.dashFilter || 'all';
 
+    // 위쪽 통계는 폴더를 가리지 않고 전부 세는데 목록만 현재 폴더로 걸러 버리면,
+    // 「미해결 지적 1」을 눌러도 그 문서가 다른 폴더에 있으면 아무것도 안 나온다.
+    // 그래서 통계 카드를 눌러 거를 때는 검색과 똑같이 폴더를 가리지 않는다.
+    const acrossFolders = !!q || filter !== 'all';
+
     // 1. 하위 폴더 필터링
     let childFolders = [];
     if (q) {
       childFolders = state.folders.filter(f => (f.name || '').toLowerCase().includes(q));
-    } else {
+    } else if (filter === 'all') {
       childFolders = state.folders.filter(f => (f.parentId || 'root') === state.currentFolderId);
     }
 
@@ -2429,7 +2448,7 @@
       const matchQ = (r.title || '').toLowerCase().includes(q);
       const isDone = r.status === 'completed' || (r.totalComments > 0 && r.resolvedCount === r.totalComments);
       const openCount = Math.max(0, (r.totalComments || 0) - (r.resolvedCount || 0));
-      const inCurrentFolder = q ? true : ((r.folderId || 'root') === state.currentFolderId);
+      const inCurrentFolder = acrossFolders ? true : ((r.folderId || 'root') === state.currentFolderId);
 
       if (!inCurrentFolder) return false;
       if (!matchQ) return false;
@@ -2439,6 +2458,10 @@
       if (filter === 'unresolved_issues') return openCount > 0;
       return true;
     });
+
+    if (el.dashScopeHint) {
+      el.dashScopeHint.classList.toggle('hidden', !(filter !== 'all' && !q));
+    }
 
     if (el.dashTotalItemCount) {
       el.dashTotalItemCount.textContent = childFolders.length + filteredReviews.length;
@@ -3734,6 +3757,36 @@
     });
   }
 
+  // 등록하기를 누르기 전에도 어디에 꽂히는지 보이도록 점선 임시 핀을 놓는다
+  function showPendingMarker(coords) {
+    removePendingMarker();
+    if (!el.overlayLayer || !coords || coords.page !== state.currentPage) return;
+
+    const config = TAG_CONFIG[coords.type] || TAG_CONFIG.error;
+    const ghost = document.createElement('div');
+    ghost.id = 'pendingMarker';
+    ghost.style.left = `${coords.xRatio * 100}%`;
+    ghost.style.top = `${coords.yRatio * 100}%`;
+
+    if (coords.widthRatio && coords.heightRatio) {
+      ghost.className = 'absolute rounded border-2 border-dashed pointer-events-none';
+      ghost.style.width = `${coords.widthRatio * 100}%`;
+      ghost.style.height = `${coords.heightRatio * 100}%`;
+      ghost.style.borderColor = config.color;
+      ghost.style.backgroundColor = `${config.color}20`;
+    } else {
+      ghost.className = 'absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none';
+      ghost.innerHTML = `<span class="w-8 h-8 rounded-full ${config.bg} text-white text-xs font-black flex items-center justify-center border-2 border-dashed border-white shadow-xl animate-pulse">${state.comments.length + 1}</span>`;
+    }
+
+    el.overlayLayer.appendChild(ghost);
+  }
+
+  function removePendingMarker() {
+    const ghost = document.getElementById('pendingMarker');
+    if (ghost) ghost.remove();
+  }
+
   function showPopoverAt(coords) {
     state.pendingCommentCoords = coords;
     const popover = el.commentInputPopover;
@@ -3750,35 +3803,46 @@
     el.commentTextInput.value = '';
     popover.classList.remove('hidden');
 
+    // 입력창은 스크롤되는 상자 안에 절대 위치로 놓인다.
+    // 화면 좌표만 쓰면 스크롤한 만큼 위로 어긋나, 시안을 내려서 찍을수록
+    // 엉뚱하게 한참 위에 나타난다. 스크롤 양을 반드시 더해야 한다.
     const containerRect = el.viewerContainer.getBoundingClientRect();
+    const scrollLeft = el.viewerContainer.scrollLeft;
+    const scrollTop = el.viewerContainer.scrollTop;
+    const pointX = coords.clientX - containerRect.left + scrollLeft;
+    const pointY = coords.clientY - containerRect.top + scrollTop;
+    const viewBottom = scrollTop + containerRect.height;
+    const viewRight = scrollLeft + containerRect.width;
     const isMobile = window.innerWidth < 768;
 
     if (isMobile) {
-      // 모바일 환경: 화면 너비에 맞게 중앙 정렬 및 화면 위/아래 클램핑
+      // 모바일 환경: 화면 너비에 맞게 중앙 정렬 및 보이는 영역 위/아래 클램핑
       const popW = Math.min(340, containerRect.width - 24);
-      const left = Math.max(12, (containerRect.width - popW) / 2);
-      let top = coords.clientY - containerRect.top + 16;
-      if (top + 220 > containerRect.height) {
-        top = Math.max(16, containerRect.height - 240);
+      const left = scrollLeft + Math.max(12, (containerRect.width - popW) / 2);
+      let top = pointY + 16;
+      if (top + 220 > viewBottom) {
+        top = Math.max(scrollTop + 16, viewBottom - 240);
       }
       popover.style.left = `${left}px`;
       popover.style.top = `${top}px`;
     } else {
-      let left = coords.clientX - containerRect.left + 20;
-      let top = coords.clientY - containerRect.top;
+      let left = pointX + 20;
+      let top = pointY;
 
-      if (left + 330 > containerRect.width) left = coords.clientX - containerRect.left - 340;
-      if (top + 200 > containerRect.height) top = containerRect.height - 220;
+      if (left + 330 > viewRight) left = pointX - 340;
+      if (top + 200 > viewBottom) top = viewBottom - 220;
 
-      popover.style.left = `${Math.max(20, left)}px`;
-      popover.style.top = `${Math.max(20, top)}px`;
+      popover.style.left = `${Math.max(scrollLeft + 20, left)}px`;
+      popover.style.top = `${Math.max(scrollTop + 20, top)}px`;
     }
 
+    showPendingMarker(coords);
     el.commentTextInput.focus();
   }
 
   function hidePopover() {
     el.commentInputPopover.classList.add('hidden');
+    removePendingMarker();
     state.pendingCommentCoords = null;
   }
 
