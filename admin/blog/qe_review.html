@@ -80,6 +80,32 @@
       }
     }
 
+    /* 여러 쪽 PDF: 무대는 투명하게 두고 쪽마다 흰 종이를 띄운다 */
+    #stageWrapper.stage-multipage {
+      background: transparent !important;
+      border-color: transparent !important;
+      box-shadow: none !important;
+      border-radius: 0 !important;
+      overflow: visible !important;
+    }
+    .pdf-page {
+      position: absolute;
+      background: #fff;
+      border-radius: 4px;
+      overflow: hidden;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, .45);
+    }
+    .pdf-page canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 시안 영역에서 두 손가락은 브라우저 화면 확대 대신 시안 확대로 쓴다 */
+    #viewerContainer {
+      touch-action: pan-x pan-y;
+    }
+
     /* 화면 높이 (Tailwind 의 h-screen 은 100vh 라 모바일에서 아래가 잘린다) */
     .app-screen {
       height: 100vh;
@@ -748,7 +774,7 @@
 
         
         <!-- STAGE OUTER WRAPPER (스케일된 실제 너비/높이를 가져 정확한 스크롤 영역과 완벽한 중앙 정렬을 제공) -->
-        <div id="stageOuter" class="relative inline-block text-left transition-all duration-75 select-none" style="margin: 20px auto;">
+        <div id="stageOuter" class="relative inline-block text-left select-none" style="margin: 20px auto;">
           <!-- DRIVE FILE LOADING OVERLAY (다른 기기에서 처음 열었을 때 드라이브 다운로드 안내) -->
           <div id="driveLoadingOverlay" class="hidden absolute inset-0 z-30 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center text-center p-6 select-none rounded-lg">
             <div class="w-14 h-14 rounded-2xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center mb-3">
@@ -761,6 +787,7 @@
           <!-- STAGE WRAPPER (원본 해상도 크기 유지, 좌상단 기준 transform scale) -->
           <div id="stageWrapper" class="relative shadow-2xl rounded-lg overflow-hidden border border-slate-800 bg-white" style="transform-origin: 0 0;">
             <canvas id="pdfCanvas" class="block"></canvas>
+            <div id="pdfPages" class="hidden absolute inset-0"></div>
             <img id="docImage" class="block max-w-none hidden" alt="시안 이미지" />
 
             <!-- INTERACTION OVERLAY LAYER -->
@@ -1636,10 +1663,14 @@
     el.nextPageBtn.addEventListener('click', () => changePage(1));
     
     // 확대 / 축소 / 100% 리셋 / 화면 맞춤
-    el.zoomInBtn.addEventListener('click', () => { state.isFitWidthMode = false; setScale(state.scale + 0.10); });
-    el.zoomOutBtn.addEventListener('click', () => { state.isFitWidthMode = false; setScale(state.scale - 0.10); });
-    el.zoom100Btn.addEventListener('click', () => { state.isFitWidthMode = false; setScale(1.0); });
-    el.zoomFitWidthBtn.addEventListener('click', zoomFitWidth);
+    const viewCenter = () => {
+      const r = el.viewerContainer.getBoundingClientRect();
+      return { clientX: r.left + el.viewerContainer.clientWidth / 2, clientY: r.top + el.viewerContainer.clientHeight / 2 };
+    };
+    el.zoomInBtn.addEventListener('click', () => { state.isFitWidthMode = false; setScale(state.scale + 0.10, viewCenter()); });
+    el.zoomOutBtn.addEventListener('click', () => { state.isFitWidthMode = false; setScale(state.scale - 0.10, viewCenter()); });
+    el.zoom100Btn.addEventListener('click', () => { state.isFitWidthMode = false; setScale(1.0, viewCenter()); });
+    el.zoomFitWidthBtn.addEventListener('click', () => zoomFitWidth(viewCenter()));
     el.zoomFitPageBtn.addEventListener('click', zoomFitPage);
 
     // Ctrl + 마우스 휠 줌 (Figma/Adobe 스타일)
@@ -1648,14 +1679,14 @@
         e.preventDefault();
         state.isFitWidthMode = false;
         const delta = e.deltaY < 0 ? 0.10 : -0.10;
-        setScale(state.scale + delta);
+        setScale(state.scale + delta, { clientX: e.clientX, clientY: e.clientY });
       }
     }, { passive: false });
 
     // 창 크기 변경 시 디폴트 너비 맞춤 모드 자동 유지 (화면 회전, 브라우저 리사이즈 대응)
     window.addEventListener('resize', () => {
       if (state.currentView === 'viewer' && state.isFitWidthMode) {
-        zoomFitWidth();
+        zoomFitWidth(viewCenter());
       }
     });
 
@@ -3086,6 +3117,7 @@
   }
 
   async function openReviewProject(reviewId) {
+    clearPdfPages();
     // 1. 로컬 스토리지에서 먼저 확인
     const localDetail = localStorage.getItem(`cheese_qe_detail_${reviewId}`);
     if (localDetail) {
@@ -3180,7 +3212,7 @@
         state.currentPage = 1;
         el.totalPageNum.textContent = state.totalPages;
         state.scale = null;
-        renderPdfPage();
+        await renderPdfPage();
       } catch (err) {
         console.warn('cached PDF open failed:', err);
         await deleteFileFromDB(reviewId);
@@ -3221,7 +3253,7 @@
             state.currentPage = 1;
             el.totalPageNum.textContent = state.totalPages;
             state.scale = null;
-            renderPdfPage();
+            await renderPdfPage();
           } else {
             state.docType = 'image';
             state.totalPages = 1;
@@ -3337,6 +3369,7 @@
   // VIEWER & DOCUMENT WORKSPACE
   // ==========================================
   function openFileInViewer(file) {
+    clearPdfPages();
     state.docName = file.name;
     state.scale = null; // 새 파일 오픈 시 너비 맞춤으로 초기화
     state.driveFileId = null; // 새 파일 업로드 시 초기화
@@ -3427,6 +3460,7 @@
   }
 
   function openSampleInViewer() {
+    clearPdfPages();
     state.docName = '샘플_랜딩페이지_시안_v1.png';
     state.reviewId = 'REV_SAMPLE_001';
     state.docType = 'image';
@@ -3542,53 +3576,266 @@
     el.docImage.src = sCanvas.toDataURL('image/png');
   }
 
-  // 한 캔버스에 그리기 작업이 겹치면 쪽이 뒤집히거나 줄어든 채 찍힌다.
-  // 느린 폰에서 쪽을 빨리 넘기면 겹칠 수 있어, 앞 작업을 취소하고 끝난 뒤에 그린다.
-  let pdfRenderTask = null;
+  // ==========================================
+  // 쪽 위치표
+  // 핀 좌표는 늘 「그 핀이 속한 쪽」 기준 비율이다. 쪽들을 세로로 이어 붙인
+  // 무대 위 어디에 놓이는지는 이 표로 바꾼다. 그림 한 장이면 무대 전체가 1쪽이다.
+  // ==========================================
+  const PAGE_GAP = 24;
 
-  function renderPdfPage() {
-    if (!state.pdfDoc) return;
-    el.currentPageNum.textContent = state.currentPage;
-    el.prevPageBtn.disabled = state.currentPage <= 1;
-    el.nextPageBtn.disabled = state.currentPage >= state.totalPages;
+  function getPageLayout() {
+    if (state.docType === 'pdf' && state.pageLayout && state.pageLayout.length) return state.pageLayout;
+    const w = state.naturalWidth || el.stageWrapper.offsetWidth || 1000;
+    const h = state.naturalHeight || el.stageWrapper.offsetHeight || 1350;
+    return [{ page: 1, left: 0, top: 0, width: w, height: h }];
+  }
 
-    const pdfDoc = state.pdfDoc;
-    const pageNo = state.currentPage;
+  function pageBox(page) {
+    const layout = getPageLayout();
+    return layout.find(p => p.page === (page || 1)) || layout[0];
+  }
 
-    pdfDoc.getPage(pageNo).then(async page => {
-      if (pdfDoc !== state.pdfDoc || pageNo !== state.currentPage) return; // 그사이 다른 쪽·문서로 넘어감
+  function stagePointFromClient(clientX, clientY) {
+    const r = el.stageWrapper.getBoundingClientRect();
+    const s = state.scale || 1;
+    return { x: (clientX - r.left) / s, y: (clientY - r.top) / s };
+  }
 
-      if (pdfRenderTask) {
-        pdfRenderTask.cancel();
-        try { await pdfRenderTask.promise; } catch (e) { /* 취소된 작업 */ }
-        if (pdfDoc !== state.pdfDoc || pageNo !== state.currentPage) return;
-      }
+  // 무대 위 한 점이 어느 쪽의 어디인지. 쪽 사이 빈틈이면 가장 가까운 쪽으로 붙이고 inside=false.
+  function pageHitFromStage(x, y) {
+    const layout = getPageLayout();
+    let best = layout[0];
+    let bestDist = Infinity;
+    for (const p of layout) {
+      const d = y < p.top ? p.top - y : (y > p.top + p.height ? y - (p.top + p.height) : 0);
+      if (d < bestDist) { bestDist = d; best = p; }
+      if (d === 0) break;
+    }
+    return {
+      page: best.page,
+      box: best,
+      inside: bestDist === 0 && x >= best.left && x <= best.left + best.width,
+      xRatio: Math.max(0, Math.min(1, (x - best.left) / best.width)),
+      yRatio: Math.max(0, Math.min(1, (y - best.top) / best.height))
+    };
+  }
 
-      const viewport = page.getViewport({ scale: 1.5 });
-      state.naturalWidth = viewport.width;
-      state.naturalHeight = viewport.height;
-      el.pdfCanvas.width = viewport.width;
-      el.pdfCanvas.height = viewport.height;
-      el.stageWrapper.style.width = viewport.width + 'px';
-      el.stageWrapper.style.height = viewport.height + 'px';
+  function updatePageIndicator() {
+    el.currentPageNum.textContent = state.currentPage || 1;
+    el.totalPageNum.textContent = state.totalPages || 1;
+    el.prevPageBtn.disabled = (state.currentPage || 1) <= 1;
+    el.nextPageBtn.disabled = (state.currentPage || 1) >= (state.totalPages || 1);
+  }
 
-      const renderContext = {
-        canvasContext: el.pdfCanvas.getContext('2d'),
-        viewport: viewport
-      };
-      const task = page.render(renderContext);
-      pdfRenderTask = task;
-      task.promise.then(() => {
-        if (pdfRenderTask === task) pdfRenderTask = null;
-        if (!state.scale) zoomFitWidth();
-        else setScale(state.scale);
-        renderMarkers();
-      }).catch(err => {
-        if (pdfRenderTask === task) pdfRenderTask = null;
-        if (err && err.name === 'RenderingCancelledException') return;
-        console.warn('PDF page render failed:', err);
-      });
+  function scrollToPage(pageNo, smooth) {
+    const p = pageBox(pageNo);
+    const vc = el.viewerContainer;
+    const outer = el.stageWrapper.getBoundingClientRect();
+    const vcRect = vc.getBoundingClientRect();
+    const stageTop = outer.top - vcRect.top + vc.scrollTop;
+    vc.scrollTo({ top: Math.max(0, stageTop + p.top * (state.scale || 1) - 12), behavior: smooth ? 'smooth' : 'auto' });
+  }
+
+  // ==========================================
+  // 여러 쪽 PDF 이어 보기
+  // 한글·워드처럼 모든 쪽을 세로로 이어 붙여 스크롤로 넘긴다.
+  // 쪽마다 캔버스를 따로 두고 화면 근처 쪽만 그린다. 멀어진 쪽은 비워 폰 메모리를 아낀다.
+  // ==========================================
+  const PDF_LAYOUT_SCALE = 1.5; // 핀 비율의 기준이 되는 쪽 크기(예전 한 쪽 보기와 같은 배율)
+  let pdfPageEls = [];          // [{ page, wrap, canvas, task, renderedMult, visible }]
+  let pdfLayoutDoc = null;      // 지금 배치해 둔 문서
+  let pdfRendering = false;
+  let pdfRenderAgain = false;
+  let pdfRenderTimer = null;
+  let pdfZoomRenderTimer = null;
+
+  function clearPdfPages() {
+    pdfPageEls.forEach(r => { if (r.task) r.task.cancel(); });
+    pdfPageEls = [];
+    pdfLayoutDoc = null;
+    state.pageLayout = null;
+    const box = document.getElementById('pdfPages');
+    if (box) {
+      box.innerHTML = '';
+      box.classList.add('hidden');
+    }
+    el.stageWrapper.classList.remove('stage-multipage');
+  }
+
+  async function layoutPdfPages(pdfDoc) {
+    clearPdfPages();
+    pdfLayoutDoc = pdfDoc;
+
+    const layout = [];
+    let top = 0;
+    let maxW = 0;
+    for (let n = 1; n <= pdfDoc.numPages; n++) {
+      const page = await pdfDoc.getPage(n);
+      if (pdfLayoutDoc !== pdfDoc) return false; // 그사이 다른 문서를 열었다
+      const vp = page.getViewport({ scale: PDF_LAYOUT_SCALE });
+      const w = Math.round(vp.width);
+      const h = Math.round(vp.height);
+      layout.push({ page: n, left: 0, top: top, width: w, height: h });
+      top += h + PAGE_GAP;
+      maxW = Math.max(maxW, w);
+    }
+    layout.forEach(p => { p.left = Math.round((maxW - p.width) / 2); });
+
+    state.pageLayout = layout;
+    state.naturalWidth = maxW;
+    state.naturalHeight = Math.max(1, top - PAGE_GAP);
+
+    el.pdfCanvas.classList.add('hidden');
+    el.docImage.classList.add('hidden');
+    el.stageWrapper.classList.add('stage-multipage');
+    el.stageWrapper.style.width = maxW + 'px';
+    el.stageWrapper.style.height = state.naturalHeight + 'px';
+
+    const box = document.getElementById('pdfPages');
+    box.innerHTML = '';
+    box.classList.remove('hidden');
+    pdfPageEls = layout.map(p => {
+      const wrap = document.createElement('div');
+      wrap.className = 'pdf-page';
+      wrap.dataset.page = p.page;
+      wrap.style.left = p.left + 'px';
+      wrap.style.top = p.top + 'px';
+      wrap.style.width = p.width + 'px';
+      wrap.style.height = p.height + 'px';
+      const canvas = document.createElement('canvas');
+      wrap.appendChild(canvas);
+      box.appendChild(wrap);
+      return { page: p.page, wrap: wrap, canvas: canvas, task: null, renderedMult: 0, visible: false };
     });
+    return true;
+  }
+
+  // 캔버스 해상도 배율. 화면 배율과 기기 화소 밀도에 맞춘다.
+  // 보이는 쪽이 적을수록(= 크게 확대할수록) 한 쪽에 화소를 더 써서 작은 글씨도 읽히게 하되,
+  // 한 캔버스는 사파리 한도(약 1,670만 화소) 아래로, 보이는 쪽 전체는 약 2,400만 화소 안으로 묶는다.
+  function pdfBitmapMult(p) {
+    const want = (window.devicePixelRatio || 1) * Math.max(1, state.scale || 1);
+    const shown = Math.max(1, pdfPageEls.filter(r => r.visible).length);
+    const perPage = Math.min(14e6, 24e6 / shown);
+    const cap = Math.min(3.5, Math.sqrt(perPage / (p.width * p.height)));
+    return Math.max(1, Math.min(want, cap));
+  }
+
+  // 위아래로 한 화면씩 미리 잡아, 그 안에 든 쪽만 「보이는 쪽」으로 친다
+  function updatePdfVisibility() {
+    if (!pdfPageEls.length) return;
+    const vc = el.viewerContainer;
+    const vcRect = vc.getBoundingClientRect();
+    const r = el.stageWrapper.getBoundingClientRect();
+    const s = state.scale || 1;
+    const margin = vc.clientHeight;
+    const top = (vcRect.top - margin - r.top) / s;
+    const bottom = (vcRect.bottom + margin - r.top) / s;
+    let changed = false;
+    pdfPageEls.forEach(rec => {
+      const p = pageBox(rec.page);
+      const vis = p.top + p.height >= top && p.top <= bottom;
+      if (vis !== rec.visible) {
+        rec.visible = vis;
+        changed = true;
+      }
+    });
+    if (changed) schedulePdfRender();
+  }
+
+  function schedulePdfRender() {
+    if (pdfRenderTimer) return;
+    pdfRenderTimer = setTimeout(() => {
+      pdfRenderTimer = null;
+      renderVisiblePdfPages();
+    }, 60);
+  }
+
+  async function renderOnePdfPage(doc, rec, mult) {
+    if (rec.task) {
+      rec.task.cancel();
+      try { await rec.task.promise; } catch (e) { /* 취소된 작업 */ }
+      rec.task = null;
+    }
+    const page = await doc.getPage(rec.page);
+    if (doc !== pdfLayoutDoc) return;
+    const vp = page.getViewport({ scale: PDF_LAYOUT_SCALE * mult });
+    rec.canvas.width = Math.round(vp.width);
+    rec.canvas.height = Math.round(vp.height);
+    const task = page.render({ canvasContext: rec.canvas.getContext('2d'), viewport: vp });
+    rec.task = task;
+    try {
+      await task.promise;
+      rec.renderedMult = mult;
+    } catch (err) {
+      if (!(err && err.name === 'RenderingCancelledException')) console.warn('PDF page render failed:', err);
+    } finally {
+      if (rec.task === task) rec.task = null;
+    }
+  }
+
+  async function renderVisiblePdfPages() {
+    if (pdfRendering) { pdfRenderAgain = true; return; }
+    pdfRendering = true;
+    try {
+      const doc = pdfLayoutDoc;
+      if (!doc) return;
+
+      // 멀어진 쪽은 비운다
+      pdfPageEls.forEach(rec => {
+        if (!rec.visible && rec.renderedMult) {
+          if (rec.task) { rec.task.cancel(); rec.task = null; }
+          rec.canvas.width = 0;
+          rec.canvas.height = 0;
+          rec.renderedMult = 0;
+        }
+      });
+
+      for (const rec of pdfPageEls) {
+        if (!rec.visible) continue;
+        const mult = pdfBitmapMult(pageBox(rec.page));
+        // 충분히 선명하면 그대로 둔다. 다만 축소해 보이는 쪽이 늘었는데 예전 고해상도를 쥐고 있으면 메모리를 위해 낮춰 다시 그린다.
+        if (rec.renderedMult && mult <= rec.renderedMult * 1.25 && rec.renderedMult <= mult * 1.6) continue;
+        await renderOnePdfPage(doc, rec, mult);
+        if (doc !== pdfLayoutDoc) return;
+      }
+    } finally {
+      pdfRendering = false;
+      if (pdfRenderAgain) {
+        pdfRenderAgain = false;
+        schedulePdfRender();
+      }
+    }
+  }
+
+  // 새 PDF 면 쪽을 배치하고 지금 쪽을 먼저 그린다. 이미 배치돼 있으면 지금 쪽으로 옮겨 간다.
+  async function renderPdfPage() {
+    if (!state.pdfDoc) return;
+    updatePageIndicator();
+
+    if (pdfLayoutDoc === state.pdfDoc) {
+      scrollToPage(state.currentPage, true);
+      return;
+    }
+
+    const doc = state.pdfDoc;
+    const ok = await layoutPdfPages(doc);
+    if (!ok || doc !== state.pdfDoc) return;
+
+    if (!state.scale) zoomFitWidth();
+    else setScale(state.scale);
+    renderMarkers();
+    scrollToPage(state.currentPage || 1, false);
+    updatePageIndicator();
+
+    // 여는 동안 막이 걷히기 전에 지금 쪽만은 그려 둔다. 나머지는 뒤에서.
+    const first = pdfPageEls.find(r => r.page === (state.currentPage || 1));
+    if (first) {
+      first.visible = true;
+      await renderOnePdfPage(doc, first, pdfBitmapMult(pageBox(first.page)));
+    }
+    updatePdfVisibility();
+    schedulePdfRender();
   }
 
   function changePage(delta) {
@@ -3596,8 +3843,8 @@
     const next = state.currentPage + delta;
     if (next >= 1 && next <= state.totalPages) {
       state.currentPage = next;
-      renderPdfPage();
-      renderMarkers();
+      updatePageIndicator();
+      scrollToPage(next, true);
     }
   }
 
@@ -3632,7 +3879,14 @@
   }
 
   // 100% 기준 배율 조정 함수
-  function setScale(newScale) {
+  function setScale(newScale, anchor) {
+    // 확대 단추·휠은 화면 가운데를, 휠은 마우스 자리를 그 자리에 붙들어 둔다.
+    // 여러 쪽을 이어 붙이면 이렇게 안 하면 보던 쪽에서 엉뚱한 곳으로 튄다.
+    let keep = null;
+    if (anchor && state.scale && el.viewerContainer) {
+      keep = { x: anchor.clientX, y: anchor.clientY, pt: stagePointFromClient(anchor.clientX, anchor.clientY) };
+    }
+
     state.scale = Math.max(0.1, Math.min(4.0, Math.round(newScale * 100) / 100));
     
     const naturalW = state.naturalWidth || el.stageWrapper.offsetWidth || 1000;
@@ -3663,6 +3917,21 @@
 
     // 마커 역스케일 업데이트 (시안 배율에 상관없이 항상 선명한 핀/배지 크기 보장!)
     updateMarkerScale();
+
+    if (keep) {
+      const r = el.stageWrapper.getBoundingClientRect();
+      el.viewerContainer.scrollLeft += (r.left + keep.pt.x * state.scale) - keep.x;
+      el.viewerContainer.scrollTop += (r.top + keep.pt.y * state.scale) - keep.y;
+    }
+
+    // 확대하면 그 배율에 맞춰 선명하게 다시 그린다 (손을 멈춘 뒤 한 번)
+    if (state.docType === 'pdf' && state.pageLayout) {
+      clearTimeout(pdfZoomRenderTimer);
+      pdfZoomRenderTimer = setTimeout(() => {
+        updatePdfVisibility();
+        schedulePdfRender();
+      }, 250);
+    }
   }
 
   // 마커 역스케일 동적 업데이트 함수 (축소/확대 시에도 화면상에서 일정한 36~40px 핀 크기 유지!)
@@ -3689,7 +3958,7 @@
   }
 
   // 가로 너비에 맞추기 (모바일 16px 여백, PC 48px 여백 최적화)
-  function zoomFitWidth() {
+  function zoomFitWidth(anchor) {
     state.isFitWidthMode = true;
     const isMobile = window.innerWidth < 768;
     const padding = isMobile ? 16 : 48;
@@ -3698,7 +3967,7 @@
       : (window.innerWidth - (isMobile ? 16 : 380));
     const naturalW = state.naturalWidth || (el.stageWrapper ? el.stageWrapper.offsetWidth : 1000) || 1000;
     const calculatedScale = Math.min(3.0, Math.max(0.1, containerW / naturalW));
-    setScale(calculatedScale);
+    setScale(calculatedScale, anchor); // 단추로 누를 때는 보던 자리를 지킨다
   }
 
   // 화면 전체에 쏙 들어가게 맞추기
@@ -3712,14 +3981,18 @@
     const containerH = (el.viewerContainer && el.viewerContainer.clientHeight > 100)
       ? (el.viewerContainer.clientHeight - padding)
       : (window.innerHeight - 120);
-    const naturalW = state.naturalWidth || el.stageWrapper.offsetWidth || 1000;
-    const naturalH = state.naturalHeight || el.stageWrapper.offsetHeight || 1350;
+    // 여러 쪽이면 이어 붙인 전체가 아니라 지금 쪽 한 장을 화면에 맞춘다
+    const fitBox = (state.docType === 'pdf' && state.pageLayout) ? pageBox(state.currentPage) : null;
+    const naturalW = fitBox ? fitBox.width : (state.naturalWidth || el.stageWrapper.offsetWidth || 1000);
+    const naturalH = fitBox ? fitBox.height : (state.naturalHeight || el.stageWrapper.offsetHeight || 1350);
     const calculatedScale = Math.min(2.0, Math.max(0.1, Math.min(containerW / naturalW, containerH / naturalH)));
     setScale(calculatedScale);
+    if (fitBox) scrollToPage(state.currentPage, false);
   }
 
   // 마우스 패닝(자유 이동) & 우클릭 메뉴 & 핀/박스 오버레이 인터랙션 통합 핸들러
   function setupInteractionEvents() {
+    setupPinchZoom();
     let isMouseDown = false;
     let isDragging = false;
     let startX = 0;
@@ -3747,20 +4020,14 @@
 
     // 1. 공통 우클릭/더블탭 퀵 컨텍스트 메뉴 표시 함수
     function openContextMenuAt(clientX, clientY) {
-      const overlayRect = el.overlayLayer.getBoundingClientRect();
-      // 이미지 오버레이 내부 비율 좌표 계산
-      const clickX = (clientX - overlayRect.left) / state.scale;
-      const clickY = (clientY - overlayRect.top) / state.scale;
-      const stageW = el.overlayLayer.offsetWidth || 1000;
-      const stageH = el.overlayLayer.offsetHeight || 1350;
-
-      const xRatio = Math.max(0, Math.min(1, clickX / stageW));
-      const yRatio = Math.max(0, Math.min(1, clickY / stageH));
+      // 누른 자리가 어느 쪽의 어디인지 (쪽을 이어 붙였으므로 그 쪽 기준 비율로 바꾼다)
+      const pt = stagePointFromClient(clientX, clientY);
+      const hit = pageHitFromStage(pt.x, pt.y);
 
       state.contextMenuCoords = {
-        page: state.currentPage,
-        xRatio,
-        yRatio,
+        page: hit.page,
+        xRatio: hit.xRatio,
+        yRatio: hit.yRatio,
         clientX: clientX,
         clientY: clientY
       };
@@ -3920,17 +4187,21 @@
           tempBoxEl = null;
         }
 
-        const stageWidth = el.overlayLayer.offsetWidth || 1000;
-        const stageHeight = el.overlayLayer.offsetHeight || 1350;
+        // 영역은 그리기 시작한 쪽 안으로 잘라 그 쪽 기준 비율로 바꾼다
+        const pb = pageHitFromStage(state.boxStart.x, state.boxStart.y).box;
+        const x0 = Math.max(left, pb.left);
+        const y0 = Math.max(top, pb.top);
+        const x1 = Math.min(left + width, pb.left + pb.width);
+        const y1 = Math.min(top + height, pb.top + pb.height);
 
-        if (width > 15 && height > 15) {
+        if (x1 - x0 > 15 && y1 - y0 > 15) {
           showPopoverAt({
-            page: state.currentPage,
+            page: pb.page,
             type: state.currentTag,
-            xRatio: left / stageWidth,
-            yRatio: top / stageHeight,
-            widthRatio: width / stageWidth,
-            heightRatio: height / stageHeight,
+            xRatio: (x0 - pb.left) / pb.width,
+            yRatio: (y0 - pb.top) / pb.height,
+            widthRatio: (x1 - x0) / pb.width,
+            heightRatio: (y1 - y0) / pb.height,
             clientX: e.clientX,
             clientY: e.clientY
           });
@@ -3941,19 +4212,14 @@
       // 핀 모드(pin)에서 단순 클릭(5px 미만 이동)일 때만 팝업 생성!
       // (기본 pan 모드일 때는 클릭해도 코멘트 팝업이 뜨지 않아 오작동 없음!)
       if (state.toolMode === 'pin' && !isDragging && e.button === 0) {
-        const overlayRect = el.overlayLayer.getBoundingClientRect();
-        if (e.clientX >= overlayRect.left && e.clientX <= overlayRect.right &&
-            e.clientY >= overlayRect.top && e.clientY <= overlayRect.bottom) {
-          const clickX = (e.clientX - overlayRect.left) / state.scale;
-          const clickY = (e.clientY - overlayRect.top) / state.scale;
-          const stageWidth = el.overlayLayer.offsetWidth || 1000;
-          const stageHeight = el.overlayLayer.offsetHeight || 1350;
-
+        const pt = stagePointFromClient(e.clientX, e.clientY);
+        const hit = pageHitFromStage(pt.x, pt.y);
+        if (hit.inside) { // 쪽과 쪽 사이 빈틈은 무시
           showPopoverAt({
-            page: state.currentPage,
+            page: hit.page,
             type: state.currentTag,
-            xRatio: clickX / stageWidth,
-            yRatio: clickY / stageHeight,
+            xRatio: hit.xRatio,
+            yRatio: hit.yRatio,
             widthRatio: null,
             heightRatio: null,
             clientX: e.clientX,
@@ -4010,6 +4276,8 @@
 
     el.overlayLayer.addEventListener('touchend', (e) => {
       if (touchIsDragging || e.changedTouches.length === 0) return;
+      // 두 손가락 확대 중이거나 막 끝낸 뒤 손가락을 떼는 것은 탭이 아니다
+      if (e.touches.length > 0 || (state.pinchEndedAt && Date.now() - state.pinchEndedAt < 400)) return;
       const t = e.changedTouches[0];
 
       // 마커나 팝업 클릭 시는 해당 엘리먼트 자체 이벤트에서 처리
@@ -4035,19 +4303,14 @@
 
       // 핀 모드일 때 단일 터치 탭 (이동 거리 10px 미만)이면 코멘트 핀 꽂기!
       if (state.toolMode === 'pin') {
-        const overlayRect = el.overlayLayer.getBoundingClientRect();
-        if (t.clientX >= overlayRect.left && t.clientX <= overlayRect.right &&
-            t.clientY >= overlayRect.top && t.clientY <= overlayRect.bottom) {
-          const clickX = (t.clientX - overlayRect.left) / state.scale;
-          const clickY = (t.clientY - overlayRect.top) / state.scale;
-          const stageWidth = el.overlayLayer.offsetWidth || 1000;
-          const stageHeight = el.overlayLayer.offsetHeight || 1350;
-
+        const pt = stagePointFromClient(t.clientX, t.clientY);
+        const hit = pageHitFromStage(pt.x, pt.y);
+        if (hit.inside) { // 쪽과 쪽 사이 빈틈은 무시
           showPopoverAt({
-            page: state.currentPage,
+            page: hit.page,
             type: state.currentTag,
-            xRatio: clickX / stageWidth,
-            yRatio: clickY / stageHeight,
+            xRatio: hit.xRatio,
+            yRatio: hit.yRatio,
             widthRatio: null,
             heightRatio: null,
             clientX: t.clientX,
@@ -4058,21 +4321,103 @@
     });
   }
 
+  // 두 손가락으로 벌리고 오므려 시안만 확대·축소한다 (화면 전체가 커지는 브라우저 확대 대신).
+  // 처음 잡은 두 손가락 사이의 시안 지점이 손가락을 따라다니므로 확대와 이동이 함께 된다.
+  function setupPinchZoom() {
+    let pinch = null;
+    const gap = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+
+    el.viewerContainer.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 2) return;
+      const a = e.touches[0];
+      const b = e.touches[1];
+      const cx = (a.clientX + b.clientX) / 2;
+      const cy = (a.clientY + b.clientY) / 2;
+      pinch = {
+        startGap: Math.max(1, gap(a, b)),
+        startScale: state.scale || 1,
+        pt: stagePointFromClient(cx, cy),
+        last: null,
+        raf: null
+      };
+      hidePopover();
+      hideMarkerMemo();
+      if (el.quickContextMenu) el.quickContextMenu.classList.add('hidden');
+    }, { passive: true });
+
+    el.viewerContainer.addEventListener('touchmove', (e) => {
+      if (!pinch || e.touches.length !== 2) return;
+      e.preventDefault();
+      const a = e.touches[0];
+      const b = e.touches[1];
+      pinch.last = {
+        scale: pinch.startScale * gap(a, b) / pinch.startGap,
+        cx: (a.clientX + b.clientX) / 2,
+        cy: (a.clientY + b.clientY) / 2
+      };
+      if (pinch.raf) return;
+      pinch.raf = requestAnimationFrame(() => {
+        if (!pinch) return;
+        pinch.raf = null;
+        const l = pinch.last;
+        if (!l) return;
+        state.isFitWidthMode = false;
+        setScale(l.scale);
+        const r = el.stageWrapper.getBoundingClientRect();
+        el.viewerContainer.scrollLeft += (r.left + pinch.pt.x * state.scale) - l.cx;
+        el.viewerContainer.scrollTop += (r.top + pinch.pt.y * state.scale) - l.cy;
+      });
+    }, { passive: false });
+
+    const endPinch = (e) => {
+      if (!pinch) return;
+      if (e.touches.length < 2) {
+        if (pinch.raf) cancelAnimationFrame(pinch.raf);
+        pinch = null;
+        state.pinchEndedAt = Date.now();
+      }
+    };
+    el.viewerContainer.addEventListener('touchend', endPinch);
+    el.viewerContainer.addEventListener('touchcancel', endPinch);
+
+    // 사파리는 두 손가락 제스처로 화면 전체를 키우려 든다
+    el.viewerContainer.addEventListener('gesturestart', (e) => e.preventDefault());
+
+    // 스크롤하면 지금 보고 있는 쪽 번호를 따라가고, 가까워진 쪽을 그린다
+    let scrollRaf = null;
+    el.viewerContainer.addEventListener('scroll', () => {
+      if (state.docType !== 'pdf' || !state.pageLayout || scrollRaf) return;
+      scrollRaf = requestAnimationFrame(() => {
+        scrollRaf = null;
+        const vc = el.viewerContainer;
+        const vcRect = vc.getBoundingClientRect();
+        const pt = stagePointFromClient(vcRect.left + vc.clientWidth / 2, vcRect.top + vc.clientHeight / 2);
+        const hit = pageHitFromStage(pt.x, pt.y);
+        if (hit.page !== state.currentPage) {
+          state.currentPage = hit.page;
+          updatePageIndicator();
+        }
+        updatePdfVisibility();
+      });
+    }, { passive: true });
+  }
+
   // 등록하기를 누르기 전에도 어디에 꽂히는지 보이도록 점선 임시 핀을 놓는다
   function showPendingMarker(coords) {
     removePendingMarker();
-    if (!el.overlayLayer || !coords || coords.page !== state.currentPage) return;
+    if (!el.overlayLayer || !coords) return;
 
     const config = TAG_CONFIG[coords.type] || TAG_CONFIG.error;
+    const pb = pageBox(coords.page);
     const ghost = document.createElement('div');
     ghost.id = 'pendingMarker';
-    ghost.style.left = `${coords.xRatio * 100}%`;
-    ghost.style.top = `${coords.yRatio * 100}%`;
+    ghost.style.left = `${pb.left + coords.xRatio * pb.width}px`;
+    ghost.style.top = `${pb.top + coords.yRatio * pb.height}px`;
 
     if (coords.widthRatio && coords.heightRatio) {
       ghost.className = 'absolute rounded border-2 border-dashed pointer-events-none';
-      ghost.style.width = `${coords.widthRatio * 100}%`;
-      ghost.style.height = `${coords.heightRatio * 100}%`;
+      ghost.style.width = `${coords.widthRatio * pb.width}px`;
+      ghost.style.height = `${coords.heightRatio * pb.height}px`;
       ghost.style.borderColor = config.color;
       ghost.style.backgroundColor = `${config.color}20`;
     } else {
@@ -4437,7 +4782,9 @@
 
   function renderMarkers() {
     el.overlayLayer.innerHTML = '';
-    const currentComments = state.comments.filter(c => c.page === state.currentPage);
+    // 이어 보기라 모든 쪽의 핀을 한꺼번에 그린다
+    const pagesShown = getPageLayout().map(p => p.page);
+    const currentComments = state.comments.filter(c => pagesShown.indexOf(c.page || 1) > -1);
     const currentScale = state.scale || 1.0;
     const invScale = Math.max(0.65, Math.min(3.5, 1 / currentScale));
 
@@ -4452,10 +4799,11 @@
           c.resolved ? 'opacity-30 border-slate-400 bg-slate-500/10' : ''
         } ${isFocused ? 'box-super-focused' : ''}`;
         box.dataset.id = c.id;
-        box.style.left = `${c.xRatio * 100}%`;
-        box.style.top = `${c.yRatio * 100}%`;
-        box.style.width = `${c.widthRatio * 100}%`;
-        box.style.height = `${c.heightRatio * 100}%`;
+        const pb = pageBox(c.page);
+        box.style.left = `${pb.left + c.xRatio * pb.width}px`;
+        box.style.top = `${pb.top + c.yRatio * pb.height}px`;
+        box.style.width = `${c.widthRatio * pb.width}px`;
+        box.style.height = `${c.heightRatio * pb.height}px`;
         if (!c.resolved) {
           box.style.borderColor = isFocused ? '#f59e0b' : config.color;
           box.style.backgroundColor = isFocused ? `${config.color}25` : `${config.color}15`;
@@ -4506,8 +4854,9 @@
           isFocused ? 'pin-super-focused z-40' : ''
         }`;
         pin.dataset.id = c.id;
-        pin.style.left = `${c.xRatio * 100}%`;
-        pin.style.top = `${c.yRatio * 100}%`;
+        const pb = pageBox(c.page);
+        pin.style.left = `${pb.left + c.xRatio * pb.width}px`;
+        pin.style.top = `${pb.top + c.yRatio * pb.height}px`;
         pin.style.transform = `translate(-50%, -50%) scale(${invScale * (isFocused ? 1.15 : 1.0)})`;
         pin.style.transformOrigin = 'center center';
 
@@ -4733,10 +5082,6 @@
   let activeFocusTimer = null;
 
   function focusCommentLocation(comment) {
-    if (state.currentPage !== comment.page && state.docType === 'pdf') {
-      state.currentPage = comment.page;
-      renderPdfPage();
-    }
 
     // 이전 포커스 타이머가 동작 중이면 리셋
     if (activeFocusTimer) {
@@ -4762,10 +5107,15 @@
       renderMarkers();
       renderCommentsList();
 
-      const stageW = el.stageWrapper.offsetWidth;
-      const stageH = el.stageWrapper.offsetHeight;
-      const targetX = (comment.xRatio * stageW) * state.scale;
-      const targetY = (comment.yRatio * stageH) * state.scale;
+      // 이어 보기 무대 위 그 쪽의 그 자리
+      const pb = pageBox(comment.page);
+      const vc = el.viewerContainer;
+      const stageRect = el.stageWrapper.getBoundingClientRect();
+      const vcRect = vc.getBoundingClientRect();
+      const stageLeft = stageRect.left - vcRect.left + vc.scrollLeft;
+      const stageTop = stageRect.top - vcRect.top + vc.scrollTop;
+      const targetX = stageLeft + (pb.left + comment.xRatio * pb.width) * state.scale;
+      const targetY = stageTop + (pb.top + comment.yRatio * pb.height) * state.scale;
 
       // 스크롤 중에는 메모 팝오버를 닫아 이전 위치 잔상이 날아다니지 않도록 함
       hideMarkerMemo();
