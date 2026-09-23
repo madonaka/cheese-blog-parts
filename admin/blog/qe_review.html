@@ -2786,6 +2786,115 @@
   }
 
   // 기존 프로젝트 이어하기 (실제 원본 파일 복원!)
+  // ==========================================
+  // 드라이브에서 시안 받기
+  // Apps Script 가 파일을 base64 로 감싸 한 번에 보내는 getFile 은
+  // 몇 MB짜리 PDF 에서 1분 넘게 걸리거나 브라우저에서 404 로 떨어진다.
+  // 드라이브 직접 받기(drive.usercontent)는 브라우저 교차 출처 요청을 403 으로 막는다.
+  // ==========================================
+  const DRIVE_CHUNK = 700 * 1024; // 폰에서 문제없이 열리던 740KB 그림과 같은 크기대
+
+  function base64IntoBytes(target, offset, b64) {
+    const bin = atob(b64);
+    for (let i = 0; i < bin.length; i++) target[offset + i] = bin.charCodeAt(i);
+  }
+
+  function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function fetchDriveChunk(fileId, offset) {
+    let lastErr = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      let res = null;
+      try {
+        res = await gasGet({ action: 'getFileChunk', fileId: fileId, offset: offset, length: DRIVE_CHUNK });
+      } catch (err) {
+        lastErr = err;
+        continue;
+      }
+      if (res && res.ok && typeof res.base64 === 'string') return res;
+      lastErr = new Error((res && res.error) || '조각 응답이 비어 있습니다');
+      // Apps Script 가 아직 옛 배포본이면 다시 해도 소용없다
+      if (res && /알 수 없는 요청/.test(res.error || '')) break;
+    }
+    throw lastErr;
+  }
+
+  async function fetchDriveFileChunked(fileId, onProgress) {
+    const first = await fetchDriveChunk(fileId, 0);
+    const total = first.total;
+    const bytes = new Uint8Array(total);
+    base64IntoBytes(bytes, 0, first.base64);
+    let done = first.length;
+    if (onProgress) onProgress(done, total);
+
+    const offsets = [];
+    for (let off = first.length; off < total; off += DRIVE_CHUNK) offsets.push(off);
+
+    // Apps Script 는 동시 실행 수에 한도가 있어 네 개씩만 보낸다
+    let next = 0;
+    const worker = async () => {
+      while (next < offsets.length) {
+        const off = offsets[next++];
+        const part = await fetchDriveChunk(fileId, off);
+        base64IntoBytes(bytes, off, part.base64);
+        done += part.length;
+        if (onProgress) onProgress(done, total);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(4, offsets.length) }, worker));
+
+    return { bytes: bytes, mimeType: first.mimeType, fileName: first.fileName };
+  }
+
+  async function fetchDriveFileWhole(fileId) {
+    const data = await gasGet({ action: 'getFile', fileId: fileId });
+    if (!data || !data.ok || !data.dataUrl) {
+      throw new Error((data && data.error) || '시안 파일 응답이 비어 있습니다');
+    }
+    const bin = atob(data.dataUrl.split(',')[1] || '');
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return { bytes: bytes, mimeType: data.mimeType, fileName: data.fileName };
+  }
+
+  async function downloadDriveFile(fileId, title, onProgress) {
+    const looksPdf = /\.pdf$/i.test(title || '');
+
+    // 그림은 구글 그림 서버에서 원본 그대로 받는다. PDF 를 여기 주면 1쪽 그림만 오므로 PDF 는 제외.
+    if (!looksPdf) {
+      try {
+        const res = await fetch('https://lh3.googleusercontent.com/d/' + encodeURIComponent(fileId) + '=s0');
+        const blob = res.ok ? await res.blob() : null;
+        if (blob && blob.type.indexOf('image/') === 0) {
+          return { kind: 'image', dataUrl: await blobToDataUrl(blob), fileName: title };
+        }
+      } catch (err) {
+        console.warn('lh3 image fetch failed, fallback to Apps Script:', err);
+      }
+    }
+
+    let got = null;
+    try {
+      got = await fetchDriveFileChunked(fileId, onProgress);
+    } catch (err) {
+      console.warn('chunked download failed, fallback to getFile:', err);
+    }
+    if (!got) got = await fetchDriveFileWhole(fileId);
+
+    const isPdf = (got.mimeType || '').indexOf('pdf') > -1 || /\.pdf$/i.test(got.fileName || title || '');
+    if (isPdf) return { kind: 'pdf', bytes: got.bytes, fileName: got.fileName };
+
+    const blob = new Blob([got.bytes], { type: got.mimeType || 'image/png' });
+    return { kind: 'image', dataUrl: await blobToDataUrl(blob), fileName: got.fileName };
+  }
+
   function showViewerLoading(text) {
     const overlay = document.getElementById('viewerLoadingOverlay');
     if (!overlay) return;
@@ -2902,15 +3011,21 @@
       el.pdfCanvas.classList.remove('hidden');
       el.docImage.classList.add('hidden');
 
-      const typedarray = new Uint8Array(fileRecord.fileData);
-      pdfjsLib.getDocument(typedarray).promise.then(pdf => {
+      // 다 읽을 때까지 기다린다. 안 기다리면 막이 먼저 걷히고,
+      // 뒤늦게 끝난 앞 작업이 다음에 연 문서를 덮어써 쪽이 꼬인다.
+      try {
+        const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(fileRecord.fileData) }).promise;
         state.pdfDoc = pdf;
         state.totalPages = pdf.numPages;
         state.currentPage = 1;
         el.totalPageNum.textContent = state.totalPages;
         state.scale = null;
         renderPdfPage();
-      });
+      } catch (err) {
+        console.warn('cached PDF open failed:', err);
+        await deleteFileFromDB(reviewId);
+        showDriveSyncToast('저장된 PDF를 열지 못했습니다. 목록에서 다시 열어 주세요.', false, 6000);
+      }
 
     } else {
       // IndexedDB에 실제 파일이 없는 경우 (다른 컴퓨터/모바일에서 처음 열었을 때!)
@@ -2922,74 +3037,63 @@
         showDriveSyncToast('구글 드라이브에서 시안 다운로드 중...', true);
 
         try {
-          const fileRes = await fetch(`${state.gasUrl}?action=getFile&fileId=${encodeURIComponent(driveFileId)}`);
-          const fileData = await fileRes.json();
+          const file = await downloadDriveFile(driveFileId, state.docName, (done, total) => {
+            showViewerLoading('시안을 불러오는 중... ' + Math.round(done / total * 100) + '%');
+          });
 
-          if (fileData.ok && fileData.dataUrl) {
-            const isPdf = (fileData.mimeType && fileData.mimeType.includes('pdf')) || (fileData.fileName && fileData.fileName.toLowerCase().endsWith('.pdf'));
+          if (file.kind === 'pdf') {
+            state.docType = 'pdf';
+            el.pdfCanvas.classList.remove('hidden');
+            el.docImage.classList.add('hidden');
 
-            if (isPdf) {
-              state.docType = 'pdf';
-              el.pdfCanvas.classList.remove('hidden');
-              el.docImage.classList.add('hidden');
+            // pdf.js 는 넘겨받은 버퍼를 비워 버리므로 저장은 먼저, 사본으로 한다
+            await saveFileToDB(reviewId, {
+              docType: 'pdf',
+              fileName: file.fileName,
+              fileData: file.bytes.buffer.slice(0)
+            });
 
-              const base64Str = fileData.dataUrl.split(',')[1];
-              const binaryStr = atob(base64Str);
-              const bytes = new Uint8Array(binaryStr.length);
-              for (let i = 0; i < binaryStr.length; i++) {
-                bytes[i] = binaryStr.charCodeAt(i);
-              }
-
-              await saveFileToDB(reviewId, {
-                docType: 'pdf',
-                fileName: fileData.fileName,
-                fileData: bytes.buffer
-              });
-
-              pdfjsLib.getDocument(bytes).promise.then(pdf => {
-                state.pdfDoc = pdf;
-                state.totalPages = pdf.numPages;
-                state.currentPage = 1;
-                el.totalPageNum.textContent = state.totalPages;
-                state.scale = null;
-                renderPdfPage();
-              });
-            } else {
-              state.docType = 'image';
-              state.totalPages = 1;
-              state.currentPage = 1;
-              el.totalPageNum.textContent = 1;
-              el.currentPageNum.textContent = 1;
-              el.prevPageBtn.disabled = true;
-              el.nextPageBtn.disabled = true;
-              el.pdfCanvas.classList.add('hidden');
-              el.docImage.classList.remove('hidden');
-
-              await saveFileToDB(reviewId, {
-                docType: 'image',
-                fileName: fileData.fileName,
-                dataUrl: fileData.dataUrl
-              });
-
-              el.docImage.onload = () => {
-                state.naturalWidth = el.docImage.naturalWidth;
-                state.naturalHeight = el.docImage.naturalHeight;
-                el.stageWrapper.style.width = state.naturalWidth + 'px';
-                el.stageWrapper.style.height = state.naturalHeight + 'px';
-                zoomFitWidth();
-                renderMarkers();
-              };
-              el.docImage.src = fileData.dataUrl;
-            }
-
-            showDriveSyncToast('구글 드라이브 시안 동기화 완료!', false, 3000);
+            const pdf = await pdfjsLib.getDocument({ data: file.bytes }).promise;
+            state.pdfDoc = pdf;
+            state.totalPages = pdf.numPages;
+            state.currentPage = 1;
+            el.totalPageNum.textContent = state.totalPages;
+            state.scale = null;
+            renderPdfPage();
           } else {
-            console.warn('Drive file fetch error:', fileData.error);
-            generateMockupCanvas(state.docName);
+            state.docType = 'image';
+            state.totalPages = 1;
+            state.currentPage = 1;
+            el.totalPageNum.textContent = 1;
+            el.currentPageNum.textContent = 1;
+            el.prevPageBtn.disabled = true;
+            el.nextPageBtn.disabled = true;
+            el.pdfCanvas.classList.add('hidden');
+            el.docImage.classList.remove('hidden');
+
+            await saveFileToDB(reviewId, {
+              docType: 'image',
+              fileName: file.fileName,
+              dataUrl: file.dataUrl
+            });
+
+            el.docImage.onload = () => {
+              state.naturalWidth = el.docImage.naturalWidth;
+              state.naturalHeight = el.docImage.naturalHeight;
+              el.stageWrapper.style.width = state.naturalWidth + 'px';
+              el.stageWrapper.style.height = state.naturalHeight + 'px';
+              zoomFitWidth();
+              renderMarkers();
+            };
+            el.docImage.src = file.dataUrl;
           }
+
+          showDriveSyncToast('구글 드라이브 시안 동기화 완료!', false, 3000);
         } catch (err) {
-          console.warn('Drive file fetch network failed:', err);
+          console.warn('Drive file download failed:', err);
+          // 대체 화면만 띄우면 무엇이 잘못됐는지 알 수 없어 오류처럼 보인다
           generateMockupCanvas(state.docName);
+          showDriveSyncToast('시안을 불러오지 못했습니다. 목록에서 다시 열어 주세요.', false, 6000);
         } finally {
           if (el.driveLoadingOverlay) el.driveLoadingOverlay.classList.add('hidden');
         }
@@ -3276,13 +3380,28 @@
     el.docImage.src = sCanvas.toDataURL('image/png');
   }
 
+  // 한 캔버스에 그리기 작업이 겹치면 쪽이 뒤집히거나 줄어든 채 찍힌다.
+  // 느린 폰에서 쪽을 빨리 넘기면 겹칠 수 있어, 앞 작업을 취소하고 끝난 뒤에 그린다.
+  let pdfRenderTask = null;
+
   function renderPdfPage() {
     if (!state.pdfDoc) return;
     el.currentPageNum.textContent = state.currentPage;
     el.prevPageBtn.disabled = state.currentPage <= 1;
     el.nextPageBtn.disabled = state.currentPage >= state.totalPages;
 
-    state.pdfDoc.getPage(state.currentPage).then(page => {
+    const pdfDoc = state.pdfDoc;
+    const pageNo = state.currentPage;
+
+    pdfDoc.getPage(pageNo).then(async page => {
+      if (pdfDoc !== state.pdfDoc || pageNo !== state.currentPage) return; // 그사이 다른 쪽·문서로 넘어감
+
+      if (pdfRenderTask) {
+        pdfRenderTask.cancel();
+        try { await pdfRenderTask.promise; } catch (e) { /* 취소된 작업 */ }
+        if (pdfDoc !== state.pdfDoc || pageNo !== state.currentPage) return;
+      }
+
       const viewport = page.getViewport({ scale: 1.5 });
       state.naturalWidth = viewport.width;
       state.naturalHeight = viewport.height;
@@ -3295,10 +3414,17 @@
         canvasContext: el.pdfCanvas.getContext('2d'),
         viewport: viewport
       };
-      page.render(renderContext).promise.then(() => {
+      const task = page.render(renderContext);
+      pdfRenderTask = task;
+      task.promise.then(() => {
+        if (pdfRenderTask === task) pdfRenderTask = null;
         if (!state.scale) zoomFitWidth();
         else setScale(state.scale);
         renderMarkers();
+      }).catch(err => {
+        if (pdfRenderTask === task) pdfRenderTask = null;
+        if (err && err.name === 'RenderingCancelledException') return;
+        console.warn('PDF page render failed:', err);
       });
     });
   }

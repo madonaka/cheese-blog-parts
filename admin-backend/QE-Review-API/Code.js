@@ -361,6 +361,34 @@ function doGet(e) {
   try {
     const action = (e && e.parameter && (e.parameter.action || e.parameter.mode)) || 'bootstrap';
 
+    // 0. 시안 파일을 조각으로 내려준다.
+    //    몇 MB짜리 PDF를 getFile 로 한 번에 보내면 1분 넘게 걸리거나 브라우저에서 404 로 떨어진다.
+    //    드라이브 직접 받기는 브라우저 교차 출처 요청을 막으므로(403) 여기를 거칠 수밖에 없다.
+    if (action === 'getFileChunk') {
+      const fileId = e.parameter.fileId;
+      if (!fileId) {
+        return createJsonResponse({ ok: false, error: "fileId가 필요합니다." });
+      }
+
+      const offset = Math.max(0, parseInt(e.parameter.offset || "0", 10) || 0);
+      const length = Math.min(1048576, Math.max(1, parseInt(e.parameter.length || "716800", 10) || 716800));
+
+      const file = DriveApp.getFileById(fileId);
+      const blob = file.getBlob();
+      const bytes = blob.getBytes();
+      const part = bytes.slice(offset, offset + length);
+
+      return createJsonResponse({
+        ok: true,
+        fileName: file.getName(),
+        mimeType: blob.getContentType(),
+        total: bytes.length,
+        offset: offset,
+        length: part.length,
+        base64: Utilities.base64Encode(part)
+      });
+    }
+
     // 1. 휴대폰/다른 PC에서 시안 파일 다운로드 (CORS 문제 없는 Base64 Data URL 반환)
     if (action === 'getFile') {
       const fileId = e.parameter.fileId;
