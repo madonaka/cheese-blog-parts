@@ -59,6 +59,12 @@ function getOrCreateSheets() {
     reviewSheet.getRange(1, 1, 1, 11).setFontWeight("bold").setBackground("#f1f5f9");
   }
 
+  // 12번째 칸: 원본 파일명. Title 은 사람이 바꿀 수 있는 관리용 이름이라
+  // PDF 인지 그림인지는 이 칸으로 가린다. 예전 시트에는 칸이 없어 머리글만 채운다.
+  if (!reviewSheet.getRange(1, 12).getValue()) {
+    reviewSheet.getRange(1, 12).setValue("File Name").setFontWeight("bold").setBackground("#f1f5f9");
+  }
+
   let commentSheet = ss.getSheetByName(SHEET_NAME_COMMENTS);
   if (!commentSheet) {
     commentSheet = ss.insertSheet(SHEET_NAME_COMMENTS);
@@ -114,7 +120,8 @@ function readReviews_(reviewSheet) {
       author: String(r[7] || ""),
       driveFileId: String(r[8] || ""),
       driveFileUrl: String(r[9] || ""),
-      updatedAt: formatStamp_(r[10])
+      updatedAt: formatStamp_(r[10]),
+      fileName: String(r[11] || "")
     });
   }
   return reviews;
@@ -191,10 +198,11 @@ function doPost(e) {
       const rowIndex = findReviewRow_(sheets.reviewSheet, reviewId);
       if (rowIndex > 0) {
         sheets.reviewSheet.getRange(rowIndex, 9, 1, 2).setValues([[driveFileId, driveFileUrl]]);
+        sheets.reviewSheet.getRange(rowIndex, 12).setValue(fileName);
       } else {
         sheets.reviewSheet.appendRow([
           reviewId, body.title || fileName, body.folderId || "root", body.pageCount || 1,
-          "in_progress", 0, 0, body.author || "검수 담당자", driveFileId, driveFileUrl, nowStamp_()
+          "in_progress", 0, 0, body.author || "검수 담당자", driveFileId, driveFileUrl, nowStamp_(), fileName
         ]);
       }
 
@@ -244,9 +252,14 @@ function doPost(e) {
       ];
 
       if (rowIndex > 0) {
+        // 이름과 폴더는 이름 변경·폴더 이동으로만 바꾼다.
+        // 문서를 오래 열어 둔 다른 기기가 자동 저장하면서 옛 이름·옛 폴더로 되돌리지 않게 한다.
+        const kept = reviewSheet.getRange(rowIndex, 2, 1, 2).getValues()[0];
+        reviewData[1] = kept[0] || reviewData[1];
+        reviewData[2] = kept[1] || reviewData[2];
         reviewSheet.getRange(rowIndex, 1, 1, 11).setValues([reviewData]);
       } else {
-        reviewSheet.appendRow(reviewData);
+        reviewSheet.appendRow(reviewData.concat([body.fileName || ""]));
       }
 
       // 지적사항은 해당 reviewId 데이터 삭제 후 일괄 재등록
@@ -305,6 +318,26 @@ function doPost(e) {
 
       deleteCommentRows_(sheets.commentSheet, reviewId);
       return createJsonResponse({ ok: true, deleted: rowIndex > 0, removedDriveFile: removedDriveFile });
+    }
+
+    // 4-1. 문서의 관리용 이름 변경 (드라이브 원본 파일명과 File Name 칸은 그대로 둔다)
+    if (mode === 'renameReview') {
+      const title = String(body.title || "").trim().slice(0, 200);
+      if (!title) {
+        return createJsonResponse({ ok: false, error: "이름이 비어 있습니다." });
+      }
+      const rowIndex = findReviewRow_(sheets.reviewSheet, body.id);
+      if (rowIndex < 0) {
+        return createJsonResponse({ ok: false, error: "검수 문서를 시트에서 찾지 못했습니다: " + body.id });
+      }
+
+      // 이름을 처음 바꾸는 예전 문서는 File Name 칸이 비어 있다. 바꾸기 전 이름이 곧 원본 파일명이므로 옮겨 둔다.
+      if (!sheets.reviewSheet.getRange(rowIndex, 12).getValue()) {
+        sheets.reviewSheet.getRange(rowIndex, 12).setValue(sheets.reviewSheet.getRange(rowIndex, 2).getValue());
+      }
+      sheets.reviewSheet.getRange(rowIndex, 2).setValue(title);
+      sheets.reviewSheet.getRange(rowIndex, 11).setValue(nowStamp_());
+      return createJsonResponse({ ok: true, title: title });
     }
 
     // 4. 문서를 다른 폴더로 이동

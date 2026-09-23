@@ -519,7 +519,7 @@
 
         <div class="min-w-0 flex items-center gap-1.5 sm:gap-2">
           <span class="w-2 h-2 rounded-full bg-emerald-500 shrink-0" title="상태 정상"></span>
-          <h2 id="docTitle" class="text-xs font-bold text-white truncate max-w-[130px] sm:max-w-[200px] lg:max-w-md" title="문서 제목">샘플 문서</h2>
+          <h2 id="docTitle" class="text-xs font-bold text-white truncate max-w-[130px] sm:max-w-[200px] lg:max-w-md cursor-pointer hover:text-indigo-300 hover:underline underline-offset-2" title="눌러서 이름 바꾸기">샘플 문서</h2>
           <span id="storageStatusBadge" class="hidden sm:inline-flex text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium shrink-0">
             자동 저장됨
           </span>
@@ -1062,8 +1062,9 @@
     
     <div class="space-y-4">
       <div>
-        <label class="block text-[11px] font-semibold text-slate-400 mb-1">폴더 이름</label>
+        <label id="folderModalLabel" class="block text-[11px] font-semibold text-slate-400 mb-1">폴더 이름</label>
         <input type="text" id="folderNameInput" placeholder="예: 2026 연표 프로젝트, 1분기 시안" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500" />
+        <p id="folderModalHint" class="hidden mt-1.5 text-[11px] text-slate-500 break-all"></p>
       </div>
       <input type="hidden" id="folderModalMode" value="create" />
       <input type="hidden" id="folderModalTargetId" value="" />
@@ -1569,6 +1570,13 @@
     el.dashboardSettingsBtn.addEventListener('click', () => el.settingsModal.classList.remove('hidden'));
     el.viewerSettingsBtn.addEventListener('click', () => el.settingsModal.classList.remove('hidden'));
 
+    // 뷰어 위쪽 제목을 누르면 이름을 바꾼다
+    if (el.docTitle) {
+      el.docTitle.addEventListener('click', () => {
+        if (state.savedReviews.some(r => r.id === state.reviewId)) openRenameReviewModal(state.reviewId);
+      });
+    }
+
     // 모바일 헤더 더보기 메뉴 (데스크톱 버튼을 그대로 눌러 같은 동작을 태운다)
     if (el.btnHeaderMore && el.headerMoreMenu) {
       el.btnHeaderMore.addEventListener('click', (e) => {
@@ -2024,7 +2032,19 @@
   }
 
   // 폴더 모달 (생성/수정)
+  function setNameModalLabels(label, placeholder, hint) {
+    const labelEl = document.getElementById('folderModalLabel');
+    const hintEl = document.getElementById('folderModalHint');
+    if (labelEl) labelEl.textContent = label;
+    el.folderNameInput.placeholder = placeholder;
+    if (hintEl) {
+      hintEl.textContent = hint || '';
+      hintEl.classList.toggle('hidden', !hint);
+    }
+  }
+
   function openCreateFolderModal() {
+    setNameModalLabels('폴더 이름', '예: 2026 연표 프로젝트, 1분기 시안', '');
     el.folderModalTitle.innerHTML = `<i data-lucide="folder-plus" class="w-4 h-4 text-indigo-400"></i><span>새 폴더 만들기</span>`;
     el.folderModalMode.value = 'create';
     el.folderModalTargetId.value = '';
@@ -2041,6 +2061,7 @@
   function openRenameFolderModal(folderId) {
     const folder = state.folders.find(f => f.id === folderId);
     if (!folder) return;
+    setNameModalLabels('폴더 이름', '예: 2026 연표 프로젝트, 1분기 시안', '');
     el.folderModalTitle.innerHTML = `<i data-lucide="edit-2" class="w-4 h-4 text-amber-400"></i><span>폴더 이름 변경</span>`;
     el.folderModalMode.value = 'rename';
     el.folderModalTargetId.value = folderId;
@@ -2049,6 +2070,64 @@
     el.folderNameInput.focus();
     lucide.createIcons();
   }
+
+  // 문서의 관리용 이름. 드라이브에 올라간 원본 파일명은 그대로 두고 목록·리포트에 보이는 이름만 바꾼다.
+  function openRenameReviewModal(reviewId) {
+    const review = state.savedReviews.find(r => r.id === reviewId);
+    if (!review) return;
+    const original = review.fileName || review.title;
+    setNameModalLabels('문서 이름', '예: 관리선발 1차 검수', '원본 파일: ' + original + ' (드라이브 원본 이름은 바뀌지 않습니다)');
+    el.folderModalTitle.innerHTML = `<i data-lucide="edit-2" class="w-4 h-4 text-amber-400"></i><span>문서 이름 변경</span>`;
+    el.folderModalMode.value = 'renameReview';
+    el.folderModalTargetId.value = reviewId;
+    el.folderNameInput.value = review.title;
+    el.folderModal.classList.remove('hidden');
+    el.folderNameInput.focus();
+    el.folderNameInput.select();
+    lucide.createIcons();
+  }
+
+  async function renameReview(reviewId, newTitle) {
+    const title = (newTitle || '').trim();
+    const review = state.savedReviews.find(r => r.id === reviewId);
+    if (!title || !review || review.title === title) return;
+
+    // 화면에서 먼저 바꾸고, 그사이 도착한 옛 목록이 되돌리지 않게 적어 둔다
+    const oldTitle = review.title;
+    if (!review.fileName) review.fileName = oldTitle;
+    review.title = title;
+    pendingRenames.set(reviewId, title);
+    localStorage.setItem('cheese_qe_projects_index', JSON.stringify(state.savedReviews));
+    if (state.reviewId === reviewId) {
+      state.docName = title;
+      el.docTitle.textContent = title;
+    }
+    renderDashboardList();
+    showDriveSyncToast('이름을 바꾸는 중...', true);
+
+    let ok = !hasGas();
+    if (hasGas()) {
+      try {
+        const data = await gasPost({ mode: 'renameReview', id: reviewId, title: title });
+        ok = !!(data && data.ok);
+        if (!ok) showDriveSyncToast('이름 변경 실패: ' + ((data && data.error) || '오류'), false, 5000);
+      } catch (err) {
+        console.warn('renameReview failed:', err);
+        showDriveSyncToast('이름 변경 실패 (네트워크 오류)', false, 5000);
+      }
+    }
+
+    if (pendingRenames.get(reviewId) === title) pendingRenames.delete(reviewId);
+    if (!ok && state.reviewId === reviewId) {
+      state.docName = oldTitle;
+      el.docTitle.textContent = oldTitle;
+    }
+    if (ok) showDriveSyncToast('이름을 바꿨습니다', false, 2500);
+    // 실패했으면 서버에 있는 이름으로 돌아간다
+    if (hasGas()) loadDashboardData();
+  }
+
+  window.openRenameReviewModal = openRenameReviewModal;
 
   function openRenameCurrentFolderModal() {
     if (state.currentFolderId !== 'root') {
@@ -2059,11 +2138,16 @@
   function submitFolderModal() {
     const name = el.folderNameInput.value.trim();
     if (!name) {
-      alert('폴더 이름을 입력하세요.');
+      alert(el.folderModalMode.value === 'renameReview' ? '문서 이름을 입력하세요.' : '폴더 이름을 입력하세요.');
       return;
     }
 
     const mode = el.folderModalMode.value;
+    if (mode === 'renameReview') {
+      closeFolderModal();
+      renameReview(el.folderModalTargetId.value, name);
+      return;
+    }
     if (mode === 'create') {
       const newFolder = {
         id: 'f_' + Date.now(),
@@ -2250,6 +2334,7 @@
   // 그대로 쓰면 방금 지운 것이 되살아나거나 옮긴 것이 제자리로 돌아간다.
   const pendingDeletes = { reviews: new Set(), folders: new Set() };
   const pendingMoves = new Map();
+  const pendingRenames = new Map();
   let pendingFolderSaves = 0;
 
   function setDashLoading(on) {
@@ -2310,7 +2395,8 @@
       if (Array.isArray(data.reviews)) {
         const reviews = data.reviews
           .filter(r => !pendingDeletes.reviews.has(r.id))
-          .map(r => pendingMoves.has(r.id) ? Object.assign({}, r, { folderId: pendingMoves.get(r.id) }) : r);
+          .map(r => pendingMoves.has(r.id) ? Object.assign({}, r, { folderId: pendingMoves.get(r.id) }) : r)
+          .map(r => pendingRenames.has(r.id) ? Object.assign({}, r, { title: pendingRenames.get(r.id) }) : r);
 
         // 없어진 폴더를 가리키는 문서는 어느 폴더에도 안 나와 영영 묻힌다. 홈에 있는 것으로 보여 준다.
         const knownFolders = state.folders.map(f => f.id);
@@ -2452,9 +2538,11 @@
       const total = review.totalComments || 0;
       const resolved = review.resolvedCount || 0;
       title = review.title;
-      meta = `${review.pageCount || 1}p · ${total > 0 ? `해결 ${resolved}/${total}` : '지적 없음'} · ${review.updatedAt || '-'}`;
+      meta = `${review.pageCount || 1}p · ${total > 0 ? `해결 ${resolved}/${total}` : '지적 없음'} · ${review.updatedAt || '-'}`
+        + (review.fileName && review.fileName !== review.title ? ` · 원본 ${review.fileName}` : '');
       buttons =
         row('검수 열기', 'arrow-right', `closeRowActions(); resumeReviewProject('${id}')`) +
+        row('이름 변경', 'edit-2', `closeRowActions(); openRenameReviewModal('${id}')`) +
         row('폴더 이동', 'folder-input', `closeRowActions(); openMoveModal('${id}')`) +
         row('문서 삭제', 'trash-2', `closeRowActions(); deleteReviewFromRow('${id}')`, true);
     }
@@ -2758,6 +2846,9 @@
           <td class="py-3 px-4 text-right pr-5 whitespace-nowrap" onclick="event.stopPropagation()">
             <div class="flex items-center justify-end gap-1.5">
               <span class="row-actions inline-flex items-center gap-1.5">
+                <button onclick="openRenameReviewModal('${r.id}')" class="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-700/80 transition" title="이름 변경">
+                  <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
+                </button>
                 <button onclick="openMoveModal('${r.id}')" class="p-1.5 text-slate-400 hover:text-amber-400 rounded-lg hover:bg-slate-700/80 transition" title="다른 폴더로 이동">
                   <i data-lucide="folder-input" class="w-3.5 h-3.5"></i>
                 </button>
@@ -3106,7 +3197,9 @@
         showDriveSyncToast('구글 드라이브에서 시안 다운로드 중...', true);
 
         try {
-          const file = await downloadDriveFile(driveFileId, state.docName, (done, total) => {
+          // 제목은 사람이 바꾼 이름일 수 있어 확장자가 없다. PDF 인지는 원본 파일명으로 가린다.
+          const originalName = (projectSummary && projectSummary.fileName) || state.docName;
+          const file = await downloadDriveFile(driveFileId, originalName, (done, total) => {
             showViewerLoading('시안을 불러오는 중... ' + Math.round(done / total * 100) + '%');
           });
 
