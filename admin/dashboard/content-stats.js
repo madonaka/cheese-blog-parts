@@ -4,7 +4,8 @@
    숫자는 손으로 적지 않고 소비자 사이트(plus.cheesehistory.com)의 파일을 그대로 읽어 센다.
    - 워크북: korean/kr-workbook-data.js 의 WB_SETS (한 묶음 = n장, 묶음 시작 해 from 으로 연대를 가른다)
    - 대중문화: korean/popculture-pages.js 의 PC_PAGES.PAGES (한 판 = 한 장)
-   - 포스터연표: modern-timeline.js 의 PAGE_START·PAGE_SPAN·PAGE_COUNT (그림 스크립트라 읽지 않고 값만 옮겨 둔다)
+   - 포스터연표: modern-timeline.js 의 PAGE_START·PAGE_SPAN·PAGE_COUNT (그림 스크립트라 읽지 않고 값만 옮겨 둔다).
+     내용 패널용 사건 목록은 korean/modern-timeline-data.js 의 DATA 를 읽는다
    - 정치경제자료: 아직 사이트에 없다. 집계 자료가 생기면 POLECON 에 연대별 장수를 넣는다. */
 (function () {
   'use strict';
@@ -68,15 +69,23 @@
     var a = POSTER.start + i * POSTER.span, b = a + POSTER.span - 1;
     if (dec !== a) return null;   /* 위 칸에 묶였다 */
     var span = Math.min(POSTER.span / 10, (LAST_DEC - dec) / 10 + 1);
-    return '<td class="cs-poster" rowspan="' + span + '"><b>' + String(i + 1).padStart(2, '0') + '</b><span>/ ' + POSTER.count + '장</span><small>' + a + '–' + b + '</small></td>';
+    return '<td class="cs-poster cs-click" data-plan="poster:' + a + '" rowspan="' + span + '"><b>' + String(i + 1).padStart(2, '0') + '</b><span>/ ' + POSTER.count + '장</span><small>' + a + '–' + b + '</small>' + planLine('poster', a) + '</td>';
   }
 
-  function cell(n, goal) {
-    if (n == null) return '<td class="cs-na">준비 중</td>';
-    if (!goal) return '<td><span class="cs-n">' + n + '</span></td>';
+  function planLine(kind, dec) {
+    var p = window.CS_PLAN ? window.CS_PLAN.progress(kind, dec) : null;
+    if (!p) return '';
+    return '<div class="cs-plan-line' + (p.done >= p.total ? ' done' : '') + '">내용 ' + p.done + '/' + p.total + '</div>';
+  }
+
+  function cell(kind, dec, n, goal) {
+    var td = '<td class="cs-click' + (n == null ? ' cs-na' : '') + '" data-plan="' + kind + ':' + dec + '">';
+    var plan = planLine(kind, dec);
+    if (n == null) return td + '준비 중' + plan + '</td>';
+    if (!goal) return td + '<span class="cs-n">' + n + '</span>' + plan + '</td>';
     var pct = Math.min(100, Math.round(n / goal * 100));
-    return '<td><span class="cs-n' + (n >= goal ? ' done' : '') + '">' + n + '</span><span class="cs-goal"> / ' + goal + '</span>' +
-      '<div class="cs-bar"><i style="width:' + pct + '%"></i></div></td>';
+    return td + '<span class="cs-n' + (n >= goal ? ' done' : '') + '">' + n + '</span><span class="cs-goal"> / ' + goal + '</span>' +
+      '<div class="cs-bar"><i style="width:' + pct + '%"></i></div>' + plan + '</td>';
   }
 
   function renderTable(stats, goals) {
@@ -89,7 +98,7 @@
         if (k.key === 'poster') { var pc = posterCell(d); return pc === null ? '' : (pc || '<td class="cs-na">–</td>'); }
         var s = stats[k.key];
         var g = dg[k.key] ? +dg[k.key][d] || 0 : 0;
-        return cell(s ? (s.byDec[d] || 0) : null, g);
+        return cell(k.key, d, s ? (s.byDec[d] || 0) : null, g);
       }).join('');
       return '<tr><th scope="row">' + d + '년대</th>' + tds + '</tr>';
     }).join('');
@@ -137,7 +146,8 @@
   async function load() {
     var r = await Promise.allSettled([
       loadScript(SITE + '/korean/kr-workbook-data.js'),
-      loadScript(SITE + '/korean/popculture-pages.js')
+      loadScript(SITE + '/korean/popculture-pages.js'),
+      loadScript(SITE + '/korean/modern-timeline-data.js')
     ]);
     r.filter(function (x) { return x.status === 'rejected'; }).forEach(function (x) { console.warn('[콘텐츠 현황]', x.reason); });
     state.stats = {

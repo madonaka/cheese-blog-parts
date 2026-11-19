@@ -1,7 +1,8 @@
 /* admin/dashboard/content-goals.js — 콘텐츠 현황의 목표(기간 목표 · 연대 칸 목표)를 읽고 저장한다.
    저장은 adminDataApi 의 set(merge) 로 content_goals 컬렉션에 한다.
    - period_<자료> : { start, end, target, base }  base = 저장할 때의 장수(기간 중 늘어난 만큼을 보여 주려고)
-   - decade        : { workbook: {"1990": 60, …}, popculture: {…}, polecon: {…} }  0 = 목표 없음 */
+   - decade        : { workbook: {"1990": 60, …}, popculture: {…}, polecon: {…} }  0 = 목표 없음
+   - plan          : 연대별 채울 내용 (content-plan.js) */
 (function () {
   'use strict';
 
@@ -20,12 +21,15 @@
     return json;
   }
 
+  function saveDoc(id, data) { return api({ action: 'set', collection: COL, id: id, data: data }); }
+
   async function load() {
-    var goals = { period: {}, decade: {} };
+    var goals = { period: {}, decade: {}, plan: {} };
     try {
       var json = await api({ action: 'get', collection: COL });
       (json.data || json.dataList || []).forEach(function (d) {
         if (d.id === 'decade') goals.decade = d;
+        else if (d.id === 'plan') goals.plan = d;
         else if (String(d.id).indexOf('period_') === 0) goals.period[d.id.slice(7)] = d;
       });
     } catch (e) { console.warn('[콘텐츠 현황] 목표 불러오기 실패', e); }
@@ -75,7 +79,7 @@
     if (!box) return;
     var btn = box.querySelector('#csGoalSave'), msg = box.querySelector('#csGoalMsg');
     var old = (S.state.goals && S.state.goals.period) || {};
-    var next = { period: {}, decade: { workbook: {}, polecon: {}, popculture: {} } };
+    var next = { period: {}, decade: { workbook: {}, polecon: {}, popculture: {} }, plan: (S.state.goals && S.state.goals.plan) || {} };
     var writes = [];
 
     var bad = '';
@@ -100,7 +104,7 @@
     if (btn) btn.disabled = true;
     if (msg) msg.textContent = '저장 중…';
     try {
-      for (var i = 0; i < writes.length; i++) await api({ action: 'set', collection: 'content_goals', id: writes[i].id, data: writes[i].data });
+      for (var i = 0; i < writes.length; i++) await saveDoc(writes[i].id, writes[i].data);
       S.setGoals(next);
       close();
     } catch (e) {
@@ -117,5 +121,5 @@
     else if (e.target.closest('#csGoalSave')) save();
   });
 
-  window.CS_GOALS = { load: load, open: open };
+  window.CS_GOALS = { load: load, open: open, saveDoc: saveDoc };
 })();
