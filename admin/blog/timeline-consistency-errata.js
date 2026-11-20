@@ -1,6 +1,6 @@
-/* admin/blog/timeline-consistency-errata.js — 「연표 정오표」의 정오표 쪽. 맞춰보기에서 불일치로 나온 사건마다 처리 상태·메모를 붙이고, 목록으로 모아 보인다.
-   - 기사로 확인한 줄: plus.cheesehistory.com/korean/timeline-errata-data.js (TIMELINE_ERRATA). 같은 해 1년연표 사건에 이어 붙인다.
-   - 처리 상태·메모, 직접 추가한 줄: Firestore timeline_errata. 문서 id 는 이어 붙인 줄이면 그 줄 id, 아니면 「tc|해|사건 이름」. */
+/* admin/blog/timeline-consistency-errata.js — 「자료 맞춰보기」 카드의 처리 상태·메모. 불일치로 나온 사건마다 상태와 메모를 붙인다.
+   - 기사로 확인한 줄: plus.cheesehistory.com/korean/timeline-errata-data.js (TIMELINE_ERRATA). 같은 해 1년연표 사건 카드에 붙여 보인다.
+   - 처리 상태·메모: Firestore timeline_errata. 문서 id 는 기사 줄이 붙은 사건이면 그 줄 id, 아니면 「tc|해|사건 이름」. 직접 추가한 줄(manual)도 같은 컬렉션에 둔다. */
 (function () {
   'use strict';
 
@@ -12,7 +12,7 @@
     { key: 'fixed', label: '고침' },
     { key: 'keep', label: '그대로 둠' }
   ];
-  var st = { file: [], saved: {}, groups: [], linked: {}, filter: 'all', editing: null, onChange: null, setMsg: null };
+  var st = { file: [], saved: {}, groups: [], linked: {}, editing: null, onChange: null, setMsg: null };
 
   function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
   function $(id) { return document.getElementById(id); }
@@ -38,7 +38,7 @@
       var s = document.createElement('script');
       s.src = DATA_URL + '?v=' + Date.now();
       s.onload = function () { resolve(Array.isArray(window.TIMELINE_ERRATA) ? window.TIMELINE_ERRATA : []); };
-      s.onerror = function () { msg('사이트의 정오표 파일을 읽지 못했어요.'); resolve([]); };
+      s.onerror = function () { msg('사이트의 기사 확인 파일(timeline-errata-data.js)을 읽지 못했어요.'); resolve([]); };
       document.head.appendChild(s);
     });
   }
@@ -77,33 +77,18 @@
   function statusOf(id) { var s = st.saved[id]; return (s && s.status) || 'check'; }
   function labelOf(key) { for (var i = 0; i < STATUS.length; i++) if (STATUS[i].key === key) return STATUS[i].label; return ''; }
 
-  /* 정오표에 오르는 것: 지금 불일치인 사건, 기사로 확인한 줄이 붙은 사건, 상태를 한 번이라도 저장한 사건, 사건에 못 붙은 줄, 직접 추가한 줄 */
-  function entries() {
-    var out = [], used = {};
-    st.groups.forEach(function (g) {
-      var id = idOf(g);
-      if (g.verdict === 'diff' || st.linked[g.key] || (st.saved[id] && !st.saved[id].manual)) {
-        out.push({ id: id, g: g, row: st.linked[g.key] || null, y: g.y, date: [g.y, g.m, g.d] });
-        used[id] = 1;
-      }
-    });
-    st.file.forEach(function (r) {
-      if (r && r.id && !r._g && !used[r.id]) { out.push(rowEntry(r)); used[r.id] = 1; }
-    });
-    Object.keys(st.saved).forEach(function (id) {
-      var d = st.saved[id];
-      if (d.manual && !used[id]) out.push(rowEntry(d));
-    });
-    out.sort(function (a, b) { return (a.date[0] - b.date[0]) || (a.date[1] - b.date[1]) || ((a.date[2] || 15) - (b.date[2] || 15)); });
-    return out;
-  }
-  function rowEntry(r) {
-    var p = String(r.date || '').split('-').map(Number);
-    return { id: r.id, g: null, row: r, y: p[0] || +r.chart || 0, date: [p[0] || +r.chart || 0, p[1] || 0, p[2] || 0] };
-  }
   function entryOf(g) {
     var id = idOf(g);
     return (g.verdict === 'diff' || st.linked[g.key] || (st.saved[id] && !st.saved[id].manual)) ? { id: id, g: g, row: st.linked[g.key] || null } : null;
+  }
+  /* 처리 상태가 붙는 사건: 지금 불일치이거나, 기사로 확인한 줄이 붙었거나, 상태를 한 번이라도 저장한 사건 */
+  function statusOfGroup(g) { var en = entryOf(g); return en ? statusOf(en.id) : ''; }
+  /* 직접 추가한 줄: 맞춰보기 카드 사이에 해·날짜 자리로 끼워 보인다 */
+  function manualRows() {
+    return Object.keys(st.saved).map(function (id) { return st.saved[id]; }).filter(function (d) { return d && d.manual; }).map(function (d) {
+      var p = String(d.date || '').split('-').map(Number);
+      return { id: d.id, row: d, y: p[0] || +d.chart || 0, m: p[1] || 0, d: p[2] || 0, status: statusOf(d.id) };
+    });
   }
   /* 상태를 바꾼 사건이 지금은 네 자료가 맞으면 「지금은 일치」로 알린다 */
   function nowSame(en) { return en.g && en.g.verdict !== 'diff'; }
@@ -140,70 +125,14 @@
     return s === 'check' ? '' : '<i class="tc-st s-' + s + '">' + esc(labelOf(s)) + '</i>';
   }
 
-  /* 카드 상세 안의 정오표 칸 */
+  /* 카드 상세 안의 처리 칸 */
   function detailHtml(g) {
     var en = entryOf(g);
     if (!en) return '';
-    return '<div class="tc-er"><h4>정오표</h4>' +
+    return '<div class="tc-er"><h4>처리</h4>' +
       (nowSame(en) ? '<p class="tc-er-ok">지금은 네 자료가 맞아요. 고친 거라면 「고침」으로 두세요.</p>' : '') +
       (en.row ? '<div class="tc-er-row"><div class="tc-er-k">기사로 확인한 내용</div>' + rowHtml(en.row) + sourcesHtml(en.row.sources) + '</div>' : '') +
       '<div class="tc-er-ctl"><label>처리 상태' + statusSelect(en.id) + '</label><label>메모' + memoBox(en.id) + '</label></div></div>';
-  }
-
-  /* 목록 보기 */
-  function visible(year, q) {
-    q = (q || '').toLowerCase();
-    return entries().filter(function (en) {
-      if (st.filter !== 'all' && statusOf(en.id) !== st.filter) return false;
-      if (year !== 'all' && String(en.y) !== String(year)) return false;
-      if (q) {
-        var g = en.g, r = en.row || {};
-        var hay = [g ? g.name : '', g ? g.note : '', r.event, r.before, r.after, r.note, (st.saved[en.id] || {}).memo]
-          .concat(g ? ['poster', 'workbook', 'year', 'db'].filter(function (k) { return g[k]; }).map(function (k) { return g[k].names.join(' '); }) : []).join(' ').toLowerCase();
-        if (hay.indexOf(q) < 0) return false;
-      }
-      return true;
-    });
-  }
-
-  function renderChips(box, year) {
-    if (!box) return;
-    var pool = entries().filter(function (en) { return year === 'all' || String(en.y) === String(year); });
-    var cnt = { all: pool.length };
-    pool.forEach(function (en) { var s = statusOf(en.id); cnt[s] = (cnt[s] || 0) + 1; });
-    box.innerHTML = [{ key: 'all', label: '정오표 전체' }].concat(STATUS).map(function (s) {
-      return '<button type="button" class="tc-chip s-' + s.key + (st.filter === s.key ? ' on' : '') + '" data-efilter="' + s.key + '">' +
-        '<div class="n">' + (cnt[s.key] || 0) + '</div><div class="l">' + esc(s.label) + '</div></button>';
-    }).join('');
-  }
-
-  function dateCell(en) {
-    var d = en.date, t = d[1] ? d[1] + '.' + (d[2] || '') : '';
-    if (en.row && !en.g) t = String(en.row.date || '').slice(5).replace('-', '.');
-    return '<td class="te-date" data-label="날짜">' + esc(t.replace(/\.$/, '월')) + '<br><span class="te-chart">' + esc(en.y) + '</span></td>';
-  }
-
-  function renderList(box, year, q) {
-    if (!box) return;
-    var list = visible(year, q);
-    if (!list.length) { box.innerHTML = '<div class="te-table-wrap"><table class="te-table"><tbody><tr><td class="te-empty">해당하는 줄이 없어요.</td></tr></tbody></table></div>'; return; }
-    var lines = window.TC_VIEW && window.TC_VIEW.verdictLines;
-    box.innerHTML = '<div class="te-table-wrap"><table class="te-table"><thead><tr><th>날짜</th><th>사건 · 다른 곳</th><th>기사 근거</th><th>처리 상태</th><th>메모</th></tr></thead><tbody>' +
-      list.map(function (en) {
-        var g = en.g, r = en.row || {};
-        var main = '<div class="te-event">' + esc(g ? g.name : r.event) + (r.manual ? '<span class="te-manual">직접 추가</span>' : '') +
-          (g ? '' : '<span class="te-manual">맞춰보기에 없는 사건</span>') + '</div>';
-        if (g) {
-          main += nowSame(en) ? '<div class="te-ok">지금은 네 자료가 맞아요</div>' : '<div class="te-why">' + (lines ? lines(g).join('<br>') : '') + '</div>';
-          if (g.note) main += '<div class="te-note">' + esc(g.note) + '</div>';
-        }
-        main += rowHtml(r);
-        if (g) main += '<div class="te-row-acts"><button type="button" class="te-btn" data-open="' + esc(g.key) + '">카드 보기</button></div>';
-        if (r.manual) main += '<div class="te-row-acts"><button type="button" class="te-btn" data-edit="' + esc(en.id) + '">고치기</button><button type="button" class="te-btn danger" data-del="' + esc(en.id) + '">지우기</button></div>';
-        return '<tr>' + dateCell(en) + '<td class="te-main">' + main + '</td>' +
-          '<td data-label="기사 근거">' + (sourcesHtml(r.sources) || '<span class="te-note">' + (g ? '카드 상세에서 보기' : '없음') + '</span>') + '</td>' +
-          '<td data-label="처리 상태">' + statusSelect(en.id) + '</td><td data-label="메모">' + memoBox(en.id) + '</td></tr>';
-      }).join('') + '</tbody></table></div>';
   }
 
   async function saveField(id, data) {
@@ -253,9 +182,11 @@
     f('date', r.date); f('event', r.event); f('before', r.before); f('after', r.after); f('note', r.note);
     f('sources', sourcesText(r.sources));
     var title = m.querySelector('h3');
-    if (title) title.textContent = id ? '정오표 줄 고치기' : '정오표 줄 직접 추가';
+    if (title) title.textContent = id ? '직접 추가한 줄 고치기' : '직접 추가';
     var fm = $('teFormMsg');
     if (fm) fm.textContent = '';
+    var del = $('teFormDel');
+    if (del) { del.style.display = id ? '' : 'none'; del.setAttribute('data-del', id || ''); del.removeAttribute('data-sure'); del.textContent = '지우기'; }
     m.classList.add('open');
   }
   function closeForm() { var m = $('teModal'); if (m) m.classList.remove('open'); }
@@ -292,15 +223,16 @@
     try {
       await api({ action: 'delete', collection: COL, id: id });
       delete st.saved[id];
+      closeForm();
       changed();
     } catch (e) { msg('지우지 못했어요: ' + e.message); }
   }
 
   document.addEventListener('click', function (e) {
     var t = e.target;
-    var chip = t.closest('[data-efilter]');
-    if (chip) { st.filter = chip.getAttribute('data-efilter'); changed(); return; }
     if (t.closest('#teAdd')) { openForm(null); return; }
+    var mc = t.closest('[data-manual]');
+    if (mc) { openForm(mc.getAttribute('data-manual')); return; }
     if (t.closest('#teFormClose') || t.id === 'teModal') { closeForm(); return; }
     if (t.closest('#teFormSave')) { submitForm(); return; }
     var ed = t.closest('[data-edit]');
@@ -326,5 +258,5 @@
     link();
   }
 
-  window.TC_ERRATA = { init: init, badge: badge, detailHtml: detailHtml, renderList: renderList, renderChips: renderChips };
+  window.TC_ERRATA = { init: init, badge: badge, detailHtml: detailHtml, statusOfGroup: statusOfGroup, manualRows: manualRows, labelOf: labelOf, STATUS: STATUS };
 })();

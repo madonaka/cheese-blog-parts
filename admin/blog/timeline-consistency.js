@@ -1,6 +1,6 @@
-/* admin/blog/timeline-consistency.js — 「연표 정오표」 화면의 맞춰보기 쪽. 사건마다 포스터·워크북·1년연표·치즈위키를 사각형 꼭짓점에 두고 여섯 선으로 잇는다.
+/* admin/blog/timeline-consistency.js — 「자료 맞춰보기」 화면. 사건마다 포스터·워크북·1년연표·치즈위키를 사각형 꼭짓점에 두고 여섯 선으로 잇는다.
    두 자료끼리 날짜와 내용이 맞으면 초록, 하나라도 다르면 빨강, 한쪽에 없으면 회색 점선으로 그린다. 카드를 누르면 네 자료의 내용을 펼친다.
-   처리 상태·메모와 정오표 목록은 timeline-consistency-errata.js(TC_ERRATA)가 맡는다.
+   사건마다 붙는 처리 상태·메모와 직접 추가한 줄은 timeline-consistency-errata.js(TC_ERRATA)가 맡는다.
    자료는 plus.cheesehistory.com 에서 script 태그로 읽는다(fetch 는 CORS 로 막힘). */
 (function () {
   'use strict';
@@ -21,7 +21,7 @@
     { key: 'same', label: '일치' },
     { key: 'single', label: '한 곳에만' }
   ];
-  var state = { groups: [], filter: 'all', year: 'all', q: '', view: location.hash === '#list' ? 'list' : 'cards' };
+  var state = { groups: [], filter: 'all', year: 'all', status: 'all', q: '' };
   var ER = function () { return window.TC_ERRATA; };
 
   function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
@@ -46,6 +46,7 @@
     return state.groups.filter(function (g) {
       if (state.filter !== 'all' && g.verdict !== state.filter) return false;
       if (state.year !== 'all' && String(g.y) !== state.year) return false;
+      if (state.status !== 'all' && (ER() ? ER().statusOfGroup(g) : '') !== state.status) return false;
       if (q) {
         var hay = KEYS.map(function (k) { return g[k]; }).filter(Boolean).map(function (x) { return x.names.join(' '); }).join(' ').toLowerCase();
         if (hay.indexOf(q) < 0) return false;
@@ -54,11 +55,21 @@
     });
   }
 
+  /* 직접 추가한 줄: 처리 상태·검색·해가 맞고, 판정 칩이 「전체」일 때만 카드 사이에 보인다 */
+  function visibleManual() {
+    if (!ER() || state.filter !== 'all') return [];
+    var q = state.q.toLowerCase();
+    return ER().manualRows().filter(function (x) {
+      if (state.year !== 'all' && String(x.y) !== state.year) return false;
+      if (state.status !== 'all' && x.status !== state.status) return false;
+      if (q && [x.row.event, x.row.before, x.row.after].join(' ').toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    });
+  }
+
   function renderChips() {
     var box = $('tcChips');
     if (!box) return;
-    if (state.view === 'list') { if (ER()) ER().renderChips(box, state.year); box.className = 'tc-chips five'; return; }
-    box.className = 'tc-chips';
     var pool = state.groups.filter(function (g) { return state.year === 'all' || String(g.y) === state.year; });
     var cnt = { all: pool.length };
     pool.forEach(function (g) { cnt[g.verdict] = (cnt[g.verdict] || 0) + 1; });
@@ -92,27 +103,28 @@
   }
 
   function renderGrid() {
-    var box = $('tcGrid'), lb = $('tcList'), lg = $('tcLegend');
+    var box = $('tcGrid');
     if (!box) return;
-    box.style.display = state.view === 'list' ? 'none' : '';
-    if (lg) lg.style.display = state.view === 'list' ? 'none' : '';
-    if (lb) lb.style.display = state.view === 'list' ? '' : 'none';
-    if (state.view === 'list') { if (lb && ER()) ER().renderList(lb, state.year, state.q); return; }
-    var list = visible();
+    var list = visible().map(function (g) { return { g: g, y: g.y, m: g.m, d: g.d }; }).concat(visibleManual());
+    list.sort(function (a, b) { return (a.y - b.y) || (a.m - b.m) || ((a.d || 15) - (b.d || 15)); });
     if (!list.length) { box.innerHTML = '<div class="tc-empty">해당하는 사건이 없어요.</div>'; return; }
     var lastY = null, html = '';
-    list.forEach(function (g, i) {
-      if (g.y !== lastY) { html += '<h2 class="tc-year">' + g.y + '년</h2>'; lastY = g.y; }
+    list.forEach(function (x) {
+      if (x.y !== lastY) { html += '<h2 class="tc-year">' + x.y + '년</h2>'; lastY = x.y; }
+      var g = x.g, when = esc(x.m + '월' + (x.d ? ' ' + x.d + '일' : ''));
+      if (!g) {
+        var r = x.row;
+        html += '<button type="button" class="tc-card v-manual" data-manual="' + esc(x.id) + '"><div class="tc-mcard"><b>직접 추가</b><span>' + esc(r.event) + '</span><em>' + when + '</em>' +
+          (x.status !== 'check' ? '<i class="tc-st s-' + x.status + '">' + esc(ER().labelOf(x.status)) + '</i>' : '') + '</div></button>';
+        return;
+      }
       html += '<button type="button" class="tc-card v-' + g.verdict + '" data-i="' + state.groups.indexOf(g) + '">' +
-        shape(g) + '<div class="tc-name"><span>' + esc(g.name) + '</span><em>' + esc(g.m + '월' + (g.d ? ' ' + g.d + '일' : '')) + '</em>' + (ER() ? ER().badge(g) : '') + '</div></button>';
+        shape(g) + '<div class="tc-name"><span>' + esc(g.name) + '</span><em>' + when + '</em>' + (ER() ? ER().badge(g) : '') + '</div></button>';
     });
     box.innerHTML = html;
   }
 
-  function renderTabs() {
-    Array.prototype.forEach.call(document.querySelectorAll('[data-view]'), function (b) { b.classList.toggle('on', b.getAttribute('data-view') === state.view); });
-  }
-  function render() { renderTabs(); renderChips(); renderYears(); renderGrid(); }
+  function render() { renderChips(); renderYears(); renderGrid(); }
 
   function srcBlock(k, e) {
     if (!e) return '<div class="tc-src off"><h4>' + SRC[k].label + '</h4><p class="tc-none">이 자료에는 없어요.</p></div>';
@@ -249,16 +261,13 @@
     var t = e.target;
     var chip = t.closest('[data-filter]');
     if (chip) { state.filter = chip.getAttribute('data-filter'); render(); return; }
-    var card = t.closest('.tc-card');
+    var card = t.closest('.tc-card[data-i]');
     if (card) { openDetail(+card.getAttribute('data-i')); return; }
-    var view = t.closest('[data-view]');
-    if (view) { state.view = view.getAttribute('data-view'); history.replaceState(null, '', state.view === 'list' ? '#list' : location.pathname + location.search); render(); return; }
-    var op = t.closest('[data-open]');
-    if (op) { var key = op.getAttribute('data-open'); for (var j = 0; j < state.groups.length; j++) if (state.groups[j].key === key) { openDetail(j); break; } return; }
     if (t.closest('#tcClose') || t.id === 'tcModal') closeDetail();
   });
   document.addEventListener('change', function (e) {
     if (e.target.id === 'tcYear') { state.year = e.target.value; render(); }
+    else if (e.target.id === 'tcStatus') { state.status = e.target.value; render(); }
   });
   document.addEventListener('input', function (e) {
     if (e.target.id === 'tcSearch') { state.q = e.target.value.trim(); renderGrid(); }
