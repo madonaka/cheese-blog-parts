@@ -1,5 +1,6 @@
-/* admin/blog/timeline-consistency.js — 「자료 맞춰보기」 화면. 사건마다 포스터·워크북·1년연표·치즈위키를 사각형 꼭짓점에 두고 여섯 선으로 잇는다.
+/* admin/blog/timeline-consistency.js — 「연표 정오표」 화면의 맞춰보기 쪽. 사건마다 포스터·워크북·1년연표·치즈위키를 사각형 꼭짓점에 두고 여섯 선으로 잇는다.
    두 자료끼리 날짜와 내용이 맞으면 초록, 하나라도 다르면 빨강, 한쪽에 없으면 회색 점선으로 그린다. 카드를 누르면 네 자료의 내용을 펼친다.
+   처리 상태·메모와 정오표 목록은 timeline-consistency-errata.js(TC_ERRATA)가 맡는다.
    자료는 plus.cheesehistory.com 에서 script 태그로 읽는다(fetch 는 CORS 로 막힘). */
 (function () {
   'use strict';
@@ -20,7 +21,8 @@
     { key: 'same', label: '일치' },
     { key: 'single', label: '한 곳에만' }
   ];
-  var state = { groups: [], filter: 'all', year: 'all', q: '' };
+  var state = { groups: [], filter: 'all', year: 'all', q: '', view: location.hash === '#list' ? 'list' : 'cards' };
+  var ER = function () { return window.TC_ERRATA; };
 
   function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
   function $(id) { return document.getElementById(id); }
@@ -55,6 +57,8 @@
   function renderChips() {
     var box = $('tcChips');
     if (!box) return;
+    if (state.view === 'list') { if (ER()) ER().renderChips(box, state.year); box.className = 'tc-chips five'; return; }
+    box.className = 'tc-chips';
     var pool = state.groups.filter(function (g) { return state.year === 'all' || String(g.y) === state.year; });
     var cnt = { all: pool.length };
     pool.forEach(function (g) { cnt[g.verdict] = (cnt[g.verdict] || 0) + 1; });
@@ -88,20 +92,27 @@
   }
 
   function renderGrid() {
-    var box = $('tcGrid');
+    var box = $('tcGrid'), lb = $('tcList'), lg = $('tcLegend');
     if (!box) return;
+    box.style.display = state.view === 'list' ? 'none' : '';
+    if (lg) lg.style.display = state.view === 'list' ? 'none' : '';
+    if (lb) lb.style.display = state.view === 'list' ? '' : 'none';
+    if (state.view === 'list') { if (lb && ER()) ER().renderList(lb, state.year, state.q); return; }
     var list = visible();
     if (!list.length) { box.innerHTML = '<div class="tc-empty">해당하는 사건이 없어요.</div>'; return; }
     var lastY = null, html = '';
     list.forEach(function (g, i) {
       if (g.y !== lastY) { html += '<h2 class="tc-year">' + g.y + '년</h2>'; lastY = g.y; }
       html += '<button type="button" class="tc-card v-' + g.verdict + '" data-i="' + state.groups.indexOf(g) + '">' +
-        shape(g) + '<div class="tc-name"><span>' + esc(g.name) + '</span><em>' + esc(g.m + '월' + (g.d ? ' ' + g.d + '일' : '')) + '</em></div></button>';
+        shape(g) + '<div class="tc-name"><span>' + esc(g.name) + '</span><em>' + esc(g.m + '월' + (g.d ? ' ' + g.d + '일' : '')) + '</em>' + (ER() ? ER().badge(g) : '') + '</div></button>';
     });
     box.innerHTML = html;
   }
 
-  function render() { renderChips(); renderYears(); renderGrid(); }
+  function renderTabs() {
+    Array.prototype.forEach.call(document.querySelectorAll('[data-view]'), function (b) { b.classList.toggle('on', b.getAttribute('data-view') === state.view); });
+  }
+  function render() { renderTabs(); renderChips(); renderYears(); renderGrid(); }
 
   function srcBlock(k, e) {
     if (!e) return '<div class="tc-src off"><h4>' + SRC[k].label + '</h4><p class="tc-none">이 자료에는 없어요.</p></div>';
@@ -163,10 +174,8 @@
     return '<div class="tc-evbox"><h4>근거</h4>' + (out || (diffs.length ? '' : '<p class="tc-ok">어긋나는 곳이 없어 아래 치즈위키 기사로 확인했어요.</p>')) + tl + '</div>';
   }
 
-  function openDetail(i) {
-    var g = state.groups[i], m = $('tcModal'), body = $('tcModalBody');
-    if (!g || !m || !body) return;
-    /* 표 1: 네 자료의 날짜·이름. 다수와 다른 날짜는 빨갛게 */
+  /* 날짜 다수결: 가장 많은 자료가 고른 날짜(tops)와 다른 자료(odd)를 가린다 */
+  function dateInfo(g) {
     var have = KEYS.filter(function (k) { return g[k]; });
     var cnt = {}, best = 0;
     have.forEach(function (k) { var x = ymd(g[k]); cnt[x] = (cnt[x] || 0) + 1; if (cnt[x] > best) best = cnt[x]; });
@@ -178,11 +187,37 @@
       if (!e.d || t.slice(-2) === '00') return x.slice(0, 7) !== t.slice(0, 7);
       return true;
     }
-    function contentOf(k) {
-      var st = Object.keys(EDGE).filter(function (x) { return EDGE[x].indexOf(k) >= 0 && g.edges[x].state !== 'none'; }).map(function (x) { return g.edges[x].content; });
-      return st.indexOf('diff') >= 0 ? 'diff' : st.indexOf('unknown') >= 0 ? 'unknown' : st.length ? 'same' : '';
+    return { have: have, tops: tops, odd: odd };
+  }
+  function contentOfKey(g, k) {
+    var st = Object.keys(EDGE).filter(function (x) { return EDGE[x].indexOf(k) >= 0 && g.edges[x].state !== 'none'; }).map(function (x) { return g.edges[x].content; });
+    return st.indexOf('diff') >= 0 ? 'diff' : st.indexOf('unknown') >= 0 ? 'unknown' : st.length ? 'same' : '';
+  }
+  function mdText(x) { var p = x.split('-'); return +p[2] ? (+p[1]) + '.' + (+p[2]) : (+p[1]) + '월'; }
+
+  /* 한 줄 판정(HTML 줄 배열). inDetail 이면 내용 불일치에 「아래 메모」 안내를 붙인다 */
+  function verdictLines(g, inDetail) {
+    var di = dateInfo(g), have = di.have, lines = [];
+    var oddKeys = have.filter(di.odd);
+    if (oddKeys.length) {
+      lines.push('<b class="bad">날짜 불일치</b> ' + esc(oddKeys.map(function (k) { return SRC[k].label; }).join('·')) + '만 ' +
+        esc(oddKeys.map(function (k) { return dateText(g[k]).slice(5); }).join('·')) + ' (나머지 ' + esc(mdText(di.tops[0])) + ')');
+    } else if (Object.keys(EDGE).some(function (k) { return g.edges[k].date.state === 'diff'; })) {
+      lines.push('<b class="bad">날짜 불일치</b> 자료마다 날짜가 달라요');
     }
-    function mdText(x) { var p = x.split('-'); return +p[2] ? (+p[1]) + '.' + (+p[2]) : (+p[1]) + '월'; }
+    if (Object.keys(EDGE).some(function (k) { return g.edges[k].content === 'diff'; })) {
+      lines.push('<b class="bad">내용 불일치</b> ' + (inDetail ? '아래 메모와 근거를 보세요' : '메모를 보세요'));
+    }
+    if (!lines.length) lines.push(have.length < 2 ? SRC[have[0]].label + '에만 있어요' : have.length + '곳 자료의 날짜' + (have.some(function (k) { return contentOfKey(g, k) === 'unknown'; }) ? '가 맞아요 (1년연표 내용은 아직 안 봤어요)' : '·내용이 모두 맞아요'));
+    return lines;
+  }
+
+  function openDetail(i) {
+    var g = state.groups[i], m = $('tcModal'), body = $('tcModalBody');
+    if (!g || !m || !body) return;
+    /* 표 1: 네 자료의 날짜·이름. 다수와 다른 날짜는 빨갛게 */
+    var odd = dateInfo(g).odd;
+    function contentOf(k) { return contentOfKey(g, k); }
     function pill(cls, t) { return '<span class="pill p-' + cls + '">' + t + '</span>'; }
     var CL = { diff: pill('diff', '내용 다름 · 메모'), unknown: pill('gray', '내용 안 봄'), same: pill('same', '내용 일치'), '': '<span class="tc-dash">-</span>' };
     var srcRows = KEYS.map(function (k) {
@@ -192,16 +227,7 @@
         '<td data-l="제목">' + esc(e.name) + '</td><td data-l="내용">' + CL[contentOf(k)] + '</td></tr>';
     }).join('');
     /* 표 위 한 줄 판정 */
-    var lines = [];
-    var oddKeys = have.filter(odd);
-    if (oddKeys.length) {
-      lines.push('<b class="bad">날짜 불일치</b> ' + esc(oddKeys.map(function (k) { return SRC[k].label; }).join('·')) + '만 ' +
-        esc(oddKeys.map(function (k) { return dateText(g[k]).slice(5); }).join('·')) + ' (나머지 ' + esc(mdText(tops[0])) + ')');
-    } else if (Object.keys(EDGE).some(function (k) { return g.edges[k].date.state === 'diff'; })) {
-      lines.push('<b class="bad">날짜 불일치</b> 자료마다 날짜가 달라요');
-    }
-    if (Object.keys(EDGE).some(function (k) { return g.edges[k].content === 'diff'; })) lines.push('<b class="bad">내용 불일치</b> 아래 메모와 근거를 보세요');
-    if (!lines.length) lines.push(have.length < 2 ? SRC[have[0]].label + '에만 있어요' : have.length + '곳 자료의 날짜' + (have.some(function (k) { return contentOf(k) === 'unknown'; }) ? '가 맞아요 (1년연표 내용은 아직 안 봤어요)' : '·내용이 모두 맞아요'));
+    var lines = verdictLines(g, true);
     var tables = '<p class="tc-verdict">' + lines.join('<br>') + '</p>' +
       '<table class="tc-tbl tc-tbl-src"><thead><tr><th>자료</th><th>날짜</th><th>제목</th><th>내용</th></tr></thead><tbody>' + srcRows + '</tbody></table>' +
       '<p class="tc-tbl-foot">빨간 칸이 다른 자료들과 다른 곳이에요. 제목이 달라도 불일치로 세지 않아요.</p>';
@@ -211,6 +237,7 @@
       '<div class="tc-tri-big">' + shape(g) + '</div>' +
       tables +
       (g.note && !Object.keys(EDGE).some(function (k) { return g.edges[k].content === 'diff'; }) ? '<p class="tc-memo"><b>내용 검토</b> ' + esc(g.note) + '</p>' : '') +
+      (ER() ? ER().detailHtml(g) : '') +
       evidenceHtml(g) +
       (Object.keys(names).length > 1 ? '<p class="tc-note">자료마다 사건 이름이 조금씩 달라요. 같은 사건이 아니면 짝이 잘못 지어진 것이니 알려 주세요.</p>' : '') +
       '<div class="tc-srcs">' + KEYS.map(function (k) { return srcBlock(k, g[k]); }).join('') + '</div>';
@@ -224,6 +251,10 @@
     if (chip) { state.filter = chip.getAttribute('data-filter'); render(); return; }
     var card = t.closest('.tc-card');
     if (card) { openDetail(+card.getAttribute('data-i')); return; }
+    var view = t.closest('[data-view]');
+    if (view) { state.view = view.getAttribute('data-view'); history.replaceState(null, '', state.view === 'list' ? '#list' : location.pathname + location.search); render(); return; }
+    var op = t.closest('[data-open]');
+    if (op) { var key = op.getAttribute('data-open'); for (var j = 0; j < state.groups.length; j++) if (state.groups[j].key === key) { openDetail(j); break; } return; }
     if (t.closest('#tcClose') || t.id === 'tcModal') closeDetail();
   });
   document.addEventListener('change', function (e) {
@@ -250,9 +281,12 @@
     var review = (typeof TIMELINE_CONSISTENCY_REVIEW !== 'undefined') ? TIMELINE_CONSISTENCY_REVIEW : null;
     var year = (typeof TIMELINE_ONEYEAR !== 'undefined') ? TIMELINE_ONEYEAR : [];
     state.groups = window.TC_MATCH.build({ from: FROM, to: TO, poster: poster, workbook: window.WB_SETS, year: year, db: db, review: review });
-    setMsg(bad.length ? bad.join(' · ') : '');
+    setMsg('처리 상태를 불러오는 중…');
+    if (ER()) await ER().init(state.groups, { onChange: render, setMsg: setMsg });
+    var m = $('tcMsg');
+    if (m && m.textContent === '처리 상태를 불러오는 중…') setMsg(bad.length ? bad.join(' · ') : '');
     render();
   }
 
-  window.TC_VIEW = { init: init };
+  window.TC_VIEW = { init: init, verdictLines: function (g) { return verdictLines(g, false); } };
 })();
