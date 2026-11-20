@@ -1,6 +1,6 @@
 /* admin/blog/timeline-consistency.js — 「자료 맞춰보기」 화면. 사건마다 포스터·워크북·1년연표·치즈위키를 사각형 꼭짓점에 두고 여섯 선으로 잇는다.
    두 자료끼리 날짜와 내용이 맞으면 초록, 하나라도 다르면 빨강, 한쪽에 없으면 회색 점선으로 그린다. 카드를 누르면 네 자료의 내용을 펼친다.
-   사건마다 붙는 처리 상태·메모와 직접 추가한 줄은 timeline-consistency-errata.js(TC_ERRATA)가 맡는다.
+   사건마다 붙는 처리 상태·메모와 직접 추가한 줄은 timeline-consistency-errata.js(TC_ERRATA), 표 보기는 timeline-consistency-table.js(TC_TABLE)가 맡는다.
    자료는 plus.cheesehistory.com 에서 script 태그로 읽는다(fetch 는 CORS 로 막힘). */
 (function () {
   'use strict';
@@ -21,7 +21,7 @@
     { key: 'same', label: '일치' },
     { key: 'single', label: '한 곳에만' }
   ];
-  var state = { groups: [], filter: 'all', year: 'all', status: 'all', q: '' };
+  var state = { groups: [], filter: 'all', year: 'all', status: 'all', q: '', srcs: [], has: 'in', view: 'cards' };
   var ER = function () { return window.TC_ERRATA; };
 
   function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
@@ -41,11 +41,19 @@
 
   function setMsg(t) { var el = $('tcMsg'); if (el) el.textContent = t || ''; }
 
+  /* 자료 고르기: 「있는 것」은 고른 자료 모두에 있는 사건, 「없는 것」은 고른 자료 중 하나라도 빠진 사건 */
+  function srcOk(g) {
+    if (!state.srcs.length) return true;
+    var all = state.srcs.every(function (k) { return !!g[k]; });
+    return state.has === 'in' ? all : !all;
+  }
+
   function visible() {
     var q = state.q.toLowerCase();
     return state.groups.filter(function (g) {
       if (state.filter !== 'all' && g.verdict !== state.filter) return false;
       if (state.year !== 'all' && String(g.y) !== state.year) return false;
+      if (!srcOk(g)) return false;
       if (state.status !== 'all' && (ER() ? ER().statusOfGroup(g) : '') !== state.status) return false;
       if (q) {
         var hay = KEYS.map(function (k) { return g[k]; }).filter(Boolean).map(function (x) { return x.names.join(' '); }).join(' ').toLowerCase();
@@ -57,7 +65,7 @@
 
   /* 직접 추가한 줄: 처리 상태·검색·해가 맞고, 판정 칩이 「전체」일 때만 카드 사이에 보인다 */
   function visibleManual() {
-    if (!ER() || state.filter !== 'all') return [];
+    if (!ER() || state.filter !== 'all' || state.srcs.length) return [];
     var q = state.q.toLowerCase();
     return ER().manualRows().filter(function (x) {
       if (state.year !== 'all' && String(x.y) !== state.year) return false;
@@ -67,10 +75,18 @@
     });
   }
 
+  /* 색: 고쳐야 함 = 파랑, 처리 안 한 불일치(「고침」으로 바꿨는데 아직 다른 것 포함) = 빨강, 불일치가 없거나 「그대로 둠」 = 회색 */
+  function tone(st, isDiff) {
+    if (st === 'todo') return 'blue';
+    if (isDiff && st !== 'keep') return 'red';
+    return 'gray';
+  }
+  function toneOf(g) { return tone(ER() ? ER().statusOfGroup(g) : '', g.verdict === 'diff'); }
+
   function renderChips() {
     var box = $('tcChips');
     if (!box) return;
-    var pool = state.groups.filter(function (g) { return state.year === 'all' || String(g.y) === state.year; });
+    var pool = state.groups.filter(function (g) { return (state.year === 'all' || String(g.y) === state.year) && srcOk(g); });
     var cnt = { all: pool.length };
     pool.forEach(function (g) { cnt[g.verdict] = (cnt[g.verdict] || 0) + 1; });
     box.innerHTML = VERDICT.map(function (v) {
@@ -105,8 +121,16 @@
   function renderGrid() {
     var box = $('tcGrid');
     if (!box) return;
-    var list = visible().map(function (g) { return { g: g, y: g.y, m: g.m, d: g.d }; }).concat(visibleManual());
+    var list = visible().map(function (g) { return { g: g, i: state.groups.indexOf(g), y: g.y, m: g.m, d: g.d }; }).concat(visibleManual());
     list.sort(function (a, b) { return (a.y - b.y) || (a.m - b.m) || ((a.d || 15) - (b.d || 15)); });
+    var lg = $('tcLegend');
+    if (lg) lg.style.display = state.view === 'table' ? 'none' : '';
+    if (state.view === 'table' && window.TC_TABLE) {
+      box.className = 'tc-tablebox';
+      window.TC_TABLE.render(box, list, { odd: dateBad, contentOf: contentOfKey, toneOf: toneOf, manualTone: function (x) { return tone(x.status, x.status !== 'fixed'); } }, ER());
+      return;
+    }
+    box.className = 'tc-grid';
     if (!list.length) { box.innerHTML = '<div class="tc-empty">해당하는 사건이 없어요.</div>'; return; }
     var lastY = null, html = '';
     list.forEach(function (x) {
@@ -114,17 +138,23 @@
       var g = x.g, when = esc(x.m + '월' + (x.d ? ' ' + x.d + '일' : ''));
       if (!g) {
         var r = x.row;
-        html += '<button type="button" class="tc-card v-manual" data-manual="' + esc(x.id) + '"><div class="tc-mcard"><b>직접 추가</b><span>' + esc(r.event) + '</span><em>' + when + '</em>' +
+        html += '<button type="button" class="tc-card v-manual t-' + tone(x.status, x.status !== 'fixed') + '" data-manual="' + esc(x.id) + '"><div class="tc-mcard"><b>직접 추가</b><span>' + esc(r.event) + '</span><em>' + when + '</em>' +
           (x.status !== 'check' ? '<i class="tc-st s-' + x.status + '">' + esc(ER().labelOf(x.status)) + '</i>' : '') + '</div></button>';
         return;
       }
-      html += '<button type="button" class="tc-card v-' + g.verdict + '" data-i="' + state.groups.indexOf(g) + '">' +
+      html += '<button type="button" class="tc-card v-' + g.verdict + ' t-' + toneOf(g) + '" data-i="' + state.groups.indexOf(g) + '">' +
         shape(g) + '<div class="tc-name"><span>' + esc(g.name) + '</span><em>' + when + '</em>' + (ER() ? ER().badge(g) : '') + '</div></button>';
     });
     box.innerHTML = html;
   }
 
-  function render() { renderChips(); renderYears(); renderGrid(); }
+  function renderBar() {
+    Array.prototype.forEach.call(document.querySelectorAll('[data-src]'), function (b) { b.classList.toggle('on', state.srcs.indexOf(b.getAttribute('data-src')) >= 0); });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-view]'), function (b) { b.classList.toggle('on', b.getAttribute('data-view') === state.view); });
+    var has = $('tcHas');
+    if (has) has.disabled = !state.srcs.length;
+  }
+  function render() { renderBar(); renderChips(); renderYears(); renderGrid(); }
 
   function srcBlock(k, e) {
     if (!e) return '<div class="tc-src off"><h4>' + SRC[k].label + '</h4><p class="tc-none">이 자료에는 없어요.</p></div>';
@@ -201,6 +231,12 @@
     }
     return { have: have, tops: tops, odd: odd };
   }
+  /* 표 칸에서 날짜가 틀린 자료: 다수와 다른 자료, 다수가 없으면(둘이 서로 다르면) 다른 자료와 날짜가 어긋난 자료 모두 */
+  function dateBad(g, k) {
+    var di = dateInfo(g);
+    if (di.tops.length === 1) return di.odd(k);
+    return Object.keys(EDGE).some(function (x) { return EDGE[x].indexOf(k) >= 0 && g.edges[x].date.state === 'diff'; });
+  }
   function contentOfKey(g, k) {
     var st = Object.keys(EDGE).filter(function (x) { return EDGE[x].indexOf(k) >= 0 && g.edges[x].state !== 'none'; }).map(function (x) { return g.edges[x].content; });
     return st.indexOf('diff') >= 0 ? 'diff' : st.indexOf('unknown') >= 0 ? 'unknown' : st.length ? 'same' : '';
@@ -261,13 +297,22 @@
     var t = e.target;
     var chip = t.closest('[data-filter]');
     if (chip) { state.filter = chip.getAttribute('data-filter'); render(); return; }
-    var card = t.closest('.tc-card[data-i]');
+    var card = t.closest('.tc-card[data-i], .tc-tr[data-i]');
     if (card) { openDetail(+card.getAttribute('data-i')); return; }
+    var sb = t.closest('[data-src]');
+    if (sb) {
+      var k = sb.getAttribute('data-src'), at = state.srcs.indexOf(k);
+      if (at >= 0) state.srcs.splice(at, 1); else state.srcs.push(k);
+      render(); return;
+    }
+    var vb = t.closest('[data-view]');
+    if (vb) { state.view = vb.getAttribute('data-view'); render(); return; }
     if (t.closest('#tcClose') || t.id === 'tcModal') closeDetail();
   });
   document.addEventListener('change', function (e) {
     if (e.target.id === 'tcYear') { state.year = e.target.value; render(); }
     else if (e.target.id === 'tcStatus') { state.status = e.target.value; render(); }
+    else if (e.target.id === 'tcHas') { state.has = e.target.value; render(); }
   });
   document.addEventListener('input', function (e) {
     if (e.target.id === 'tcSearch') { state.q = e.target.value.trim(); renderGrid(); }
