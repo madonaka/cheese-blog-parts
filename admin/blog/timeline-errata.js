@@ -1,5 +1,5 @@
-/* admin/blog/timeline-errata.js — 연표 정오표: 기존 연표 그림과 확인된 내용이 다른 곳을 모아 보고 처리 상태를 관리한다.
-   - 줄 내용: plus.cheesehistory.com/korean/timeline-errata-data.js (TIMELINE_ERRATA, 연표 작업 세션이 추가)
+/* admin/blog/timeline-errata.js — 1년연표 정오표: 1년연표와 치즈위키에서 확인된 내용이 다른 곳을 모아 보고 처리 상태를 관리한다.
+   - 줄 내용: plus.cheesehistory.com/korean/timeline-errata-data.js (TIMELINE_ERRATA, 치즈위키 작업 세션이 추가)
    - 처리 상태·메모, 여기서 직접 추가한 줄: Firestore timeline_errata (문서 id = 줄 id) */
 (function () {
   'use strict';
@@ -9,7 +9,7 @@
   var STATUS = [
     { key: 'check', label: '확인 필요' },
     { key: 'todo', label: '고쳐야 함' },
-    { key: 'fixed', label: '연표 그림 고침' },
+    { key: 'fixed', label: '1년연표 고침' },
     { key: 'keep', label: '그대로 둠' }
   ];
   var state = { rows: [], saved: {}, filter: 'all', chart: 'all', q: '', editing: null };
@@ -98,8 +98,8 @@
     if (!sel) return;
     var charts = {};
     state.rows.forEach(function (r) { if (r.chart) charts[r.chart] = 1; });
-    sel.innerHTML = '<option value="all">모든 연표 그림</option>' + Object.keys(charts).sort().map(function (c) {
-      return '<option value="' + esc(c) + '"' + (state.chart === c ? ' selected' : '') + '>국내연표 ' + esc(c) + '</option>';
+    sel.innerHTML = '<option value="all">모든 해 1년연표</option>' + Object.keys(charts).sort().map(function (c) {
+      return '<option value="' + esc(c) + '"' + (state.chart === c ? ' selected' : '') + '>1년연표 ' + esc(c) + '</option>';
     }).join('');
   }
 
@@ -121,19 +121,19 @@
     body.innerHTML = rows.map(function (r) {
       var sv = state.saved[r.id] || {}, st = statusOf(r);
       return '<tr data-id="' + esc(r.id) + '">' +
-        '<td class="te-date">' + esc(r.date) + '<br>' + (r.chart ? '<span class="te-chart">국내연표 ' + esc(r.chart) + '</span>' : '') + '</td>' +
-        '<td><div class="te-event">' + esc(r.event) + (r.manual ? '<span class="te-manual">직접 추가</span>' : '') + '</div>' +
+        '<td class="te-date" data-label="날짜">' + esc(r.date) + '<br>' + (r.chart ? '<span class="te-chart">1년연표 ' + esc(r.chart) + '</span>' : '') + '</td>' +
+        '<td class="te-main"><div class="te-event">' + esc(r.event) + (r.manual ? '<span class="te-manual">직접 추가</span>' : '') + '</div>' +
           '<div class="te-before">' + esc(r.before) + '</div>' +
           '<div class="te-after">' + esc(r.after) + '</div>' +
           (r.note ? '<div class="te-note">' + esc(r.note) + '</div>' : '') +
           (r.found_by ? '<div class="te-note">찾은 곳: ' + esc(r.found_by) + (r.found_at ? ' · ' + esc(r.found_at) : '') + '</div>' : '') +
           (r.manual ? '<div class="te-row-acts"><button type="button" class="te-btn" data-edit="' + esc(r.id) + '">고치기</button><button type="button" class="te-btn danger" data-del="' + esc(r.id) + '">지우기</button></div>' : '') +
         '</td>' +
-        '<td>' + renderSources(r.sources) + '</td>' +
-        '<td><select class="te-status s-' + st + '" data-status="' + esc(r.id) + '">' + STATUS.map(function (s) {
+        '<td data-label="근거">' + renderSources(r.sources) + '</td>' +
+        '<td data-label="처리 상태"><select class="te-status s-' + st + '" data-status="' + esc(r.id) + '">' + STATUS.map(function (s) {
           return '<option value="' + s.key + '"' + (s.key === st ? ' selected' : '') + '>' + esc(s.label) + '</option>';
         }).join('') + '</select>' + (sv.updated_at ? '<div class="te-saved">' + esc(String(sv.updated_at).slice(0, 10)) + ' 저장</div>' : '') + '</td>' +
-        '<td><textarea class="te-memo" rows="2" data-memo="' + esc(r.id) + '" placeholder="메모">' + esc(sv.memo || '') + '</textarea></td>' +
+        '<td data-label="메모"><textarea class="te-memo" rows="2" data-memo="' + esc(r.id) + '" placeholder="메모">' + esc(sv.memo || '') + '</textarea></td>' +
         '</tr>';
     }).join('');
   }
