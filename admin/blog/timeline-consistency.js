@@ -21,7 +21,9 @@
     { key: 'same', label: '일치' },
     { key: 'single', label: '한 곳에만' }
   ];
-  var state = { groups: [], filter: 'all', year: 'all', status: 'all', q: '', srcs: [], has: 'in', view: 'cards' };
+  var VIEW_KEY = 'tc_view';
+  function savedView() { try { return localStorage.getItem(VIEW_KEY) === 'table' ? 'table' : 'cards'; } catch (e) { return 'cards'; } }
+  var state = { groups: [], filter: 'all', year: 'all', status: 'all', q: '', srcs: [], has: 'in', view: savedView() };
   var ER = function () { return window.TC_ERRATA; };
 
   function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
@@ -306,7 +308,11 @@
       render(); return;
     }
     var vb = t.closest('[data-view]');
-    if (vb) { state.view = vb.getAttribute('data-view'); render(); return; }
+    if (vb) {
+      state.view = vb.getAttribute('data-view');
+      try { localStorage.setItem(VIEW_KEY, state.view); } catch (e2) { /* 저장 못 해도 화면은 바뀐다 */ }
+      render(); return;
+    }
     if (t.closest('#tcClose') || t.id === 'tcModal') closeDetail();
   });
   document.addEventListener('change', function (e) {
