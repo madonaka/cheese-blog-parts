@@ -620,15 +620,17 @@ function renderRead() {
     el("div", { class: "levels" }, M.LEVELS.map((l) => el("button", { class: pick.level === l.n ? "on" : "", onclick: () => { setLevel(l.n); renderRead(); } }, l.n))),
     el("div", { class: "level-desc" }, `본문 약 ${M.READ_LEN[pick.level - 1]}자`),
     el("div", { class: "h" }, "읽는 방식"),
-    el("div", { class: "chips" }, [[0, "내 속도로"], [400, "페이스 400자/분"], [550, "페이스 550자/분"], [700, "페이스 700자/분"], [900, "페이스 900자/분"]].map(([v, t]) =>
+    el("div", { class: "chips" }, [[0, "내 속도로"], ["aloud", "🎤 소리 내어 읽기"], [400, "페이스 400자/분"], [550, "페이스 550자/분"], [700, "페이스 700자/분"], [900, "페이스 900자/분"]].map(([v, t]) =>
       el("button", { class: "chip" + (R.pace === v ? " on" : ""), onclick: () => { R.pace = v; renderRead(); } }, t))),
-    el("div", { class: "level-desc" }, "페이스: 정해진 속도로 문장이 하나씩 밝아져요. 눈이 따라가며 집중을 붙잡는 연습이에요."),
+    el("div", { class: "level-desc" }, R.pace === "aloud"
+      ? "소리 내어 읽기: 노래방처럼 읽은 곳이 칠해지고, 지금 문장 아래에 내가 읽은 말이 떠요. 4초 넘게 막힌 낱말은 빨갛게 표시돼서 끝나고 읽는 법과 뜻을 알려 주고 약점 노트에 담아요."
+      : "페이스: 정해진 속도로 문장이 하나씩 밝아져요. 눈이 따라가며 집중을 붙잡는 연습이에요."),
     R.phase === "ready" && R.reading
       ? el("button", { class: "primary", onclick: beginReading }, `받아 둔 글 읽기 시작 (${R.reading.chars}자)`)
       : el("button", { class: "primary", disabled: R.loading, onclick: fetchReading }, R.loading ? "글을 만드는 중… (20초쯤)" : "새 글 받기"),
     last.length ? [el("div", { class: "h" }, "최근 기록"), el("div", { class: "rec-list" }, last.map((r) =>
       el("div", { class: "rec" }, el("div", { class: `stamp sm g-${r.acc >= 1 ? "S" : r.acc >= 0.8 ? "A" : r.acc >= 0.6 ? "B" : "C"}` }, `${r.correct}`),
-        el("div", { class: "mid" }, el("b", { lang: "ja" }, r.title), el("span", {}, `${r.date} · ${r.genreName} · ${r.chars}자 · ${fmtTime(r.seconds)}${r.pace ? " · 페이스" : ""}`)),
+        el("div", { class: "mid" }, el("b", { lang: "ja" }, r.title), el("span", {}, `${r.date} · ${r.genreName} · ${r.chars}자 · ${fmtTime(r.seconds)}${r.pace === "aloud" ? " · 소리 내어" : r.pace ? " · 페이스" : ""}`)),
         el("div", { class: "sc" }, `${r.cpm}자/분`))))] : null);
 }
 async function fetchReading() {
@@ -648,6 +650,7 @@ function splitSentences(text) {
   return text.split(/\n{2,}/).map((para) => para.match(/[^。！？!?]+[。！？!?」』）)]*|[^。！？!?]+$/g) || [para]);
 }
 function renderReading(root) {
+  if (R.pace === "aloud") return renderAloud(root);
   const r = R.reading;
   const paras = splitSentences(r.text_ja);
   const spans = [];
@@ -674,10 +677,137 @@ function renderReading(root) {
     if (now && now !== R.lastNow) { R.lastNow = now; now.scrollIntoView({ block: "center", behavior: "smooth" }); }
   }, 250);
 }
+// ---------- 소리 내어 읽기(노래방) ----------
+// 본문 글자를 하나씩 span 으로 두고, 음성 인식 결과를 앞에서부터 본문과 맞춰 가며 읽은 곳까지 칠한다.
+// 음성 인식은 한자를 가나로 적기도 하므로 엄격히 맞추지 않고, 다음 몇 글자 안에서 같은 글자를 찾으면 그만큼 나아간다.
+const SKIP_RE = /[\s、。，．・「」『』（）()！？!?…ー〜\-—]/;
+function renderAloud(root) {
+  const r = R.reading;
+  const chars = [];         // 본문 글자(구두점 포함) span
+  const idx = [];           // 맞출 글자 → chars 위치
+  const paraEls = r.text_ja.split(/\n{2,}/).map((para) => el("p", {}, [...para].map((c) => {
+    const sp = el("span", {}, c);
+    if (!SKIP_RE.test(c)) idx.push(chars.length);
+    chars.push(sp);
+    return sp;
+  })));
+  const target = idx.map((i) => chars[i].textContent);
+  const body = el("div", { class: "read-text aloud", lang: "ja" }, paraEls);
+  const heardLine = el("div", { class: "heard-line", lang: "ja" }, "마이크를 눌러 읽기 시작");
+  const clock = el("b", { class: "clock" }, "0:00");
+  const micB = el("button", { class: "mic aloud-mic" }, "🎤");
+  const skipB = el("button", { class: "ghost-btn", onclick: () => skipSentence() }, "막힌 문장 건너뛰기");
+  const doneB = el("button", { class: "primary", onclick: () => finishAloud() }, "다 읽었어요 → 문제 풀기");
+  put(root,
+    el("div", { class: "read-head" }, el("div", {}, el("span", { class: "rd-genre" }, r.genreName + " · 소리 내어 읽기"), el("h2", { lang: "ja" }, r.title_ja)), clock),
+    body,
+    el("div", { class: "aloud-dock" }, heardLine, el("div", { class: "aloud-btns" }, skipB, micB)), doneB);
+
+  const A = R.aloud = { pos: 0, anchorPos: 0, anchorHeard: 0, heard: "", lastMove: Date.now(), stuck: [], started: 0, stuckAt: -1 };
+  const norm = (s) => [...s].filter((c) => !SKIP_RE.test(c)).join("");
+  function align() {
+    const h = norm(A.heard).slice(A.anchorHeard);
+    let p = A.anchorPos;
+    for (const c of h) {
+      for (let j = p; j < Math.min(target.length, p + 10); j++) {
+        if (target[j] === c) { p = j + 1; break; }
+      }
+    }
+    if (p > A.pos) { A.pos = p; A.lastMove = Date.now(); A.stuckAt = -1; }
+    paint();
+  }
+  function paint() {
+    const upto = A.pos ? idx[A.pos - 1] : -1;
+    chars.forEach((sp, i) => sp.classList.toggle("done", i <= upto));
+    const cur = idx[Math.min(A.pos, idx.length - 1)];
+    chars.forEach((sp) => sp.classList.remove("cursor"));
+    if (chars[cur] && A.pos < idx.length) {
+      chars[cur].classList.add("cursor");
+      if (A.lastScroll !== Math.floor(A.pos / 25)) { A.lastScroll = Math.floor(A.pos / 25); chars[cur].scrollIntoView({ block: "center", behavior: "smooth" }); }
+    }
+  }
+  // 막힌 낱말: 커서부터 다음 구두점까지(최대 6글자)
+  function wordAt(p) {
+    const start = idx[p];
+    let end = start;
+    while (end + 1 < chars.length && !SKIP_RE.test(chars[end + 1].textContent) && end - start < 5) end++;
+    return { start, end, text: chars.slice(start, end + 1).map((s) => s.textContent).join("") };
+  }
+  function markStuck() {
+    if (A.pos >= idx.length || A.stuckAt === A.pos) return;
+    A.stuckAt = A.pos;
+    const w = wordAt(A.pos);
+    for (let i = w.start; i <= w.end; i++) chars[i].classList.add("stuck");
+    if (!A.stuck.some((x) => x.text === w.text)) A.stuck.push({ text: w.text, context: sentenceAround(w.start) });
+  }
+  function sentenceAround(i) {
+    let a = i, b = i;
+    while (a > 0 && !/[。！？\n]/.test(chars[a - 1].textContent)) a--;
+    while (b < chars.length - 1 && !/[。！？]/.test(chars[b].textContent)) b++;
+    return chars.slice(a, b + 1).map((s) => s.textContent).join("");
+  }
+  function skipSentence() {
+    markStuck();
+    let i = idx[Math.min(A.pos, idx.length - 1)];
+    while (i < chars.length - 1 && !/[。！？]/.test(chars[i].textContent)) i++;
+    const next = idx.findIndex((x) => x > i);
+    A.pos = A.anchorPos = next < 0 ? idx.length : next;
+    A.anchorHeard = norm(A.heard).length;
+    A.lastMove = Date.now();
+    paint();
+  }
+  function startMic() {
+    if (!SR) { toast("이 브라우저는 음성 인식이 안 돼요."); return; }
+    if (!A.started) { A.started = Date.now(); R.t0 = Date.now(); }
+    micB.classList.add("on");
+    A.lastMove = Date.now();
+    let base = A.heard; // 다시 켰을 때 앞에 들은 말 위에 이어 붙임
+    startRec({
+      onLive: (t) => { A.heard = base + t; heardLine.textContent = "🎤 " + (t.slice(-40) || "듣고 있어요…"); align(); },
+      onFinal: () => { micB.classList.remove("on"); },
+    });
+  }
+  micB.onclick = () => (rec ? rec.stop() : startMic());
+  R.timer = setInterval(() => {
+    if (!A.started) return;
+    clock.textContent = fmtTime((Date.now() - A.started) / 1000);
+    if (rec && Date.now() - A.lastMove > 4000) markStuck();
+  }, 300);
+  async function finishAloud() {
+    if (rec) rec.stop();
+    clearInterval(R.timer);
+    R.elapsed = A.started ? (Date.now() - A.started) / 1000 : 1;
+    R.aloudReport = { coverage: Math.round((A.pos / idx.length) * 100), stuck: A.stuck, words: null };
+    R.phase = "quiz";
+    renderRead();
+    root.scrollTop = 0;
+    if (A.stuck.length) {
+      try {
+        const res = await api("/api/read/stuck", { method: "POST", body: JSON.stringify({ items: A.stuck.slice(0, 15) }) });
+        R.aloudReport.words = res.words;
+        S.weak = res.weak;
+        if (R.phase === "quiz") renderRead();
+      } catch (e) { toast(e.message); }
+    }
+  }
+}
+
+function aloudReportEl() {
+  const a = R.aloudReport;
+  if (!a || R.pace !== "aloud") return null;
+  return el("div", { class: "card" },
+    el("div", { class: "lab blue", style: "font-size:12px;font-weight:800;color:var(--blue)" }, "소리 내어 읽기 결과"),
+    el("div", { class: "note" }, `끝까지 따라온 비율 ${a.coverage}% · 막힌 곳 ${a.stuck.length}군데`),
+    a.stuck.length ? (a.words
+      ? el("div", { class: "hard", style: "margin-top:8px" }, a.words.map((w) => el("div", { class: "hard-item" }, el("b", { lang: "ja" }, w.word), el("span", { class: "rd" }, w.reading), el("span", { class: "mn" }, w.meaning_ko), el("span", { class: "rd" }, "노트에 담음"))))
+      : el("div", { class: "note tip" }, "막힌 낱말의 읽는 법과 뜻을 찾는 중…")) : el("div", { class: "note good" }, "막힘 없이 읽었어요!"));
+}
+
 function renderQuiz(root) {
   const r = R.reading;
   put(root,
     el("div", { class: "read-head" }, el("div", {}, el("span", { class: "rd-genre" }, `읽은 시간 ${fmtTime(R.elapsed)} · 본문은 가렸어요`), el("h2", { lang: "ja" }, r.title_ja))),
+    aloudReportEl(),
     r.questions.map((q, qi) => el("div", { class: "card q" },
       el("div", { class: "q-t", lang: "ja" }, `${qi + 1}. ${q.q_ja}`),
       q.choices.map((c, ci) => el("button", { class: "choice" + (R.answers[qi] === ci ? " on" : ""), lang: "ja", onclick: () => { R.answers[qi] = ci; renderRead(); } }, `${"①②③④"[ci]} ${c}`)))),
@@ -759,11 +889,16 @@ function startRec({ onFinal, onLive }) {
   let r = null;
   const t0 = Date.now();
   const text = () => [acc, part.trim()].filter(Boolean).join(" ");
-  rec = {
-    stop() { stopped = true; try { r?.stop(); } catch {} },
+  let finished = false;
+  const ctl = {
+    // onend 가 안 오는 브라우저가 있어도 마이크가 켜진 채로 굳지 않게 1.5초 뒤 강제로 끝낸다
+    stop() { stopped = true; try { r?.stop(); } catch {} setTimeout(() => finish(), 1500); },
   };
+  rec = ctl;
   function finish() {
-    rec = null;
+    if (finished) return;
+    finished = true;
+    if (rec === ctl) rec = null;
     setMicUI(false);
     if (!cancelled) onFinal(text());
   }
