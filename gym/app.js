@@ -83,8 +83,9 @@ function renderHero() {
   const streak = G.weekStreak(S.sessions, S.today);
   const kicker = el("p", { class: "hero-kicker" }, `${G.md(S.today)}(${S.weekday}) 오늘`,
     streak ? el("span", { class: "streak" }, `주 3회 ${streak}주 연속`) : null);
-  let title, sub = [], next, cta = null, meter = null;
+  let title, sub = [], next, cta = null, meter = null, ring = null;
   const weightNow = t && G.isWeight(t);
+  const wk = G.weekSummary(S.sessions, S.today);
 
   if (weightNow) {
     const plan = S.routines[t.type] || [];
@@ -93,6 +94,7 @@ function renderHero() {
     const prev = lastWeightBefore(t.type, S.today);
     const pv = prev ? G.volume(prev) : 0;
     title = t.finished ? `${t.type}루틴 완료` : `${t.type}루틴 하는 중`;
+    ring = G.ring(t.finished ? 1 : done / Math.max(1, plan.length), t.finished ? "✓" : `${done}/${plan.length}`, "종목");
     sub.push(`${done}/${plan.length}종목 · ${G.setCount(t)}세트 · 운동량 ${G.num(vol)}kg`);
     if (pv) {
       const pct = Math.round(((vol - pv) / pv) * 100);
@@ -105,12 +107,15 @@ function renderHero() {
     const ca = (t.cardio || []).map((c) => `${c.kind} ${c.minutes ?? "?"}분`).join(" · ");
     title = t.type === "유산소" ? (t.finished || ca ? "유산소 완료" : "유산소 하는 중") : (t.typeNote || "오늘 기록");
     if (ca) sub.push(ca);
+    const min = (t.cardio || []).reduce((a, c) => a + (c.minutes || 0), 0);
+    ring = G.ring(Math.min(1, min / 30), min ? `${min}` : "0", "분");
     const nt = lastWeightType() === "A" ? "B" : "A";
     next = `다음 웨이트: ${nt}루틴`;
   } else {
     const nt = S.nextType;
     const prev = lastWeightBefore(nt, S.today);
     title = `오늘은 ${nt}루틴 차례`;
+    ring = G.ring(Math.min(1, wk.weights / 3), `${wk.weights}/3`, "이번 주");
     if (prev) sub.push(`지난 ${nt} ${G.md(prev.date)}: ${prev.exercises.length}종목 · 운동량 ${G.num(G.volume(prev))}kg, 이번엔 넘어 보세요`);
     cta = el("div", { class: "hero-cta" },
       el("button", { class: "cta", type: "button", onclick: () => send(`${nt}루틴 시작할게`) }, `${nt}루틴 시작`),
@@ -118,10 +123,48 @@ function renderHero() {
   }
   $("#hero").className = `hero ${weightNow ? (t.type === "A" ? "h-a" : "h-b") : t?.type === "유산소" ? "h-c" : ""}`;
   $("#hero").replaceChildren(...[kicker,
-    el("h1", { class: "hero-title" }, title, t?.finished ? el("span", { class: "check", "aria-hidden": "true" }, "✓") : null),
-    ...sub.map((x) => el("p", { class: "hero-sub" }, x)),
+    el("div", { class: "hero-main" },
+      el("div", { class: "hero-text" },
+        el("h1", { class: "hero-title" }, title),
+        ...sub.map((x) => el("p", { class: "hero-sub" }, x))),
+      ring),
     meter, cta,
     next ? el("p", { class: "hero-next" }, next) : null].filter(Boolean));
+  renderNextUp();
+}
+
+// ---------- 오늘: 다음 종목(운동 중일 때만) ----------
+let listOpen = null; // 사용자가 루틴 목록을 직접 펼치거나 접었으면 그 선택을 따른다
+function renderNextUp() {
+  const box = $("#nextUp");
+  const t = S.todaySession;
+  const inSession = t && G.isWeight(t) && !t.finished;
+  const card = $("#todayCard");
+  const folded = listOpen == null ? !!inSession : !listOpen;
+  card.classList.toggle("folded", folded);
+  $("#foldBtn").textContent = folded ? "전체 보기" : "접기";
+  $("#foldBtn").setAttribute("aria-expanded", String(!folded));
+  if (!inSession) { box.hidden = true; return; }
+  const plan = S.routines[t.type] || [];
+  const left = plan.filter((r) => (t.exercises.find((e) => e.id === r.id)?.sets.length || 0) < r.sets);
+  box.hidden = false;
+  if (!left.length) {
+    box.replaceChildren(el("p", { class: "nu-label" }, "루틴 끝"),
+      el("p", { class: "nu-name" }, "오늘 루틴을 다 했어요"),
+      el("div", { class: "nu-actions" }, el("button", { class: "cta dark", type: "button", onclick: () => send("끝!") }, "마무리하기")));
+    return;
+  }
+  // 하다 만 종목이 있으면 그것, 아니면 순서대로 다음
+  const r = left.find((x) => t.exercises.some((e) => e.id === x.id)) || left[0];
+  const doneSets = t.exercises.find((e) => e.id === r.id)?.sets.length || 0;
+  box.replaceChildren(
+    el("p", { class: "nu-label" }, doneSets ? `하는 중 · ${doneSets}/${r.sets}세트` : `다음 종목 · 남은 ${left.length}개`),
+    el("button", { class: "nu-name", type: "button", onclick: () => openSheet(r) }, r.ko, el("small", {}, r.ja || "")),
+    el("p", { class: "nu-target" }, el("b", {}, `${r.kg}kg`), ` × ${r.reps}회 × ${r.sets}세트`,
+      r.last ? el("span", {}, `지난번 ${G.setsText(r.last.sets)}`) : null),
+    el("div", { class: "nu-actions" },
+      el("button", { class: "cta dark", type: "button", onclick: () => send(doneSets ? `${r.ko} ${doneSets + 1}세트 할게` : `${r.ko} 할게`) }, doneSets ? "다음 세트" : "시작"),
+      el("button", { class: "cta soft", type: "button", onclick: () => send(`${r.ko} 사람 있어`) }, "사람 있어")));
 }
 
 // ---------- 오늘: 이번 주 ----------
@@ -181,10 +224,20 @@ $("#typeSeg").addEventListener("click", (e) => {
   renderRoutineCard();
 });
 $("#foldBtn").addEventListener("click", () => {
-  const folded = $("#todayCard").classList.toggle("folded");
-  $("#foldBtn").textContent = folded ? "펼치기" : "접기";
-  $("#foldBtn").setAttribute("aria-expanded", String(!folded));
+  listOpen = $("#todayCard").classList.contains("folded");
+  renderNextUp();
 });
+
+// ---------- 키보드가 열리면 탭·머리·빠른 버튼을 숨겨 대화 자리를 넓힌다(터치 화면) ----------
+const touch = matchMedia("(pointer: coarse)").matches;
+$("#input").addEventListener("focus", () => {
+  if (!touch) return;
+  document.body.classList.add("kbd");
+  setTimeout(scrollFeed, 250);
+});
+$("#input").addEventListener("blur", () => setTimeout(() => {
+  if (document.activeElement !== $("#input")) document.body.classList.remove("kbd");
+}, 120));
 
 // ---------- 종목 설명 ----------
 function openSheet(r) {

@@ -31,6 +31,16 @@
     });
   };
 
+  // 원형 진행 게이지(0~1)
+  G.ring = (pct, big, small) => {
+    const r = 30, c = 2 * Math.PI * r;
+    const svgEl = G.svg("svg", { viewBox: "0 0 72 72", class: "ring", "aria-hidden": "true" });
+    svgEl.append(G.svg("circle", { cx: 36, cy: 36, r, class: "ring-bg" }));
+    svgEl.append(G.svg("circle", { cx: 36, cy: 36, r, class: "ring-fg", "stroke-dasharray": `${c * Math.max(0, Math.min(1, pct))} ${c}`, transform: "rotate(-90 36 36)" }));
+    return G.el("div", { class: "hero-ring", role: "img", "aria-label": `${big} ${small}` }, svgEl,
+      G.el("div", { class: "ring-txt" }, G.el("b", {}, big), G.el("span", {}, small)));
+  };
+
   // ---------- 날짜 ----------
   const WD = ["일", "월", "화", "수", "목", "금", "토"];
   G.md = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
