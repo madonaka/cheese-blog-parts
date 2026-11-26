@@ -1,4 +1,24 @@
-import { API_BASE, IS_REMOTE, authHeader, currentUser, signIn } from "./remote.js?v=1";
+// 일반 script(관리자 규칙: ES Module 금지). 전역을 더럽히지 않게 즉시 실행 함수로 감싼다.
+(function () {
+// 배포판(admin.cheesehistory.com/gym/)은 코치 서버(Cloud Function)를 부르고, 관리자 로그인 토큰을 쓴다.
+const IS_REMOTE = !["localhost", "127.0.0.1"].includes(location.hostname);
+const API_BASE = IS_REMOTE ? "https://asia-northeast3-cheese-history-platform.cloudfunctions.net/gymCoach" : "";
+const TOKEN_KEY = "cheese_gym_token";
+function goLogin() {
+  localStorage.removeItem(TOKEN_KEY);
+  location.href = "/?return=" + encodeURIComponent(location.pathname);
+}
+function authHeader() {
+  const t = localStorage.getItem(TOKEN_KEY);
+  return IS_REMOTE && t ? { authorization: "Bearer " + t } : {};
+}
+function tokenAlive() {
+  try {
+    const body = (localStorage.getItem(TOKEN_KEY) || "").split(".")[0];
+    const p = JSON.parse(atob(body.replace(/-/g, "+").replace(/_/g, "/")));
+    return p.exp > Date.now();
+  } catch { return false; }
+}
 
 const $ = (s) => document.querySelector(s);
 const el = (tag, attrs = {}, ...kids) => {
@@ -19,13 +39,13 @@ let busy = false;
 
 // ---------- 서버 ----------
 async function api(path, opts = {}) {
-  const headers = { "content-type": "application/json", ...(await authHeader()), ...(opts.headers || {}) };
+  const headers = { "content-type": "application/json", ...authHeader(), ...(opts.headers || {}) };
   const pc = localStorage.getItem("passcode");
   if (pc && !IS_REMOTE) headers["x-passcode"] = pc;
   const res = await fetch(API_BASE + path, { ...opts, headers });
   if (res.status === 401) {
     if (IS_REMOTE) {
-      showLogin("다시 로그인해 주세요.");
+      goLogin();
       throw new Error("로그인이 필요합니다.");
     }
     const v = prompt("앱 암호를 입력해 주세요");
@@ -331,29 +351,10 @@ $("#tabs").addEventListener("click", (e) => {
   if (b.dataset.view === "history") drawChart();
 });
 
-// ---------- 로그인(배포판) ----------
-function showLogin(msg = "") {
-  $("#login").hidden = false;
-  $("#loginMsg").textContent = msg;
-}
-$("#loginBtn").addEventListener("click", async () => {
-  $("#loginMsg").textContent = "로그인 창을 여는 중…";
-  try {
-    await signIn();
-    $("#login").hidden = true;
-    await load();
-  } catch (err) {
-    const code = err?.code || "";
-    $("#loginMsg").textContent =
-      code === "auth/unauthorized-domain" ? "이 주소가 Firebase 로그인 허용 목록에 없습니다(설정 필요)."
-      : code === "auth/popup-blocked" ? "팝업이 막혔어요. 브라우저에서 팝업을 허용해 주세요."
-      : code === "auth/popup-closed-by-user" ? "로그인 창이 닫혔어요. 다시 눌러 주세요."
-      : `로그인 실패: ${err?.message || err}`;
-  }
-});
-
+// ---------- 시작 ----------
 async function start() {
-  if (IS_REMOTE && !(await currentUser())) return showLogin();
+  if (IS_REMOTE && !tokenAlive()) return goLogin();
   await load();
 }
 start().catch((err) => addMsg("err", `불러오지 못했습니다: ${err.message}`));
+})();
