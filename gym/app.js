@@ -268,7 +268,7 @@ function renderChat() {
     box.append(el("p", { class: "empty" }, "헬스장에 도착하면 몸 상태와 함께 말을 걸어 주세요.", el("br"),
       "세트를 말하면 코치가 알아서 기록해요."));
   }
-  for (const m of S.display) addMsg(m.role, m.text + (m.image ? (m.text ? "\n[사진]" : "[사진]") : ""), m.t, false);
+  for (const m of S.display) addMsg(m.role, m.text + (m.image ? (m.text ? "\n[사진]" : "[사진]") : ""), m.t, false, m.model);
   // 운동 중이면 대화 끝으로, 아니면 맨 위(오늘 카드)부터 보이게
   const t = S.todaySession;
   if (t && !t.finished && S.display.length) scrollFeed();
@@ -278,13 +278,14 @@ function scrollFeed() {
   const f = $("#feed");
   f.scrollTop = f.scrollHeight;
 }
-function addMsg(role, text, t, scroll = true) {
+function addMsg(role, text, t, scroll = true, model = "") {
   const box = $("#chat");
   box.querySelector(".empty")?.remove();
   const time = t ? new Date(t).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }) : "";
   const n = el("div", { class: `msg ${role}` });
   G.fillText(n, text, role === "coach");
-  if (time) n.append(el("span", { class: "when" }, time));
+  // 어느 모델이 답했는지(판단은 Opus, 기록은 Sonnet)
+  if (time) n.append(el("span", { class: "when" }, model ? `${time} · ${model === "opus" ? "Opus" : "Sonnet"}` : time));
   box.append(n);
   if (scroll) scrollFeed();
   return n;
@@ -314,7 +315,7 @@ async function send(text) {
   try {
     const out = await api("/api/chat", { method: "POST", body: JSON.stringify({ text, image }) });
     wait.remove();
-    addMsg("coach", out.reply, new Date().toISOString());
+    addMsg("coach", out.reply, new Date().toISOString(), true, out.model);
     const fresh = await api("/api/state"); // 루틴 목표·오늘 기록이 바뀌었을 수 있다
     S = fresh;
     if (["A", "B"].includes(S.todaySession?.type)) viewType = S.todaySession.type;
