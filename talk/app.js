@@ -214,8 +214,24 @@ function renderHome() {
   } else if (pick.mode === "video") {
     const ta = el("textarea", { class: "paste", rows: 7, lang: "ja", placeholder: "유튜브에서 「…더보기 → 스크립트 표시」를 열고 자막을 통째로 복사해 붙여 넣으세요. 예능·드라마 자막도 됩니다." });
     const ti = el("input", { class: "paste-title", placeholder: "영상 제목 (없어도 됨)" });
-    startArea = el("div", {}, ti, ta,
-      el("button", { class: "primary", onclick: () => start("video", null, { transcript: ta.value, videoTitle: ti.value }) }, "이 영상으로 수업 시작"),
+    const yt = (q) => "https://www.youtube.com/results?search_query=" + encodeURIComponent(q);
+    const FIND = [
+      ["브이로그 (사회인 일상)", "社会人 vlog 一人暮らし 休日"],
+      ["예능 토크 클립", "トーク バラエティ 公式 切り抜き"],
+      ["유튜버 그룹 (東海オンエア)", "東海オンエア"],
+      ["잡학 토크 (ゆる言語学ラジオ)", "ゆる言語学ラジオ"],
+      ["경제 뉴스 (テレ東BIZ)", "テレ東BIZ"],
+      ["회사원 공감 콩트", "サラリーマン あるある コント"],
+    ];
+    startArea = el("div", {},
+      el("div", { class: "sub-h" }, "① 영상 없이: AI가 대본을 지어 들려줘요"),
+      el("div", { class: "gen-grid" }, [{ key: "random", name: "아무거나" }, ...M.STYLES].map((st) =>
+        el("button", { class: "gen", onclick: () => start("video", null, { scriptStyle: st.key }) }, el("b", {}, st.name), el("span", {}, "새 대본 듣고 대화")))),
+      el("div", { class: "sub-h" }, "② 진짜 영상으로: 찾아서 자막 붙여 넣기"),
+      el("div", { class: "find" }, FIND.map(([t, q]) => el("a", { href: yt(q), target: "_blank", rel: "noopener" }, t, " ↗"))),
+      el("div", { class: "level-desc", style: "margin-bottom:8px" }, "영상 아래 「…더보기 → 스크립트 표시」를 열고 자막을 길게 눌러 전부 복사해 오세요. PC 가 편해요."),
+      ti, ta,
+      el("button", { class: "primary", onclick: () => start("video", null, { transcript: ta.value, videoTitle: ti.value }) }, "이 자막으로 수업 시작"),
       el("div", { class: "level-desc" }, "자막에서 쓸 만한 표현 10개와 따라 말할 대사 5개를 뽑은 뒤, 그 영상 이야기로 대화해요."));
   } else {
     startArea = el("button", { class: "primary", onclick: () => start(pick.mode) }, `${M.MODES[pick.mode].name} 시작`);
@@ -259,7 +275,7 @@ async function setLevel(n) {
 
 // ---------- 수업 ----------
 async function start(mode, scenarioId, extra = {}) {
-  if (mode === "video" && (extra.transcript || "").trim().length < 80) { toast("자막을 붙여 넣어 주세요."); return; }
+  if (mode === "video" && !extra.scriptStyle && (extra.transcript || "").trim().length < 80) { toast("자막을 붙여 넣어 주세요."); return; }
   if (busy) return;
   if (S.current && !confirm("하던 수업이 있어요. 끝내고 새로 시작할까요?")) return;
   if (S.current) await endLesson(true);
@@ -271,7 +287,7 @@ async function start(mode, scenarioId, extra = {}) {
   switchView("lesson");
   renderLessonHead();
   const feed = $("#feed");
-  feed.replaceChildren(thinkingEl(mode === "video" ? "영상 자막을 정리하는 중 (10~20초)" : String(scenarioId).startsWith("gen:") ? "새 상황을 만드는 중" : "수업 준비 중"));
+  feed.replaceChildren(thinkingEl(mode === "video" ? (extra.scriptStyle ? "대본을 쓰는 중 (20~30초)" : "영상 자막을 정리하는 중 (10~20초)") : String(scenarioId).startsWith("gen:") ? "새 상황을 만드는 중" : "수업 준비 중"));
   try {
     const r = await streamApi("/api/session/start", { mode, scenarioId, level: pick.level, ...extra }, (reply) => speak(reply));
     S.current = r.session;
@@ -328,9 +344,35 @@ function videoEl(v) {
     const ja = el("div", { class: "vl-ja hidden", lang: "ja", onclick: () => ja.classList.remove("hidden") }, l.ja);
     return el("div", { class: "vl" }, ja, el("div", { class: "vl-ko" }, l.ko), el("div", { class: "model-tools" }, sp, sh, match));
   });
+  let script = null;
+  if (v.script?.length) {
+    const names = [...new Set(v.script.map((l) => l.speaker))];
+    const rows = v.script.map((l) => el("div", { class: "sc-line" }, el("span", { class: "sc-who" }, l.speaker), el("span", { class: "sc-ja hidden", lang: "ja", onclick: (e) => e.target.classList.remove("hidden") }, l.ja)));
+    let playing = false;
+    const playBtn = el("button", { class: "tool" }, "▶ 대본 전체 듣기");
+    const subBtn = el("button", { class: "tool", onclick: () => { const on = !subBtn.classList.contains("on"); subBtn.classList.toggle("on", on); rows.forEach((r) => r.lastChild.classList.toggle("hidden", !on)); } }, "자막");
+    playBtn.onclick = () => {
+      if (playing) { playing = false; speechSynthesis.cancel(); playBtn.textContent = "▶ 대본 전체 듣기"; return; }
+      playing = true; playBtn.textContent = "⏹ 멈추기";
+      speechSynthesis.cancel();
+      v.script.forEach((l, i) => {
+        const u = new SpeechSynthesisUtterance(l.ja);
+        const vo = bestVoice(); if (vo) u.voice = vo;
+        u.lang = "ja-JP";
+        u.rate = M.LEVELS[(S.current?.level || pick.level) - 1].rate + Number(localStorage.getItem("rateAdj") || 0);
+        u.pitch = [1, 0.75, 1.3, 0.9][names.indexOf(l.speaker) % 4]; // 인물마다 목소리 높이를 달리함
+        u.onstart = () => { rows.forEach((r) => r.classList.remove("now")); rows[i].classList.add("now"); rows[i].scrollIntoView({ block: "nearest", behavior: "smooth" }); };
+        if (i === v.script.length - 1) u.onend = () => { playing = false; playBtn.textContent = "▶ 다시 듣기"; rows[i].classList.remove("now"); };
+        speechSynthesis.speak(u);
+      });
+    };
+    script = el("details", { open: true }, el("summary", {}, `대본 듣기 ${v.script.length}줄 (먼저 자막 없이 들어 보세요)`),
+      el("div", { class: "model-tools", style: "margin-bottom:6px" }, playBtn, subBtn), rows);
+  }
   return el("div", { class: "video-card" },
-    el("div", { class: "lab" }, "영상 수업 자료"), el("h3", {}, v.title), el("p", { class: "vsum" }, v.summary_ko),
-    el("details", { open: true }, el("summary", {}, `이 영상의 표현 ${v.expressions.length}개 (대화에서 쓰면 점수)`), exps),
+    el("div", { class: "lab" }, v.script ? "AI 대본 수업 자료" : "영상 수업 자료"), el("h3", {}, v.title), el("p", { class: "vsum" }, v.summary_ko),
+    script,
+    el("details", { open: !v.script }, el("summary", {}, `이 영상의 표현 ${v.expressions.length}개 (대화에서 쓰면 점수)`), exps),
     el("details", {}, el("summary", {}, `실제 대사 따라 말하기 ${v.lines.length}개 (먼저 듣고, 대사는 눌러야 보임)`), lines));
 }
 
