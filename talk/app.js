@@ -744,32 +744,55 @@ async function weakAct(id, action) {
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null;
 let recTarget = null; // 따라 말하기일 때 { text, btn, out }
+// 브라우저는 말이 잠깐 멈추면 인식을 스스로 끝낸다. 사용자가 다시 누르기 전까지는 끝난 토막을 모아 두고 곧바로 다시 듣는다.
+const REC_MAX_MS = 5 * 60 * 1000;
 function startRec({ onFinal, onLive }) {
   speechSynthesis?.cancel();
-  rec = new SR();
-  rec.lang = "ja-JP";
-  rec.interimResults = true;
-  rec.continuous = true; // 길게 말할 수 있게: 다시 눌러야 끝남
-  let fin = "";
+  let acc = "";   // 끝난 토막들
+  let part = "";  // 지금 토막
+  let stopped = false;
   let cancelled = false;
-  rec.onresult = (e) => {
-    let f = "", interim = "";
-    for (const r of e.results) (r.isFinal ? (f += r[0].transcript) : (interim += r[0].transcript));
-    fin = f;
-    onLive((f + interim).trim());
+  let fails = 0;
+  let r = null;
+  const t0 = Date.now();
+  const text = () => (acc + part).trim();
+  rec = {
+    stop() { stopped = true; try { r?.stop(); } catch {} },
   };
-  rec.onerror = (e) => {
-    if (e.error === "no-speech" || e.error === "aborted") return;
-    cancelled = true;
-    toast(e.error === "not-allowed" || e.error === "service-not-allowed" ? "마이크 권한을 허용해 주세요." : `음성 인식 오류: ${e.error}`);
-  };
-  rec.onend = () => {
-    const last = $("#liveText").dataset.text || fin;
+  function finish() {
     rec = null;
     setMicUI(false);
-    if (!cancelled) onFinal(last.trim());
-  };
-  rec.start();
+    if (!cancelled) onFinal(text());
+  }
+  function run() {
+    r = new SR();
+    r.lang = "ja-JP";
+    r.interimResults = true;
+    r.continuous = true;
+    r.onresult = (e) => {
+      let t = "";
+      for (const x of e.results) t += x[0].transcript;
+      part = t;
+      fails = 0;
+      onLive(text());
+    };
+    r.onerror = (e) => {
+      if (e.error === "no-speech" || e.error === "aborted" || e.error === "network") return; // 다시 듣기로 넘어감
+      cancelled = stopped = true;
+      toast(e.error === "not-allowed" || e.error === "service-not-allowed" ? "마이크 권한을 허용해 주세요." : `음성 인식 오류: ${e.error}`);
+    };
+    r.onend = () => {
+      acc = text();
+      part = "";
+      if (!stopped && Date.now() - t0 < REC_MAX_MS && fails < 20) {
+        fails++;
+        try { run(); return; } catch {}
+      }
+      finish();
+    };
+    r.start();
+  }
+  run();
 }
 function setMicUI(on) {
   $("#micBtn").classList.toggle("on", on);
@@ -780,7 +803,7 @@ $("#micBtn").addEventListener("click", () => {
   if (rec) { rec.stop(); return; }
   if (!SR) { toast("이 브라우저는 음성 인식이 안 돼요. 크롬이나 엣지를 써 주세요."); return; }
   if (busy || !S.current) return;
-  $("#liveText").textContent = "듣고 있어요. 다 말하면 다시 누르세요";
+  $("#liveText").textContent = "듣고 있어요. 멈춰 생각해도 안 끊겨요. 다 말하면 다시 누르세요";
   $("#liveText").dataset.text = "";
   setMicUI(true);
   startRec({
