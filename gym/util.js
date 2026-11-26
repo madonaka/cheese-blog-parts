@@ -21,6 +21,16 @@
     return n;
   };
 
+  // 글을 노드에 넣는다. rich 면 **굵게** 만 굵은 글씨로 바꾼다(그 밖의 마크다운 기호는 지운다). HTML 은 넣지 않는다.
+  G.fillText = (node, text, rich) => {
+    if (!rich) { node.append(text); return; }
+    const clean = text.replace(/^#{1,6}\s+/gm, "").replace(/^\s*\*\s+/gm, "- ");
+    clean.split(/(\*\*[^*]+\*\*)/g).forEach((part) => {
+      if (/^\*\*[^*]+\*\*$/.test(part)) node.append(G.el("b", {}, part.slice(2, -2)));
+      else if (part) node.append(part);
+    });
+  };
+
   // ---------- 날짜 ----------
   const WD = ["일", "월", "화", "수", "목", "금", "토"];
   G.md = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;

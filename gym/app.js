@@ -45,6 +45,8 @@ async function api(path, opts = {}) {
   return data;
 }
 
+G.api = api; // 달력(지난 대화)·사진에서 쓴다
+
 async function load() {
   S = await api("/api/state");
   if (!viewType) viewType = ["A", "B"].includes(S.todaySession?.type) ? S.todaySession.type : S.nextType;
@@ -227,7 +229,9 @@ function addMsg(role, text, t, scroll = true) {
   const box = $("#chat");
   box.querySelector(".empty")?.remove();
   const time = t ? new Date(t).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }) : "";
-  const n = el("div", { class: `msg ${role}` }, text, time ? el("span", { class: "when" }, time) : null);
+  const n = el("div", { class: `msg ${role}` });
+  G.fillText(n, text, role === "coach");
+  if (time) n.append(el("span", { class: "when" }, time));
   box.append(n);
   if (scroll) scrollFeed();
   return n;
@@ -384,10 +388,20 @@ $("#tabs").addEventListener("click", (e) => {
 });
 addEventListener("resize", () => { if (currentView === "growth") G.redrawGrowthLine(S); });
 
+// 배포판에서는 머리의 이름을 누르면 관리자 대시보드로 돌아간다
+if (IS_REMOTE) {
+  const brand = $(".brand");
+  brand.replaceWith(el("a", { class: "brand", href: "/admin/dashboard/new_dashboard.html", title: "관리자 대시보드로" }, ...brand.childNodes));
+}
+
 // ---------- 시작 ----------
 async function start() {
   if (IS_REMOTE && !tokenAlive()) return goLogin();
   await load();
+  // 주소 끝 #calendar, #growth, #routine 으로 그 탭을 바로 연다
+  const [v, sub] = location.hash.slice(1).split(":");
+  if (v === "growth" && sub) G.openGrowth(sub);
+  if (["calendar", "growth", "routine"].includes(v)) switchView(v);
 }
 start().catch((err) => addMsg("err", `불러오지 못했습니다: ${err.message}`));
 })();

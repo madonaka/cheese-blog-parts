@@ -5,16 +5,32 @@
   const SKIP = new Set(["chinup", "plank", "db_reardelt", "cable_row"]);
   let chartEx = null;
 
+  // 성장 탭은 요약 카드(타일)만 먼저 보여 주고, 누르면 그 내용만 연다.
+  let openKey = null;
+  G.openGrowth = (key) => { openKey = key; };
+
   G.renderGrowth = function (S, root) {
     const today = S.today;
     const lifts = S.catalog.filter((c) => !SKIP.has(c.id)).map((c) => ({ c, pts: G.series(S.sessions, c.id) })).filter((x) => x.pts.length >= 2);
+    const recs = G.records(S.sessions, lifts.map((x) => x.c.id));
+    const ctx = { S, today, lifts, recs };
+    const section = SECTIONS.find((s) => s.key === openKey);
+    if (section) {
+      const body = el("div", { class: "detail-body" });
+      root.replaceChildren(
+        el("div", { class: "detail-top" },
+          el("button", { class: "back", type: "button", onclick: () => { openKey = null; G.renderGrowth(S, root); root.closest(".view").scrollTop = 0; } }, "‹ 성장"),
+          el("h2", {}, section.title)),
+        el("section", { class: "card" }, body));
+      section.open(ctx, body);
+      return;
+    }
+
     const first = S.sessions[0]?.date || today;
     const weeks = Math.max(1, Math.round(G.daysBetween(first, today) / 7));
     const trainDays = S.sessions.filter((s) => G.isWeight(s)).length;
-    const recs = G.records(S.sessions, lifts.map((x) => x.c.id));
     const monthRecs = recs.filter((r) => r.date.slice(0, 7) === today.slice(0, 7)).length;
     const streak = G.weekStreak(S.sessions, today);
-
     root.replaceChildren(
       el("section", { class: "hero growth-hero" },
         el("p", { class: "hero-kicker" }, `${G.md(first)} 시작 · ${weeks}주째`),
@@ -22,15 +38,99 @@
           stat(trainDays, "웨이트 한 날"),
           stat(monthRecs, "이번 달 신기록"),
           stat(streak, "주 3회 연속 주"))),
-      gainsCard(lifts),
-      recordsCard(recs, S),
-      volumeCard(S, today),
-      projectionCard(lifts, S, today),
-      bodyCard(S, today),
-      lineCard(S, lifts),
+      el("div", { class: "tiles" }, SECTIONS.map((s) => {
+        const sum = s.summary(ctx);
+        return el("button", { class: `tile ${s.wide ? "wide" : ""}`, type: "button", onclick: () => { openKey = s.key; G.renderGrowth(S, root); root.closest(".view").scrollTop = 0; } },
+          el("span", { class: "tile-title" }, s.title),
+          el("b", { class: "tile-big" }, sum.big),
+          sum.small ? el("span", { class: "tile-small" }, sum.small) : null,
+          el("span", { class: "tile-go", "aria-hidden": "true" }, "›"));
+      })),
     );
-    drawLine(S);
   };
+
+  // 카드 하나 = 제목, 타일 요약, 열었을 때 그리는 함수
+  const SECTIONS = [
+    { key: "muscle", title: "근육 지도", wide: true,
+      summary: ({ S, today }) => {
+        const sc = G.muscleScores(S.sessions, today);
+        const pull = sc.rearDelt + sc.lats + sc.midBack, push = sc.chest + sc.frontDelt;
+        return { big: push ? `당기기 : 밀기 = ${(pull / push).toFixed(1)} : 1` : "기록 없음", small: "최근 4주 많이 쓴 부위를 그림으로" };
+      },
+      open: ({ S }, body) => G.renderMuscleMap(S, body) },
+    { key: "gains", title: "처음보다 늘어난 무게",
+      summary: ({ lifts }) => {
+        const r = gainRows(lifts)[0];
+        return r ? { big: `+${r.pct}%`, small: `${r.c.ko} ${r.a}→${r.b}kg` } : { big: "-" };
+      },
+      open: ({ lifts }, body) => body.replaceChildren(...inner(gainsCard(lifts))) },
+    { key: "records", title: "신기록",
+      summary: ({ recs, today }) => {
+        const n = recs.filter((r) => r.date.slice(0, 7) === today.slice(0, 7)).length;
+        return { big: `이번 달 ${n}번`, small: recs[0] ? `최근 ${G.md(recs[0].date)} ${recs[0].kg}kg` : "" };
+      },
+      open: ({ recs, S }, body) => body.replaceChildren(...inner(recordsCard(recs, S))) },
+    { key: "volume", title: "주간 운동량",
+      summary: ({ S, today }) => {
+        const w = weekVolumes(S, today);
+        return { big: `${(w.at(-1).v / 1000).toFixed(1)}t`, small: `지난주 ${(w.at(-2).v / 1000).toFixed(1)}t` };
+      },
+      open: ({ S, today }, body) => body.replaceChildren(...inner(volumeCard(S, today))) },
+    { key: "proj", title: "이대로 가면",
+      summary: ({ lifts, today }) => {
+        const r = projRows(lifts, today)[0];
+        return r ? { big: `${r.c.ko}`, small: `${r.now} → ${r.w12}kg (${G.md(G.addDays(today, 84))})` } : { big: "-" };
+      },
+      open: ({ lifts, S, today }, body) => body.replaceChildren(...inner(projectionCard(lifts, S, today))) },
+    { key: "body", title: "몸은 어떻게 바뀔까",
+      summary: ({ S }) => {
+        const m = (S.measures || []).at(-1);
+        return m ? { big: `체지방 ${m.bodyFat}%`, small: `골격근 ${m.muscle}kg · ${G.md(m.date)} 측정` } : { big: "측정 없음" };
+      },
+      open: ({ S, today }, body) => body.replaceChildren(...inner(bodyCard(S, today))) },
+    { key: "photos", title: "월별 몸 사진",
+      summary: ({ S, today }) => {
+        const d = S.photoDates || [];
+        const thisMonth = d.some((x) => x.slice(0, 7) === today.slice(0, 7));
+        return { big: `${d.length}장`, small: thisMonth ? `이번 달 찍음 · ${G.md(d.at(-1))}` : "이번 달 아직 안 찍음" };
+      },
+      open: ({ S }, body) => G.renderPhotos(S, body) },
+    { key: "line", title: "종목별 무게 그래프", wide: true,
+      summary: () => ({ big: "그래프", small: "종목 하나씩 무게 변화" }),
+      open: ({ S, lifts }, body) => { body.replaceChildren(...lineCard(S, lifts).childNodes); drawLine(S); } },
+  ];
+
+  // 카드 안쪽만(맨 앞 제목은 상세 화면 머리에 이미 있으므로 뺀다)
+  function inner(card) {
+    const kids = [...card.childNodes];
+    return kids[0]?.tagName === "H2" ? kids.slice(1) : kids;
+  }
+
+  function gainRows(lifts) {
+    return lifts.map(({ c, pts }) => {
+      const a = pts[0].kg, b = Math.max(...pts.map((p) => p.kg));
+      return { c, a, b, pct: a ? Math.round(((b - a) / a) * 100) : 0 };
+    }).sort((x, y) => y.pct - x.pct);
+  }
+  function projRows(lifts, today) {
+    return lifts.map(({ c, pts }) => {
+      const now = Math.max(...pts.map((p) => p.kg));
+      const t = G.trend(pts, today);
+      return { c, now, t, w4: G.project(now, t, 4, c.steps), w12: G.project(now, t, 12, c.steps) };
+    }).filter((r) => r.t != null).sort((a, b) => b.w12 - b.now - (a.w12 - a.now));
+  }
+  function weekVolumes(S, today) {
+    const map = G.byDate(S.sessions);
+    const mon = G.mondayOf(today);
+    const wks = [];
+    for (let k = 7; k >= 0; k--) {
+      const m = G.addDays(mon, -7 * k);
+      let v = 0;
+      for (let i = 0; i < 7; i++) v += G.volume(map.get(G.addDays(m, i)));
+      wks.push({ m, v });
+    }
+    return wks;
+  }
 
   function stat(n, label) {
     return el("div", { class: "stat" }, el("b", {}, n), el("span", {}, label));
