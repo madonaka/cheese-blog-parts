@@ -751,28 +751,49 @@ function renderPlacement(root) {
 
 // 말로 답하는 카드: 문제를 보여 주고, 마이크를 켜고, 다 말하면 onDone(말한 것)
 function answerCard({ prompt, sub, hint, lang = "ja-JP", limit = 0, onDone, big = false, emoji = "" }) {
-  const live = el("div", { class: "ans-live", lang: lang.startsWith("ja") ? "ja" : "ko" }, "마이크를 누르고 말하세요");
-  const typed = el("input", { class: "paste-title", placeholder: "말 대신 적어도 돼요", lang: lang.startsWith("ja") ? "ja" : "ko" });
-  typed.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); if (rec) rec.stop(); else finish(); } });
+  const isJa = lang.startsWith("ja");
+  const live = el("div", { class: "ans-live", lang: isJa ? "ja" : "ko" }, "🎤 마이크를 누르고 말하세요");
+  const typed = el("input", { class: "paste-title", placeholder: "말 대신 적어도 돼요", lang: isJa ? "ja" : "ko" });
   const bar = el("i");
   const micB = el("button", { class: "mic" }, "🎤");
-  let t0 = 0, timer = null, said = "";
-  const finish = () => { clearInterval(timer); const v = (said || typed.value).trim(); onDone(v, t0 ? (Date.now() - t0) / 1000 : 99); };
-  micB.onclick = () => {
-    if (rec) { rec.stop(); return; }
+  const cancelB = el("button", { class: "ghost-btn" }, "취소");
+  const retryB = el("button", { class: "ghost-btn" }, "🎤 다시 말하기");
+  const submitB = el("button", { class: "primary ans-submit" }, "이대로 제출");
+  const skipB = el("button", { class: "ghost-btn" }, "모르겠어요");
+  let t0 = 0, sec = 99, timer = null, said = "", state = "idle";
+  const row = el("div", { class: "ans-row" });
+  function draw() {
+    // idle: [입력칸][모르겠어요][마이크]  recording: [취소][마이크(멈춤)]  review: [다시 말하기][입력칸(고쳐 적기)] + 제출
+    if (state === "recording") row.replaceChildren(cancelB, el("span", { style: "flex:1;font-size:13px;color:var(--muted)" }, "다 말하면 마이크를 다시 누르세요"), micB);
+    else if (state === "review") row.replaceChildren(retryB, typed);
+    else row.replaceChildren(typed, skipB, micB);
+    submitB.hidden = state !== "review";
+    micB.classList.toggle("on", state === "recording");
+  }
+  function startMic() {
     if (!SR) { toast("음성 인식이 안 되는 브라우저예요. 적어서 답해 주세요."); return; }
-    t0 = Date.now();
-    micB.classList.add("on");
-    if (limit) timer = setInterval(() => { const p = Math.min(1, (Date.now() - t0) / 1000 / limit); bar.style.width = `${p * 100}%`; bar.classList.toggle("over", p >= 1); }, 100);
-    startRec({ lang, onLive: (t) => { said = t; live.textContent = t || "듣고 있어요…"; }, onFinal: (t) => { said = t; micB.classList.remove("on"); finish(); } });
-  };
+    said = ""; live.textContent = "듣고 있어요…";
+    if (!t0) t0 = Date.now();
+    state = "recording"; draw();
+    if (limit) { clearInterval(timer); timer = setInterval(() => { const p = Math.min(1, (Date.now() - t0) / 1000 / limit); bar.style.width = `${p * 100}%`; bar.classList.toggle("over", p >= 1); }, 100); }
+    startRec({ lang, onLive: (t) => { said = t; live.textContent = t || "듣고 있어요…"; },
+      onFinal: (t) => { clearInterval(timer); said = t; if (sec === 99) sec = (Date.now() - t0) / 1000; typed.value = said; live.textContent = said ? "내 답: " + said : "잘 못 들었어요. 다시 말하거나 적어 주세요."; state = "review"; draw(); } });
+  }
+  const submit = () => { if (rec) return; clearInterval(timer); onDone((typed.value || said).trim(), sec); };
+  micB.onclick = () => (rec ? rec.stop() : startMic());
+  cancelB.onclick = () => { if (rec) rec.abort(); clearInterval(timer); said = ""; live.textContent = "취소했어요. 다시 마이크를 누르세요"; state = "idle"; setTimeout(draw, 250); };
+  retryB.onclick = () => { typed.value = ""; startMic(); };
+  submitB.onclick = submit;
+  skipB.onclick = () => { if (typed.value.trim()) { said = typed.value; sec = t0 ? (Date.now() - t0) / 1000 : 99; } submit(); };
+  typed.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); if (state !== "review" && typed.value.trim()) { said = typed.value; sec = t0 ? (Date.now() - t0) / 1000 : 99; } submit(); } });
+  typed.addEventListener("input", () => { if (state === "idle") skipB.textContent = typed.value.trim() ? "보내기" : "모르겠어요"; });
+  draw();
   return el("div", { class: "card ans" },
     emoji ? el("div", { class: "ans-emoji" }, emoji) : null,
     el("div", { class: "ans-q" + (big ? " big" : ""), lang: /[ぁ-んァ-ン一-龥]/.test(prompt) && !/[가-힣]/.test(prompt) ? "ja" : "ko" }, prompt),
     sub ? el("div", { class: "note tip", style: "text-align:center" }, sub) : null,
     limit ? el("div", { class: "limit" }, bar) : null,
-    live,
-    el("div", { class: "ans-row" }, typed, el("button", { class: "ghost-btn", onclick: () => { if (rec) rec.stop(); else finish(); } }, typed.value ? "보내기" : "모르겠어요"), micB),
+    live, row, submitB,
     hint ? el("div", { class: "level-desc", style: "text-align:center" }, hint) : null);
 }
 
@@ -789,7 +810,7 @@ async function openDay(day) {
 }
 
 function addScore(n) { CR.score += n; saveCR(); }
-function nextStep() { CR.step++; CR.i = 0; CR.answers = []; CR.graded = null; saveCR(); renderCourse(); $("#view-course").scrollTop = 0; }
+function nextStep() { CR.step++; CR.i = 0; CR.answers = []; CR.graded = null; CR.queue = null; CR.tries = null; CR.redo = null; saveCR(); renderCourse(); $("#view-course").scrollTop = 0; }
 
 function renderDay(root) {
   const steps = stepsOf();
@@ -824,7 +845,7 @@ function stepPattern(body) {
 // 바꿔 말하기(드릴)와 주간 시험: 한국어 보고 5초 안에 → 끝나면 한 번에 채점
 function stepDrills(body, key) {
   const list = CR.pkg.drills;
-  if (CR.graded) return showGraded(body, list.map((d) => ({ prompt: d.ko, expected: d.ja })), key === "test");
+  if (CR.graded) return showGraded(body, list.map((d) => ({ kind: "ko2ja", prompt: d.ko, expected: d.ja })), key === "test");
   if (CR.i < list.length) {
     const d = list[CR.i];
     put(body, el("div", { class: "h" }, `${key === "test" ? "주간 시험" : "바꿔 말하기"} ${CR.i + 1} / ${list.length} · 5초 안에 말하면 +3`),
@@ -854,23 +875,55 @@ async function gradeNow(body, items) {
 
 function showGraded(body, items, isTest) {
   const g = CR.graded;
+  if (CR.redo && CR.redo.i < CR.redo.q.length) return redoCard(body, items);
   const pts = g.reduce((n, x) => n + (x.verdict === "ok" ? 1 : x.verdict === "awkward" ? 0.5 : 0), 0);
   const pct = Math.round((pts / g.length) * 100);
   const pass = pct >= 70;
   const V = { ok: ["⭕", "v-ok"], awkward: ["△", "v-mid"], wrong: ["❌", "v-bad"] };
+  const wrongIdx = items.map((it, i) => (g[i]?.verdict !== "ok" && it.kind !== "ja2ko" ? i : -1)).filter((i) => i >= 0);
+  const redone = CR.redo?.done || {};
+  const left = wrongIdx.filter((i) => !redone[i]);
   put(body,
     el("div", { class: "card" }, el("div", { class: "report-top" }, el("div", { class: `stamp txt ${pct >= 90 ? "g-S" : pct >= 70 ? "g-A" : "g-C"}` }, `${pct}`),
-      el("div", {}, el("div", { class: "big" }, `${pct}점`), el("div", { class: "sub" }, isTest ? (pass ? "통과! 다음 주가 열려요." : "70점이 안 돼서 통과 못 했어요. 다시 도전!") : "틀린 문장은 약점 노트에 담았어요.")))),
+      el("div", {}, el("div", { class: "big" }, `${pct}점`), el("div", { class: "sub" }, isTest ? (pass ? "통과! 다음 주가 열려요." : "70점이 안 돼서 통과 못 했어요. 틀린 문장을 다시 말해 보고 재도전!") : "틀린 문장은 약점 노트에 담았어요.")))),
+    left.length ? el("button", { class: "primary", onclick: () => { CR.redo = { q: [...left], i: 0, tries: {}, done: redone }; saveCR(); renderCourse(); } }, `🔁 틀린 문장 ${left.length}개 다시 말하기`) : wrongIdx.length ? el("div", { class: "note good", style: "margin-bottom:10px" }, "틀린 문장을 모두 다시 말해 맞혔어요 👏") : null,
     items.map((it, i) => {
       const x = g[i] || {};
       const sp = el("button", { class: "mini" }, "🔊"); sp.onclick = () => speak(x.fix || it.expected, { btn: sp });
-      return el("div", { class: "card q" }, el("div", { class: "q-t" }, `${(V[x.verdict] || ["?"])[0]} ${it.prompt}`),
+      return el("div", { class: "card q" }, el("div", { class: "q-t" }, `${(V[x.verdict] || ["?"])[0]}${redone[i] ? " → 🔁⭕" : ""} ${it.prompt}`),
         el("div", { class: "note", lang: "ja" }, "내 답: " + (CR.answers[i]?.said || "(무응답)")),
         el("div", { class: "model", lang: "ja" }, x.fix || it.expected, " ", sp), x.why_ko ? el("div", { class: "note tip" }, x.why_ko) : null);
     }),
     isTest && !pass
-      ? el("button", { class: "primary", onclick: () => { CR.i = 0; CR.answers = []; CR.graded = null; saveCR(); renderCourse(); } }, "다시 도전")
-      : el("button", { class: "primary", onclick: nextStep }, "다음"));
+      ? el("button", { class: left.length ? "secondary" : "primary", style: "width:100%;margin-top:8px", onclick: () => { CR.i = 0; CR.answers = []; CR.graded = null; CR.redo = null; saveCR(); renderCourse(); } }, "시험 다시 보기")
+      : el("button", { class: left.length ? "secondary" : "primary", style: "width:100%;margin-top:8px", onclick: nextStep }, left.length ? "다시 말하기 건너뛰고 다음" : "다음"));
+}
+
+// 틀린 문장 다시 말하기: 한국어를 보고 다시 말함. 두 번째부터는 모범 답을 먼저 보여 주고 따라 말하게 함
+function redoCard(body, items) {
+  const R2 = CR.redo;
+  const i = R2.q[R2.i];
+  const it = items[i];
+  const model = CR.graded[i]?.fix || it.expected;
+  const tries = R2.tries[i] || 0;
+  const sp = el("button", { class: "tool" }, "🔊 모범 답 듣기"); sp.onclick = () => speak(model, { btn: sp });
+  put(body, el("div", { class: "h" }, `🔁 다시 말하기 · 남은 ${R2.q.length - R2.i}개${tries ? ` · ${tries + 1}번째` : ""}`),
+    tries ? el("div", { class: "card" }, el("div", { class: "note" }, "모범 답을 듣고 그대로 말해 보세요"), el("div", { class: "model", lang: "ja" }, model), el("div", { class: "model-tools" }, sp)) : null,
+    answerCard({ prompt: it.prompt, big: true, hint: tries ? "" : "이번엔 고친 문장을 떠올리며 말해 보세요", onDone: (said) => {
+      const pct = similarity(model, said);
+      const ok = pct >= 75;
+      R2.tries[i] = tries + 1;
+      if (ok) { R2.done[i] = true; addScore(3); }
+      else if (tries + 1 < 3) R2.q.push(i);
+      R2.i++; saveCR();
+      const sp2 = el("button", { class: "tool" }, "🔊"); sp2.onclick = () => speak(model, { btn: sp2 });
+      put(body, el("div", { class: "card ans" }, el("div", { class: "ans-emoji" }, ok ? "⭕" : "❌"),
+        el("div", { class: "note", lang: "ja" }, "내 말: " + (said || "(무응답)") + ` · 일치 ${pct}%`),
+        el("div", { class: "model", lang: "ja" }, model), el("div", { class: "model-tools", style: "justify-content:center" }, sp2),
+        !ok && tries + 1 < 3 ? el("div", { class: "note tip" }, "이 문장은 끝에서 모범 답을 보며 한 번 더 해요.") : null,
+        el("button", { class: "primary", onclick: () => { speechSynthesis.cancel(); renderCourse(); } }, R2.i < R2.q.length ? "다음" : "결과로")));
+      if (!ok) speak(model);
+    } }));
 }
 
 // 표현·단어·복습: 그림(이모지)과 뜻을 보고 3초 안에 일본어로. 글자로 바로 맞춰 봄(채점 호출 없음)
@@ -878,25 +931,35 @@ function stepCards(body, key) {
   const list = key === "expr" ? CR.pkg.expressions : key === "words" ? CR.pkg.words : CR.review;
   const title = { expr: "표현", words: "단어", review: "복습" }[key];
   if (!list.length) { put(body, el("div", { class: "empty" }, "복습할 것이 아직 없어요."), el("button", { class: "primary", onclick: nextStep }, "다음")); return; }
-  if (CR.i >= list.length) {
-    const ok = CR.answers.filter((a) => a?.ok).length;
-    put(body, el("div", { class: "card" }, el("div", { class: "big", style: "font-size:26px;font-weight:800" }, `${ok} / ${list.length}`), el("div", { class: "note" }, `${title}: 3초 안에 맞힌 것 ${CR.answers.filter((a) => a?.ok && a.sec <= 3).length}개`)),
-      list.map((w, i) => el("div", { class: "hard-item" }, el("span", {}, CR.answers[i]?.ok ? "⭕" : "❌"), el("b", { lang: "ja" }, w.ja), el("span", { class: "rd" }, w.reading), el("span", { class: "mn" }, w.meaning_ko))),
+  CR.queue ||= list.map((_, i) => i);
+  CR.tries ||= {};
+  if (CR.i >= CR.queue.length) {
+    const first = list.filter((_, i) => CR.answers[i]?.ok).length;
+    const fixed = list.filter((_, i) => CR.answers[i]?.fixed).length;
+    put(body, el("div", { class: "card" }, el("div", { class: "big", style: "font-size:26px;font-weight:800" }, `한 번에 ${first} / ${list.length}`),
+        el("div", { class: "note" }, `다시 해서 맞힌 것 ${fixed}개 · 3초 안에 맞힌 것 ${list.filter((_, i) => CR.answers[i]?.ok && CR.answers[i].sec <= 3).length}개`)),
+      list.map((w, i) => { const a = CR.answers[i] || {}; return el("div", { class: "hard-item" }, el("span", {}, a.ok ? "⭕" : a.fixed ? "🔁" : "❌"), el("b", { lang: "ja" }, w.ja), el("span", { class: "rd" }, w.reading), el("span", { class: "mn" }, w.meaning_ko)); }),
       el("button", { class: "primary", style: "margin-top:12px", onclick: nextStep }, "다음"));
     return;
   }
-  const w = list[CR.i];
-  put(body, el("div", { class: "h" }, `${title} ${CR.i + 1} / ${list.length} · 3초 안에 말하면 +3${w.from ? " · " + w.from : ""}`),
-    answerCard({ prompt: w.meaning_ko, emoji: w.emoji, limit: 3, big: true, onDone: (said, sec) => {
+  const idx = CR.queue[CR.i];
+  const w = list[idx];
+  const tries = CR.tries[idx] || 0;
+  const label = CR.i < list.length ? `${title} ${CR.i + 1} / ${list.length} · 3초 안에 말하면 +3` : `🔁 틀린 것 다시 · 남은 ${CR.queue.length - CR.i}개`;
+  put(body, el("div", { class: "h" }, label + (w.from ? " · " + w.from : "")),
+    answerCard({ prompt: w.meaning_ko, emoji: w.emoji, limit: 3, big: true, hint: tries ? `힌트: ${w.reading || w.ja}`.slice(0, 4 + Math.ceil((w.reading || w.ja).length / 2)) + "…" : "", onDone: (said, sec) => {
       const pct = Math.max(similarity(w.ja, said), w.reading ? similarity(w.reading, said) : 0);
       const ok = pct >= 70;
-      CR.answers[CR.i] = { said, sec, ok };
-      if (ok) addScore(5 + (sec <= 3 ? 3 : 0));
+      CR.tries[idx] = tries + 1;
+      if (!tries) { CR.answers[idx] = { said, sec, ok }; if (ok) addScore(5 + (sec <= 3 ? 3 : 0)); }
+      else if (ok) { CR.answers[idx].fixed = true; addScore(3); }
+      if (!ok && tries + 1 < 3) CR.queue.push(idx); // 틀리면 끝에 다시
       CR.i++; saveCR();
       const sp = el("button", { class: "tool" }, "🔊"); sp.onclick = () => speak(w.example_ja || w.ja, { btn: sp });
       put(body, el("div", { class: "card ans" }, el("div", { class: "ans-emoji" }, ok ? "⭕" : "❌"),
         el("div", { class: "ans-q big", lang: "ja" }, w.ja), el("div", { class: "note", style: "text-align:center" }, w.reading),
         el("div", { class: "note", lang: "ja", style: "text-align:center" }, "내 말: " + (said || "(무응답)") + ` · 일치 ${pct}%`),
+        !ok && tries + 1 < 3 ? el("div", { class: "note tip", style: "text-align:center" }, "이 낱말은 끝에서 한 번 더 나와요. 소리 내어 두세 번 따라 해 두세요.") : null,
         w.example_ja ? el("div", { class: "model", lang: "ja" }, w.example_ja, el("div", { class: "note" }, w.example_ko)) : null,
         el("div", { class: "model-tools", style: "justify-content:center" }, sp),
         el("button", { class: "primary", onclick: () => { speechSynthesis.cancel(); renderCourse(); } }, "다음")));
@@ -907,7 +970,7 @@ function stepCards(body, key) {
 // 한→일 3개(말로 답) + 일→한 3개(듣고 한국어로 뜻) → 한 번에 채점
 function stepTrans(body) {
   const items = [...CR.pkg.ko2ja.map((x) => ({ kind: "ko2ja", prompt: x.ko, expected: x.ja })), ...CR.pkg.ja2ko.map((x) => ({ kind: "ja2ko", prompt: x.ja, expected: x.ko }))];
-  if (CR.graded) return showGraded(body, items, false);
+  if (CR.graded) return showGraded(body, items, false); // items 에 kind 가 들어 있음
   if (CR.i >= items.length) return gradeNow(body, items.map((it, i) => ({ ...it, said: CR.answers[i]?.said || "" })));
   const it = items[CR.i];
   const onDone = (said, sec) => { CR.answers[CR.i] = { said, sec }; CR.i++; saveCR(); renderCourse(); };
@@ -1309,6 +1372,7 @@ function startRec({ onFinal, onLive, lang = "ja-JP" }) {
   const ctl = {
     // onend 가 안 오는 브라우저가 있어도 마이크가 켜진 채로 굳지 않게 1.5초 뒤 강제로 끝낸다
     stop() { stopped = true; try { r?.stop(); } catch {} setTimeout(() => finish(), 1500); },
+    abort() { cancelled = stopped = true; try { r?.abort(); } catch {} setTimeout(() => finish(), 200); },
   };
   rec = ctl;
   function finish() {
