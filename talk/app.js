@@ -972,119 +972,183 @@ function renderReading(root) {
     if (now && now !== R.lastNow) { R.lastNow = now; now.scrollIntoView({ block: "center", behavior: "smooth" }); }
   }, 250);
 }
-// ---------- 소리 내어 읽기(노래방) ----------
-// 본문 글자를 하나씩 span 으로 두고, 음성 인식 결과를 앞에서부터 본문과 맞춰 가며 읽은 곳까지 칠한다.
-// 음성 인식은 한자를 가나로 적기도 하므로 엄격히 맞추지 않고, 다음 몇 글자 안에서 같은 글자를 찾으면 그만큼 나아간다.
-const SKIP_RE = /[\s、。，．・「」『』（）()！？!?…ー〜\-—]/;
+// ---------- 소리 내어 읽기: 한 문장씩 ----------
+// 서버가 글을 문장으로 나누고 낱말마다 읽는 법(후리가나)과 뜻을 붙여 준다(/api/read/ruby).
+// 내가 읽은 말을 그 문장의 한자 표기와 가나 읽기 둘 다와 견줘서, 더 많이 맞는 쪽으로 진행 위치를 잡는다.
+const NORM_RE = /[\s、。，．・「」『』（）()！？!?…ー〜\-—]/g;
+const normJa = (s) => String(s || "").replace(NORM_RE, "");
+// 앞에서부터 맞춘 글자 수(순서를 지키며 몇 글자 건너뛰기 허용)
+function prefixMatch(target, heard) {
+  let p = 0, hit = 0;
+  for (const c of heard) {
+    for (let j = p; j < Math.min(target.length, p + 6); j++) if (target[j] === c) { p = j + 1; hit++; break; }
+  }
+  return { pos: p, hit };
+}
+
 function renderAloud(root) {
   const r = R.reading;
-  const chars = [];         // 본문 글자(구두점 포함) span
-  const idx = [];           // 맞출 글자 → chars 위치
-  const paraEls = r.text_ja.split(/\n{2,}/).map((para) => el("p", {}, [...para].map((c) => {
-    const sp = el("span", {}, c);
-    if (!SKIP_RE.test(c)) idx.push(chars.length);
-    chars.push(sp);
-    return sp;
-  })));
-  const target = idx.map((i) => chars[i].textContent);
-  const body = el("div", { class: "read-text aloud", lang: "ja" }, paraEls);
-  const heardLine = el("div", { class: "heard-line", lang: "ja" }, "마이크를 눌러 읽기 시작");
-  const clock = el("b", { class: "clock" }, "0:00");
-  const micB = el("button", { class: "mic aloud-mic" }, "🎤");
-  const skipB = el("button", { class: "ghost-btn", onclick: () => skipSentence() }, "막힌 문장 건너뛰기");
-  const doneB = el("button", { class: "primary", onclick: () => finishAloud() }, "다 읽었어요 → 문제 풀기");
+  if (R.rubyId !== r.id) { R.ruby = null; R.al = null; }
+  if (!R.ruby) {
+    put(root, el("div", { class: "card" }, thinkingEl("문장마다 읽는 법(후리가나)을 붙이는 중 (10~20초)")));
+    if (R.rubyLoading === r.id) return;
+    R.rubyLoading = r.id;
+    api("/api/read/ruby", { method: "POST", body: JSON.stringify({ id: r.id }) })
+      .then((x) => { R.ruby = x.sentences; R.rubyId = r.id; R.al = { i: 0, results: [], queue: null, started: 0, furi: false }; if (R.phase === "reading") renderRead(); })
+      .catch((e) => { toast(e.message); R.pace = 0; renderRead(); }).finally(() => { R.rubyLoading = null; });
+    return;
+  }
+  const A = R.al;
+  const order = A.queue || R.ruby.map((_, i) => i); // 막힌 문장만 다시 읽을 때는 queue
+  if (A.i >= order.length) return renderAloudSummary(root);
+  const si = order[A.i];
+  const s = R.ruby[si];
+  // 문장을 낱말 조각으로: 후리가나가 있는 낱말은 ruby, 나머지는 글자
+  const pieces = [];
+  let rest = s.ja;
+  const words = [...s.words].filter((w) => w.w && s.ja.includes(w.w));
+  while (rest) {
+    let best = null;
+    for (const w of words) { const k = rest.indexOf(w.w); if (k >= 0 && (!best || k < best.k || (k === best.k && w.w.length > best.w.w.length))) best = { k, w }; }
+    if (!best) { [...rest].forEach((c) => pieces.push({ t: c })); break; }
+    [...rest.slice(0, best.k)].forEach((c) => pieces.push({ t: c }));
+    pieces.push({ t: best.w.w, r: best.w.r, m: best.w.m });
+    rest = rest.slice(best.k + best.w.w.length);
+  }
+  // 진행 위치 계산용: 조각마다 한자 표기 길이와 가나 길이
+  const spans = pieces.map((p) => {
+    const node = p.r ? el("ruby", { title: p.m || "" }, p.t, el("rt", {}, p.r)) : el("span", {}, p.t);
+    if (p.r) node.onclick = () => { node.classList.add("show"); toast(`${p.t}（${p.r}） ${p.m || ""}`); markWord(p); };
+    return { p, node, jaLen: normJa(p.t).length, kanaLen: normJa(p.r || p.t).length };
+  });
+  const jaStr = normJa(s.ja), kanaStr = normJa(spans.map((x) => x.p.r || x.p.t).join(""));
+  const sentEl = el("div", { class: "al-sent" + (A.furi ? " furi" : ""), lang: "ja" }, spans.map((x) => x.node));
+  const heardEl = el("div", { class: "al-heard", lang: "ja" }, "🎤 마이크를 누르고 이 문장을 읽어 주세요");
+  const bar = el("i");
+  const prevS = A.i > 0 ? R.ruby[order[A.i - 1]].ja : "";
+  const nextS = A.i + 1 < order.length ? R.ruby[order[A.i + 1]].ja : "";
+  const micB = el("button", { class: "mic" }, "🎤");
+  const furiB = el("button", { class: "tool" + (A.furi ? " on" : "") , onclick: () => { A.furi = !A.furi; sentEl.classList.toggle("furi", A.furi); furiB.classList.toggle("on", A.furi); } }, "후리가나");
+  const listenB = el("button", { class: "tool" }, "🔊 들어 보기"); listenB.onclick = () => { if (rec) rec.stop(); speak(s.ja, { btn: listenB }); };
+  const clock = el("b", { class: "clock" }, fmtTime(A.started ? (Date.now() - A.started) / 1000 : 0));
   put(root,
-    el("div", { class: "read-head" }, el("div", {}, el("span", { class: "rd-genre" }, r.genreName + " · 소리 내어 읽기"), el("h2", { lang: "ja" }, r.title_ja)), clock),
-    body,
-    el("div", { class: "aloud-dock" }, heardLine, el("div", { class: "aloud-btns" }, skipB, micB)), doneB);
+    el("div", { class: "read-head" }, el("div", {}, el("span", { class: "rd-genre" }, `${r.genreName} · 소리 내어 읽기${A.queue ? " · 막힌 문장 다시" : ""}`), el("h2", { lang: "ja" }, r.title_ja)), clock),
+    el("div", { class: "al-progress" }, el("span", {}, `${A.i + 1} / ${order.length} 문장`), el("div", { class: "limit" }, el("i", { style: `width:${(A.i / order.length) * 100}%;background:var(--navy)` }))),
+    prevS ? el("div", { class: "al-side", lang: "ja" }, prevS) : null,
+    el("div", { class: "card al-card" }, sentEl, el("div", { class: "limit" }, bar), heardEl,
+      el("div", { class: "model-tools", style: "justify-content:center" }, listenB, furiB)),
+    nextS ? el("div", { class: "al-side", lang: "ja" }, nextS) : null,
+    el("div", { class: "aloud-dock" },
+      el("button", { class: "ghost-btn", disabled: A.i === 0, onclick: () => { if (rec) rec.stop(); A.i--; renderRead(); } }, "← 이전"),
+      el("button", { class: "ghost-btn", onclick: () => { finishSentence(true); } }, "막힘, 넘어가기"),
+      el("span", { style: "flex:1" }), micB),
+    el("button", { class: "secondary", style: "width:100%;margin-top:8px", onclick: () => { if (rec) rec.stop(); A.i = order.length; renderRead(); } }, "여기서 그만 읽고 결과 보기"));
 
-  const A = R.aloud = { pos: 0, anchorPos: 0, anchorHeard: 0, heard: "", lastMove: Date.now(), stuck: [], started: 0, stuckAt: -1 };
-  const norm = (s) => [...s].filter((c) => !SKIP_RE.test(c)).join("");
-  function align() {
-    const h = norm(A.heard).slice(A.anchorHeard);
-    let p = A.anchorPos;
-    for (const c of h) {
-      for (let j = p; j < Math.min(target.length, p + 10); j++) {
-        if (target[j] === c) { p = j + 1; break; }
-      }
-    }
-    if (p > A.pos) { A.pos = p; A.lastMove = Date.now(); A.stuckAt = -1; }
-    paint();
+  let base = 0, heard = "", lastMove = Date.now(), best = 0, stuckShown = new Set();
+  const res = (A.results[si] ||= { ok: false, stuck: [], tries: 0 });
+  function paint(cov, posKana) {
+    // 가나 기준 위치를 조각 경계로 바꿔 그 앞까지 칠함
+    let acc = 0;
+    spans.forEach((x) => { x.node.classList.toggle("done", acc + x.kanaLen <= posKana); acc += x.kanaLen; });
+    bar.style.width = `${Math.round(cov * 100)}%`;
   }
-  function paint() {
-    const upto = A.pos ? idx[A.pos - 1] : -1;
-    chars.forEach((sp, i) => sp.classList.toggle("done", i <= upto));
-    const cur = idx[Math.min(A.pos, idx.length - 1)];
-    chars.forEach((sp) => sp.classList.remove("cursor"));
-    if (chars[cur] && A.pos < idx.length) {
-      chars[cur].classList.add("cursor");
-      if (A.lastScroll !== Math.floor(A.pos / 25)) { A.lastScroll = Math.floor(A.pos / 25); chars[cur].scrollIntoView({ block: "center", behavior: "smooth" }); }
-    }
+  function currentPiece(posKana) {
+    let acc = 0;
+    for (const x of spans) { if (acc + x.kanaLen > posKana) return x; acc += x.kanaLen; }
+    return null;
   }
-  // 막힌 낱말: 커서부터 다음 구두점까지(최대 6글자)
-  function wordAt(p) {
-    const start = idx[p];
-    let end = start;
-    while (end + 1 < chars.length && !SKIP_RE.test(chars[end + 1].textContent) && end - start < 5) end++;
-    return { start, end, text: chars.slice(start, end + 1).map((s) => s.textContent).join("") };
+  function markWord(p) {
+    if (!p.r || res.stuck.some((w) => w.w === p.t)) return;
+    res.stuck.push({ w: p.t, r: p.r, m: p.m || "" });
+    saveAl();
   }
-  function markStuck() {
-    if (A.pos >= idx.length || A.stuckAt === A.pos) return;
-    A.stuckAt = A.pos;
-    const w = wordAt(A.pos);
-    for (let i = w.start; i <= w.end; i++) chars[i].classList.add("stuck");
-    if (!A.stuck.some((x) => x.text === w.text)) A.stuck.push({ text: w.text, context: sentenceAround(w.start) });
+  function onHeard(t) {
+    heard = t.slice(base);
+    heardEl.textContent = "🎤 " + (heard || "듣고 있어요…");
+    const h = normJa(heard);
+    const a = prefixMatch(jaStr, h), b = prefixMatch(kanaStr, h);
+    // 한자 표기로 맞춘 위치를 가나 길이로 환산해서 둘 중 앞선 쪽을 씀
+    const jaAsKana = Math.round((a.pos / Math.max(1, jaStr.length)) * kanaStr.length);
+    const posKana = Math.max(b.pos, jaAsKana);
+    const cov = Math.min(1, Math.max(a.hit / jaStr.length, b.hit / kanaStr.length));
+    if (posKana > best) { best = posKana; lastMove = Date.now(); }
+    paint(cov, best);
+    if (cov >= 0.85 || best >= kanaStr.length - 1) { res.ok = !res.stuck.length; finishSentence(false); }
   }
-  function sentenceAround(i) {
-    let a = i, b = i;
-    while (a > 0 && !/[。！？\n]/.test(chars[a - 1].textContent)) a--;
-    while (b < chars.length - 1 && !/[。！？]/.test(chars[b].textContent)) b++;
-    return chars.slice(a, b + 1).map((s) => s.textContent).join("");
+  function finishSentence(skipped) {
+    if (finishSentence.done) return;
+    finishSentence.done = true;
+    clearInterval(R.timer);
+    if (skipped) { const x = currentPiece(best); if (x?.p.r) markWord(x.p); res.ok = false; res.skipped = true; }
+    res.tries++;
+    A.i++;
+    saveAl();
+    // 마이크는 켠 채로 다음 문장으로(듣기 이어짐)
+    if (rec) { A.carry = true; }
+    renderRead();
   }
-  function skipSentence() {
-    markStuck();
-    let i = idx[Math.min(A.pos, idx.length - 1)];
-    while (i < chars.length - 1 && !/[。！？]/.test(chars[i].textContent)) i++;
-    const next = idx.findIndex((x) => x > i);
-    A.pos = A.anchorPos = next < 0 ? idx.length : next;
-    A.anchorHeard = norm(A.heard).length;
-    A.lastMove = Date.now();
-    paint();
-  }
+  function saveAl() { R.al = A; }
   function startMic() {
     if (!SR) { toast("이 브라우저는 음성 인식이 안 돼요."); return; }
-    if (!A.started) { A.started = Date.now(); R.t0 = Date.now(); }
+    if (!A.started) A.started = Date.now();
+    lastMove = Date.now();
     micB.classList.add("on");
-    A.lastMove = Date.now();
-    let base = A.heard; // 다시 켰을 때 앞에 들은 말 위에 이어 붙임
     startRec({
-      onLive: (t) => { A.heard = base + t; heardLine.textContent = "🎤 " + (t.slice(-40) || "듣고 있어요…"); align(); },
-      onFinal: () => { micB.classList.remove("on"); },
+      onLive: (t) => { R.alText = t; R.alHook?.(t); },
+      onFinal: () => { micB.classList.remove("on"); A.carry = false; },
     });
+    R.alHook = (t) => onHeard(t);
   }
-  micB.onclick = () => (rec ? rec.stop() : startMic());
+  micB.onclick = () => { if (rec) { A.carry = false; rec.stop(); } else { base = 0; startMic(); } };
+  // 앞 문장에서 마이크가 켜진 채로 넘어왔으면, 지금까지 들은 말 뒤부터 이 문장으로 셈
+  if (rec && A.carry) {
+    base = (R.alText || "").length;
+    micB.classList.add("on");
+    // startRec 의 onLive 는 앞 문장 화면의 onHeard 를 부르므로 고리를 바꿔 끼움
+    R.alHook = (t) => onHeard(t);
+  }
   R.timer = setInterval(() => {
-    if (!A.started) return;
-    clock.textContent = fmtTime((Date.now() - A.started) / 1000);
-    if (rec && Date.now() - A.lastMove > 4000) markStuck();
-  }, 300);
-  async function finishAloud() {
-    if (rec) rec.stop();
-    clearInterval(R.timer);
-    R.elapsed = A.started ? (Date.now() - A.started) / 1000 : 1;
-    R.aloudReport = { coverage: Math.round((A.pos / idx.length) * 100), stuck: A.stuck, words: null };
-    R.phase = "quiz";
-    renderRead();
-    root.scrollTop = 0;
-    if (A.stuck.length) {
-      try {
-        const res = await api("/api/read/stuck", { method: "POST", body: JSON.stringify({ items: A.stuck.slice(0, 15) }) });
-        R.aloudReport.words = res.words;
-        S.weak = res.weak;
-        if (R.phase === "quiz") renderRead();
-      } catch (e) { toast(e.message); }
+    if (A.started) clock.textContent = fmtTime((Date.now() - A.started) / 1000);
+    if (!rec) return;
+    // 3초 넘게 못 나아가면 다음 낱말의 읽는 법을 바로 띄움
+    if (Date.now() - lastMove > 3000) {
+      const x = currentPiece(best);
+      if (x && x.p.r && !stuckShown.has(x.p.t)) {
+        stuckShown.add(x.p.t);
+        x.node.classList.add("show", "stuck");
+        markWord(x.p);
+        heardEl.textContent = `💡 ${x.p.t} → ${x.p.r}  ${x.p.m || ""}`;
+      }
     }
+  }, 300);
+}
+
+function renderAloudSummary(root) {
+  if (rec) rec.stop();
+  const A = R.al;
+  const res = R.ruby.map((s, i) => ({ s, r: A.results[i] || { ok: false, stuck: [], tries: 0 } }));
+  const tried = res.filter((x) => x.r.tries > 0);
+  const stuckIdx = res.map((x, i) => (x.r.tries > 0 && !x.r.ok ? i : -1)).filter((i) => i >= 0);
+  const words = [];
+  res.forEach((x) => x.r.stuck.forEach((w) => { if (!words.some((y) => y.w === w.w)) words.push(w); }));
+  const smooth = res.filter((x) => x.r.ok).length;
+  const total = Math.max(1, tried.length);
+  R.aloudReport = { coverage: Math.round((smooth / total) * 100), stuck: words.map((w) => ({ text: w.w })), words: words.map((w) => ({ word: w.w, reading: w.r, meaning_ko: w.m })) };
+  if (!A.saved && words.length) {
+    A.saved = true;
+    Promise.all(words.slice(0, 20).map((w) => api("/api/weak/add", { method: "POST", body: JSON.stringify({ text: w.w, reading: w.r, meaning_ko: w.m, kind: "vocab" }) }).then((x) => (S.weak = x.weak)).catch(() => {})));
   }
+  put(root,
+    el("div", { class: "card" }, el("div", { class: "report-top" }, el("div", { class: `stamp txt ${smooth === total ? "g-S" : smooth / total >= 0.8 ? "g-A" : "g-C"}` }, `${smooth}/${total}`),
+      el("div", {}, el("div", { class: "big" }, "막힘 없이 읽은 문장"), el("div", { class: "sub" }, `읽은 문장 ${tried.length}/${res.length} · ${fmtTime(A.started ? (Date.now() - A.started) / 1000 : 0)} · 막힌 낱말 ${words.length}개는 약점 노트에 담았어요`)))),
+    words.length ? [el("div", { class: "h" }, "막힌 낱말 읽는 법"), el("div", { class: "hard" }, words.map((w) => {
+      const sp = el("button", { class: "mini" }, "🔊"); sp.onclick = () => speak(w.w, { btn: sp });
+      return el("div", { class: "hard-item" }, el("b", { lang: "ja" }, w.w), el("span", { class: "rd" }, w.r), el("span", { class: "mn" }, w.m), sp);
+    }))] : null,
+    el("div", { class: "h" }, "문장별"),
+    res.map((x, i) => el("div", { class: "al-row" + (x.r.tries && !x.r.ok ? " bad" : "") + (!x.r.tries ? " skip" : "") }, el("span", {}, !x.r.tries ? "·" : x.r.ok ? "⭕" : "△"), el("span", { lang: "ja" }, x.s.ja))),
+    stuckIdx.length ? el("button", { class: "primary", onclick: () => { A.queue = stuckIdx; A.i = 0; stuckIdx.forEach((i) => { A.results[i] = { ok: false, stuck: A.results[i]?.stuck || [], tries: A.results[i]?.tries || 0 }; }); renderRead(); } }, `막힌 문장 ${stuckIdx.length}개만 다시 읽기`) : null,
+    el("button", { class: stuckIdx.length ? "secondary" : "primary", style: "width:100%;margin-top:8px", onclick: () => { R.elapsed = A.started ? (Date.now() - A.started) / 1000 : 1; R.phase = "quiz"; renderRead(); root.scrollTop = 0; } }, "문제 풀기"));
 }
 
 function aloudReportEl() {
@@ -1092,10 +1156,7 @@ function aloudReportEl() {
   if (!a || R.pace !== "aloud") return null;
   return el("div", { class: "card" },
     el("div", { class: "lab blue", style: "font-size:12px;font-weight:800;color:var(--blue)" }, "소리 내어 읽기 결과"),
-    el("div", { class: "note" }, `끝까지 따라온 비율 ${a.coverage}% · 막힌 곳 ${a.stuck.length}군데`),
-    a.stuck.length ? (a.words
-      ? el("div", { class: "hard", style: "margin-top:8px" }, a.words.map((w) => el("div", { class: "hard-item" }, el("b", { lang: "ja" }, w.word), el("span", { class: "rd" }, w.reading), el("span", { class: "mn" }, w.meaning_ko), el("span", { class: "rd" }, "노트에 담음"))))
-      : el("div", { class: "note tip" }, "막힌 낱말의 읽는 법과 뜻을 찾는 중…")) : el("div", { class: "note good" }, "막힘 없이 읽었어요!"));
+    el("div", { class: "note" }, `막힘 없이 읽은 문장 ${a.coverage}% · 막힌 낱말 ${a.words.length}개`));
 }
 
 function renderQuiz(root) {
