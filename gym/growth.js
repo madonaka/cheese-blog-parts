@@ -58,6 +58,12 @@
         return { big: push ? `당기기 : 밀기 = ${(pull / push).toFixed(1)} : 1` : "기록 없음", small: "최근 4주 많이 쓴 부위를 그림으로" };
       },
       open: ({ S }, body) => G.renderMuscleMap(S, body) },
+    { key: "body", title: "몸은 어떻게 바뀔까", wide: true,
+      summary: ({ S }) => {
+        const m = (S.measures || []).at(-1);
+        return m ? { big: `체지방 ${m.bodyFat}% → ${(m.bodyFat - 2.2).toFixed(1)}%`, small: "지금과 2월 예상 몸을 그림으로" } : { big: "측정 없음" };
+      },
+      open: ({ S, today }, body) => body.replaceChildren(...inner(bodyCard(S, today))) },
     { key: "gains", title: "처음보다 늘어난 무게",
       summary: ({ lifts }) => {
         const r = gainRows(lifts)[0];
@@ -82,17 +88,11 @@
         return r ? { big: `${r.c.ko}`, small: `${r.now} → ${r.w12}kg (${G.md(G.addDays(today, 84))})` } : { big: "-" };
       },
       open: ({ lifts, S, today }, body) => body.replaceChildren(...inner(projectionCard(lifts, S, today))) },
-    { key: "body", title: "몸은 어떻게 바뀔까",
-      summary: ({ S }) => {
-        const m = (S.measures || []).at(-1);
-        return m ? { big: `체지방 ${m.bodyFat}%`, small: `골격근 ${m.muscle}kg · ${G.md(m.date)} 측정` } : { big: "측정 없음" };
-      },
-      open: ({ S, today }, body) => body.replaceChildren(...inner(bodyCard(S, today))) },
-    { key: "photos", title: "월별 몸 사진",
+    { key: "photos", title: "월별 몸 사진(선택)",
       summary: ({ S, today }) => {
         const d = S.photoDates || [];
         const thisMonth = d.some((x) => x.slice(0, 7) === today.slice(0, 7));
-        return { big: `${d.length}장`, small: thisMonth ? `이번 달 찍음 · ${G.md(d.at(-1))}` : "이번 달 아직 안 찍음" };
+        return { big: `${d.length}장`, small: d.length ? (thisMonth ? `이번 달 찍음 · ${G.md(d.at(-1))}` : `마지막 ${G.md(d.at(-1))}`) : "원할 때만 찍어 두는 내 사진" };
       },
       open: ({ S }, body) => G.renderPhotos(S, body) },
     { key: "line", title: "종목별 무게 그래프", wide: true,
@@ -244,8 +244,24 @@
       basis = "측정이 적어서, 주 3회 웨이트 + 단백질 하루 100g 이상을 지킨 초보자에게 흔한 범위로 계산";
     }
     const f1 = (v) => (Math.round(v * 10) / 10).toFixed(1);
+    // 그림 세 장: 지금 / 12주 뒤 예상(범위 가운데) / 꾸준히 6개월 예시
+    let figs = null;
+    if (last?.bodyFat) {
+      const midFat = fatRange ? (fatRange[0] + fatRange[1]) / 2 : last.bodyFat;
+      const midMg = muscleRange ? (muscleRange[0] + muscleRange[1]) / 2 - last.muscle : 0;
+      const d26 = G.addDays(today, 182);
+      const fig = (label, when, bf, mg, hl) => el("figure", { class: "bs-fig" + (hl ? " now" : "") },
+        G.bodyFigure({ bf, mg, highlight: hl }),
+        el("figcaption", {}, el("b", {}, label), el("span", {}, `${when} · 체지방 ${f1(bf)}%`), mg ? el("span", {}, `근육 +${f1(mg)}kg`) : null));
+      figs = el("div", { class: "bs-row" },
+        fig("지금", G.md(last.date), last.bodyFat, 0, true),
+        fig("12주 뒤 예상", G.md(d12), midFat, midMg, false),
+        fig("6개월 꾸준히", G.md(d26), Math.max(12, last.bodyFat - 4.5), 3, false));
+    }
     return el("section", { class: "card" },
       el("h2", {}, "몸은 어떻게 바뀔까"),
+      figs,
+      figs ? el("p", { class: "fine" }, "체지방률과 근육량에 따른 일반적인 남성 체형 예시예요. 내 몸을 그린 게 아니라 숫자가 어느 정도 몸인지 감을 잡기 위한 그림이에요.") : null,
       last
         ? el("div", { class: "body-grid" },
             bodyCell("체지방률", `${last.bodyFat ?? "?"}%`, fatRange ? `${f1(fatRange[0])}~${f1(fatRange[1])}%` : "?", "down"),
