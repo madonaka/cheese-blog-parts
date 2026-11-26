@@ -134,6 +134,7 @@ function bestVoice() {
 let speakingBtn = null;
 function speak(text, { slow = false, btn = null } = {}) {
   if (!("speechSynthesis" in window) || !text) return;
+  if (AP.playing) plPause();
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
   const v = bestVoice();
@@ -147,6 +148,64 @@ function speak(text, { slow = false, btn = null } = {}) {
   btn?.classList.add("speaking");
   u.onend = u.onerror = () => btn?.classList.remove("speaking");
   speechSynthesis.speak(u);
+}
+
+
+// ---------- 상대 말 재생기: 문장 단위로 읽어서 멈춤·이어 듣기·한 문장 다시·처음부터·속도 ----------
+// speechSynthesis.pause 는 안드로이드에서 잘 안 먹어서, 문장마다 끊어 읽고 멈춘 문장부터 다시 읽는다.
+const SPEEDS = [0.75, 1, 1.25, 1.5, 1.75];
+const AP = { text: "", sents: [], i: 0, playing: false, gen: 0, views: new Set() };
+function speedMul() { return Number(localStorage.getItem("aiSpeed") || 1); }
+function splitJa(text) { return (String(text).match(/[^。！？!?]+[。！？!?」』）)]*|[^。！？!?]+$/g) || [text]).map((x) => x.trim()).filter(Boolean); }
+function plLoad(text) { if (AP.text === text) return; plStop(); AP.text = text; AP.sents = splitJa(text); AP.i = 0; }
+function plStop() { AP.playing = false; AP.gen++; try { speechSynthesis.cancel(); } catch {} plNotify(); }
+function plPlay(from) {
+  if (from != null) AP.i = from;
+  if (AP.i >= AP.sents.length) AP.i = 0;
+  try { speechSynthesis.cancel(); } catch {}
+  AP.playing = true; AP.gen++;
+  const gen = AP.gen;
+  const next = () => {
+    if (gen !== AP.gen || !AP.playing) return;
+    if (AP.i >= AP.sents.length) { AP.playing = false; AP.i = AP.sents.length; plNotify(); return; }
+    const u = new SpeechSynthesisUtterance(AP.sents[AP.i]);
+    const v = bestVoice(); if (v) u.voice = v;
+    u.lang = "ja-JP";
+    const lv = M.LEVELS[(S.current?.level || pick.level) - 1];
+    u.rate = Math.max(0.5, Math.min(2.2, (lv.rate + Number(localStorage.getItem("rateAdj") || 0)) * speedMul()));
+    u.onend = () => { if (gen !== AP.gen) return; AP.i++; next(); };
+    u.onerror = () => { if (gen !== AP.gen) return; AP.playing = false; plNotify(); };
+    plNotify();
+    speechSynthesis.speak(u);
+  };
+  next();
+}
+function plPause() { if (!AP.playing) return; AP.playing = false; AP.gen++; try { speechSynthesis.cancel(); } catch {} plNotify(); }
+function plNotify() { AP.views.forEach((f) => f()); }
+function playReply(text) { plLoad(text); AP.text = text; plPlay(0); }
+
+// 말풍선마다 붙는 조작 줄
+function playerTools(text) {
+  const mine = () => AP.text === text;
+  const playB = el("button", { class: "tool" });
+  const restartB = el("button", { class: "tool", title: "처음부터" }, "⏮ 처음부터");
+  const againB = el("button", { class: "tool", title: "방금 문장 다시" }, "↺ 한 문장 다시");
+  const speedB = el("button", { class: "tool", title: "속도" });
+  const pos = el("span", { class: "pl-pos" });
+  const draw = () => {
+    const on = mine() && AP.playing;
+    playB.textContent = on ? "⏸ 멈춤" : mine() && AP.i > 0 && AP.i < AP.sents.length ? "▶ 이어 듣기" : "▶ 듣기";
+    playB.classList.toggle("speaking", on);
+    speedB.textContent = `${speedMul()}×`;
+    pos.textContent = mine() && AP.sents.length > 1 ? `${Math.min(AP.i + 1, AP.sents.length)}/${AP.sents.length}` : "";
+  };
+  playB.onclick = () => { if (mine() && AP.playing) plPause(); else { plLoad(text); plPlay(); } };
+  restartB.onclick = () => { plLoad(text); plPlay(0); };
+  againB.onclick = () => { plLoad(text); const i = AP.playing || AP.i >= AP.sents.length ? Math.max(0, AP.i - (AP.playing ? 0 : 1)) : AP.i; plPlay(Math.min(i, AP.sents.length - 1)); };
+  speedB.onclick = () => { const k = SPEEDS.indexOf(speedMul()); localStorage.setItem("aiSpeed", SPEEDS[(k + 1) % SPEEDS.length]); draw(); toast(`상대 말 속도 ${speedMul()}× (다음 문장부터)`); };
+  AP.views.add(draw);
+  draw();
+  return [playB, restartB, againB, speedB, pos];
 }
 
 // ---------- 머리 ----------
@@ -295,7 +354,7 @@ async function start(mode, scenarioId, extra = {}) {
   const feed = $("#feed");
   feed.replaceChildren(thinkingEl(mode === "video" ? (extra.scriptStyle ? "대본을 쓰는 중 (20~30초)" : "영상 자막을 정리하는 중 (10~20초)") : String(scenarioId).startsWith("gen:") ? "새 상황을 만드는 중" : "수업 준비 중"));
   try {
-    const r = await streamApi("/api/session/start", { mode, scenarioId, level: pick.level, ...extra }, (reply) => speak(reply));
+    const r = await streamApi("/api/session/start", { mode, scenarioId, level: pick.level, ...extra }, (reply) => playReply(reply));
     S.current = r.session;
     renderLesson();
   } catch (err) {
@@ -324,6 +383,7 @@ function renderLessonHead() {
 }
 
 function renderLesson() {
+  AP.views.clear();
   renderLessonHead();
   const feed = $("#feed");
   feed.replaceChildren();
@@ -392,8 +452,7 @@ function aiEl(t, latest = false) {
     hard.replaceChildren(...(t.hard_words || []).map(hardEl));
   }
   fill();
-  const playBtn = el("button", { class: "tool", onclick: () => speak(t.reply_ja, { btn: playBtn }) }, "🔊 다시 듣기");
-  const slowBtn = el("button", { class: "tool", onclick: () => speak(t.reply_ja, { slow: true, btn: slowBtn }) }, "🐢 천천히");
+  const ptools = playerTools(t.reply_ja || "");
   const subBtn = el("button", { class: "tool" + (showSub ? " on" : ""), onclick: () => toggleSub() }, "자막");
   function toggleSub(force) {
     const on = force ?? text.classList.contains("hidden");
@@ -405,7 +464,7 @@ function aiEl(t, latest = false) {
   const n = (t.hard_words || []).length;
   wrap.append(el("div", { class: "turn-ai" }, el("div", { class: "avatar", lang: "ja" }, "相"),
     el("div", { class: "bubble" },
-      el("div", { class: "ai-tools" }, playBtn, slowBtn, subBtn, n ? el("span", { class: "tool", style: "border:0;color:var(--gold)" }, `어려운 말 ${n}개`) : null),
+      el("div", { class: "ai-tools" }, ptools, subBtn, n ? el("span", { class: "tool", style: "border:0;color:var(--gold)" }, `어려운 말 ${n}개`) : null),
       text, hard)));
   if (t.task_ko) wrap.append(el("div", { class: "task" }, t.task_ko));
   return wrap;
@@ -497,7 +556,7 @@ async function say(text) {
   $("#input").value = "";
   autoGrow();
   try {
-    const r = await streamApi("/api/session/say", { text }, (reply) => { speak(reply); think.lastChild.textContent = " 첨삭 중"; });
+    const r = await streamApi("/api/session/say", { text }, (reply) => { playReply(reply); think.lastChild.textContent = " 첨삭 중"; });
     S.current = r.session;
     S.xp = r.xp; S.todayXp = r.todayXp;
     pending.replaceWith(meEl(r.turn, true));
@@ -1236,6 +1295,7 @@ let recTarget = null; // 따라 말하기일 때 { text, btn, out }
 // 브라우저는 말이 잠깐 멈추면 인식을 스스로 끝낸다. 사용자가 다시 누르기 전까지는 끝난 토막을 모아 두고 곧바로 다시 듣는다.
 const REC_MAX_MS = 5 * 60 * 1000;
 function startRec({ onFinal, onLive, lang = "ja-JP" }) {
+  if (AP.playing) plPause();
   speechSynthesis?.cancel();
   let acc = "";   // 끝난 토막들
   let part = "";  // 지금 토막
