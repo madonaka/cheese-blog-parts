@@ -441,11 +441,14 @@ function meEl(t, animate = false) {
       el("div", { class: "comp" }, el("div", { class: "bar" }, el("i", { style: `width:${t.comprehension}%` })), el("b", {}, `${t.comprehension}점`)));
     if (t.listen_answer_ko) parts.push(el("div", { class: "note tip", style: "margin-top:6px" }, t.listen_answer_ko));
   }
+  if (f.verdict) {
+    const V = { natural: ["✓ 자연스러워요", "v-ok"], awkward: ["△ 뜻은 통하지만 어색해요", "v-mid"], wrong: ["✗ 틀렸거나 다르게 들려요", "v-bad"] }[f.verdict];
+    parts.push(el("div", { class: "verdict " + V[1] }, V[0]));
+    if (f.heard_as_ko) parts.push(el("div", { class: "heard" }, "원어민에게는: ", f.heard_as_ko));
+  }
   if (f.errors?.length) {
     parts.push(el("div", { class: "lab" }, `고칠 곳 ${f.errors.length}`));
-    for (const e of f.errors) parts.push(el("div", { class: "err" }, el("span", { class: "w" }, e.wrong), " → ", el("span", { class: "r" }, e.right), el("span", { class: "why" }, e.why_ko)));
-  } else if (t.comprehension < 0 || t.comprehension == null) {
-    parts.push(el("div", { class: "perfect" }, "✓ 문법 실수 없음"));
+    for (const e of f.errors) parts.push(el("div", { class: "err" }, e.kind ? el("span", { class: "ek ek-" + e.kind }, e.kind) : null, el("span", { class: "w" }, e.wrong), " → ", el("span", { class: "r" }, e.right), el("span", { class: "why" }, e.why_ko)));
   }
   if (f.natural) {
     const btn = el("button", { class: "tool" }, "🔊");
@@ -755,7 +758,7 @@ function startRec({ onFinal, onLive }) {
   let fails = 0;
   let r = null;
   const t0 = Date.now();
-  const text = () => (acc + part).trim();
+  const text = () => [acc, part.trim()].filter(Boolean).join(" ");
   rec = {
     stop() { stopped = true; try { r?.stop(); } catch {} },
   };
@@ -768,11 +771,9 @@ function startRec({ onFinal, onLive }) {
     r = new SR();
     r.lang = "ja-JP";
     r.interimResults = true;
-    r.continuous = true;
+    r.continuous = false; // 안드로이드 크롬은 continuous 에서 앞 결과를 겹쳐 돌려줘 말이 되풀이됨. 토막마다 끝내고 다시 듣는다.
     r.onresult = (e) => {
-      let t = "";
-      for (const x of e.results) t += x[0].transcript;
-      part = t;
+      part = e.results[e.results.length - 1][0].transcript;
       fails = 0;
       onLive(text());
     };
