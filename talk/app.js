@@ -1447,8 +1447,139 @@ async function stepDone(body) {
 const UNIT = LANG === "en" ? "단어" : "자";
 let R = { genre: "random", pace: 0, phase: "idle", reading: null, t0: 0, elapsed: 0, timer: null, answers: [], result: null, loading: false };
 function fmtTime(sec) { return `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`; }
+// ---------- 듣기·읽기 탭: 🎧 듣기 / 📖 읽기 ----------
+let RM = localStorage.getItem("readMode") || "listen";
+function rmSwitch() {
+  return el("div", { class: "seg-sw" }, [["listen", "🎧 듣기"], ["read", "📖 읽기"]].map(([k, t]) =>
+    el("button", { class: RM === k ? "on" : "", onclick: () => { RM = k; localStorage.setItem("readMode", k); renderRead(); } }, t)));
+}
+
+// 두 목소리: 이름으로 남녀 목소리를 고르고, 하나뿐이면 높낮이로 가른다
+function voiceFor(gender) {
+  const male = /Keita|Ichiro|Takumi|Daichi|Naoki|Guy|David|Mark|Christopher|Eric|Davis|Tony|Andrew|Brian|Male|男/i;
+  const female = /Nanami|Haruka|Ayumi|Mayu|Sayaka|Kyoko|Aria|Jenny|Zira|Samantha|Michelle|Emma|Ava|Female|女/i;
+  const re = gender === "m" ? male : female;
+  const v = voices.find((x) => re.test(x.name));
+  return v || bestVoice();
+}
+const LS = { phase: "idle", item: null, plays: 0, answers: [], result: null, genre: "random", gen: 0, loading: false };
+function playLines(lines, from = 0, onLine) {
+  LS.gen++;
+  const gen = LS.gen;
+  speechSynthesis.cancel();
+  if (AP.playing) plPause();
+  const vm = voiceFor("m"), vf = voiceFor("f");
+  const same = vm === vf;
+  noiseOn();
+  const lv = M.LEVELS[pick.level - 1];
+  let i = from;
+  const next = () => {
+    if (gen !== LS.gen) return;
+    if (i >= lines.length) { noiseOff(); onLine?.(-1); return; }
+    const l = lines[i];
+    const u = new SpeechSynthesisUtterance(l.text);
+    const v = l.gender === "m" ? vm : vf; if (v) u.voice = v;
+    u.lang = SPEECH;
+    u.rate = Math.max(0.5, Math.min(2.6, (lv.rate + Number(localStorage.getItem("rateAdj") || 0)) * speedMul() * envOf().rate));
+    u.pitch = envOf().pitch * (same ? (l.gender === "m" ? 0.78 : 1.22) : 1);
+    const k = i;
+    u.onstart = () => onLine?.(k);
+    u.onend = () => { if (gen !== LS.gen) return; i++; setTimeout(next, 250); };
+    u.onerror = () => { if (gen !== LS.gen) return; i++; next(); };
+    speechSynthesis.speak(u);
+  };
+  next();
+}
+function stopLines() { LS.gen++; speechSynthesis.cancel(); noiseOff(); }
+
+function renderListen(root) {
+  if (LS.phase === "idle" && S.listening && !LS.item) { LS.item = S.listening; LS.phase = "ready"; }
+  const hist = S.listenings || [];
+  if (LS.phase === "play" || LS.phase === "quiz") return listenPlay(root);
+  if (LS.phase === "result") return listenResult(root);
+  const okRate = hist.length ? Math.round((hist.reduce((n, x) => n + x.correct, 0) / hist.reduce((n, x) => n + x.total, 0)) * 100) : null;
+  put(root, rmSwitch(),
+    el("div", { class: "card" }, el("div", { class: "read-best" },
+      el("div", {}, el("span", {}, "들은 것"), el("b", {}, `${hist.length}편`)),
+      el("div", {}, el("span", {}, "정답률"), el("b", {}, okRate == null ? "-" : `${okRate}%`))),
+      el("div", { class: "level-desc" }, "자막 없이 듣고 문제를 푼 뒤 대본을 봐요. 적게 듣고 맞힐수록 점수가 높아요. 속도·배경 소리는 홈의 설정과 말풍선 속도를 따라가요.")),
+    el("div", { class: "h" }, "들을 거리"),
+    el("div", { class: "gen-grid" }, [{ key: "random", name: "아무거나" }, ...(S.listenGenres || [])].map((g) =>
+      el("button", { class: "gen tile" + (LS.genre === g.key ? " picked" : ""), onclick: () => { LS.genre = g.key; renderRead(); } }, el("b", {}, g.name), el("span", {}, LS.genre === g.key ? "✓ 골랐어요" : ""), el("i", { class: "tile-emoji" }, { random: "🎲", talk2: "🗣️", phone: "📞", announce: "📢", news: "📺", interview: "🎙️", chat: "☕" }[g.key] || "🎧")))),
+    el("div", { class: "h" }, "단계 (홈과 같음)"),
+    el("div", { class: "levels" }, M.LEVELS.map((l) => el("button", { class: pick.level === l.n ? "on" : "", onclick: () => { setLevel(l.n); renderRead(); } }, l.n))),
+    el("div", { class: "level-desc" }, M.LEVELS[pick.level - 1].name),
+    LS.phase === "ready" && LS.item
+      ? el("button", { class: "primary", onclick: () => { LS.phase = "play"; LS.plays = 0; LS.answers = []; renderRead(); } }, `받아 둔 듣기 시작: ${LS.item.title_ko}`)
+      : el("button", { class: "primary", disabled: LS.loading, onclick: fetchListening }, LS.loading ? "들을 거리를 만드는 중… (15초쯤)" : "새 듣기 받기"),
+    hist.length ? [el("div", { class: "h" }, "최근 기록"), el("div", { class: "rec-list" }, hist.slice(-8).reverse().map((r) =>
+      el("div", { class: "rec" }, el("div", { class: `stamp sm g-${r.correct === r.total ? "S" : r.correct >= r.total - 1 ? "A" : "C"}` }, `${r.correct}`),
+        el("div", { class: "mid" }, el("b", {}, r.title), el("span", {}, `${r.date} · ${r.genreName} · ${r.level}단계 · ${r.plays}번 들음`)), el("div", { class: "sc" }, `+${r.score}`))))] : null);
+}
+async function fetchListening() {
+  LS.loading = true; renderRead();
+  try {
+    const r = await api("/api/listen/new", { method: "POST", body: JSON.stringify({ level: pick.level, genre: LS.genre }) });
+    LS.item = r.listening; S.listening = r.listening; LS.phase = "play"; LS.plays = 0; LS.answers = [];
+  } catch (e) { toast(e.message); }
+  LS.loading = false;
+  if (currentView === "read") renderRead();
+}
+function listenPlay(root) {
+  const x = LS.item;
+  const rows = x.lines.map((l, i) => el("div", { class: "ls-line " + (l.gender === "m" ? "m" : "f") },
+    el("span", { class: "ls-who" }, l.speaker),
+    el("span", { class: "ls-text hidden", lang: "ja", onclick: (e) => e.target.classList.remove("hidden") }, l.text)));
+  const mark = (k) => rows.forEach((r, i) => r.classList.toggle("now", i === k));
+  const playB = el("button", { class: "primary big-play" }, LS.plays ? `▶ 다시 듣기 (${LS.plays + 1}번째)` : "▶ 듣기 시작");
+  playB.onclick = () => { LS.plays++; playB.textContent = `▶ 다시 듣기 (${LS.plays + 1}번째)`; playLines(x.lines, 0, mark); };
+  const stopB = el("button", { class: "secondary" }, "⏹ 멈춤"); stopB.onclick = () => { stopLines(); mark(-1); };
+  const quiz = LS.phase === "quiz";
+  put(root, rmSwitch(),
+    el("div", { class: "read-head" }, el("div", {}, el("span", { class: "rd-genre" }, `${x.genreName} · ${x.level}단계`), el("h2", {}, x.title_ko))),
+    el("div", { class: "task", style: "margin-left:0" }, "상황: " + x.situation_ko),
+    el("div", { class: "row-btns" }, playB, stopB),
+    el("div", { class: "card ls-box" }, el("div", { class: "note", style: "margin-bottom:6px" }, "자막은 가려져 있어요. 정 모르겠으면 줄을 눌러 보세요."), rows),
+    !quiz ? el("button", { class: "primary", disabled: false, onclick: () => { if (!LS.plays) { toast("먼저 한 번 들어 보세요"); return; } stopLines(); LS.phase = "quiz"; renderRead(); } }, "다 들었어요 → 문제 풀기") : null,
+    quiz ? [x.questions.map((q, qi) => el("div", { class: "card q" },
+      el("div", { class: "q-t" }, `${qi + 1}. ${q.q_ko}`),
+      q.choices.map((c, ci) => el("button", { class: "choice" + (LS.answers[qi] === ci ? " on" : ""), onclick: () => { LS.answers[qi] = ci; renderRead(); } }, `${"①②③④"[ci]} ${c}`)))),
+      el("button", { class: "primary", disabled: LS.answers.filter((a) => a != null).length < x.questions.length, onclick: submitListenUI }, "채점하기")] : null);
+}
+async function submitListenUI() {
+  stopLines();
+  try {
+    const r = await api("/api/listen/submit", { method: "POST", body: JSON.stringify({ id: LS.item.id, answers: LS.answers, plays: LS.plays }) });
+    LS.result = r; LS.phase = "result"; S.listening = null;
+    S.listenings = [...(S.listenings || []), r.result]; S.xp = r.xp; S.todayXp = r.todayXp; renderTop();
+    renderRead();
+  } catch (e) { toast(e.message); }
+}
+function listenResult(root) {
+  const x = LS.item, R2 = LS.result, res = R2.result;
+  const rows = x.lines.map((l, i) => {
+    const sp = el("button", { class: "mini" }, "🔊"); sp.onclick = () => playLines([l], 0);
+    const out = el("span", { class: "match" });
+    const sh = el("button", { class: "mini", onclick: () => shadowing(l.text, sh, out) }, "🎙");
+    return el("div", { class: "ls-line open " + (l.gender === "m" ? "m" : "f") }, el("span", { class: "ls-who" }, l.speaker),
+      el("div", { class: "ls-body" }, el("span", { class: "ls-text", lang: "ja" }, l.text), el("div", { class: "model-tools" }, sp, sh, starBtn({ text: l.text, kind: "sentence" }), out)));
+  });
+  const allB = el("button", { class: "secondary" }, "▶ 대본 보며 전체 듣기"); allB.onclick = () => playLines(x.lines, 0, (k) => rows.forEach((r, i) => r.classList.toggle("now", i === k)));
+  put(root, rmSwitch(),
+    el("div", { class: "card" }, el("div", { class: "report-top" }, el("div", { class: `stamp txt ${res.correct === res.total ? "g-S" : res.correct >= res.total - 1 ? "g-A" : "g-C"}` }, `${res.correct}/${res.total}`),
+      el("div", {}, el("div", { class: "big" }, `+${res.score}점`), el("div", { class: "sub" }, `${res.plays}번 듣고 풀었어요 · ${x.title_ko}`)))),
+    el("div", { class: "h" }, "해설"),
+    R2.answers.map((a, i) => el("div", { class: "card q" }, el("div", { class: "q-t" }, `${a.ok ? "⭕" : "❌"} ${i + 1}. ${x.questions[i].q_ko}`),
+      el("div", { class: "note" }, `정답 ${"①②③④"[a.answer]} ${x.questions[i].choices[a.answer]}` + (a.ok ? "" : ` · 내 답 ${"①②③④"[a.mine] || "-"}`)), el("div", { class: "note tip" }, a.explain_ko))),
+    el("div", { class: "h" }, "대본 (줄마다 🔊 다시 듣기 · 🎙 따라 말하기 · ☆ 저장)"),
+    allB, el("div", { class: "card ls-box" }, rows),
+    el("div", { class: "h" }, "들을 때 막힐 만한 말"), el("div", { class: "hard" }, (R2.vocab || []).map(hardEl)),
+    el("button", { class: "primary", style: "margin-top:12px", onclick: () => { stopLines(); LS.phase = "idle"; LS.item = null; LS.result = null; renderRead(); } }, "다음 듣기"));
+}
+
 function renderRead() {
   const root = $("#view-read");
+  if (RM === "listen") return renderListen(root);
   if (!R.reading && S.reading && R.phase === "idle") { R.reading = S.reading; R.phase = "ready"; }
   clearInterval(R.timer);
   if (R.phase === "reading") return renderReading(root);
@@ -1459,7 +1590,7 @@ function renderRead() {
   const good = hist.filter((x) => x.acc >= 0.8);
   const best = good.length ? Math.max(...good.map((x) => x.cpm)) : null;
   const last = hist.slice(-8).reverse();
-  put(root,
+  put(root, rmSwitch(),
     el("div", { class: "card" },
       el("div", { class: "read-best" },
         el("div", {}, el("span", {}, "내 최고 속도 (정답 80% 이상)"), el("b", {}, best ? `${best}${UNIT}/분` : "-")),
