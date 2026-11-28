@@ -1507,8 +1507,88 @@ function voiceFor(gender) {
   return v || bestVoice();
 }
 const LS = { phase: "idle", item: null, plays: 0, answers: [], result: null, genre: "random", sub: "random", more: {}, custom: "", moreLoading: false, gen: 0, loading: false, length: localStorage.getItem("listenLen") || "short" };
+// 듣기는 진짜 음성 파일(MP3)로 튼다: 폰 화면이 꺼져도 계속 나옴. 못 받으면 브라우저 음성으로
+const LA = { id: null, url: null, marks: null, loading: null, failed: null, el: null, timer: null, stopAt: null, onLine: null };
+const audioEl = () => (LA.el ||= Object.assign(new Audio(), { preload: "auto" }));
+function b64Blob(b64) { const bin = atob(b64); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return new Blob([u], { type: "audio/mpeg" }); }
+async function loadListenAudio(item) {
+  if (LA.id === item.id && LA.url) return true;
+  if (LA.failed === item.id) return false;
+  if (LA.loading?.id === item.id) return LA.loading.p;
+  const key = `/talk-audio/${LANG}/${item.id}`;
+  const p = (async () => {
+    try {
+      let blob, marks;
+      const cache = "caches" in window ? await caches.open("talk-audio").catch(() => null) : null;
+      const hit = cache && (await cache.match(key));
+      if (hit) { blob = await hit.blob(); marks = JSON.parse(decodeURIComponent(hit.headers.get("x-marks") || "[]")); }
+      else {
+        const r = await api("/api/listen/audio", { method: "POST", body: JSON.stringify({ lines: item.lines.map((l) => ({ speaker: l.speaker, gender: l.gender, text: l.text })) }) });
+        blob = b64Blob(r.mp3); marks = r.marks;
+        cache?.put(key, new Response(blob, { headers: { "content-type": "audio/mpeg", "x-marks": encodeURIComponent(JSON.stringify(marks)) } })).catch(() => {});
+      }
+      if (LA.url) URL.revokeObjectURL(LA.url);
+      LA.id = item.id; LA.url = URL.createObjectURL(blob); LA.marks = marks;
+      audioEl().src = LA.url;
+      return true;
+    } catch (e) {
+      LA.failed = item.id; console.warn(e);
+      toast("음성 파일을 못 만들어서 브라우저 음성으로 들려줘요 (화면이 꺼지면 멈춰요)");
+      return false;
+    } finally { LA.loading = null; }
+  })();
+  LA.loading = { id: item.id, p };
+  return p;
+}
+function listenRate() { const lv = M.LEVELS[pick.level - 1]; return Math.max(0.5, Math.min(2.5, lv.rate * speedMul() * envOf().rate)); }
+function audioLineAt(t) { const m = LA.marks || []; let k = -1; for (let i = 0; i < m.length; i++) if (t >= m[i].start - 0.05) k = i; return k; }
+function audioStop() { const a = LA.el; if (a) a.pause(); clearInterval(LA.timer); LA.timer = null; }
+// 대본 전체(item.lines) 중 from 줄부터. only 면 그 줄만
+function audioPlay(item, from, onLine, only) {
+  const a = audioEl();
+  LS.gen++;
+  speechSynthesis.cancel();
+  if (AP.playing) plPause();
+  audioStop();
+  noiseOn();
+  a.currentTime = LA.marks[from]?.start || 0;
+  a.playbackRate = listenRate();
+  a.defaultPlaybackRate = a.playbackRate;
+  LA.stopAt = only ? LA.marks[from].end + 0.05 : null;
+  LA.onLine = onLine;
+  let last = -2;
+  const tick = () => {
+    if (LA.stopAt != null && a.currentTime >= LA.stopAt) { audioStop(); noiseOff(); onLine?.(-1); return; }
+    const k = audioLineAt(a.currentTime);
+    if (k !== last) { last = k; onLine?.(k); }
+  };
+  a.onended = () => { clearInterval(LA.timer); noiseOff(); onLine?.(-1); };
+  a.play().catch((e) => { toast("재생을 시작하지 못했어요. 한 번 더 눌러 주세요"); console.warn(e); });
+  LA.timer = setInterval(tick, 200);
+  tick();
+  if ("mediaSession" in navigator) {
+    navigator.mediaSession.metadata = new MediaMetadata({ title: item.title_ko || "듣기", artist: LANG === "en" ? "영어 듣기" : "일본어 듣기", album: item.genreName || "" });
+    const jump = (d) => { const k = Math.max(0, Math.min(LA.marks.length - 1, audioLineAt(a.currentTime) + d)); a.currentTime = LA.marks[k].start; };
+    for (const [act, fn] of [["play", () => a.play()], ["pause", () => a.pause()], ["previoustrack", () => jump(-1)], ["nexttrack", () => jump(1)],
+      ["seekbackward", () => (a.currentTime = Math.max(0, a.currentTime - 5))], ["seekforward", () => (a.currentTime = a.currentTime + 5)]])
+      try { navigator.mediaSession.setActionHandler(act, fn); } catch {}
+  }
+}
+// 듣기 화면의 재생: 음성 파일이 있으면 그걸로, 없으면 받아 오고, 못 받으면 브라우저 음성
+async function playItem(item, from, onLine, only, btn) {
+  if (LA.id === item.id && LA.url) return audioPlay(item, from, onLine, only);
+  if (LA.failed !== item.id) {
+    const t = btn?.textContent; if (btn) { btn.disabled = true; btn.textContent = "음성 준비 중…"; }
+    const ok = await loadListenAudio(item);
+    if (btn) { btn.disabled = false; btn.textContent = t; }
+    if (ok) return audioPlay(item, from, onLine, only);
+  }
+  playLines(only ? [item.lines[from]] : item.lines, only ? 0 : from, only ? null : onLine);
+}
+
 function playLines(lines, from = 0, onLine) {
   LS.gen++;
+  audioStop();
   const gen = LS.gen;
   speechSynthesis.cancel();
   if (AP.playing) plPause();
@@ -1534,7 +1614,7 @@ function playLines(lines, from = 0, onLine) {
   };
   next();
 }
-function stopLines() { LS.gen++; speechSynthesis.cancel(); noiseOff(); }
+function stopLines() { LS.gen++; speechSynthesis.cancel(); audioStop(); noiseOff(); }
 
 function renderListen(root) {
   if (LS.phase === "idle" && S.listening && !LS.item) { LS.item = S.listening; LS.phase = "ready"; }
@@ -1598,12 +1678,13 @@ async function fetchListening() {
 function listenPlay(root) {
   const x = LS.item;
   const rows = x.lines.map((l, i) => el("div", { class: "ls-line " + (l.gender === "m" ? "m" : "f") },
-    el("span", { class: "ls-who", title: "여기부터 듣기", onclick: () => { if (!LS.plays) LS.plays = 1; playLines(x.lines, i, mark); } }, "▸ " + l.speaker),
+    el("span", { class: "ls-who", title: "여기부터 듣기", onclick: () => { if (!LS.plays) LS.plays = 1; playItem(x, i, mark); } }, "▸ " + l.speaker),
     el("span", { class: "ls-text hidden", lang: "ja", onclick: (e) => e.target.classList.remove("hidden") }, l.text)));
   const prog = el("div", { class: "note" }, `${x.lines.length}줄`);
   const mark = (k) => { rows.forEach((r, i) => r.classList.toggle("now", i === k)); if (k >= 0) { prog.textContent = `${k + 1} / ${x.lines.length}줄`; if (x.lines.length > 12) rows[k].scrollIntoView({ block: "center", behavior: "smooth" }); } };
   const playB = el("button", { class: "primary big-play" }, LS.plays ? `▶ 다시 듣기 (${LS.plays + 1}번째)` : "▶ 듣기 시작");
-  playB.onclick = () => { LS.plays++; playB.textContent = `▶ 다시 듣기 (${LS.plays + 1}번째)`; playLines(x.lines, 0, mark); };
+  playB.onclick = () => { LS.plays++; const t = `▶ 다시 듣기 (${LS.plays + 1}번째)`; playItem(x, 0, mark, false, playB).then(() => { playB.textContent = t; }); };
+  loadListenAudio(x); // 미리 받아 둠
   const stopB = el("button", { class: "secondary" }, "⏹ 멈춤"); stopB.onclick = () => { stopLines(); mark(-1); };
   const quiz = LS.phase === "quiz";
   put(root, rmSwitch(),
@@ -1629,13 +1710,13 @@ async function submitListenUI() {
 function listenResult(root) {
   const x = LS.item, R2 = LS.result, res = R2.result;
   const rows = x.lines.map((l, i) => {
-    const sp = el("button", { class: "mini" }, "🔊"); sp.onclick = () => playLines([l], 0);
+    const sp = el("button", { class: "mini" }, "🔊"); sp.onclick = () => playItem(x, i, null, true);
     const out = el("span", { class: "match" });
     const sh = el("button", { class: "mini", onclick: () => shadowing(l.text, sh, out) }, "🎙");
     return el("div", { class: "ls-line open " + (l.gender === "m" ? "m" : "f") }, el("span", { class: "ls-who" }, l.speaker),
       el("div", { class: "ls-body" }, el("span", { class: "ls-text", lang: "ja" }, l.text), el("div", { class: "model-tools" }, sp, sh, starBtn({ text: l.text, kind: "sentence" }), out)));
   });
-  const allB = el("button", { class: "secondary" }, "▶ 대본 보며 전체 듣기"); allB.onclick = () => playLines(x.lines, 0, (k) => rows.forEach((r, i) => r.classList.toggle("now", i === k)));
+  const allB = el("button", { class: "secondary" }, "▶ 대본 보며 전체 듣기"); allB.onclick = () => playItem(x, 0, (k) => rows.forEach((r, i) => r.classList.toggle("now", i === k)), false, allB);
   put(root, rmSwitch(),
     el("div", { class: "card" }, el("div", { class: "report-top" }, el("div", { class: `stamp txt ${res.correct === res.total ? "g-S" : res.correct >= res.total - 1 ? "g-A" : "g-C"}` }, `${res.correct}/${res.total}`),
       el("div", {}, el("div", { class: "big" }, `+${res.score}점`), el("div", { class: "sub" }, `${res.plays}번 듣고 풀었어요 · ${x.title_ko}`)))),
