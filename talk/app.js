@@ -113,6 +113,20 @@ async function load() {
   renderTop();
   renderHome();
   if (S.current) { renderLesson(); }
+  api("/api/vocab/state", { method: "POST", body: "{}" }).then((x) => { VB = x; SAVED = new Set(x.saved.map((i) => i.w)); }).catch(() => {});
+}
+let VB = null;            // 단어장 상태
+let SAVED = new Set();    // 저장한 말
+// ⭐ 저장 단추: 어디서든 낱말·문장을 단어장에 담는다
+function starBtn({ text, reading = "", meaning_ko = "", kind = "word", ex_ja = "", ex_ko = "" }) {
+  const on = () => SAVED.has(text);
+  const b = el("button", { class: "mini star" + (on() ? " on" : ""), title: "단어장에 저장" }, on() ? "⭐" : "☆");
+  b.onclick = async (e) => {
+    e.stopPropagation();
+    if (on()) { toast("이미 저장했어요"); return; }
+    try { const r = await api("/api/vocab/save", { method: "POST", body: JSON.stringify({ text, reading, meaning_ko, kind, ex_ja, ex_ko }) }); SAVED.add(text); if (VB) VB.vocab = r.vocab; b.textContent = "⭐"; b.classList.add("on"); toast("단어장에 저장했어요"); } catch (er) { toast(er.message); }
+  };
+  return b;
 }
 
 function toast(text, cls = "") {
@@ -492,7 +506,7 @@ function aiEl(t, latest = false) {
   const n = (t.hard_words || []).length;
   wrap.append(el("div", { class: "turn-ai" }, el("div", { class: "avatar", lang: "ja" }, LANG === "en" ? "T" : "相"),
     el("div", { class: "bubble" },
-      el("div", { class: "ai-tools" }, ptools, subBtn, koBtn, n ? el("span", { class: "tool", style: "border:0;color:var(--gold)" }, `어려운 말 ${n}개`) : null),
+      el("div", { class: "ai-tools" }, ptools, subBtn, koBtn, starBtn({ text: t.reply_ja || "", meaning_ko: t.reply_ko || "", kind: "sentence" }), n ? el("span", { class: "tool", style: "border:0;color:var(--gold)" }, `어려운 말 ${n}개`) : null),
       text, koLine, hard)));
   if (t.task_ko) wrap.append(el("div", { class: "task" }, t.task_ko));
   if (latest && t.next?.mission_ko) wrap.append(missionCard(t.next));
@@ -547,7 +561,7 @@ function hardEl(w) {
   const b = el("button", { disabled: saved, onclick: async () => {
     try { const r = await api("/api/weak/add", { method: "POST", body: JSON.stringify({ text: w.word, reading: w.reading, meaning_ko: w.meaning_ko, kind: "listening" }) }); S.weak = r.weak; b.textContent = "담음 ✓"; b.disabled = true; } catch (e) { toast(e.message); }
   } }, saved ? "노트에 있음" : "+ 노트");
-  return el("div", { class: "hard-item" }, el("b", { lang: "ja" }, w.word), el("span", { class: "rd" }, w.reading), el("span", { class: "mn" }, w.meaning_ko), b);
+  return el("div", { class: "hard-item" }, el("b", { lang: "ja" }, w.word), el("span", { class: "rd" }, w.reading), el("span", { class: "mn" }, w.meaning_ko), starBtn({ text: w.word, reading: w.reading, meaning_ko: w.meaning_ko }), b);
 }
 
 // 내 말 + 빨간 펜
@@ -573,7 +587,7 @@ function meEl(t, animate = false) {
     btn.onclick = () => speak(f.natural, { btn });
     const match = el("span", { class: "match" });
     const shadow = el("button", { class: "tool", onclick: () => shadowing(f.natural, shadow, match) }, "🎙 따라 말하기");
-    parts.push(el("div", { class: "lab blue" }, f.verdict && f.verdict !== "natural" ? "모범 답안 · 이 문장으로 한 번 따라 말하고 넘어가요" : "모범 답안"), el("div", { class: "model", lang: "ja" }, f.natural), el("div", { class: "model-tools" }, btn, shadow, match));
+    parts.push(el("div", { class: "lab blue" }, f.verdict && f.verdict !== "natural" ? "모범 답안 · 이 문장으로 한 번 따라 말하고 넘어가요" : "모범 답안"), el("div", { class: "model", lang: "ja" }, f.natural), el("div", { class: "model-tools" }, btn, shadow, starBtn({ text: f.natural, kind: "sentence" }), match));
   }
   if (f.upgrades?.length || f.circumlocution?.length) {
     parts.push(el("div", { class: "lab gold" }, "한 단계 위 표현"));
@@ -971,7 +985,7 @@ function stepPattern(body) {
       const out = el("span", { class: "match" });
       let got = false;
       const sh = el("button", { class: "tool", onclick: () => shadowing(x.ja, sh, out, (pct) => { if (pct >= 80 && !got) { got = true; addScore(5); } }) }, "🎙 따라 말하기");
-      return el("div", { class: "card" }, el("div", { class: "model", lang: "ja" }, x.ja), el("div", { class: "note" }, x.ko), el("div", { class: "model-tools" }, sp, sh, out));
+      return el("div", { class: "card" }, el("div", { class: "model", lang: "ja" }, x.ja), el("div", { class: "note" }, x.ko), el("div", { class: "model-tools" }, sp, sh, starBtn({ text: x.ja, meaning_ko: x.ko, kind: "sentence" }), out));
     }),
     el("button", { class: "primary", onclick: nextStep }, "다음: 바꿔 말하기"));
 }
@@ -1095,7 +1109,7 @@ function stepCards(body, key) {
         el("div", { class: "note", lang: "ja", style: "text-align:center" }, "내 말: " + (said || "(무응답)") + ` · 일치 ${pct}%`),
         !ok && tries + 1 < 3 ? el("div", { class: "note tip", style: "text-align:center" }, "이 낱말은 끝에서 한 번 더 나와요. 소리 내어 두세 번 따라 해 두세요.") : null,
         w.example_ja ? el("div", { class: "model", lang: "ja" }, w.example_ja, el("div", { class: "note" }, w.example_ko)) : null,
-        el("div", { class: "model-tools", style: "justify-content:center" }, sp),
+        el("div", { class: "model-tools", style: "justify-content:center" }, sp, starBtn({ text: w.ja, reading: w.reading, meaning_ko: w.meaning_ko, ex_ja: w.example_ja || "", ex_ko: w.example_ko || "" })),
         el("button", { class: "primary", onclick: () => { speechSynthesis.cancel(); renderCourse(); } }, "다음")));
       speak(w.ja);
     } }));
@@ -1494,10 +1508,172 @@ function renderReadResult(root) {
     el("button", { class: "primary", onclick: () => { R.phase = "idle"; R.reading = null; R.result = null; renderRead(); } }, "다음 글"));
 }
 
-// ---------- 약점 노트 ----------
-let weakFilter = "all";
+// ---------- 단어장: 오늘의 단어(간격 반복) · 문형×단어 · 저장함 · 약점 노트 ----------
+let VS = { phase: "hub" }; // 단어 공부 진행
 function renderWeak() {
   const root = $("#view-weak");
+  if (VS.phase === "learn") return vocabLearn(root);
+  if (VS.phase === "quiz") return vocabQuiz(root);
+  if (VS.phase === "done") return vocabDone(root);
+  if (VS.phase === "combo") return comboRun(root);
+  if (VS.phase === "loading") return put(root, el("div", { class: "card" }, thinkingEl(VS.msg || "준비 중")));
+  if (!VB) { put(root, el("div", { class: "card" }, thinkingEl("단어장 불러오는 중"))); api("/api/vocab/state", { method: "POST", body: "{}" }).then((x) => { VB = x; SAVED = new Set(x.saved.map((i) => i.w)); renderWeak(); }).catch((e) => toast(e.message)); return; }
+  const v = VB.vocab;
+  const hub = el("div", {},
+    el("div", { class: "card idcard" },
+      el("div", { class: "id-top" }, el("div", {}, el("div", { class: "id-sub" }, "오늘 할 단어"), el("div", { class: "id-rank" }, `복습 ${v.due} · 새 단어 ${v.newLeft}`)),
+        el("div", { class: "id-streak" }, el("div", { class: "id-sub" }, "단어장"), el("b", {}, `${v.total}`))),
+      el("div", { class: "id-foot", style: "margin-top:10px" }, el("span", {}, `저장 ${v.saved} · 오래 기억 ${v.mastered}`), el("span", {}, "1·3·7·14·30·60일 간격으로 다시 나와요"))),
+    el("button", { class: "challenge", onclick: startVocabToday }, el("span", { class: "ico" }, "📚"), el("div", {}, el("b", {}, "오늘의 단어 시작"), el("span", {}, `새 단어는 먼저 익히고, 그림·뜻을 보고 3초 안에 말하기. 틀린 건 내일 다시.`))),
+    el("button", { class: "challenge", onclick: () => startCombo(10) }, el("span", { class: "ico" }, "🧩"), el("div", {}, el("b", {}, "문형 × 단어 10문장"), el("span", {}, "배운 문형에 단어장 낱말을 끼워 여러 상황에서 바로 말하기"))),
+    el("div", { class: "h" }, "하루 새 단어"),
+    el("div", { class: "chips" }, [10, 20, 30, 40].map((n) => el("button", { class: "chip" + (v.newPerDay === n ? " on" : ""), onclick: () => vocabSet({ newPerDay: n }) }, `${n}개`))),
+    el("div", { class: "h" }, "급수 (여러 개 고르면 섞어서)"),
+    el("div", { class: "chips" }, VB.levelsAll.map((l) => el("button", { class: "chip" + (v.levels.includes(l) ? " on" : ""), onclick: () => { const set = new Set(v.levels); set.has(l) ? set.delete(l) : set.add(l); if (set.size) vocabSet({ levels: [...set] }); } }, l))),
+    el("div", { class: "h" }, `⭐ 저장함 ${VB.saved.length}`),
+    VB.saved.length ? el("div", { class: "weak-list" }, VB.saved.slice(0, 50).map((x) => {
+      const sp = el("button", { class: "mini" }, "🔊"); sp.onclick = () => speak(x.w, { btn: sp });
+      return el("div", { class: "wk" }, el("div", { class: "wk-top" }, el("span", { class: "wk-kind k-vocab" }, x.kind === "sentence" ? "문장" : "낱말"), el("span", { class: "wk-text", lang: "ja" }, x.w), x.r ? el("span", { class: "wk-rd" }, x.r) : null),
+        x.m ? el("div", { class: "wk-mn" }, x.m) : null,
+        el("div", { class: "wk-foot" }, el("span", {}, `다음 복습 ${x.due.slice(5)}`), el("span", { class: "sp" }), sp,
+          el("button", { class: "mini", onclick: async () => { const r = await api("/api/vocab/unsave", { method: "POST", body: JSON.stringify({ id: x.id }) }); VB.vocab = r.vocab; VB.saved = VB.saved.filter((y) => y.id !== x.id); SAVED.delete(x.w); renderWeak(); } }, "지우기")));
+    })) : el("div", { class: "empty" }, "수업·코스·읽기에서 ☆를 누르면 여기 모여요."),
+    el("div", { class: "h" }, "약점 노트"));
+  root.replaceChildren(hub, el("div", { id: "weakArea" }));
+  renderWeakList($("#weakArea"));
+}
+async function vocabSet(body) {
+  try { const r = await api("/api/vocab/settings", { method: "POST", body: JSON.stringify(body) }); VB.vocab = r.vocab; renderWeak(); } catch (e) { toast(e.message); }
+}
+async function startVocabToday() {
+  VS = { phase: "loading", msg: "오늘의 단어를 고르는 중 (새 단어를 처음 만들 땐 20초쯤)" }; renderWeak();
+  try {
+    const r = await api("/api/vocab/today", { method: "POST", body: "{}" });
+    VB.vocab = r.vocab;
+    const quiz = [...r.fresh, ...r.due].sort(() => Math.random() - 0.5);
+    if (!quiz.length) { VS = { phase: "hub" }; toast("오늘 할 단어를 다 했어요!"); renderWeak(); return; }
+    VS = { phase: r.fresh.length ? "learn" : "quiz", fresh: r.fresh, queue: quiz.map((x) => x.id), items: Object.fromEntries(quiz.map((x) => [x.id, x])), i: 0, li: 0, res: {}, tries: {} };
+  } catch (e) { toast(e.message); VS = { phase: "hub" }; }
+  renderWeak();
+}
+// 새 단어 먼저 익히기
+function vocabLearn(root) {
+  const w = VS.fresh[VS.li];
+  if (!w) { VS.phase = "quiz"; return renderWeak(); }
+  const sp = el("button", { class: "tool" }, "🔊 낱말"); sp.onclick = () => speak(w.w, { btn: sp });
+  const sp2 = el("button", { class: "tool" }, "🔊 예문"); sp2.onclick = () => speak(w.ex_ja, { btn: sp2 });
+  put(root, el("div", { class: "step-name" }, `새 단어 익히기 ${VS.li + 1} / ${VS.fresh.length} · ${w.level}`),
+    el("div", { class: "stepdots" }, VS.fresh.map((_, i) => el("span", { class: i < VS.li ? "ok" : i === VS.li ? "now" : "" }))),
+    el("div", { class: "card ans" }, el("div", { class: "ans-emoji" }, w.emoji), el("div", { class: "ans-q big", lang: "ja" }, w.w), el("div", { class: "note", style: "text-align:center" }, w.r),
+      el("div", { class: "pt-mean", style: "text-align:center;margin:6px 0 10px" }, w.m),
+      el("div", { class: "model", lang: "ja", style: "text-align:left" }, w.ex_ja, el("div", { class: "note" }, w.ex_ko)),
+      el("div", { class: "model-tools", style: "justify-content:center" }, sp, sp2, starBtn({ text: w.w, reading: w.r, meaning_ko: w.m, ex_ja: w.ex_ja, ex_ko: w.ex_ko }))),
+    el("button", { class: "primary", onclick: () => { VS.li++; speechSynthesis.cancel(); renderWeak(); } }, VS.li + 1 < VS.fresh.length ? "다음 단어" : "이제 시험 보기"),
+    el("button", { class: "secondary", style: "width:100%;margin-top:8px", onclick: () => { VS.phase = "quiz"; renderWeak(); } }, "익히기 건너뛰고 바로 시험"));
+  speak(w.w);
+}
+// 시험: 상자가 낮으면 그림·뜻 보고 말하기, 높으면 낱말 보고 뜻 떠올리기(스스로 채점)
+function vocabQuiz(root) {
+  if (VS.i >= VS.queue.length) { VS.phase = "done"; return renderWeak(); }
+  const id = VS.queue[VS.i];
+  const w = VS.items[id];
+  const tries = VS.tries[id] || 0;
+  const head = el("div", {}, el("div", { class: "step-name" }, `${VS.i + 1} / ${VS.queue.length}${tries ? " · 🔁 다시" : ""} · ${w.level || ""}`),
+    el("div", { class: "stepdots" }, el("span", { class: "ok", style: `flex:${VS.i}` }), el("span", { style: `flex:${Math.max(1, VS.queue.length - VS.i)}` })));
+  const record = (ok) => {
+    if (!(id in VS.res)) VS.res[id] = ok; // 간격 반복에는 첫 답만
+    VS.tries[id] = tries + 1;
+    if (!ok && tries < 1) VS.queue.push(id); // 틀리면 끝에 한 번 더
+    VS.i++;
+  };
+  const recall = (w.box >= 2 && !w.isNew) || w.kind === "sentence";
+  if (recall) {
+    const ans = el("div", { hidden: true }, el("div", { class: "note", style: "text-align:center" }, w.r), el("div", { class: "pt-mean", style: "text-align:center;margin:6px 0" }, w.m), w.ex_ja ? el("div", { class: "model", lang: "ja" }, w.ex_ja, el("div", { class: "note" }, w.ex_ko)) : null,
+      el("div", { class: "row-btns" }, el("button", { class: "secondary", onclick: () => { record(false); renderWeak(); } }, "❌ 몰랐어요"), el("button", { class: "primary", onclick: () => { record(true); renderWeak(); } }, "⭕ 알았어요")));
+    const showB = el("button", { class: "primary", onclick: () => { ans.hidden = false; showB.hidden = true; speak(w.w); } }, "뜻 보기");
+    put(root, head, el("div", { class: "card ans" }, el("span", { class: "speak-pill rv" }, "뜻을 떠올려 보세요"), el("div", { class: "ans-q big", lang: "ja" }, w.w), ans), showB);
+    return;
+  }
+  put(root, head, answerCard({ prompt: w.m, emoji: w.emoji, limit: 3, big: true, expect: w.w, onDone: (said, sec) => {
+    const pct = Math.max(similarity(w.w, said), w.r && LANG === "ja" ? similarity(w.r, said) : 0);
+    const ok = pct >= 70;
+    record(ok);
+    const sp = el("button", { class: "tool" }, "🔊"); sp.onclick = () => speak(w.ex_ja || w.w, { btn: sp });
+    put(root, head, el("div", { class: "card ans" }, el("div", { class: "ans-emoji" }, ok ? "⭕" : "❌"), el("div", { class: "ans-q big", lang: "ja" }, w.w), el("div", { class: "note", style: "text-align:center" }, `${w.r} · ${w.m}`),
+      el("div", { class: "note", lang: "ja", style: "text-align:center" }, `내 말: ${said || "(무응답)"} · 일치 ${pct}%${sec <= 3 && ok ? " · ⚡빠름" : ""}`),
+      w.ex_ja ? el("div", { class: "model", lang: "ja" }, w.ex_ja, el("div", { class: "note" }, w.ex_ko)) : null,
+      el("div", { class: "model-tools", style: "justify-content:center" }, sp, starBtn({ text: w.w, reading: w.r, meaning_ko: w.m, ex_ja: w.ex_ja, ex_ko: w.ex_ko }))),
+      el("button", { class: "primary", onclick: () => { speechSynthesis.cancel(); renderWeak(); } }, "다음"));
+    speak(w.w);
+  } }));
+}
+async function vocabDone(root) {
+  const ids = Object.keys(VS.res);
+  const ok = ids.filter((k) => VS.res[k]).length;
+  put(root, el("div", { class: "card" }, thinkingEl("기록하는 중")));
+  try {
+    const r = await api("/api/vocab/answer", { method: "POST", body: JSON.stringify({ results: ids.map((id) => ({ id, ok: VS.res[id] })) }) });
+    VB.vocab = r.vocab; S.xp = r.xp; S.todayXp = r.todayXp; renderTop();
+  } catch (e) { toast(e.message); }
+  const wrong = ids.filter((k) => !VS.res[k]).map((k) => VS.items[k]);
+  put(root, el("div", { class: "card" }, el("div", { class: "report-top" }, el("div", { class: `stamp txt ${ok === ids.length ? "g-S" : "g-A"}` }, `${ok}/${ids.length}`),
+      el("div", {}, el("div", { class: "big" }, "오늘의 단어 끝"), el("div", { class: "sub" }, "맞힌 건 다음 간격으로, 틀린 건 내일 다시 나와요")))),
+    wrong.length ? [el("div", { class: "h" }, "내일 다시 볼 단어"), el("div", { class: "hard" }, wrong.map((w) => el("div", { class: "hard-item" }, el("span", {}, w.emoji), el("b", { lang: "ja" }, w.w), el("span", { class: "rd" }, w.r), el("span", { class: "mn" }, w.m))))] : null,
+    el("button", { class: "primary", style: "margin-top:12px", onclick: () => startCombo(10) }, "🧩 이 단어들로 문형 × 단어 10문장"),
+    el("button", { class: "secondary", style: "width:100%;margin-top:8px", onclick: () => { VS = { phase: "hub" }; renderWeak(); } }, "단어장으로"));
+}
+// 문형 × 단어 조합 문장
+async function startCombo(n) {
+  VS = { phase: "loading", msg: "배운 문형에 단어를 끼워 문장을 만드는 중 (15초쯤)" }; renderWeak();
+  try {
+    const r = await api("/api/vocab/combo", { method: "POST", body: JSON.stringify({ n }) });
+    VS = { phase: "combo", items: r.items, i: 0, answers: [], graded: null };
+  } catch (e) { toast(e.message); VS = { phase: "hub" }; }
+  renderWeak();
+}
+function comboRun(root) {
+  const list = VS.items;
+  if (VS.graded) {
+    const V2 = { ok: "⭕", awkward: "△", wrong: "❌" };
+    const okN = VS.graded.filter((x) => x.verdict === "ok").length;
+    put(root, el("div", { class: "card" }, el("div", { class: "report-top" }, el("div", { class: "stamp txt g-A" }, `${okN}/${list.length}`), el("div", {}, el("div", { class: "big" }, "문형 × 단어 결과"), el("div", { class: "sub" }, "틀린 문장은 약점 노트에 담았어요. 🎙로 바로 다시 말해 보세요.")))),
+      list.map((it, i) => {
+        const g = VS.graded[i] || {};
+        const model = g.fix || it.ja;
+        const sp = el("button", { class: "tool" }, "🔊"); sp.onclick = () => speak(model, { btn: sp });
+        const out = el("span", { class: "match" });
+        const sh = el("button", { class: "tool", onclick: () => shadowing(model, sh, out) }, "🎙 다시 말하기");
+        return el("div", { class: "card q" }, el("div", { class: "note" }, it.situation_ko + " · " + it.pattern), el("div", { class: "q-t" }, `${V2[g.verdict] || "?"} ${it.ko}`),
+          el("div", { class: "note", lang: "ja" }, "내 답: " + (VS.answers[i] || "(무응답)")), el("div", { class: "model", lang: "ja" }, model),
+          g.why_ko ? el("div", { class: "note tip" }, g.why_ko) : null, el("div", { class: "model-tools" }, sp, sh, starBtn({ text: model, meaning_ko: it.ko, kind: "sentence" }), out));
+      }),
+      el("button", { class: "primary", onclick: () => startCombo(10) }, "10문장 더"),
+      el("button", { class: "secondary", style: "width:100%;margin-top:8px", onclick: () => { VS = { phase: "hub" }; renderWeak(); } }, "단어장으로"));
+    return;
+  }
+  if (VS.i >= list.length) {
+    put(root, el("div", { class: "card" }, thinkingEl("엄격하게 채점하는 중")));
+    api("/api/course/grade", { method: "POST", body: JSON.stringify({ items: list.map((it, i) => ({ kind: "ko2ja", prompt: it.ko, expected: it.ja, said: VS.answers[i] || "" })) }) })
+      .then((r) => { VS.graded = r.results; renderWeak(); })
+      .catch((e) => { toast(e.message); VS.graded = list.map(() => ({ verdict: "?", fix: "", why_ko: "" })); renderWeak(); });
+    return;
+  }
+  const it = list[VS.i];
+  put(root, el("div", { class: "step-name" }, `문형 × 단어 ${VS.i + 1} / ${list.length} · ${it.pattern}`),
+    el("div", { class: "stepdots" }, list.map((_, i) => el("span", { class: i < VS.i ? "ok" : i === VS.i ? "now" : "" }))),
+    el("div", { class: "task", style: "margin-left:0" }, "상황: " + it.situation_ko),
+    answerCard({ prompt: it.ko, big: true, expect: it.ja, onDone: (said) => {
+      VS.answers[VS.i] = said; VS.i++;
+      const sp = el("button", { class: "tool" }, "🔊"); sp.onclick = () => speak(it.ja, { btn: sp });
+      put(root, el("div", { class: "card ans" }, el("div", { class: "note" }, "모범 문장"), el("div", { class: "model", lang: "ja" }, it.ja), el("div", { class: "note", lang: "ja" }, "내 답: " + (said || "(무응답)")),
+        el("div", { class: "model-tools", style: "justify-content:center" }, sp, starBtn({ text: it.ja, meaning_ko: it.ko, kind: "sentence" }))),
+        el("button", { class: "primary", onclick: () => { speechSynthesis.cancel(); renderWeak(); } }, VS.i < list.length ? "다음 문장" : "채점하기"));
+      speak(it.ja);
+    } }));
+}
+
+let weakFilter = "all";
+function renderWeakList(root) {
   const K = { grammar: "문법", vocab: "어휘", listening: "듣기" };
   const f = { all: (w) => !w.mastered, grammar: (w) => !w.mastered && w.kind === "grammar", vocab: (w) => !w.mastered && w.kind === "vocab", listening: (w) => !w.mastered && w.kind === "listening", done: (w) => w.mastered };
   const list = S.weak.filter(f[weakFilter]).sort((a, b) => (a.last < b.last ? 1 : -1));
