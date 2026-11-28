@@ -513,6 +513,11 @@ function openSettingsModal() {
       if (currentView === "home") renderHome();
       openSettingsModal();
     } }, t))),
+    el("div", { class: "h" }, "내 발음 녹음 (🎙 내 발음 듣기)"),
+    el("div", { class: "chips" }, [[false, "끄기 (인식 우선)"], [true, "켜기"]].map(([v, t]) => el("button", { class: "chip" + (myRecOn() === v ? " on" : ""), onclick: () => {
+      setPref("myRec", v ? "1" : "0"); openSettingsModal();
+    } }, t))),
+    el("div", { class: "level-desc" }, DUAL_MIC_OK ? "말하는 동안 내 목소리를 녹음해 원어민 발음과 비교해요." : "폰에서는 녹음과 음성 인식이 마이크를 같이 못 써서, 켜면 「잘 못 들었어요」가 자꾸 나올 수 있어요. 그래서 기본은 꺼 두었어요."),
     el("div", { class: "h" }, "목소리"),
     el("div", { class: "voice-row", style: "margin-top:0" }, sel),
     el("div", { class: "h" }, `하루 목표 점수 (현재 ${S.profile.dailyGoal}점)`),
@@ -2959,6 +2964,9 @@ let recTarget = null; // 따라 말하기일 때 { text, btn, out }
 // 브라우저는 말이 잠깐 멈추면 인식을 스스로 끝낸다. 사용자가 다시 누르기 전까지는 끝난 토막을 모아 두고 곧바로 다시 듣는다.
 // 동시에 MediaRecorder로 내 발음 오디오도 안전하게 녹음한다(브라우저가 동시 마이크를 막으면 조용히 생략하고 STT만 동작).
 const REC_MAX_MS = 5 * 60 * 1000;
+// 안드로이드 크롬은 녹음이 마이크를 잡으면 음성 인식이 소리를 못 받아 「잘 못 들었어요」만 나옴 → 폰에서는 기본으로 끔
+const DUAL_MIC_OK = !/Android|iPhone|iPad/i.test(navigator.userAgent);
+const myRecOn = () => getPref("myRec", DUAL_MIC_OK ? "1" : "0") === "1";
 function startRec({ onFinal, onLive, lang = SPEECH, expect = "", expectReading = "" }) {
   if (AP.playing) plPause();
   speechSynthesis?.cancel();
@@ -2978,7 +2986,7 @@ function startRec({ onFinal, onLive, lang = SPEECH, expect = "", expectReading =
   let audioDone = Promise.resolve(null);
   let resolveAudio = null;
   const stopStream = () => { try { mediaStream?.getTracks().forEach((tr) => tr.stop()); } catch {} mediaStream = null; };
-  if (navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== "undefined") {
+  if (myRecOn() && navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== "undefined") {
     navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
       if (finished || cancelled || stopped) { try { stream.getTracks().forEach((tr) => tr.stop()); } catch {} return; }
       mediaStream = stream;
