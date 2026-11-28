@@ -1513,30 +1513,55 @@ function canDoCard(courseKey, co = null) {
   const items = (syl.canDo || []).map((txt, idx) => {
     const startU = idx * 4 + 1, endU = Math.min(syl.totalUnits, (idx + 1) * 4);
     const unlocked = co && doneUnits >= endU;
-    const active = co && doneUnits >= startU && doneUnits < endU;
+    const active = co && doneUnits >= startU - 1 && doneUnits < endU && idx === Math.min(5, Math.floor(doneUnits / 4));
     return el("li", { class: unlocked ? "ok" : active ? "now" : "" },
       el("span", { class: "cd-ico" }, unlocked ? "✅" : active ? "🔵" : "○"),
       el("div", { class: "cd-txt" }, el("span", {}, txt), el("em", {}, `유닛 ${startU}~${endU}`)));
   });
+  const roadmapList = el("div", { class: "roadmap-list" }, (syl.units || []).map((u) => {
+    const isDone = doneUnitSet.has(u.unitNo) || (co && !doneUnitSet.size && u.unitNo <= doneUnits);
+    return el("div", { class: "rm-item" + (isDone ? " done" : "") },
+      el("span", { class: "rm-no" }, isDone ? "✓" : String(u.unitNo)),
+      el("div", { class: "rm-body" },
+        el("b", { lang: LANG }, u.pattern),
+        el("span", {}, `${u.pattern_ko} · ${u.theme_ko}`)),
+      u.grammar_tag ? el("span", { class: "rm-tag" }, u.grammar_tag) : null);
+  }));
+
+  // 진행 중인 코스 화면에서는 컴팩트하게 요약(현재 목표 1줄 + 펼치기)해 4주 표가 첫 화면에 보이도록 최적화
+  if (co) {
+    const unlockedN = Math.min(6, Math.floor(doneUnits / 4));
+    const curIdx = Math.min(5, Math.floor(doneUnits / 4));
+    const curTxt = syl.canDo?.[curIdx] || "";
+    return el("div", { class: "card cando-card" },
+      el("div", { class: "cd-head" },
+        el("span", { class: "lab blue" }, "🎓 졸업 목표 · 고정 커리큘럼"),
+        el("b", { class: "cd-pct" }, `${doneUnits}/${syl.totalUnits}유닛 · ${pct}%`)),
+      el("div", { class: "cd-badge" }, syl.badge),
+      el("div", { class: "limit", style: "margin:8px 0 10px" }, el("i", { style: `width:${pct}%;background:var(--brand)` })),
+      el("div", { class: "cando-now" + (unlockedN >= 6 ? " ok" : "") },
+        el("span", { class: "cd-ico" }, unlockedN >= 6 ? "🎉" : "🔵"),
+        el("div", { class: "cd-txt" },
+          el("em", {}, unlockedN >= 6 ? "6가지 졸업 목표 모두 달성!" : `지금 단계 목표 (${unlockedN}/6 달성 · 유닛 ${curIdx * 4 + 1}~${Math.min(syl.totalUnits, (curIdx + 1) * 4)})`),
+          el("span", {}, curTxt))),
+      el("details", { class: "roadmap-det" },
+        el("summary", {}, `졸업 후 가능한 대화 6가지 & ${syl.totalUnits}유닛 로드맵`),
+        el("ul", { class: "cando-list", style: "margin-top:8px" }, items),
+        el("div", { class: "sub-h", style: "margin-top:12px" }, `📚 전체 ${syl.totalUnits}유닛 커리큘럼`),
+        roadmapList));
+  }
+
+  // 반 고르기(PICK) 미리보기 화면에서는 6가지 Can-do를 바로 펼쳐 확신을 줌
   return el("div", { class: "card cando-card" },
     el("div", { class: "cd-head" },
-      el("span", { class: "lab blue", style: "margin:0" }, "🎓 졸업 목표 · 검증된 고정 커리큘럼"),
-      co ? el("b", { class: "cd-pct" }, `${doneUnits}/${syl.totalUnits}유닛 · ${pct}%`) : el("span", { class: "mini", style: "pointer-events:none" }, syl.duration)),
+      el("span", { class: "lab blue" }, "🎓 졸업 목표 · 검증된 고정 커리큘럼"),
+      el("span", { class: "mini", style: "pointer-events:none" }, syl.duration)),
     el("div", { class: "cd-badge" }, syl.badge),
-    co ? el("div", { class: "limit", style: "margin:8px 0 10px" }, el("i", { style: `width:${pct}%;background:var(--brand)` })) : null,
-    el("div", { class: "note", style: "margin:4px 0 8px" }, co ? "이 반을 완수하면 아래 6가지가 가능해져요 (4유닛 완료마다 자동 체크):" : "이 반을 완수하면 아래 6가지 실전 대화가 가능해져요:"),
+    el("div", { class: "note", style: "margin:4px 0 8px" }, "이 반을 완수하면 아래 6가지 실전 대화가 가능해져요:"),
     el("ul", { class: "cando-list" }, items),
     el("details", { class: "roadmap-det" },
-      el("summary", {}, `📚 고정 마스터 커리큘럼 ${syl.totalUnits}유닛 전체 로드맵 보기`),
-      el("div", { class: "roadmap-list" }, (syl.units || []).map((u) => {
-        const isDone = doneUnitSet.has(u.unitNo) || (co && !doneUnitSet.size && u.unitNo <= doneUnits);
-        return el("div", { class: "rm-item" + (isDone ? " done" : "") },
-          el("span", { class: "rm-no" }, isDone ? "✓" : String(u.unitNo)),
-          el("div", { class: "rm-body" },
-            el("b", { lang: LANG }, u.pattern),
-            el("span", {}, `${u.pattern_ko} · ${u.theme_ko}`)),
-          u.grammar_tag ? el("span", { class: "rm-tag" }, u.grammar_tag) : null);
-      }))));
+      el("summary", {}, `📚 고정 마스터 커리큘럼 ${syl.totalUnits}유닛 전체 보기`),
+      roadmapList));
 }
 
 // 이번 주(월~일, 일본 시간) 몇 번 했는지와 연속 달성 주
@@ -1602,7 +1627,8 @@ function renderCourse() {
         return el("button", { class: "scene tile", onclick: () => { PICK = { key: c.key }; renderCourse(); } },
           S.placement?.course === c.key ? el("small", {}, "추천") : null,
           el("b", {}, c.name),
-          el("span", {}, syl ? `${c.desc} · ${syl.badge.replace(/^도달 목표:\s*/, "")}` : c.desc),
+          el("span", {}, c.desc),
+          syl ? el("em", { class: "tile-goal" }, `${syl.totalUnits}유닛 · 목표 보기`) : null,
           el("i", { class: "tile-emoji" }, tileEmoji(c.key)));
       })));
     return;
@@ -1990,21 +2016,21 @@ function stepCourseBlitz(body) {
 
   const it = B.items[B.i];
   const pctBar = Math.round((B.i / total) * 100);
-  const head = el("div", { style: "margin-bottom:10px" },
-    el("div", { style: "display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:6px" },
-      el("div", { style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap" },
+  const head = el("div", { class: "blitz-head" },
+    el("div", { class: "blitz-top" },
+      el("div", { class: "blitz-meta" },
         el("b", {}, `🔥 ${B.i + 1} / ${total}`),
         el("span", { class: "mini", style: "pointer-events:none" }, `통과 ${B.passed}`),
         B.streak >= 2 ? el("span", { class: "combo" }, `🔥 ${B.streak}연속`) : null),
       B.mode === "main"
-        ? el("div", { style: "display:flex;gap:4px" }, [20, 30, 50].map((n) =>
-            el("button", { class: "mini" + (B.target === n ? " on" : ""), style: B.target === n ? "background:var(--brand);color:#fff;border-color:var(--brand)" : "", onclick: () => {
+        ? el("div", { class: "blitz-seg", title: "목표 문장 수" }, [20, 30, 50].map((n) =>
+            el("button", { class: B.target === n ? "on" : "", onclick: () => {
               if (n < B.i + 1) { toast(`이미 ${B.i + 1}번째 문장 진행 중이에요`); return; }
               B.target = n; setPref("courseBlitzCount", n); saveCR(); prefetchCourseBlitz(false); renderCourse();
-            } }, `${n}`)))
+            } }, `${n}문장`)))
         : null),
     el("div", { class: "limit" }, el("i", { style: `width:${pctBar}%;background:var(--brand)` })),
-    p.pattern?.form ? el("div", { class: "level-desc", style: "margin-top:6px" }, `오늘 배운 것 총동원: ${p.pattern.form} · 표현 ${p.expressions?.length || 0} · 단어 ${p.words?.length || 0}`) : null);
+    p.pattern?.form ? el("div", { class: "blitz-ctx" }, el("span", { lang: LANG }, p.pattern.form), el("em", {}, `표현 ${p.expressions?.length || 0} · 단어 ${p.words?.length || 0} 조합`)) : null);
 
   put(body, head,
     answerCard({
@@ -2044,7 +2070,14 @@ function stepCourseBlitz(body) {
             diff.node,
             LANG === "ja" && it.reading ? el("div", { class: "note", style: "text-align:center;margin-top:4px" }, it.reading) : null,
             el("div", { class: "note", lang: LANG, style: "text-align:center" }, "내 말(인식): " + (said || "(무응답)")),
+            !ok && said ? altCard(it.ja, said, it.ko, (v) => {
+              if (v !== "ok_alt" || !B.wrong.includes(B.i)) return;
+              B.wrong = B.wrong.filter((x) => x !== B.i); B.passed++; B.streak++; if (B.streak > B.bestStreak) B.bestStreak = B.streak;
+              if (B.missedMap) delete B.missedMap[B.i];
+              addScore(1); saveCR(); passFx({ vol: 0.12 });
+            }) : null,
             !ok && said ? (() => { const slot = el("div"); const cb = el("button", { class: "tool", onclick: () => { cb.remove(); slot.replaceChildren(pronTipCard(it.ja, said, it.reading || "") || ""); } }, "🗣 발음 코치"); return el("div", { style: "text-align:center" }, cb, slot); })() : null,
+            ok ? (() => { const slot = el("div"); const cb = el("button", { class: "tool", onclick: () => { cb.remove(); slot.replaceChildren(altCard(it.ja, "", it.ko)); } }, "💬 비슷한 표현"); return el("div", { style: "text-align:center" }, cb, slot); })() : null,
             el("div", { class: "model-tools", style: "justify-content:center" }, sp, slow, myAudioBtn(audioUrl, "🎙 내 발음"), starBtn({ text: it.ja, reading: it.reading || "", meaning_ko: it.ko, kind: "sentence" })),
             el("div", { class: "row-btns", style: "margin-top:10px" }, retryBtn, nextBtn)));
         if (!ok) speak(it.ja); else passFx();
@@ -2328,18 +2361,28 @@ function stepToeic(body) {
       btns, fb);
   });
 
+  const fmtBlanks = (txt) => String(txt || "").split(/(\[\d+\]\s*_{2,}|_{3,})/g).map((seg) =>
+    /^(\[\d+\]\s*_{2,}|_{3,})$/.test(seg) ? el("span", { class: "toeic-blank" }, seg.replace(/_{2,}/, "____")) : seg
+  );
+  const subCards2 = subs.map((sq, si) => subCards[si]);
+  // Part 5 단일 문항 빈칸도 시각적으로 강조
+  if (q.part === "5") {
+    const qt = subCards2[0]?.querySelector?.(".q-t");
+    if (qt) qt.replaceChildren(...fmtBlanks(subs[0].q));
+  }
+
   put(body,
     el("div", { class: "toeic-bar" },
-      el("div", { style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap" },
+      el("div", { class: "toeic-meta" },
         el("b", {}, `${isTest ? "⏱ 미니 테스트 · " : ""}${partLabel}`),
         q.tag ? el("span", { class: "mini", style: "pointer-events:none" }, q.tag) : null,
         el("span", { class: "note", style: "margin:0" }, `${CR.i + 1}/${list.length}`)),
       timerEl),
     el("div", { class: "card q" },
       listenBox,
-      q.passage && !isPart34 ? el("div", { class: "toeic-passage", lang: "en" }, q.passage) : null,
+      q.passage && !isPart34 ? el("div", { class: "toeic-passage" + (subs.length > 1 ? " scroll" : ""), lang: "en" }, fmtBlanks(q.passage)) : null,
       scriptBox,
-      subCards),
+      subCards2),
     nextWrap);
 }
 
@@ -3106,6 +3149,23 @@ function pronTipCard(target, heard, reading = "") {
       el("ul", {}, (tip.diff_ko || []).map((d) => el("li", {}, d))),
       el("div", { class: "pt-fix" }, tip.fix_ko),
       pr.length ? el("div", { class: "chips", style: "margin:6px 0 0" }, pr) : null);
+  }).catch(() => box.remove());
+  return box;
+}
+// 비슷한 표현: 다르게 말했으면 통하는 표현인지 가르고(onVerdict), 같은 뜻의 다른 표현을 뉘앙스와 함께
+function altCard(target, said, ko = "", onVerdict = null) {
+  const box = el("div", { class: "alt-card" }, el("div", { class: "pt-h" }, said ? "💬 내 표현은 통할까" : "💬 비슷한 표현"), thinkingEl("표현 살펴보는 중"));
+  api("/api/speak/alt", { method: "POST", body: JSON.stringify({ target, said, ko }) }).then((r) => {
+    const V = { same: ["✓ 모범과 같은 말이에요", "ok"], ok_alt: ["△ 통하는 다른 표현이에요", "mid"], different: ["✗ 뜻이 달라져요", "bad"] }[r.verdict] || ["", ""];
+    box.replaceChildren(el("div", { class: "pt-h" }, said ? "💬 내 표현은 통할까" : "💬 비슷한 표현"),
+      said && r.verdict !== "same" ? el("div", { class: "alt-v " + V[1] }, V[0]) : null,
+      said && r.note_ko ? el("div", { class: "note" }, r.note_ko) : null,
+      el("div", { class: "alt-list" }, (r.alts || []).map((a) => {
+        const sp = el("button", { class: "mini" }, "🔊"); sp.onclick = () => speak(a.text, { btn: sp });
+        return el("div", { class: "alt-item" }, el("div", {}, el("b", { lang: LANG }, a.text), a.reading && a.reading !== a.text ? el("span", { class: "rd" }, a.reading) : null, el("div", { class: "note" }, a.nuance_ko)),
+          el("div", { class: "alt-tools" }, sp, starBtn({ text: a.text, reading: a.reading, meaning_ko: ko || a.nuance_ko, kind: "sentence" })));
+      })));
+    onVerdict?.(r.verdict);
   }).catch(() => box.remove());
   return box;
 }
