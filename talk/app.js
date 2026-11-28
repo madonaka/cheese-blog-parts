@@ -532,14 +532,92 @@ function renderLessonHead() {
       el("span", { class: "mission" + (m.n >= m.goal ? " done" : "") }, (m.n >= m.goal ? "✓ " : "") + m.text, m.goal > 1 ? el("em", {}, `${Math.min(m.n, m.goal)}/${m.goal}`) : null))));
 }
 
+// ---------- 한 장씩 보기: ① 상대 말 → (내 답) → ② 바로 교정 → ③ 고쳐 말하기·발음 확인 → 다음 장 ----------
+let LV = localStorage.getItem("lessonView") || "page"; // page | chat
+let PG = { fb: false, stage: "fix", tried: false };     // fb: 방금 내 답의 교정 장을 보여 줄 차례
+function setLessonView(v) { LV = v; localStorage.setItem("lessonView", v); renderLesson(); }
+
+// 발음 확인: 모범 문장과 내가 말한 것(음성 인식)을 글자(영어는 낱말) 단위로 맞춰 들린 곳은 초록, 안 들린 곳은 빨강
+function pronDiff(target, said) {
+  const en = LANG === "en";
+  const toks = (x) => en ? String(x).toLowerCase().replace(/[^a-z0-9' ]/g, " ").split(/\s+/).filter(Boolean) : [...String(x).replace(/[\s。、！？!?.,「」]/g, "")];
+  const t = toks(target), h = toks(said);
+  const dp = Array.from({ length: t.length + 1 }, () => new Array(h.length + 1).fill(0));
+  for (let i = t.length - 1; i >= 0; i--) for (let j = h.length - 1; j >= 0; j--) dp[i][j] = t[i] === h[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const hit = new Array(t.length).fill(false);
+  for (let i = 0, j = 0; i < t.length && j < h.length;) { if (t[i] === h[j]) { hit[i] = true; i++; j++; } else if (dp[i + 1][j] >= dp[i][j + 1]) i++; else j++; }
+  const pct = t.length ? Math.round((hit.filter(Boolean).length / t.length) * 100) : 0;
+  const node = el("div", { class: "pron", lang: en ? "en" : "ja" }, t.map((c, i) => el("span", { class: hit[i] ? "ok" : "miss" }, c + (en ? " " : ""))));
+  return { pct, node, missed: t.filter((_, i) => !hit[i]) };
+}
+
+let PG_SPOKEN = ""; // 이미 읽어 준 상대 말(같은 장을 다시 그릴 때 또 읽지 않게)
+function renderPage(feed) {
+  const d = S.current?.display || [];
+  if (!d.length) return;
+  const lastAi = d[d.length - 1];
+  const me = d.length >= 2 && d[d.length - 2].role === "user" ? d[d.length - 2] : null;
+  const turnNo = d.filter((x) => x.role === "user").length;
+  const pageBar = el("div", { class: "page-bar" }, el("span", {}, PG.fb && me ? (PG.stage === "fix" ? `${turnNo}번째 답 · 교정` : `${turnNo}번째 답 · 고쳐 말하기`) : `${turnNo + 1}번째 차례 · 상대 말`),
+    el("button", { class: "mini", onclick: () => setLessonView("chat") }, "💬 대화 전체 보기"));
+  // ② 교정 장
+  if (PG.fb && me && PG.stage === "fix") {
+    const f = me.feedback || {};
+    const ok = f.verdict === "natural";
+    const card = meEl(me, true);
+    put(feed, pageBar, el("div", { class: "page-lab" }, "내가 한 말"), card,
+      el("button", { class: "primary", onclick: () => { PG.stage = ok ? "done" : "say"; if (ok) { PG.fb = false; retryTarget = null; } renderLesson(); } }, ok ? "다음 ▶ 상대 말 듣기" : "✏️ 고친 문장 말해 보기 ▶"));
+    return;
+  }
+  // ③ 고쳐 말하기 + 발음 확인
+  if (PG.fb && me && PG.stage === "say") {
+    const f = me.feedback || {};
+    // 먼저 내 문장을 바르게 고친 것(corrected)으로 말해 보고, 더 자연스러운 말(natural)은 아래에 한 단계 더로
+    const model = f.corrected || f.natural;
+    const result = el("div");
+    const sp = el("button", { class: "tool" }, "🔊 모범 듣기"); sp.onclick = () => speak(model, { btn: sp });
+    const slow = el("button", { class: "tool" }, "🐢 천천히"); slow.onclick = () => speak(model, { slow: true, btn: slow });
+    const nextB = el("button", { class: "primary", disabled: !PG.tried, onclick: () => { PG.fb = false; retryTarget = null; renderLesson(); } }, "다음 ▶ 상대 말 듣기");
+    const skipB = el("button", { class: "secondary", style: "width:100%;margin-top:8px", onclick: () => { PG.fb = false; retryTarget = null; renderLesson(); } }, "이번만 건너뛰기");
+    put(feed, pageBar,
+      el("div", { class: "card ans" }, el("span", { class: "speak-pill" }, "이 문장을 말해 보세요"), el("div", { class: "ans-q big", lang: "ja" }, model),
+        f.meant_ko ? el("div", { class: "note", style: "text-align:center" }, f.meant_ko) : null,
+        f.corrected && f.natural && f.corrected !== f.natural ? el("div", { class: "next-level" }, el("span", { class: "hl" }, "한 단계 더"), el("span", { lang: "ja" }, f.natural)) : null,
+        el("div", { class: "model-tools", style: "justify-content:center" }, sp, slow, starBtn({ text: model, meaning_ko: f.meant_ko || "", kind: "sentence" }))),
+      answerCard({ prompt: "🎤 따라 말하기", sub: "다 말하면 들린 글자는 초록, 안 들린 곳은 빨강으로 보여 줘요", expect: model, onDone: (said) => {
+        const r = pronDiff(model, said);
+        PG.tried = true;
+        const pass = r.pct >= 80;
+        if (pass) { retryTarget = null; toast("통과!", "gold"); }
+        nextB.disabled = false;
+        put(result, el("div", { class: "card" }, el("div", { class: "verdict " + (pass ? "v-ok" : r.pct >= 60 ? "v-mid" : "v-bad") }, `${pass ? "⭕ 통과" : "다시 해 보세요"} · 일치 ${r.pct}%`),
+          r.node, el("div", { class: "note" }, "내 말(인식): " + (said || "(무응답)")),
+          r.missed.length ? el("div", { class: "note tip" }, `빨간 곳이 다르게 들렸어요. 발음이 흐렸거나 빠졌을 수 있어요. 🐢 천천히 듣고 그 부분만 또박또박 다시 해 보세요.`) : null,
+          el("button", { class: "secondary", style: "width:100%;margin-top:8px", onclick: () => { PG.tried = true; renderLesson(); } }, "🎤 다시 말하기")));
+        result.scrollIntoView({ behavior: "smooth", block: "start" });
+      } }), result, nextB, skipB);
+    speak(model);
+    return;
+  }
+  // ① 상대 말 장
+  const video = d.find((x) => x.role === "video");
+  put(feed, pageBar, turnNo === 0 && video ? videoEl(video.video) : null, aiEl(lastAi, true),
+    el("div", { class: "page-hint" }, "아래 🎤를 눌러 대답하세요. 막히면 💡 힌트"));
+  if (PG_SPOKEN !== lastAi.reply_ja && turnNo > 0) { PG_SPOKEN = lastAi.reply_ja; playReply(lastAi.reply_ja); }
+  else PG_SPOKEN = lastAi.reply_ja;
+}
+
 function renderLesson() {
   AP.views.clear();
   renderLessonHead();
   const feed = $("#feed");
   feed.replaceChildren();
+  feed.classList.toggle("paged", LV === "page");
+  if (LV === "page" && S.current) { renderPage(feed); feed.scrollTop = 0; return; }
   const d = S.current?.display || [];
   d.forEach((t, i) => feed.append(t.role === "ai" ? aiEl(t, i === d.length - 1) : t.role === "video" ? videoEl(t.video) : meEl(t)));
   if (!S.current) feed.append(el("div", { class: "empty" }, "진행 중인 수업이 없어요. 홈에서 수업을 골라 주세요."));
+  else feed.prepend(el("div", { class: "page-bar" }, el("span", {}, "대화 전체"), el("button", { class: "mini", onclick: () => setLessonView("page") }, "📄 한 장씩 보기")));
   feed.scrollTop = feed.scrollHeight;
 }
 
@@ -699,7 +777,7 @@ function meEl(t, animate = false) {
     btn.onclick = () => speak(f.natural, { btn });
     const match = el("span", { class: "match" });
     const shadow = el("button", { class: "tool", onclick: () => shadowing(f.natural, shadow, match) }, "🎙 따라 말하기");
-    const needFix = f.verdict && f.verdict !== "natural" && animate;
+    const needFix = f.verdict && f.verdict !== "natural" && animate && LV !== "page";
     parts.push(el("div", { class: "lab blue" }, needFix ? "✏️ 고쳐 말하기: 이 문장을 말해서 맞혀야 다음 차례로 넘어가요" : "모범 답안"), el("div", { class: "model", lang: "ja" }, f.natural), el("div", { class: "model-tools" }, btn, shadow, starBtn({ text: f.natural, kind: "sentence" }), match));
     if (needFix) {
       const skip = el("button", { class: "mini", onclick: () => { retryTarget = null; skip.remove(); toast("이번만 넘어가요. 끝나고 다시 연습해요"); } }, "이번만 건너뛰기");
@@ -737,14 +815,25 @@ async function say(text) {
   const feed = $("#feed");
   const pending = el("div", { class: "turn-me" }, el("div", { class: "me-text", lang: "ja" }, text));
   const think = thinkingEl("듣는 중");
+  if (LV === "page") feed.replaceChildren(el("div", { class: "page-lab" }, "내가 한 말"));
   feed.append(pending, think);
   feed.scrollTop = feed.scrollHeight;
   $("#input").value = "";
   autoGrow();
   try {
-    const r = await streamApi("/api/session/say", { text, hint }, (reply) => { playReply(reply); think.lastChild.textContent = " 첨삭 중"; });
+    const r = await streamApi("/api/session/say", { text, hint }, (reply) => { if (LV !== "page") playReply(reply); think.lastChild.textContent = " 첨삭 중"; });
     S.current = r.session;
     S.xp = r.xp; S.todayXp = r.todayXp;
+    if (LV === "page") {
+      // 교정 장부터 보여 주고, 상대의 다음 말은 「다음」을 누르면 읽는다
+      retryTarget = r.turn.feedback?.verdict && r.turn.feedback.verdict !== "natural" && r.turn.feedback.natural ? r.turn.feedback.natural : null;
+      PG = { fb: true, stage: "fix", tried: false };
+      HINT = 0;
+      renderLesson();
+      for (const g of r.turn.points.goalsDone || []) toast(`✓ ${g}`, "gold");
+      for (const m of r.turn.points.done || []) toast(`미션 완료! ${m} +30`, "gold");
+      return;
+    }
     pending.replaceWith(meEl(r.turn, true));
     retryTarget = r.turn.feedback?.verdict && r.turn.feedback.verdict !== "natural" && r.turn.feedback.natural ? r.turn.feedback.natural : null;
     document.querySelectorAll("#feed .mission-card").forEach((x) => x.remove()); // 지난 차례의 할 일은 치움
