@@ -1540,7 +1540,7 @@ function renderPlacement(root) {
 }
 
 // 말로 답하는 카드: 문제를 보여 주고, 마이크를 켜고, 다 말하면 onDone(말한 것, 초, 녹음URL)
-function answerCard({ prompt, sub, hint, lang = SPEECH, limit = 0, onDone, big = false, emoji = "", expect = "", expectReading = "", instant = false }) {
+function answerCard({ prompt, sub, hint, lang = SPEECH, limit = 0, onDone, big = false, emoji = "", expect = "", expectReading = "", instant = false, autoStop = 0 }) {
   const isTarget = !lang.startsWith("ko");
   const live = el("div", { class: "ans-live", lang: isTarget ? LANG : "ko" }, "🎤 마이크를 누르고 말하세요");
   const typed = el("input", { class: "paste-title", placeholder: "말 대신 적어도 돼요", lang: isTarget ? LANG : "ko" });
@@ -1551,7 +1551,7 @@ function answerCard({ prompt, sub, hint, lang = SPEECH, limit = 0, onDone, big =
   const submitB = el("button", { class: "primary ans-submit" }, "이대로 제출");
   const skipB = el("button", { class: "ghost-btn" }, "모르겠어요");
   const reviewTools = el("div", { class: "model-tools", style: "justify-content:center;margin:4px 0" });
-  let t0 = 0, sec = 99, timer = null, said = "", state = "idle", lastAudio = null;
+  let t0 = 0, sec = 99, timer = null, said = "", state = "idle", lastAudio = null, micSaid = "";
   const row = el("div", { class: "ans-row" });
   const pill = el("span", { class: "speak-pill" });
   function draw() {
@@ -1576,13 +1576,17 @@ function answerCard({ prompt, sub, hint, lang = SPEECH, limit = 0, onDone, big =
       lang,
       expect: lang.startsWith("ko") ? "" : expect,
       expectReading: lang.startsWith("ko") ? "" : expectReading,
-      onLive: (t) => { said = t; live.textContent = t || "듣고 있어요…"; },
+      onLive: (t) => {
+        said = t; live.textContent = t || "듣고 있어요…";
+        // 맞게 들리면 마이크를 다시 누르지 않아도 바로 채점
+        if (autoStop && expect && t && rec && similarity(expect, t, expectReading) >= autoStop) rec.stop();
+      },
       onFinal: (t, audioUrl) => {
         clearInterval(timer);
-        said = t;
+        said = t; micSaid = t;
         lastAudio = audioUrl || null;
         if (sec === 99) sec = (Date.now() - t0) / 1000;
-        if (instant && said.trim()) { onDone(said.trim(), sec, lastAudio); return; }
+        if (instant && said.trim()) { onDone(said.trim(), sec, lastAudio, { spoken: true }); return; }
         typed.value = said;
         live.textContent = said ? "내 답: " + said : "잘 못 들었어요. 다시 말하거나 적어 주세요.";
         state = "review";
@@ -1590,7 +1594,7 @@ function answerCard({ prompt, sub, hint, lang = SPEECH, limit = 0, onDone, big =
       },
     });
   }
-  const submit = () => { if (rec) return; clearInterval(timer); onDone((typed.value || said).trim(), sec, lastAudio); };
+  const submit = () => { if (rec) return; clearInterval(timer); const ans = (typed.value || said).trim(); onDone(ans, sec, lastAudio, { spoken: !!ans && ans === micSaid.trim() }); };
   micB.onclick = () => (rec ? rec.stop() : startMic());
   cancelB.onclick = () => { if (rec) rec.abort(); clearInterval(timer); said = ""; lastAudio = null; live.textContent = "취소했어요. 다시 마이크를 누르세요"; state = "idle"; setTimeout(draw, 250); };
   retryB.onclick = () => { typed.value = ""; lastAudio = null; startMic(); };
@@ -1878,6 +1882,7 @@ function stepCourseBlitz(body) {
             diff.node,
             LANG === "ja" && it.reading ? el("div", { class: "note", style: "text-align:center;margin-top:4px" }, it.reading) : null,
             el("div", { class: "note", lang: LANG, style: "text-align:center" }, "내 말(인식): " + (said || "(무응답)")),
+            !ok && said ? (() => { const slot = el("div"); const cb = el("button", { class: "tool", onclick: () => { cb.remove(); slot.replaceChildren(pronTipCard(it.ja, said, it.reading || "") || ""); } }, "🗣 발음 코치"); return el("div", { style: "text-align:center" }, cb, slot); })() : null,
             el("div", { class: "model-tools", style: "justify-content:center" }, sp, slow, myAudioBtn(audioUrl, "🎙 내 발음"), starBtn({ text: it.ja, reading: it.reading || "", meaning_ko: it.ko, kind: "sentence" })),
             el("div", { class: "row-btns", style: "margin-top:10px" }, retryBtn, nextBtn)));
         if (!ok) speak(it.ja); else passFx();
@@ -2801,13 +2806,43 @@ function vocabLearn(root) {
   speak(w.w);
 }
 // 시험: 상자가 낮으면 그림·뜻 보고 말하기, 높으면 낱말 보고 뜻 떠올리기(스스로 채점)
+// 다른 말로 인식됐을 때: 무엇이 달랐는지 발음 코치(같은 짝은 서버에 저장돼 다시 안 물어봄)
+function pronTipCard(target, heard, reading = "") {
+  if (!heard || !target || heard.trim().toLowerCase() === target.trim().toLowerCase()) return null;
+  const box = el("div", { class: "pron-tip" }, el("div", { class: "pt-h" }, "🗣 왜 다르게 들렸을까"), thinkingEl("발음 비교하는 중"));
+  api("/api/pron/tip", { method: "POST", body: JSON.stringify({ target, heard, reading }) }).then(({ tip }) => {
+    const pr = (tip.practice || []).map((x) => { const b = el("button", { class: "chip" }, "🔊 " + x); b.onclick = () => speak(x, { btn: b }); return b; });
+    box.replaceChildren(el("div", { class: "pt-h" }, "🗣 왜 다르게 들렸을까"),
+      el("div", { class: "pt-row" }, el("span", { class: "pt-ok" }, "말하려던 소리"), el("b", { lang: LANG }, target), el("span", {}, tip.target_sound)),
+      el("div", { class: "pt-row" }, el("span", { class: "pt-bad" }, "들린 소리"), el("b", { lang: LANG }, heard), el("span", {}, tip.heard_sound)),
+      el("ul", {}, (tip.diff_ko || []).map((d) => el("li", {}, d))),
+      el("div", { class: "pt-fix" }, tip.fix_ko),
+      pr.length ? el("div", { class: "chips", style: "margin:6px 0 0" }, pr) : null);
+  }).catch(() => box.remove());
+  return box;
+}
+// 단어 사이 옮겨 다니기: 이전·다음·목록
+function vocabNav(root) {
+  const go = (i) => { speechSynthesis.cancel(); stopMyAudio(); if (rec) { try { rec.abort(); } catch {} } VS.i = Math.max(0, Math.min(VS.queue.length - 1, i)); VS.list = false; renderWeak(); };
+  const mark = (id) => (id in VS.res ? (VS.res[id] ? "⭕" : "❌") : "·");
+  const nav = el("div", { class: "vnav" },
+    el("button", { class: "mini", disabled: VS.i <= 0, onclick: () => go(VS.i - 1) }, "‹ 이전"),
+    el("button", { class: "mini", onclick: () => { VS.list = !VS.list; renderWeak(); } }, VS.list ? "목록 닫기" : "☰ 단어 목록"),
+    el("button", { class: "mini", disabled: VS.i >= VS.queue.length - 1, onclick: () => go(VS.i + 1) }, "다음 ›"),
+    el("button", { class: "mini", onclick: () => { VS.i = VS.queue.length; renderWeak(); } }, "여기까지 끝내기"));
+  if (!VS.list) return nav;
+  const seen = new Set();
+  const rows = VS.queue.map((id, i) => [id, i]).filter(([id]) => (seen.has(id) ? false : seen.add(id)));
+  return [nav, el("div", { class: "vlist" }, rows.map(([id, i]) => { const w = VS.items[id];
+    return el("button", { class: "vl-item" + (i === VS.i ? " now" : ""), onclick: () => go(i) }, el("span", { class: "vl-m" }, mark(id)), el("b", { lang: LANG }, w.w), el("span", {}, w.m)); }))];
+}
 function vocabQuiz(root) {
   if (VS.i >= VS.queue.length) { VS.phase = "done"; return renderWeak(); }
   const id = VS.queue[VS.i];
   const w = VS.items[id];
   const tries = VS.tries[id] || 0;
-  const head = el("div", {}, el("div", { class: "step-name" }, `${VS.i + 1} / ${VS.queue.length}${tries ? " · 🔁 다시" : ""} · ${w.level || ""}`),
-    el("div", { class: "stepdots" }, el("span", { class: "ok", style: `flex:${VS.i}` }), el("span", { style: `flex:${Math.max(1, VS.queue.length - VS.i)}` })));
+  const head = el("div", {}, el("div", { class: "step-name" }, `${VS.i + 1} / ${VS.queue.length}${tries ? " · 🔁 다시" : ""} · ${w.level || ""}${id in VS.res ? (VS.res[id] ? " · ⭕ 맞힘" : " · ❌ 틀림") : ""}`),
+    el("div", { class: "stepdots" }, el("span", { class: "ok", style: `flex:${VS.i}` }), el("span", { style: `flex:${Math.max(1, VS.queue.length - VS.i)}` })), vocabNav(root));
   const record = (ok) => {
     if (ok) passFx();
     if (!(id in VS.res)) VS.res[id] = ok; // 간격 반복에는 첫 답만
@@ -2823,13 +2858,17 @@ function vocabQuiz(root) {
     put(root, head, el("div", { class: "card ans" }, el("span", { class: "speak-pill rv" }, "뜻을 떠올려 보세요"), el("div", { class: "ans-q big", lang: LANG }, w.w), ans), showB);
     return;
   }
-  put(root, head, answerCard({ prompt: w.m, emoji: w.emoji, limit: 3, big: true, expect: w.w, expectReading: w.r || "", onDone: (said, sec, audioUrl) => {
+  put(root, head, answerCard({ prompt: w.m, emoji: w.emoji, limit: 3, big: true, expect: w.w, expectReading: w.r || "", instant: true, autoStop: 85,
+    hint: "마이크를 누르고 말하면 맞는 순간 바로 넘어가요. 안 넘어가면 마이크를 한 번 더 누르세요", onDone: (said, sec, audioUrl, how = {}) => {
     const pct = similarity(w.w, said, w.r || "");
     const ok = pct >= 70;
     record(ok);
+    const diff = !ok && said ? pronDiff(w.w, said, w.r || "") : null;
     const sp = el("button", { class: "tool" }, "🔊"); sp.onclick = () => speak(w.ex_ja || w.w, { btn: sp });
     put(root, head, el("div", { class: "card ans" }, el("div", { class: "ans-emoji" }, ok ? "⭕" : "❌"), el("div", { class: "ans-q big", lang: LANG }, w.w), el("div", { class: "note", style: "text-align:center" }, `${w.r} · ${w.m}`),
       el("div", { class: "note", lang: LANG, style: "text-align:center" }, `내 말: ${said || "(무응답)"} · 일치 ${pct}%${sec <= 3 && ok ? " · ⚡빠름" : ""}`),
+      diff ? diff.node : null,
+      !ok && said && how.spoken ? pronTipCard(w.w, said, w.r || "") : null,
       w.ex_ja ? el("div", { class: "model", lang: LANG }, w.ex_ja, el("div", { class: "note" }, w.ex_ko)) : null,
       el("div", { class: "model-tools", style: "justify-content:center" }, sp, myAudioBtn(audioUrl, "🎙 내 발음"), starBtn({ text: w.w, reading: w.r, meaning_ko: w.m, ex_ja: w.ex_ja, ex_ko: w.ex_ko }))),
       el("button", { class: "primary", onclick: () => { speechSynthesis.cancel(); stopMyAudio(); renderWeak(); } }, "다음"));
