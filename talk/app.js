@@ -517,7 +517,7 @@ function renderHome() {
     el("div", { class: "h" }, "목소리"),
     el("div", { class: "voice-row" }, sel),
     el("div", { class: "h" }, "상대 말 속도 (수업·듣기·코스 모두)"), rateSel,
-    el("div", { class: "voice-row" }, `모델 ${S.model} · 오늘 $${S.cost.today.toFixed(3)}`)
+    el("div", { class: "voice-row" }, `모델 ${S.model} · 오늘 $${S.cost.today.toFixed(3)}` + (S.tts ? ` · 듣기 음성 이번 달 ${Math.round(S.tts.used / 1000)}천 / ${S.tts.cap / 10000}만 자` : ""))
   );
 }
 
@@ -1524,7 +1524,7 @@ async function loadListenAudio(item) {
       if (hit) { blob = await hit.blob(); marks = JSON.parse(decodeURIComponent(hit.headers.get("x-marks") || "[]")); }
       else {
         const r = await api("/api/listen/audio", { method: "POST", body: JSON.stringify({ lines: item.lines.map((l) => ({ speaker: l.speaker, gender: l.gender, text: l.text })) }) });
-        blob = b64Blob(r.mp3); marks = r.marks;
+        blob = b64Blob(r.mp3); marks = r.marks; if (S.tts) S.tts.used = r.used;
         cache?.put(key, new Response(blob, { headers: { "content-type": "audio/mpeg", "x-marks": encodeURIComponent(JSON.stringify(marks)) } })).catch(() => {});
       }
       if (LA.url) URL.revokeObjectURL(LA.url);
