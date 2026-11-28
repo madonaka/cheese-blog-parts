@@ -619,7 +619,9 @@ function aiEl(t, latest = false) {
       el("div", { class: "ai-tools" }, ptools, subBtn, koBtn, starBtn({ text: t.reply_ja || "", meaning_ko: t.reply_ko || "", kind: "sentence" }), n ? el("span", { class: "tool", style: "border:0;color:var(--gold)" }, `어려운 말 ${n}개`) : null),
       text, koLine, hard)));
   if (t.task_ko) wrap.append(el("div", { class: "task" }, t.task_ko));
-  if (latest && t.next?.mission_ko) wrap.append(missionCard(t.next));
+  if (latest && t.wrap_up) wrap.append(el("div", { class: "wrap-card" }, el("b", {}, "🏁 대화 끝"), el("div", { class: "note" }, "성적표를 보고, 이번 대화에서 틀린 문장을 다시 말하는 연습으로 마무리해요."),
+    el("button", { class: "primary", onclick: () => endLesson() }, "끝내고 성적표 · 고쳐 말하기 연습")));
+  else if (latest && t.next?.mission_ko) wrap.append(missionCard(t.next));
   return wrap;
 }
 
@@ -697,7 +699,12 @@ function meEl(t, animate = false) {
     btn.onclick = () => speak(f.natural, { btn });
     const match = el("span", { class: "match" });
     const shadow = el("button", { class: "tool", onclick: () => shadowing(f.natural, shadow, match) }, "🎙 따라 말하기");
-    parts.push(el("div", { class: "lab blue" }, f.verdict && f.verdict !== "natural" ? "모범 답안 · 이 문장으로 한 번 따라 말하고 넘어가요" : "모범 답안"), el("div", { class: "model", lang: "ja" }, f.natural), el("div", { class: "model-tools" }, btn, shadow, starBtn({ text: f.natural, kind: "sentence" }), match));
+    const needFix = f.verdict && f.verdict !== "natural" && animate;
+    parts.push(el("div", { class: "lab blue" }, needFix ? "✏️ 고쳐 말하기: 이 문장을 말해서 맞혀야 다음 차례로 넘어가요" : "모범 답안"), el("div", { class: "model", lang: "ja" }, f.natural), el("div", { class: "model-tools" }, btn, shadow, starBtn({ text: f.natural, kind: "sentence" }), match));
+    if (needFix) {
+      const skip = el("button", { class: "mini", onclick: () => { retryTarget = null; skip.remove(); toast("이번만 넘어가요. 끝나고 다시 연습해요"); } }, "이번만 건너뛰기");
+      parts.push(el("div", { class: "fix-row" }, el("span", {}, "모범 답안을 보고 🎙 따라 말하기를 누르세요. 70% 넘으면 통과."), skip));
+    }
   }
   if (f.upgrades?.length || f.circumlocution?.length) {
     parts.push(el("div", { class: "lab gold" }, "한 단계 위 표현"));
@@ -793,6 +800,7 @@ function showReport(r, readonly = false) {
     el("ul", { class: "mlist" }, r.missions.map((m) => el("li", { class: m.done ? "ok" : "" }, m.text))),
     r.suggestLevelUp ? el("div", { class: "levelup" }, el("b", {}, "승급 시험 통과! "), `이 단계에서 3번 연속 A 이상이에요. ${r.level + 1}단계로 올려 볼까요?`,
       el("button", { class: "primary", style: "margin-top:10px", onclick: () => { setLevel(r.level + 1); closeModal(); toast(`${r.level + 1}단계로 올렸어요`, "gold"); } }, `${r.level + 1}단계로 올리기`)) : null,
+    (r.fixes?.length || r.ups?.length) && !readonly ? el("button", { class: "primary", style: "margin:6px 0 4px", onclick: () => fixDrill(r) }, `✏️ 이번 대화 다시 말하기 연습 (${(r.fixes?.length || 0) + (r.ups?.length || 0)}문제)`) : null,
     r.graduated?.length ? [el("div", { class: "h" }, "🎓 졸업한 약점"), el("div", { class: "taglist" }, r.graduated.map((x) => el("span", { class: "tag" }, x)))] : null,
     r.advanced?.length ? [el("div", { class: "h" }, "잘 쓴 표현"), el("div", { class: "taglist" }, r.advanced.map((x) => el("span", { class: "tag" }, x)))] : null,
     r.newWeak?.length ? [el("div", { class: "h" }, `약점 노트에 새로 담김 ${r.newWeak.length}개 (다음 수업에 다시 나와요)`), el("div", { class: "taglist" }, r.newWeak.map((x) => el("span", { class: "tag" }, x)))] : null,
@@ -802,6 +810,44 @@ function showReport(r, readonly = false) {
   );
   $("#modal").hidden = false;
 }
+// 끝난 뒤 정리 연습: 「하려던 말」(한국어)만 보고 다시 말하기 → 한 단계 위 표현으로 바꿔 말하기. 맞힐 때까지(3번까지)
+function fixDrill(r) {
+  const items = [
+    ...(r.fixes || []).map((x) => ({ prompt: x.meant_ko || `이 말을 바르게: ${x.said}`, sub: `내가 한 말: ${x.said}`, model: x.natural, why: x.why })),
+    ...(r.ups || []).map((x) => ({ prompt: `「${x.plain}」 대신 더 나은 말로 (${x.meaning_ko})`, sub: "한 단계 위 표현으로 바꿔 말하기", model: x.better, why: "" })),
+  ];
+  const D = { q: items.map((_, i) => i), i: 0, tries: {}, ok: 0 };
+  const sheet = $("#sheet");
+  const step = () => {
+    if (D.i >= D.q.length) {
+      put(sheet, el("h2", {}, "다시 말하기 연습 끝"), el("div", { class: "report-top" }, el("div", { class: "stamp txt g-A" }, `${D.ok}/${items.length}`), el("div", {}, el("div", { class: "sub" }, "한 번에 맞힌 문장 수예요. 틀렸던 문장은 단어장 ⭐에 담아 두면 다시 나와요."))),
+        items.map((it) => el("div", { class: "hard-item" }, el("b", { lang: "ja" }, it.model), starBtn({ text: it.model, meaning_ko: it.prompt, kind: "sentence" }))),
+        el("button", { class: "primary", style: "margin-top:12px", onclick: closeModal }, "닫기"));
+      return;
+    }
+    const k = D.q[D.i], it = items[k], tries = D.tries[k] || 0;
+    const sp = el("button", { class: "tool" }, "🔊 모범 듣기"); sp.onclick = () => speak(it.model, { btn: sp });
+    put(sheet, el("div", { class: "step-name" }, `다시 말하기 ${D.i + 1} / ${D.q.length}${tries ? " · 🔁 모범을 보고 다시" : ""}`),
+      tries ? el("div", { class: "card" }, el("div", { class: "note" }, "모범 문장을 듣고 따라 말하세요"), el("div", { class: "model", lang: "ja" }, it.model), el("div", { class: "model-tools" }, sp)) : null,
+      answerCard({ prompt: it.prompt, sub: it.sub, big: true, expect: it.model, onDone: (said) => {
+        const pct = similarity(it.model, said);
+        const ok = pct >= 75;
+        D.tries[k] = tries + 1;
+        if (ok && !tries) D.ok++;
+        if (!ok && tries + 1 < 3) D.q.push(k);
+        D.i++;
+        const sp2 = el("button", { class: "tool" }, "🔊"); sp2.onclick = () => speak(it.model, { btn: sp2 });
+        put(sheet, el("div", { class: "card ans" }, el("div", { class: "ans-emoji" }, ok ? "⭕" : "❌"), el("div", { class: "note" }, `내 말: ${said || "(무응답)"} · 일치 ${pct}%`),
+          el("div", { class: "model", lang: "ja" }, it.model), it.why ? el("div", { class: "note tip" }, it.why) : null, el("div", { class: "model-tools", style: "justify-content:center" }, sp2, starBtn({ text: it.model, meaning_ko: it.prompt, kind: "sentence" })),
+          !ok && tries + 1 < 3 ? el("div", { class: "note tip" }, "끝에서 모범 문장을 보며 한 번 더 해요.") : null,
+          el("button", { class: "primary", onclick: () => { speechSynthesis.cancel(); step(); } }, "다음")));
+        if (!ok) speak(it.model);
+      } }));
+  };
+  step();
+  $("#modal").hidden = false;
+}
+
 function closeModal() { $("#modal").hidden = true; }
 $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") closeModal(); });
 
@@ -1905,8 +1951,8 @@ $("#micBtn").addEventListener("click", () => {
   if (!SR) { toast("이 브라우저는 음성 인식이 안 돼요. 크롬이나 엣지를 써 주세요."); return; }
   if (busy || !S.current) return;
   if (retryTarget) {
-    retryTarget = null;
-    toast("먼저 모범 답안을 🎙 따라 말해 보세요. 한 번 더 누르면 그냥 넘어가요.");
+    toast("먼저 위의 ✏️ 고쳐 말하기를 통과하거나 「이번만 건너뛰기」를 눌러 주세요.");
+    document.querySelector("#feed .fix-row")?.scrollIntoView({ block: "center", behavior: "smooth" });
     return;
   }
   const koNow = koOnce; koOnce = false; $("#koBtn")?.classList.remove("on");
@@ -1945,7 +1991,8 @@ function shadowing(target, btn, out, onScore) {
       const pct = similarity(target, t);
       out.textContent = `일치 ${pct}%` + (pct >= 90 ? " 완벽!" : pct >= 70 ? " 좋아요" : "");
       onScore?.(pct);
-      if (pct >= 70 && retryTarget === target) { retryTarget = null; toast("좋아요! 이제 다음 말로 넘어가요"); }
+      if (pct >= 70 && retryTarget === target) { retryTarget = null; document.querySelectorAll("#feed .fix-row").forEach((x) => x.replaceWith(el("div", { class: "note good" }, "✓ 고쳐 말하기 통과"))); toast("통과! 이제 다음 말로 넘어가요", "gold"); }
+      else if (retryTarget === target) toast(`일치 ${pct}%. 한 번 더 해 보세요`);
     },
   });
 }
