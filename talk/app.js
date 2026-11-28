@@ -184,6 +184,40 @@ function starBtn({ text, reading = "", meaning_ko = "", kind = "word", ex_ja = "
   return b;
 }
 
+// ---------- 문장 속 낱말 골라 저장: 대본·말풍선·모범 문장에서 길게 눌러 고르면 「☆ 단어장에」 단추가 뜸 ----------
+const PICK_SEL = '[lang="ja"], [lang="en"]';
+let pickChip = null;
+function hidePickChip() { pickChip?.remove(); pickChip = null; }
+function showPickChip() {
+  const sel = getSelection();
+  const text = sel && !sel.isCollapsed ? sel.toString().replace(/\s+/g, " ").trim() : "";
+  if (!text || text.length > 30 || /[가-힣]/.test(text)) return hidePickChip();
+  const node = sel.anchorNode?.nodeType === 1 ? sel.anchorNode : sel.anchorNode?.parentElement;
+  const host = node?.closest(PICK_SEL);
+  if (!host || host.closest("input, textarea, #composer")) return hidePickChip();
+  const rect = sel.getRangeAt(0).getBoundingClientRect();
+  const context = (host.closest(".ja-text, .model, .ls-text, .bubble, .card, p, div") || host).textContent.replace(/\s+/g, " ").trim().slice(0, 300);
+  hidePickChip();
+  pickChip = el("button", { class: "pick-chip", onmousedown: (e) => e.preventDefault(), onclick: async () => {
+    const b = pickChip; if (!b) return;
+    b.disabled = true; b.textContent = "뜻 찾는 중…";
+    try {
+      const r = await api("/api/vocab/save", { method: "POST", body: JSON.stringify({ text, kind: "word", context }) });
+      SAVED.add(r.item?.w || text); if (VB) VB.vocab = r.vocab;
+      toast(`⭐ ${r.item?.w || text}${r.item?.r && r.item.r !== r.item.w ? ` (${r.item.r})` : ""} · ${r.item?.m || ""}`);
+      getSelection()?.removeAllRanges();
+    } catch (er) { toast(er.message); }
+    hidePickChip();
+  } }, `☆ 「${text.length > 12 ? text.slice(0, 12) + "…" : text}」 단어장에`);
+  document.body.append(pickChip);
+  const top = rect.top > 60 ? rect.top - 46 : rect.bottom + 8;
+  pickChip.style.top = `${Math.max(8, top)}px`;
+  pickChip.style.left = `${Math.min(innerWidth - pickChip.offsetWidth - 8, Math.max(8, rect.left + rect.width / 2 - pickChip.offsetWidth / 2))}px`;
+}
+let pickT = null;
+document.addEventListener("selectionchange", () => { clearTimeout(pickT); pickT = setTimeout(showPickChip, 350); });
+addEventListener("scroll", hidePickChip, true);
+
 function toast(text, cls = "") {
   const t = $("#toast");
   t.textContent = text;
@@ -1444,8 +1478,14 @@ function renderRecord() {
 const CR_KEY = LANG === "en" ? "course_run_en" : "course_run";
 let CR = JSON.parse(localStorage.getItem(CR_KEY) || "null"); // { key, day(=회차), step, score, pkg, review, plan, answers, graded, i, blitz }
 const saveCR = () => localStorage.setItem(CR_KEY, JSON.stringify(CR));
+let TOEIC_TIMER = null;
+const stopToeicTimer = () => { if (TOEIC_TIMER) { clearInterval(TOEIC_TIMER); TOEIC_TIMER = null; } };
 const stepsOf = () => {
-  if (CR?.pkg?.test) return [["test", "주간 시험"], ["talk", "미니 회화"], ["done", "완료"]];
+  if (CR?.pkg?.test) {
+    return CR?.pkg?.toeic?.length
+      ? [["test", "주간 말하기 시험"], ["toeic", "⏱ 토익 미니 테스트"], ["talk", "미니 회화"], ["done", "완료"]]
+      : [["test", "주간 시험"], ["talk", "미니 회화"], ["done", "완료"]];
+  }
   const s2 = [["pattern", "문형"], ["expr", "표현 5"], ["words", "단어 10"], ["drills", "🔥 폭격 드릴"], ["trans", PAIR]];
   if (CR?.pkg?.toeic?.length) s2.push(["toeic", "토익"]);
   return [...s2, ["talk", "미니 회화"], ["review", "복습"], ["done", "완료"]];
@@ -1453,6 +1493,51 @@ const stepsOf = () => {
 let CR_BLITZ_NET = { fetching: false, err: "", waiting: false };
 let PL = null;   // 진단 진행 { i, answers, result, check }
 let PICK = null; // 반을 고른 뒤 주 횟수 고르기 { key }
+
+// 반별 고정 마스터 커리큘럼 달성률 + 졸업 후 가능한 대화(Can-do) 6가지 체크리스트 카드
+function canDoCard(courseKey, co = null) {
+  const syl = S.courseMeta?.SYLLABUS?.[courseKey];
+  if (!syl) return null;
+  let doneUnits = 0;
+  const doneUnitSet = new Set();
+  if (co) {
+    let fallbackDone = 0;
+    for (const d of co.plan || []) {
+      if (!co.done?.[d.n]) continue;
+      if (d.unitNo) doneUnitSet.add(d.unitNo);
+      else if (!d.test) fallbackDone++;
+    }
+    doneUnits = Math.min(syl.totalUnits, doneUnitSet.size + fallbackDone);
+  }
+  const pct = Math.round((doneUnits / Math.max(1, syl.totalUnits)) * 100);
+  const items = (syl.canDo || []).map((txt, idx) => {
+    const startU = idx * 4 + 1, endU = Math.min(syl.totalUnits, (idx + 1) * 4);
+    const unlocked = co && doneUnits >= endU;
+    const active = co && doneUnits >= startU && doneUnits < endU;
+    return el("li", { class: unlocked ? "ok" : active ? "now" : "" },
+      el("span", { class: "cd-ico" }, unlocked ? "✅" : active ? "🔵" : "○"),
+      el("div", { class: "cd-txt" }, el("span", {}, txt), el("em", {}, `유닛 ${startU}~${endU}`)));
+  });
+  return el("div", { class: "card cando-card" },
+    el("div", { class: "cd-head" },
+      el("span", { class: "lab blue", style: "margin:0" }, "🎓 졸업 목표 · 검증된 고정 커리큘럼"),
+      co ? el("b", { class: "cd-pct" }, `${doneUnits}/${syl.totalUnits}유닛 · ${pct}%`) : el("span", { class: "mini", style: "pointer-events:none" }, syl.duration)),
+    el("div", { class: "cd-badge" }, syl.badge),
+    co ? el("div", { class: "limit", style: "margin:8px 0 10px" }, el("i", { style: `width:${pct}%;background:var(--brand)` })) : null,
+    el("div", { class: "note", style: "margin:4px 0 8px" }, co ? "이 반을 완수하면 아래 6가지가 가능해져요 (4유닛 완료마다 자동 체크):" : "이 반을 완수하면 아래 6가지 실전 대화가 가능해져요:"),
+    el("ul", { class: "cando-list" }, items),
+    el("details", { class: "roadmap-det" },
+      el("summary", {}, `📚 고정 마스터 커리큘럼 ${syl.totalUnits}유닛 전체 로드맵 보기`),
+      el("div", { class: "roadmap-list" }, (syl.units || []).map((u) => {
+        const isDone = doneUnitSet.has(u.unitNo) || (co && !doneUnitSet.size && u.unitNo <= doneUnits);
+        return el("div", { class: "rm-item" + (isDone ? " done" : "") },
+          el("span", { class: "rm-no" }, isDone ? "✓" : String(u.unitNo)),
+          el("div", { class: "rm-body" },
+            el("b", { lang: LANG }, u.pattern),
+            el("span", {}, `${u.pattern_ko} · ${u.theme_ko}`)),
+          u.grammar_tag ? el("span", { class: "rm-tag" }, u.grammar_tag) : null);
+      }))));
+}
 
 // 이번 주(월~일, 일본 시간) 몇 번 했는지와 연속 달성 주
 function weekKey(dateStr) {
@@ -1489,6 +1574,7 @@ function perWeekPicker(onPick, current) {
 }
 
 function renderCourse() {
+  stopToeicTimer();
   const root = $("#view-course");
   holdScroll(root, CR && S.course && CR.key === S.course.key ? `day-${CR.step}-${CR.i}-${CR.blitz?.i ?? ""}-${CR.blitz?.done ? "d" : ""}-${CR.graded ? "g" : ""}` : PL ? `pl-${PL.i}` : PICK ? "pick" : "course-main");
   if (CR && S.course && CR.key === S.course.key && S.course.v === 2 && !COURSE_AWAY) return renderDay(root);
@@ -1497,6 +1583,7 @@ function renderCourse() {
   if (PICK) {
     const c = C.COURSES.find((x) => x.key === PICK.key);
     put(root, el("div", { class: "card" }, el("div", { class: "id-sub" }, "고른 반"), el("b", {}, c.name), el("div", { class: "note" }, c.desc)),
+      canDoCard(PICK.key),
       perWeekPicker((n) => beginCourse(PICK.key, n)),
       el("button", { class: "secondary", style: "width:100%", onclick: () => { PICK = null; renderCourse(); } }, "← 반 다시 고르기"));
     return;
@@ -1504,14 +1591,20 @@ function renderCourse() {
   if (!S.course) {
     put(root,
       el("div", { class: "card idcard" },
-        el("div", { class: "id-sub" }, `${LNAME} 코스`), el("div", { class: "id-rank" }, "주 몇 회 목표로, 4주씩 쌓기"),
-        el("div", { class: "id-sub", style: "margin-top:6px" }, `문형 → 표현 5 → 그림 단어 10 → 🔥 폭격 드릴(최대 50문장) → ${PAIR}${LANG === "en" ? " → (토익반은 토익 문제)" : ""} → 미니 회화 → 복습. 매주 마지막 회차는 주간 시험, 4주마다 진단을 다시 봐서 반을 올려요.`)),
+        el("div", { class: "id-sub" }, `${LNAME} 코스`), el("div", { class: "id-rank" }, "검증된 24유닛 고정 커리큘럼"),
+        el("div", { class: "id-sub", style: "margin-top:6px" }, `문형 → 표현 5 → 그림 단어 10 → 🔥 폭격 드릴(최대 50문장) → ${PAIR}${LANG === "en" ? " → (토익반은 Part 2~7 + 주간 타이머 시험)" : ""} → 미니 회화 → 복습. 빠짐없이 밟고 4주마다 진단으로 실력을 검증해요.`)),
       el("button", { class: "challenge", onclick: () => { PL = { i: 0, answers: [] }; renderCourse(); } },
         el("span", { class: "ico" }, "📝"), el("div", {}, el("b", {}, "5분 진단 시험 보고 반 정하기"), el("span", {}, `한국어 문장 6개를 ${LNAME}로 말해요.${LANG === "en" ? " 하나도 못 해도 괜찮아요. 입문반부터 시작해요." : ""}`))),
       S.placement ? el("div", { class: "card" }, el("b", {}, "지난 진단 결과: " + (C.COURSES.find((c) => c.key === S.placement.course)?.name || "")), el("div", { class: "note" }, S.placement.comment_ko)) : null,
-      el("div", { class: "h" }, "반 바로 고르기"),
-      el("div", { class: "scenes" }, C.COURSES.map((c) => el("button", { class: "scene tile", onclick: () => { PICK = { key: c.key }; renderCourse(); } },
-        S.placement?.course === c.key ? el("small", {}, "추천") : null, el("b", {}, c.name), el("span", {}, c.desc), el("i", { class: "tile-emoji" }, tileEmoji(c.key))))));
+      el("div", { class: "h" }, "반 바로 고르기 (눌러서 24유닛 로드맵 확인)"),
+      el("div", { class: "scenes" }, C.COURSES.map((c) => {
+        const syl = C.SYLLABUS?.[c.key];
+        return el("button", { class: "scene tile", onclick: () => { PICK = { key: c.key }; renderCourse(); } },
+          S.placement?.course === c.key ? el("small", {}, "추천") : null,
+          el("b", {}, c.name),
+          el("span", {}, syl ? `${c.desc} · ${syl.badge.replace(/^도달 목표:\s*/, "")}` : c.desc),
+          el("i", { class: "tile-emoji" }, tileEmoji(c.key)));
+      })));
     return;
   }
   const co = S.course;
@@ -1519,7 +1612,7 @@ function renderCourse() {
     // 옛 30일 코스: 주 횟수만 정하면 끝낸 회차는 그대로 두고 이어서 짬
     put(root, el("div", { class: "card" }, el("b", {}, "코스가 「주 몇 회 목표」 방식으로 바뀌었어요"),
       el("div", { class: "note" }, `${co.name}에서 끝낸 ${Object.keys(co.done).length}회차는 그대로 남고, 남은 회차를 주 횟수에 맞춰 다시 짜요.`)),
-      perWeekPicker(async (n) => { put(root, el("div", { class: "card" }, thinkingEl("남은 회차를 짜는 중 (20~30초)"))); try { const r = await api("/api/course/per-week", { method: "POST", body: JSON.stringify({ perWeek: n }) }); S.course = r.course; } catch (e) { toast(e.message); } renderCourse(); }));
+      perWeekPicker(async (n) => { put(root, el("div", { class: "card" }, thinkingEl("남은 회차를 짜는 중"))); try { const r = await api("/api/course/per-week", { method: "POST", body: JSON.stringify({ perWeek: n }) }); S.course = r.course; } catch (e) { toast(e.message); } renderCourse(); }));
     return;
   }
   const doneN = Object.keys(co.done).length;
@@ -1545,6 +1638,7 @@ function renderCourse() {
       : el("button", { class: "challenge", onclick: () => openDay(next.n) },
           el("span", { class: "ico" }, next.test ? "📝" : "▶"),
           el("div", {}, el("b", {}, `${next.n}회차 ${next.test ? "주간 시험" : "시작"}`), el("span", {}, `${next.theme_ko} · ${next.pattern}`))),
+    canDoCard(co.key, co),
     lastCheck ? el("div", { class: "card" }, el("div", { class: "note" }, `지난 진단 ${lastCheck.total}/60점${co.baseline != null ? ` · 처음 ${co.baseline}점에서 ${lastCheck.total - co.baseline >= 0 ? "+" : ""}${lastCheck.total - co.baseline}` : ""}`)) : null,
     el("div", { class: "h" }, `이번 4주 · ${block.from}~${block.to}회차`),
     weeks.map((wk, wi) => el("div", { class: "weekrow" }, el("span", { class: "wk-lab" }, `${wi + 1}주`),
@@ -1562,7 +1656,7 @@ function renderCourse() {
 
 async function beginCourse(key, perWeek) {
   const root = $("#view-course");
-  put(root, el("div", { class: "card" }, thinkingEl("4주 커리큘럼을 짜는 중 (20~30초)")));
+  put(root, el("div", { class: "card" }, thinkingEl("고정 마스터 커리큘럼을 준비하는 중")));
   try {
     const r = await api("/api/course/start", { method: "POST", body: JSON.stringify({ key, perWeek }) });
     S.course = r.course; PL = null; PICK = null; CR = null; saveCR();
@@ -1694,7 +1788,8 @@ async function openDay(day) {
 
 function addScore(n) { CR.score += n; saveCR(); }
 function nextStep() {
-  CR.step++; CR.i = 0; CR.answers = []; CR.graded = null; CR.queue = null; CR.tries = null; CR.redo = null; CR.blitz = null;
+  stopToeicTimer(); stopLines();
+  CR.step++; CR.i = 0; CR.answers = []; CR.graded = null; CR.queue = null; CR.tries = null; CR.redo = null; CR.blitz = null; CR.toeicTimer = null;
   CR_BLITZ_NET = { fetching: false, err: "", waiting: false };
   saveCR(); renderCourse(); $("#view-course").scrollTop = 0;
 }
@@ -2084,42 +2179,168 @@ function stepTrans(body) {
   }
 }
 
-// 토익 문제: Part 2(듣고 응답 고르기) · Part 5(빈칸) · Part 7(지문). 바로 채점
+// 토익 문제: Part 2(질의응답) · Part 3(대화) · Part 4(담화) · Part 5(문법·어휘) · Part 6(장문 빈칸·문장삽입) · Part 7(독해)
+// 주간 시험(CR.pkg.test)에서는 제한 시간 카운트다운 실전 미니 테스트로 동작
 function stepToeic(body) {
+  stopToeicTimer();
   const list = CR.pkg.toeic || [];
-  if (CR.i >= list.length) {
-    const ok = CR.answers.filter((a) => a?.ok).length;
-    put(body, el("div", { class: "card" }, el("div", { class: "big", style: "font-size:26px;font-weight:800" }, `토익 ${ok} / ${list.length}`), el("div", { class: "note" }, "틀린 문제는 약점 노트에 담았어요.")),
+  const isTest = !!CR.pkg.test;
+  const subListOf = (item) => (item.subqs?.length ? item.subqs : [{ q: item.q, choices: item.choices, answer: item.answer, explain_ko: item.explain_ko }]);
+  const totalQ = list.reduce((n, item) => n + subListOf(item).length, 0);
+  if (!CR.toeicTimer) {
+    CR.toeicTimer = { started: Date.now(), limitSec: isTest ? Math.max(300, totalQ * 45) : 0, timedOut: false };
+    saveCR();
+  }
+  const T = CR.toeicTimer;
+  const doneNow = CR.i >= list.length || T.timedOut;
+
+  if (doneNow) {
+    stopLines();
+    const flat = [];
+    const byPart = {};
+    list.forEach((item, idx) => {
+      const subs = subListOf(item);
+      const ans = CR.answers[idx];
+      subs.forEach((_, si) => {
+        const ok = Array.isArray(ans) ? !!ans[si]?.ok : !!ans?.ok;
+        flat.push({ part: item.part, ok });
+        const bp = (byPart[item.part] ||= { ok: 0, total: 0 });
+        bp.total++;
+        if (ok) bp.ok++;
+      });
+    });
+    const okN = flat.filter((x) => x.ok).length;
+    const pct = Math.round((okN / Math.max(1, flat.length)) * 100);
+    const elapsed = fmtTime(Math.min(T.limitSec || 99999, (Date.now() - T.started) / 1000));
+    const baseEst = S.course?.key === "toeic800" ? 650 : S.course?.key === "toeic600" ? 500 : 380;
+    const estScore = Math.min(990, Math.round((baseEst + pct * 2.6) / 10) * 10);
+    put(body,
+      el("div", { class: "card" },
+        el("div", { class: "report-top" },
+          el("div", { class: `stamp txt ${pct >= 80 ? "g-S" : pct >= 60 ? "g-A" : "g-C"}` }, `${okN}/${flat.length}`),
+          el("div", {},
+            el("div", { class: "big" }, isTest ? `토익 미니 테스트 ${pct}%` : `토익 연습 ${okN}/${flat.length}`),
+            el("div", { class: "sub" }, `${T.timedOut ? "⏱ 시간 종료 · " : ""}소요 ${elapsed}${isTest ? ` · 현재 감각 약 ${estScore}점대` : ""}`))),
+        el("div", { class: "chips", style: "margin-top:10px" }, Object.entries(byPart).sort((a, b) => Number(a[0]) - Number(b[0])).map(([pt, v]) =>
+          el("span", { class: "chip" + (v.ok === v.total ? " on" : ""), style: "pointer-events:none" }, `Part ${pt}: ${v.ok}/${v.total}`))),
+        el("div", { class: "note tip", style: "margin-top:10px" }, "틀린 문제는 약점 노트에 자동으로 담아 두었어요.")),
       el("button", { class: "primary", onclick: nextStep }, "다음"));
     return;
   }
+
   const q = list[CR.i];
+  const subs = subListOf(q);
   const L = "ABCD";
-  const isListen = q.part === "2";
-  const playAll = (btn) => { plStop(); const txt = [q.q, ...q.choices.map((c, i) => `${L[i]}. ${c}`)].join("  "); speak(txt, { btn }); };
-  const listenB = el("button", { class: "tool" }, "🔊 질문과 응답 듣기"); listenB.onclick = () => playAll(listenB);
-  const choiceBtns = q.choices.map((c, i) => el("button", { class: "choice", lang: "en" }, isListen ? `(${L[i]})` : `(${L[i]}) ${c}`));
-  const result = el("div");
-  choiceBtns.forEach((b, i) => b.onclick = () => {
-    if (CR.answers[CR.i]) return;
-    const ok = i === q.answer;
-    CR.answers[CR.i] = { ok };
-    if (ok) addScore(6);
-    else api("/api/weak/add", { method: "POST", body: JSON.stringify({ text: isListen ? q.choices[q.answer] : q.part === "5" ? q.q.replace(/_{2,}/, q.choices[q.answer]) : q.q, meaning_ko: q.explain_ko.slice(0, 80), kind: isListen ? "listening" : "grammar" }) }).then((x) => (S.weak = x.weak)).catch(() => {});
-    choiceBtns.forEach((x, j) => { x.classList.toggle("on", j === q.answer); if (j === i && !ok) x.classList.add("bad"); if (isListen) x.textContent = `(${L[j]}) ${q.choices[j]}`; });
-    CR.i++; saveCR();
-    put(result, el("div", { class: "card" }, el("div", { class: "verdict " + (ok ? "v-ok" : "v-bad") }, ok ? "⭕ 정답" : `❌ 정답은 (${L[q.answer]})`),
-      isListen ? el("div", { class: "model", lang: "en" }, q.q) : null, el("div", { class: "note tip" }, q.explain_ko),
-      el("button", { class: "primary", onclick: () => { speechSynthesis.cancel(); renderCourse(); } }, CR.i < list.length ? "다음 문제" : "결과")));
+  const isPart2 = q.part === "2";
+  const isPart34 = q.part === "3" || q.part === "4";
+  const isListen = isPart2 || isPart34;
+  const partLabel = { 2: "Part 2 · 질의응답", 3: "Part 3 · 짧은 대화", 4: "Part 4 · 안내·담화", 5: "Part 5 · 문법·어휘", 6: "Part 6 · 장문 빈칸·문장삽입", 7: "Part 7 · 독해" }[q.part] || `Part ${q.part}`;
+
+  // 타이머 표시 바
+  const timerEl = el("b", { class: "toeic-timer" }, "");
+  const tickTimer = () => {
+    const sec = Math.floor((Date.now() - T.started) / 1000);
+    if (T.limitSec > 0) {
+      const left = Math.max(0, T.limitSec - sec);
+      timerEl.textContent = `⏱ ${fmtTime(left)}`;
+      timerEl.classList.toggle("warn", left <= 60);
+      if (left <= 0) {
+        stopToeicTimer();
+        T.timedOut = true;
+        saveCR();
+        toast("⏱ 제한 시간이 끝났어요! 지금까지 푼 결과로 채점할게요.");
+        renderCourse();
+      }
+    } else {
+      timerEl.textContent = `⏱ ${fmtTime(sec)}`;
+    }
+  };
+  tickTimer();
+  TOEIC_TIMER = setInterval(tickTimer, 1000);
+
+  // 세트 내 진행 상태 초기화
+  if (!Array.isArray(CR.answers[CR.i])) CR.answers[CR.i] = new Array(subs.length).fill(null);
+  const setAns = CR.answers[CR.i];
+  const allDone = () => setAns.every((a) => a != null);
+
+  // 듣기 재생 컨트롤
+  let listenBox = null;
+  let scriptBox = null;
+  if (isPart2) {
+    const playAll = (btn) => { plStop(); stopLines(); const txt = [q.q, ...subs[0].choices.map((c, i) => `${L[i]}. ${c}`)].join("  "); speak(txt, { btn }); };
+    const listenB = el("button", { class: "tool" }, "🔊 질문과 응답 듣기"); listenB.onclick = () => playAll(listenB);
+    listenBox = [el("div", { class: "note" }, "질문 하나와 응답 셋을 들려줘요. 가장 알맞은 응답을 고르세요."), el("div", { class: "model-tools" }, listenB)];
+    setTimeout(() => playAll(listenB), 300);
+  } else if (isPart34) {
+    const lines = q.script?.length ? q.script : [{ speaker: "Speaker", gender: "f", text: q.passage || q.q || "" }];
+    const playB = el("button", { class: "tool" }, q.part === "3" ? "▶ 대화 듣기" : "▶ 안내 방송 듣기");
+    playB.onclick = () => { plStop(); playLines(lines, 0, null); };
+    const stopB = el("button", { class: "tool" }, "⏹ 멈춤");
+    stopB.onclick = () => stopLines();
+    listenBox = [
+      el("div", { class: "note" }, `${q.part === "3" ? "두 사람의 대화를" : "안내 방송·담화를"} 듣고 아래 ${subs.length}문항에 답하세요. 다 풀면 대본이 열려요.`),
+      el("div", { class: "model-tools" }, playB, stopB),
+    ];
+    scriptBox = el("div", { class: "toeic-script", hidden: !allDone(), lang: "en" },
+      el("div", { class: "lab blue", style: "margin-bottom:6px" }, "📜 듣기 대본"),
+      lines.map((l) => el("div", { class: "ts-line" }, el("b", {}, l.speaker + ": "), el("span", {}, l.text))));
+    setTimeout(() => { if (!allDone()) playLines(lines, 0, null); }, 350);
+  }
+
+  const nextWrap = el("div", { hidden: !allDone() },
+    el("button", { class: "primary", style: "margin-top:10px", onclick: () => { speechSynthesis.cancel(); stopLines(); CR.i++; saveCR(); renderCourse(); } }, CR.i + 1 < list.length ? "다음 파트 ▶" : "결과 보기"));
+
+  const subCards = subs.map((sq, si) => {
+    const fb = el("div");
+    const btns = sq.choices.map((c, ci) => el("button", { class: "choice", lang: "en" }, isPart2 ? `(${L[ci]})` : `(${L[ci]}) ${c}`));
+    const showFb = (picked, ok) => {
+      btns.forEach((x, j) => {
+        x.classList.toggle("on", j === sq.answer);
+        if (j === picked && !ok) x.classList.add("bad");
+        if (isPart2) x.textContent = `(${L[j]}) ${sq.choices[j]}`;
+      });
+      put(fb,
+        el("div", { class: "verdict " + (ok ? "v-ok" : "v-bad"), style: "margin-top:8px" }, ok ? "⭕ 정답" : `❌ 정답은 (${L[sq.answer]})`),
+        isPart2 ? el("div", { class: "model", lang: "en", style: "margin-top:6px" }, q.q) : null,
+        el("div", { class: "note tip", style: "margin-top:6px" }, sq.explain_ko));
+    };
+    if (setAns[si]) showFb(setAns[si].picked, setAns[si].ok);
+    btns.forEach((b, ci) => {
+      b.onclick = () => {
+        if (setAns[si]) return;
+        const ok = ci === sq.answer;
+        setAns[si] = { ok, picked: ci };
+        if (ok) { addScore(isTest ? 5 : 4); passFx(); }
+        else {
+          const weakTxt = isPart2 ? sq.choices[sq.answer] : q.part === "5" ? (sq.q || "").replace(/_{2,}/, sq.choices[sq.answer]) : (sq.q || q.tag || `Part ${q.part}`);
+          api("/api/weak/add", { method: "POST", body: JSON.stringify({ text: weakTxt.slice(0, 80), meaning_ko: `[Part ${q.part}${q.tag ? "·" + q.tag : ""}] ${(sq.explain_ko || "").slice(0, 75)}`, kind: isListen ? "listening" : "grammar" }) }).then((x) => (S.weak = x.weak)).catch(() => {});
+        }
+        saveCR();
+        showFb(ci, ok);
+        if (allDone()) {
+          if (scriptBox) scriptBox.hidden = false;
+          nextWrap.hidden = false;
+        }
+      };
+    });
+    return el("div", { class: "toeic-subq" },
+      !isPart2 ? el("div", { class: "q-t", lang: "en" }, subs.length > 1 ? `Q${si + 1}. ${sq.q}` : sq.q) : null,
+      btns, fb);
   });
-  put(body, el("div", { class: "h" }, `토익 Part ${q.part} · ${CR.i + 1} / ${list.length}`),
+
+  put(body,
+    el("div", { class: "toeic-bar" },
+      el("div", { style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap" },
+        el("b", {}, `${isTest ? "⏱ 미니 테스트 · " : ""}${partLabel}`),
+        q.tag ? el("span", { class: "mini", style: "pointer-events:none" }, q.tag) : null,
+        el("span", { class: "note", style: "margin:0" }, `${CR.i + 1}/${list.length}`)),
+      timerEl),
     el("div", { class: "card q" },
-      isListen ? [el("div", { class: "note" }, "질문 하나와 응답 셋을 들려줘요. 가장 알맞은 응답을 고르세요."), el("div", { class: "model-tools" }, listenB)] : null,
-      q.passage ? el("div", { class: "toeic-passage", lang: "en" }, q.passage) : null,
-      !isListen ? el("div", { class: "q-t", lang: "en" }, q.q) : null,
-      choiceBtns),
-    result);
-  if (isListen) setTimeout(() => playAll(listenB), 300);
+      listenBox,
+      q.passage && !isPart34 ? el("div", { class: "toeic-passage", lang: "en" }, q.passage) : null,
+      scriptBox,
+      subCards),
+    nextWrap);
 }
 
 function stepTalk(body) {
@@ -3298,6 +3519,7 @@ $("#endBtn").addEventListener("click", () => {
 // ---------- 탭 ----------
 let currentView = "home";
 function switchView(v) {
+  if (v !== "course") stopToeicTimer();
   currentView = v;
   document.body.classList.toggle("in-lesson", v === "lesson" && !!S?.current);
   document.querySelectorAll("#tabs button").forEach((x) => x.classList.toggle("on", x.dataset.view === v));
