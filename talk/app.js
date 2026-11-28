@@ -513,6 +513,10 @@ function openSettingsModal() {
       if (currentView === "home") renderHome();
       openSettingsModal();
     } }, t))),
+    el("div", { class: "h" }, "통과할 때 띵동 소리"),
+    el("div", { class: "chips" }, [["1", "켜기"], ["0", "끄기"]].map(([v, t]) => el("button", { class: "chip" + (getPref("passSound", "1") === v ? " on" : ""), onclick: () => {
+      setPref("passSound", v); openSettingsModal(); if (v === "1") dingDong();
+    } }, t))),
     el("div", { class: "h" }, "내 발음 녹음 (🎙 내 발음 듣기)"),
     el("div", { class: "chips" }, [[false, "끄기 (인식 우선)"], [true, "켜기"]].map(([v, t]) => el("button", { class: "chip" + (myRecOn() === v ? " on" : ""), onclick: () => {
       setPref("myRec", v ? "1" : "0"); openSettingsModal();
@@ -963,7 +967,7 @@ function renderPage(feed) {
         const r = pronDiff(model, said, modelReading);
         PG.tried = true;
         const pass = r.pct >= 80;
-        if (pass) { retryTarget = null; toast("통과!", "gold"); }
+        if (pass) { retryTarget = null; passFx(); }
         nextB.disabled = false;
         const spR = el("button", { class: "tool" }, "🔊 모범 듣기"); spR.onclick = () => speak(model, { btn: spR });
         put(result, el("div", { class: "card" }, el("div", { class: "verdict " + (pass ? "v-ok" : r.pct >= 60 ? "v-mid" : "v-bad") }, `${pass ? "⭕ 통과" : "다시 해 보세요"} · 일치 ${r.pct}%`),
@@ -1537,7 +1541,7 @@ function renderBlitz() {
             el("div", { class: "note", lang: LANG, style: "text-align:center" }, "내 말(인식): " + (said || "(무응답)")),
             el("div", { class: "model-tools", style: "justify-content:center" }, sp, slow, myAudioBtn(audioUrl, "🎙 내 발음"), starBtn({ text: it.ja, reading: it.reading || "", meaning_ko: it.ko, kind: "sentence" })),
             el("div", { class: "row-btns", style: "margin-top:10px" }, retryBtn, nextBtn)));
-        if (!ok) speak(it.ja);
+        if (!ok) speak(it.ja); else passFx();
       },
     }));
 }
@@ -2600,6 +2604,7 @@ function renderAloud(root) {
     finishSentence.done = true;
     clearInterval(R.timer);
     if (skipped) { const x = currentPiece(best); if (x?.p.r) markWord(x.p); res.ok = false; res.skipped = true; }
+    else if (res.ok) passFx({ vol: 0.07 });
     res.tries++;
     A.i++;
     saveAl();
@@ -2819,6 +2824,7 @@ function vocabQuiz(root) {
   const head = el("div", {}, el("div", { class: "step-name" }, `${VS.i + 1} / ${VS.queue.length}${tries ? " · 🔁 다시" : ""} · ${w.level || ""}`),
     el("div", { class: "stepdots" }, el("span", { class: "ok", style: `flex:${VS.i}` }), el("span", { style: `flex:${Math.max(1, VS.queue.length - VS.i)}` })));
   const record = (ok) => {
+    if (ok) passFx();
     if (!(id in VS.res)) VS.res[id] = ok; // 간격 반복에는 첫 답만
     VS.tries[id] = tries + 1;
     if (!ok && tries < 1) VS.queue.push(id); // 틀리면 끝에 한 번 더
@@ -2958,6 +2964,38 @@ if (LANG === "en") {
   const kb = el("button", { type: "button", id: "koBtn", class: "ghost-btn", title: "막히면 한국어로 말하기", onclick: () => { koOnce = !koOnce; kb.classList.toggle("on", koOnce); toast(koOnce ? "다음 한 번은 한국어로 들어요" : "다시 영어로 들어요"); } }, "한국어로");
   $("#composer").insertBefore(kb, $("#micBtn"));
 }
+// ---------- 통과 효과: 초록 체크 + 띵동 ----------
+let FX_AC = null;
+function dingDong(vol = 0.18) {
+  if (getPref("passSound", "1") !== "1") return;
+  try {
+    FX_AC ||= new (window.AudioContext || window.webkitAudioContext)();
+    if (FX_AC.state === "suspended") FX_AC.resume();
+    const t = FX_AC.currentTime;
+    // 두 음(미 → 도 한 옥타브 위)을 종소리처럼: 사인파 + 배음 조금, 빠르게 울리고 천천히 사라짐
+    [[1318.5, 0], [2093, 0.11]].forEach(([f, d]) => {
+      [[1, 1], [2.01, 0.25]].forEach(([mul, g]) => {
+        const o = FX_AC.createOscillator(), a = FX_AC.createGain();
+        o.type = "sine"; o.frequency.value = f * mul;
+        a.gain.setValueAtTime(0.0001, t + d);
+        a.gain.exponentialRampToValueAtTime(vol * g, t + d + 0.012);
+        a.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.55);
+        o.connect(a).connect(FX_AC.destination);
+        o.start(t + d); o.stop(t + d + 0.6);
+      });
+    });
+  } catch {}
+}
+function passFx({ sound = true, vol } = {}) {
+  if (sound) dingDong(vol);
+  navigator.vibrate?.(30);
+  document.querySelector(".pass-fx")?.remove();
+  const n = el("div", { class: "pass-fx", "aria-hidden": "true" },
+    svgEl(`<svg viewBox="0 0 52 52" width="88" height="88"><circle cx="26" cy="26" r="24" fill="#16a34a"/><path d="M15 27l7 7 15-16" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>`));
+  document.body.append(n);
+  setTimeout(() => n.remove(), 900);
+}
+
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null;
 let recTarget = null; // 따라 말하기일 때 { text, btn, out }
@@ -3141,6 +3179,7 @@ function shadowing(target, btn, out, onScore, reading = "") {
       if (!t) { out.textContent = ""; return; }
       const pct = similarity(target, t, reading);
       out.textContent = `일치 ${pct}%` + (pct >= 90 ? " 완벽!" : pct >= 70 ? " 좋아요" : "");
+      if (pct >= 70) passFx();
       if (audioUrl && out.parentNode) {
         const prev = out.nextElementSibling;
         if (prev?.dataset?.shadowAudio) prev.remove();
