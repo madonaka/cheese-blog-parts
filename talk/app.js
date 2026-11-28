@@ -392,6 +392,7 @@ function renderLessonHead() {
         el("b", {}, c.scenario ? c.scenario.title : M.MODES[c.mode].name),
         el("span", {}, (c.scenario ? "목표: " + c.scenario.goal + " · " : "") + lv.name + (c.twist ? " · 반전: " + c.twist : "") + (c.cost ? ` · 이번 수업 $${c.cost.toFixed(3)}` : ""))),
       el("div", { class: "score" }, el("b", {}, c.score || 0), el("span", {}, c.combo >= 2 ? `🔥 ${c.combo}콤보` : ""))),
+    (c.goals || []).length ? el("div", { class: "goals" }, c.goals.map((g, i) => el("span", { class: "goal" + (g.done ? " done" : "") }, `${g.done ? "✓" : i + 1} ${g.text_ko}`))) : null,
     el("div", { class: "missions" }, (c.missions || []).map((m) =>
       el("span", { class: "mission" + (m.n >= m.goal ? " done" : "") }, (m.n >= m.goal ? "✓ " : "") + m.text, m.goal > 1 ? el("em", {}, `${Math.min(m.n, m.goal)}/${m.goal}`) : null))));
 }
@@ -483,7 +484,32 @@ function aiEl(t, latest = false) {
       el("div", { class: "ai-tools" }, ptools, subBtn, koBtn, n ? el("span", { class: "tool", style: "border:0;color:var(--gold)" }, `어려운 말 ${n}개`) : null),
       text, koLine, hard)));
   if (t.task_ko) wrap.append(el("div", { class: "task" }, t.task_ko));
+  if (latest && t.next?.mission_ko) wrap.append(missionCard(t.next));
   return wrap;
+}
+
+// 지금 할 일과 힌트: 💡 를 누를 때마다 ① 한국어로 무슨 말을 할지 ② 첫 낱말 ③ 모범 문장(소리·따라 말하기)
+function missionCard(nx) {
+  HINT = 0;
+  const box = el("div", { class: "hint-box" });
+  const btn = el("button", { class: "tool hint-btn" }, "💡 힌트");
+  const draw = () => {
+    const parts = [];
+    if (HINT >= 1) parts.push(el("div", { class: "hint-l" }, el("span", { class: "hl" }, "할 말"), nx.say_ko));
+    if (HINT >= 2) parts.push(el("div", { class: "hint-l" }, el("span", { class: "hl" }, "첫마디"), el("b", { lang: "ja" }, nx.starter + " …")));
+    if (HINT >= 3) {
+      const sp = el("button", { class: "tool" }, "🔊"); sp.onclick = () => speak(nx.model, { btn: sp });
+      const out = el("span", { class: "match" });
+      const sh = el("button", { class: "tool", onclick: () => shadowing(nx.model, sh, out) }, "🎙 따라 말하기");
+      parts.push(el("div", { class: "hint-l" }, el("span", { class: "hl" }, "모범"), el("b", { lang: "ja" }, nx.model)), el("div", { class: "model-tools" }, sp, sh, out));
+    }
+    box.replaceChildren(...parts);
+    btn.textContent = HINT >= 3 ? "💡 힌트 다 봄 (점수 절반)" : `💡 힌트 ${HINT + 1}/3`;
+    btn.disabled = HINT >= 3;
+  };
+  btn.onclick = () => { HINT = Math.min(3, HINT + 1); draw(); };
+  draw();
+  return el("div", { class: "mission-card" }, el("div", { class: "mc-top" }, el("span", { class: "mc-lab" }, "🎯 지금 할 일"), btn), el("div", { class: "mc-text" }, nx.mission_ko), box);
 }
 
 function markHard(text, words) {
@@ -559,8 +585,10 @@ function meEl(t, animate = false) {
     el("div", { class: "redpen" }, parts));
 }
 
+let HINT = 0; // 이번 차례에 본 힌트 단계(0~3)
 async function say(text) {
   if (busy || !S.current) return;
+  const hint = HINT;
   busy = true;
   speechSynthesis?.cancel();
   try { speechSynthesis.speak(new SpeechSynthesisUtterance("")); } catch {}
@@ -572,13 +600,16 @@ async function say(text) {
   $("#input").value = "";
   autoGrow();
   try {
-    const r = await streamApi("/api/session/say", { text }, (reply) => { playReply(reply); think.lastChild.textContent = " 첨삭 중"; });
+    const r = await streamApi("/api/session/say", { text, hint }, (reply) => { playReply(reply); think.lastChild.textContent = " 첨삭 중"; });
     S.current = r.session;
     S.xp = r.xp; S.todayXp = r.todayXp;
     pending.replaceWith(meEl(r.turn, true));
     retryTarget = r.turn.feedback?.verdict && r.turn.feedback.verdict !== "natural" && r.turn.feedback.natural ? r.turn.feedback.natural : null;
+    document.querySelectorAll("#feed .mission-card").forEach((x) => x.remove()); // 지난 차례의 할 일은 치움
     think.replaceWith(aiEl(S.current.display[S.current.display.length - 1], true));
+    HINT = 0;
     renderLessonHead();
+    for (const g of r.turn.points.goalsDone || []) toast(`✓ ${g}`, "gold");
     for (const m of r.turn.points.done || []) toast(`미션 완료! ${m} +30`, "gold");
     if (r.turn.graduated?.length) setTimeout(() => toast(`🎓 약점 졸업: ${r.turn.graduated.join(", ")}`, "gold"), 1500);
     feed.scrollTop = feed.scrollHeight;
@@ -837,7 +868,7 @@ function renderPlacement(root) {
 }
 
 // 말로 답하는 카드: 문제를 보여 주고, 마이크를 켜고, 다 말하면 onDone(말한 것)
-function answerCard({ prompt, sub, hint, lang = SPEECH, limit = 0, onDone, big = false, emoji = "" }) {
+function answerCard({ prompt, sub, hint, lang = SPEECH, limit = 0, onDone, big = false, emoji = "", expect = "" }) {
   const isJa = !lang.startsWith("ko");
   const live = el("div", { class: "ans-live", lang: isJa ? "ja" : "ko" }, "🎤 마이크를 누르고 말하세요");
   const typed = el("input", { class: "paste-title", placeholder: "말 대신 적어도 돼요", lang: isJa ? "ja" : "ko" });
@@ -863,7 +894,7 @@ function answerCard({ prompt, sub, hint, lang = SPEECH, limit = 0, onDone, big =
     if (!t0) t0 = Date.now();
     state = "recording"; draw();
     if (limit) { clearInterval(timer); timer = setInterval(() => { const p = Math.min(1, (Date.now() - t0) / 1000 / limit); bar.style.width = `${p * 100}%`; bar.classList.toggle("over", p >= 1); }, 100); }
-    startRec({ lang, onLive: (t) => { said = t; live.textContent = t || "듣고 있어요…"; },
+    startRec({ lang, expect: lang.startsWith("ko") ? "" : expect, onLive: (t) => { said = t; live.textContent = t || "듣고 있어요…"; },
       onFinal: (t) => { clearInterval(timer); said = t; if (sec === 99) sec = (Date.now() - t0) / 1000; typed.value = said; live.textContent = said ? "내 답: " + said : "잘 못 들었어요. 다시 말하거나 적어 주세요."; state = "review"; draw(); } });
   }
   const submit = () => { if (rec) return; clearInterval(timer); onDone((typed.value || said).trim(), sec); };
@@ -936,7 +967,7 @@ function stepDrills(body, key) {
   if (CR.i < list.length) {
     const d = list[CR.i];
     put(body, el("div", { class: "h" }, `${key === "test" ? "주간 시험" : "바꿔 말하기"} ${CR.i + 1} / ${list.length} · 5초 안에 말하면 +3`),
-      answerCard({ prompt: d.ko, limit: 5, big: true, onDone: (said, sec) => {
+      answerCard({ prompt: d.ko, limit: 5, big: true, expect: d.ja, onDone: (said, sec) => {
         CR.answers[CR.i] = { said, sec };
         CR.i++; saveCR();
         put(body, el("div", { class: "card ans" }, el("div", { class: "note" }, "모범 답"), el("div", { class: "model", lang: "ja" }, d.ja),
@@ -996,7 +1027,7 @@ function redoCard(body, items) {
   const sp = el("button", { class: "tool" }, "🔊 모범 답 듣기"); sp.onclick = () => speak(model, { btn: sp });
   put(body, el("div", { class: "h" }, `🔁 다시 말하기 · 남은 ${R2.q.length - R2.i}개${tries ? ` · ${tries + 1}번째` : ""}`),
     tries ? el("div", { class: "card" }, el("div", { class: "note" }, "모범 답을 듣고 그대로 말해 보세요"), el("div", { class: "model", lang: "ja" }, model), el("div", { class: "model-tools" }, sp)) : null,
-    answerCard({ prompt: it.prompt, big: true, hint: tries ? "" : "이번엔 고친 문장을 떠올리며 말해 보세요", onDone: (said) => {
+    answerCard({ prompt: it.prompt, big: true, expect: model, hint: tries ? "" : "이번엔 고친 문장을 떠올리며 말해 보세요", onDone: (said) => {
       const pct = similarity(model, said);
       const ok = pct >= 75;
       R2.tries[i] = tries + 1;
@@ -1034,7 +1065,7 @@ function stepCards(body, key) {
   const tries = CR.tries[idx] || 0;
   const label = CR.i < list.length ? `${title} ${CR.i + 1} / ${list.length} · 3초 안에 말하면 +3` : `🔁 틀린 것 다시 · 남은 ${CR.queue.length - CR.i}개`;
   put(body, el("div", { class: "h" }, label + (w.from ? " · " + w.from : "")),
-    answerCard({ prompt: w.meaning_ko, emoji: w.emoji, limit: 3, big: true, hint: tries ? `힌트: ${w.reading || w.ja}`.slice(0, 4 + Math.ceil((w.reading || w.ja).length / 2)) + "…" : "", onDone: (said, sec) => {
+    answerCard({ prompt: w.meaning_ko, emoji: w.emoji, limit: 3, big: true, expect: w.ja, hint: tries ? `힌트: ${w.reading || w.ja}`.slice(0, 4 + Math.ceil((w.reading || w.ja).length / 2)) + "…" : "", onDone: (said, sec) => {
       const pct = Math.max(similarity(w.ja, said), w.reading && LANG === "ja" ? similarity(w.reading, said) : 0);
       const ok = pct >= 70;
       CR.tries[idx] = tries + 1;
@@ -1062,7 +1093,7 @@ function stepTrans(body) {
   const it = items[CR.i];
   const onDone = (said, sec) => { CR.answers[CR.i] = { said, sec }; CR.i++; saveCR(); renderCourse(); };
   if (it.kind === "ko2ja") {
-    put(body, el("div", { class: "h" }, `한국어 → ${LNAME}로 말하기 ${CR.i + 1} / ${items.length}`), answerCard({ prompt: it.prompt, big: true, onDone }));
+    put(body, el("div", { class: "h" }, `한국어 → ${LNAME}로 말하기 ${CR.i + 1} / ${items.length}`), answerCard({ prompt: it.prompt, big: true, expect: it.expected, onDone }));
   } else {
     const card = answerCard({ prompt: "🔊 듣고 한국어로 뜻을 말해 보세요", lang: "ko-KR", onDone, sub: "문장은 채점 뒤에 보여 줘요" });
     const again = el("button", { class: "tool" }, "🔊 다시 듣기"); again.onclick = () => speak(it.prompt, { btn: again });
@@ -1478,6 +1509,11 @@ async function weakAct(id, action) {
 }
 
 // ---------- 마이크 ----------
+// 말하는 중 취소, 확인 단계 단추
+$("#liveCancel").addEventListener("click", (e) => { e.stopPropagation(); if (rec) rec.abort(); $("#input").value = ""; toast("취소했어요. 다시 마이크를 누르세요"); });
+$("#rvRetry").addEventListener("click", () => { $("#input").value = ""; showReview(false); $("#micBtn").click(); });
+$("#rvCancel").addEventListener("click", () => { $("#input").value = ""; autoGrow(); showReview(false); });
+$("#rvSend").addEventListener("click", () => { const t = $("#input").value.trim(); showReview(false); if (t) say(t); });
 let koOnce = false; // 다음 한 번은 한국어로 듣기(영어 수업)
 if (LANG === "en") {
   const kb = el("button", { type: "button", id: "koBtn", class: "ghost-btn", title: "막히면 한국어로 말하기", onclick: () => { koOnce = !koOnce; kb.classList.toggle("on", koOnce); toast(koOnce ? "다음 한 번은 한국어로 들어요" : "다시 영어로 들어요"); } }, "한국어로");
@@ -1488,7 +1524,7 @@ let rec = null;
 let recTarget = null; // 따라 말하기일 때 { text, btn, out }
 // 브라우저는 말이 잠깐 멈추면 인식을 스스로 끝낸다. 사용자가 다시 누르기 전까지는 끝난 토막을 모아 두고 곧바로 다시 듣는다.
 const REC_MAX_MS = 5 * 60 * 1000;
-function startRec({ onFinal, onLive, lang = SPEECH }) {
+function startRec({ onFinal, onLive, lang = SPEECH, expect = "" }) {
   if (AP.playing) plPause();
   speechSynthesis?.cancel();
   let acc = "";   // 끝난 토막들
@@ -1518,8 +1554,15 @@ function startRec({ onFinal, onLive, lang = SPEECH }) {
     r.lang = lang;
     r.interimResults = true;
     r.continuous = false; // 안드로이드 크롬은 continuous 에서 앞 결과를 겹쳐 돌려줘 말이 되풀이됨. 토막마다 끝내고 다시 듣는다.
+    r.maxAlternatives = expect ? 5 : 1;
     r.onresult = (e) => {
-      part = e.results[e.results.length - 1][0].transcript;
+      const last = e.results[e.results.length - 1];
+      part = last[0].transcript;
+      // 기대하는 답(힌트 문장)이 있으면 인식 후보 가운데 그것과 가장 가까운 것을 고른다(엉뚱하게 받아 적히는 것 줄이기)
+      if (expect && last.length > 1) {
+        let best = -1;
+        for (let k = 0; k < last.length; k++) { const sc = similarity(expect, acc + last[k].transcript); if (sc > best) { best = sc; part = last[k].transcript; } }
+      }
       fails = 0;
       onLive(text());
     };
@@ -1541,6 +1584,15 @@ function startRec({ onFinal, onLive, lang = SPEECH }) {
   }
   run();
 }
+function showReview(on) {
+  $("#reviewBar").hidden = !on;
+  if (on) $("#reviewBar .rv-hint").textContent = "인식된 말을 확인하세요. 틀렸으면 고쳐 적거나 다시 말하기";
+}
+function lastNext() {
+  const d = S.current?.display || [];
+  for (let i = d.length - 1; i >= 0; i--) if (d[i].role === "ai") return d[i].next || null;
+  return null;
+}
 function setMicUI(on) {
   $("#micBtn").classList.toggle("on", on);
   $("#micBtn").setAttribute("aria-pressed", on ? "true" : "false");
@@ -1559,10 +1611,18 @@ $("#micBtn").addEventListener("click", () => {
   $("#liveText").textContent = koNow ? "한국어로 말하세요. 영어로 바꿔 알려 줄게요" : "듣고 있어요. 멈춰 생각해도 안 끊겨요. 다 말하면 다시 누르세요";
   $("#liveText").dataset.text = "";
   setMicUI(true);
+  const expect = koNow ? "" : lastNext()?.model || "";
   startRec({
     lang: koNow ? "ko-KR" : SPEECH,
+    expect,
     onLive: (t) => { $("#liveText").textContent = t || "듣고 있어요…"; $("#liveText").dataset.text = t; },
-    onFinal: (t) => { if (t) say(koNow ? `(한국어로 말함) ${t}` : t); },
+    onFinal: (t) => {
+      if (!t) { toast("잘 못 들었어요. 다시 말해 주세요."); return; }
+      // 바로 보내지 않고 확인: 입력칸에 넣어 두고 다시 말하기 / 고쳐 적기 / 보내기
+      $("#input").value = koNow ? `(한국어로 말함) ${t}` : t;
+      autoGrow();
+      showReview(true);
+    },
   });
 });
 
@@ -1607,7 +1667,7 @@ function similarity(a, b) {
 function autoGrow() { const t = $("#input"); t.style.height = "auto"; t.style.height = Math.min(120, t.scrollHeight) + "px"; }
 $("#input").addEventListener("input", autoGrow);
 $("#input").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("#composer").requestSubmit(); } });
-$("#composer").addEventListener("submit", (e) => { e.preventDefault(); const t = $("#input").value.trim(); if (t) say(t); });
+$("#composer").addEventListener("submit", (e) => { e.preventDefault(); const t = $("#input").value.trim(); showReview(false); if (t) say(t); });
 $("#endBtn").addEventListener("click", () => {
   if (!S.current) return;
   if (!S.current.turns) { if (confirm("아직 한 마디도 안 했어요. 그냥 끝낼까요?")) endLesson(); return; }
