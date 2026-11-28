@@ -314,13 +314,13 @@ function playReply(text) { plLoad(text); AP.text = text; plPlay(0); }
 function playerTools(text) {
   const mine = () => AP.text === text;
   const playB = el("button", { class: "tool" });
-  const restartB = el("button", { class: "tool", title: "처음부터" }, "⏮ 처음부터");
-  const againB = el("button", { class: "tool", title: "방금 문장 다시" }, "↺ 한 문장 다시");
+  const restartB = el("button", { class: "tool", title: "처음부터" }, "⏮");
+  const againB = el("button", { class: "tool", title: "방금 문장 다시" }, "↺ 한 문장");
   const speedB = el("button", { class: "tool", title: "속도" });
   const pos = el("span", { class: "pl-pos" });
   const draw = () => {
     const on = mine() && AP.playing;
-    playB.textContent = on ? "⏸ 멈춤" : mine() && AP.i > 0 && AP.i < AP.sents.length ? "▶ 이어 듣기" : "▶ 듣기";
+    playB.textContent = on ? "⏸ 멈춤" : mine() && AP.i > 0 && AP.i < AP.sents.length ? "▶ 이어" : "▶ 듣기";
     playB.classList.toggle("speaking", on);
     speedB.textContent = `${speedMul()}×`;
     pos.textContent = mine() && AP.sents.length > 1 ? `${Math.min(AP.i + 1, AP.sents.length)}/${AP.sents.length}` : "";
@@ -526,7 +526,10 @@ function renderLessonHead() {
       el("div", { class: "lh-title" },
         el("b", {}, c.scenario ? c.scenario.title : M.MODES[c.mode].name),
         el("span", {}, (c.scenario ? "목표: " + c.scenario.goal + " · " : "") + lv.name + (c.twist ? " · 반전: " + c.twist : "") + (c.cost ? ` · 이번 수업 $${c.cost.toFixed(3)}` : ""))),
-      el("div", { class: "score" }, el("b", {}, c.score || 0), el("span", {}, c.combo >= 2 ? `🔥 ${c.combo}콤보` : ""))),
+      el("div", { class: "score" }, el("b", {}, c.score || 0), el("span", {}, c.combo >= 2 ? `🔥 ${c.combo}콤보` : "")),
+      el("div", { class: "lh-btns" },
+        el("button", { class: "mini", title: "수업은 그대로 두고 홈으로", onclick: () => switchView("home") }, "✕"),
+        el("button", { class: "mini end", onclick: () => $("#endBtn").click() }, "끝내기"))),
     (c.goals || []).length ? el("div", { class: "goals" }, c.goals.map((g, i) => el("span", { class: "goal" + (g.done ? " done" : "") }, `${g.done ? "✓" : i + 1} ${g.text_ko}`))) : null,
     el("div", { class: "missions" }, (c.missions || []).map((m) =>
       el("span", { class: "mission" + (m.n >= m.goal ? " done" : "") }, (m.n >= m.goal ? "✓ " : "") + m.text, m.goal > 1 ? el("em", {}, `${Math.min(m.n, m.goal)}/${m.goal}`) : null))));
@@ -2116,6 +2119,7 @@ $("#endBtn").addEventListener("click", () => {
 let currentView = "home";
 function switchView(v) {
   currentView = v;
+  document.body.classList.toggle("in-lesson", v === "lesson" && !!S?.current);
   document.querySelectorAll("#tabs button").forEach((x) => x.classList.toggle("on", x.dataset.view === v));
   for (const k of ["home", "course", "lesson", "read", "record", "weak"]) $(`#view-${k}`).hidden = k !== v;
   if (v === "course") renderCourse();
