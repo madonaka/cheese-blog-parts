@@ -32,7 +32,10 @@ function setLang(l) { localStorage.setItem("lang", l); location.reload(); }
 let S = null;          // 서버 상태
 let M = null;          // 메타(상황, 단계 …)
 let busy = false;
-let pick = { mode: "talk", cat: "업무", level: null };
+let pick = { mode: "talk", cat: "업무", level: null, register: localStorage.getItem("register") || "std" };
+const REGISTERS = LANG === "en"
+  ? [["std", "표준"], ["casual", "구어체·슬랭"], ["elder", "어르신 말투"]]
+  : [["std", "표준"], ["casual", "구어체·반말"], ["kansai", "간사이벤"], ["elder", "어르신 말투"]];
 let showSub = localStorage.getItem("showSub") === "1"; // 자막 기본 가림
 let retryTarget = null; // 어색·틀림 판정 뒤 따라 말해야 할 모범 답안
 
@@ -152,6 +155,51 @@ function bestVoice() {
   for (const re of pref) { const f = voices.find((x) => re.test(x.name)); if (f) return f; }
   return voices[0] || null;
 }
+// ---------- 듣기 환경: 브라우저 음성은 바꿀 수 있는 게 높낮이·빠르기뿐이라, 배경 잡음을 같이 틀어 「잘 안 들리는 상황」을 흉내 낸다 ----------
+const ENVS = {
+  normal: { name: "보통", pitch: 1, rate: 1, noise: 0 },
+  cafe: { name: "☕ 카페 잡음", pitch: 1, rate: 1, noise: 0.10, color: "pink" },
+  station: { name: "🚉 역·거리 잡음", pitch: 1, rate: 1.05, noise: 0.22, color: "brown" },
+  phone: { name: "📞 전화처럼 흐리게", pitch: 1.1, rate: 1.05, noise: 0.07, color: "white" },
+  elder: { name: "👴 낮고 느린 목소리", pitch: 0.55, rate: 0.85, noise: 0.06, color: "brown" },
+};
+const envOf = () => ENVS[localStorage.getItem("listenEnv")] || ENVS.normal;
+let NOISE = null;
+function noiseOn() {
+  const env = envOf();
+  if (!env.noise) return;
+  try {
+    if (!NOISE) {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const len = ctx.sampleRate * 3;
+      const bufs = {};
+      for (const color of ["white", "pink", "brown"]) {
+        const b = ctx.createBuffer(1, len, ctx.sampleRate), d = b.getChannelData(0);
+        let last = 0, b0 = 0, b1 = 0, b2 = 0;
+        for (let i = 0; i < len; i++) {
+          const w = Math.random() * 2 - 1;
+          if (color === "brown") { last = (last + 0.02 * w) / 1.02; d[i] = last * 3.5; }
+          else if (color === "pink") { b0 = 0.99765 * b0 + w * 0.099; b1 = 0.963 * b1 + w * 0.2965; b2 = 0.57 * b2 + w * 1.0527; d[i] = (b0 + b1 + b2 + w * 0.1848) * 0.2; }
+          else d[i] = w * 0.5;
+        }
+        bufs[color] = b;
+      }
+      NOISE = { ctx, bufs, src: null, gain: ctx.createGain() };
+      NOISE.gain.connect(ctx.destination);
+    }
+    if (NOISE.src) return;
+    NOISE.ctx.resume?.();
+    const src = NOISE.ctx.createBufferSource();
+    src.buffer = NOISE.bufs[env.color || "brown"];
+    src.loop = true;
+    NOISE.gain.gain.value = env.noise;
+    src.connect(NOISE.gain);
+    src.start();
+    NOISE.src = src;
+  } catch {}
+}
+function noiseOff() { try { NOISE?.src?.stop(); } catch {} if (NOISE) NOISE.src = null; }
+
 let speakingBtn = null;
 function speak(text, { slow = false, btn = null } = {}) {
   if (!("speechSynthesis" in window) || !text) return;
@@ -163,23 +211,25 @@ function speak(text, { slow = false, btn = null } = {}) {
   u.lang = SPEECH;
   const lv = M.LEVELS[(S.current?.level || pick.level) - 1];
   const adj = Number(localStorage.getItem("rateAdj") || 0);
-  u.rate = Math.max(0.5, (slow ? 0.7 : lv.rate) + adj);
+  u.rate = Math.max(0.5, ((slow ? 0.7 : lv.rate) + adj) * (slow ? 1 : envOf().rate));
+  u.pitch = envOf().pitch;
+  if (!slow) noiseOn();
   speakingBtn?.classList.remove("speaking");
   speakingBtn = btn;
   btn?.classList.add("speaking");
-  u.onend = u.onerror = () => btn?.classList.remove("speaking");
+  u.onend = u.onerror = () => { btn?.classList.remove("speaking"); noiseOff(); };
   speechSynthesis.speak(u);
 }
 
 
 // ---------- 상대 말 재생기: 문장 단위로 읽어서 멈춤·이어 듣기·한 문장 다시·처음부터·속도 ----------
 // speechSynthesis.pause 는 안드로이드에서 잘 안 먹어서, 문장마다 끊어 읽고 멈춘 문장부터 다시 읽는다.
-const SPEEDS = [0.75, 1, 1.25, 1.5, 1.75];
+const SPEEDS = [0.75, 1, 1.25, 1.5, 1.75, 2, 2.25];
 const AP = { text: "", sents: [], i: 0, playing: false, gen: 0, views: new Set() };
 function speedMul() { return Number(localStorage.getItem("aiSpeed") || 1); }
 function splitJa(text) { return (String(text).match(/[^。！？!?]+[。！？!?」』）)]*|[^。！？!?]+$/g) || [text]).map((x) => x.trim()).filter(Boolean); }
 function plLoad(text) { if (AP.text === text) return; plStop(); AP.text = text; AP.sents = splitJa(text); AP.i = 0; }
-function plStop() { AP.playing = false; AP.gen++; try { speechSynthesis.cancel(); } catch {} plNotify(); }
+function plStop() { AP.playing = false; AP.gen++; try { speechSynthesis.cancel(); } catch {} noiseOff(); plNotify(); }
 function plPlay(from) {
   if (from != null) AP.i = from;
   if (AP.i >= AP.sents.length) AP.i = 0;
@@ -193,15 +243,17 @@ function plPlay(from) {
     const v = bestVoice(); if (v) u.voice = v;
     u.lang = SPEECH;
     const lv = M.LEVELS[(S.current?.level || pick.level) - 1];
-    u.rate = Math.max(0.5, Math.min(2.2, (lv.rate + Number(localStorage.getItem("rateAdj") || 0)) * speedMul()));
-    u.onend = () => { if (gen !== AP.gen) return; AP.i++; next(); };
-    u.onerror = () => { if (gen !== AP.gen) return; AP.playing = false; plNotify(); };
+    u.rate = Math.max(0.5, Math.min(2.6, (lv.rate + Number(localStorage.getItem("rateAdj") || 0)) * speedMul() * envOf().rate));
+    u.pitch = envOf().pitch;
+    noiseOn();
+    u.onend = () => { if (gen !== AP.gen) return; AP.i++; if (AP.i >= AP.sents.length) noiseOff(); next(); };
+    u.onerror = () => { noiseOff(); if (gen !== AP.gen) return; AP.playing = false; plNotify(); };
     plNotify();
     speechSynthesis.speak(u);
   };
   next();
 }
-function plPause() { if (!AP.playing) return; AP.playing = false; AP.gen++; try { speechSynthesis.cancel(); } catch {} plNotify(); }
+function plPause() { if (!AP.playing) return; AP.playing = false; AP.gen++; try { speechSynthesis.cancel(); } catch {} noiseOff(); plNotify(); }
 function plNotify() { AP.views.forEach((f) => f()); }
 function playReply(text) { plLoad(text); AP.text = text; plPlay(0); }
 
@@ -363,6 +415,11 @@ function renderHome() {
     courseCard, cont, challenge,
     el("div", { class: "h" }, "수업 고르기"), modes,
     el("div", { class: "h" }, "단계"), levels,
+    el("div", { class: "h" }, "상대 말투"),
+    el("div", { class: "chips" }, REGISTERS.map(([k, t]) => el("button", { class: "chip" + (pick.register === k ? " on" : ""), onclick: () => { pick.register = k; localStorage.setItem("register", k); renderHome(); } }, t))),
+    el("div", { class: "h" }, "듣기 환경 (상대 목소리)"),
+    el("div", { class: "chips" }, Object.entries(ENVS).map(([k, e]) => el("button", { class: "chip" + ((localStorage.getItem("listenEnv") || "normal") === k ? " on" : ""), onclick: () => { localStorage.setItem("listenEnv", k); renderHome(); speak(LANG === "en" ? "Can you hear me okay?" : "ちゃんと聞こえますか。今日はよろしくお願いします。"); } }, e.name))),
+    el("div", { class: "level-desc" }, "브라우저 음성이라 진짜 어르신 목소리는 못 내요. 높낮이·빠르기를 바꾸고 배경 잡음을 같이 틀어서 잘 안 들리는 상황을 흉내 내요."),
     el("div", { class: "h" }, pick.mode === "talk" ? "상황" : ""), startArea,
     el("div", { class: "h" }, "내 기록"), stats,
     el("div", { class: "h" }, "목소리"),
@@ -393,7 +450,7 @@ async function start(mode, scenarioId, extra = {}) {
   const feed = $("#feed");
   feed.replaceChildren(thinkingEl(mode === "video" ? (extra.scriptStyle ? "대본을 쓰는 중 (20~30초)" : "영상 자막을 정리하는 중 (10~20초)") : String(scenarioId).startsWith("gen:") ? "새 상황을 만드는 중" : "수업 준비 중"));
   try {
-    const r = await streamApi("/api/session/start", { mode, scenarioId, level: pick.level, ...extra }, (reply) => playReply(reply));
+    const r = await streamApi("/api/session/start", { mode, scenarioId, level: pick.level, register: pick.register, ...extra }, (reply) => playReply(reply));
     S.current = r.session;
     renderLesson();
   } catch (err) {
