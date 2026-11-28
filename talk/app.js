@@ -1471,7 +1471,7 @@ function voiceFor(gender) {
   const v = voices.find((x) => re.test(x.name));
   return v || bestVoice();
 }
-const LS = { phase: "idle", item: null, plays: 0, answers: [], result: null, genre: "random", gen: 0, loading: false };
+const LS = { phase: "idle", item: null, plays: 0, answers: [], result: null, genre: "random", sub: "random", gen: 0, loading: false, length: localStorage.getItem("listenLen") || "short" };
 function playLines(lines, from = 0, onLine) {
   LS.gen++;
   const gen = LS.gen;
@@ -1513,14 +1513,20 @@ function renderListen(root) {
       el("div", {}, el("span", {}, "정답률"), el("b", {}, okRate == null ? "-" : `${okRate}%`))),
       el("div", { class: "level-desc" }, "자막 없이 듣고 문제를 푼 뒤 대본을 봐요. 적게 듣고 맞힐수록 점수가 높아요. 속도·배경 소리는 홈의 설정과 말풍선 속도를 따라가요.")),
     el("div", { class: "h" }, "들을 거리"),
-    el("div", { class: "gen-grid" }, [{ key: "random", name: "아무거나" }, ...(S.listenGenres || [])].map((g) =>
-      el("button", { class: "gen tile" + (LS.genre === g.key ? " picked" : ""), onclick: () => { LS.genre = g.key; renderRead(); } }, el("b", {}, g.name), el("span", {}, LS.genre === g.key ? "✓ 골랐어요" : ""), el("i", { class: "tile-emoji" }, { random: "🎲", talk2: "🗣️", phone: "📞", announce: "📢", news: "📺", interview: "🎙️", chat: "☕" }[g.key] || "🎧")))),
+    el("div", { class: "gen-grid pick-grid" }, [{ key: "random", name: "아무거나" }, ...(S.listenGenres || [])].map((g) =>
+      el("button", { class: "gen tile" + (LS.genre === g.key ? " picked" : ""), onclick: () => { LS.genre = g.key; LS.sub = "random"; renderRead(); } }, el("b", {}, g.name), el("span", {}, LS.genre === g.key ? "✓ 골랐어요" : ""), el("i", { class: "tile-emoji" }, { random: "🎲", talk2: "🗣️", phone: "📞", announce: "📢", news: "📺", interview: "🎙️", chat: "☕" }[g.key] || "🎧")))),
+    (() => { const g = (S.listenGenres || []).find((x) => x.key === LS.genre); return g?.subs ? [el("div", { class: "h" }, `${g.name}: 장소·상황`),
+      el("div", { class: "chips" }, [{ key: "random", name: "아무거나" }, ...g.subs].map((sb) => el("button", { class: "chip" + (LS.sub === sb.key ? " on" : ""), title: sb.hint || "", onclick: () => { LS.sub = sb.key; renderRead(); } }, sb.name))),
+      LS.sub !== "random" ? el("div", { class: "level-desc" }, g.subs.find((x) => x.key === LS.sub)?.hint || "") : null] : null; })(),
+    el("div", { class: "h" }, "길이"),
+    el("div", { class: "chips" }, Object.entries(S.listenLengths || {}).map(([k, v]) => el("button", { class: "chip" + (LS.length === k ? " on" : ""), onclick: () => { LS.length = k; localStorage.setItem("listenLen", k); renderRead(); } }, v.name))),
+    ["long", "xl"].includes(LS.length) ? el("div", { class: "level-desc" }, "긴 것은 만드는 데 1분쯤 걸려요. 들을 때 인물 이름을 누르면 그 줄부터 다시 들을 수 있어요.") : null,
     el("div", { class: "h" }, "단계 (홈과 같음)"),
     el("div", { class: "levels" }, M.LEVELS.map((l) => el("button", { class: pick.level === l.n ? "on" : "", onclick: () => { setLevel(l.n); renderRead(); } }, l.n))),
     el("div", { class: "level-desc" }, M.LEVELS[pick.level - 1].name),
     LS.phase === "ready" && LS.item
       ? el("button", { class: "primary", onclick: () => { LS.phase = "play"; LS.plays = 0; LS.answers = []; renderRead(); } }, `받아 둔 듣기 시작: ${LS.item.title_ko}`)
-      : el("button", { class: "primary", disabled: LS.loading, onclick: fetchListening }, LS.loading ? "들을 거리를 만드는 중… (15초쯤)" : "새 듣기 받기"),
+      : el("button", { class: "primary", disabled: LS.loading, onclick: fetchListening }, LS.loading ? `들을 거리를 만드는 중… (${{ short: "15초", mid: "30초", long: "1분", xl: "1~2분" }[LS.length] || "15초"}쯤)` : "새 듣기 받기"),
     hist.length ? [el("div", { class: "h" }, "최근 기록"), el("div", { class: "rec-list" }, hist.slice(-8).reverse().map((r) =>
       el("div", { class: "rec" }, el("div", { class: `stamp sm g-${r.correct === r.total ? "S" : r.correct >= r.total - 1 ? "A" : "C"}` }, `${r.correct}`),
         el("div", { class: "mid" }, el("b", {}, r.title), el("span", {}, `${r.date} · ${r.genreName} · ${r.level}단계 · ${r.plays}번 들음`)), el("div", { class: "sc" }, `+${r.score}`))))] : null);
@@ -1528,7 +1534,7 @@ function renderListen(root) {
 async function fetchListening() {
   LS.loading = true; renderRead();
   try {
-    const r = await api("/api/listen/new", { method: "POST", body: JSON.stringify({ level: pick.level, genre: LS.genre }) });
+    const r = await api("/api/listen/new", { method: "POST", body: JSON.stringify({ level: pick.level, genre: LS.genre, length: LS.length, sub: LS.sub }) });
     LS.item = r.listening; S.listening = r.listening; LS.phase = "play"; LS.plays = 0; LS.answers = [];
   } catch (e) { toast(e.message); }
   LS.loading = false;
@@ -1537,9 +1543,10 @@ async function fetchListening() {
 function listenPlay(root) {
   const x = LS.item;
   const rows = x.lines.map((l, i) => el("div", { class: "ls-line " + (l.gender === "m" ? "m" : "f") },
-    el("span", { class: "ls-who" }, l.speaker),
+    el("span", { class: "ls-who", title: "여기부터 듣기", onclick: () => { if (!LS.plays) LS.plays = 1; playLines(x.lines, i, mark); } }, "▸ " + l.speaker),
     el("span", { class: "ls-text hidden", lang: "ja", onclick: (e) => e.target.classList.remove("hidden") }, l.text)));
-  const mark = (k) => rows.forEach((r, i) => r.classList.toggle("now", i === k));
+  const prog = el("div", { class: "note" }, `${x.lines.length}줄`);
+  const mark = (k) => { rows.forEach((r, i) => r.classList.toggle("now", i === k)); if (k >= 0) { prog.textContent = `${k + 1} / ${x.lines.length}줄`; if (x.lines.length > 12) rows[k].scrollIntoView({ block: "center", behavior: "smooth" }); } };
   const playB = el("button", { class: "primary big-play" }, LS.plays ? `▶ 다시 듣기 (${LS.plays + 1}번째)` : "▶ 듣기 시작");
   playB.onclick = () => { LS.plays++; playB.textContent = `▶ 다시 듣기 (${LS.plays + 1}번째)`; playLines(x.lines, 0, mark); };
   const stopB = el("button", { class: "secondary" }, "⏹ 멈춤"); stopB.onclick = () => { stopLines(); mark(-1); };
@@ -1547,7 +1554,7 @@ function listenPlay(root) {
   put(root, rmSwitch(),
     el("div", { class: "read-head" }, el("div", {}, el("span", { class: "rd-genre" }, `${x.genreName} · ${x.level}단계`), el("h2", {}, x.title_ko))),
     el("div", { class: "task", style: "margin-left:0" }, "상황: " + x.situation_ko),
-    el("div", { class: "row-btns" }, playB, stopB),
+    el("div", { class: "row-btns" }, playB, stopB), prog,
     el("div", { class: "card ls-box" }, el("div", { class: "note", style: "margin-bottom:6px" }, "자막은 가려져 있어요. 정 모르겠으면 줄을 눌러 보세요."), rows),
     !quiz ? el("button", { class: "primary", disabled: false, onclick: () => { if (!LS.plays) { toast("먼저 한 번 들어 보세요"); return; } stopLines(); LS.phase = "quiz"; renderRead(); } }, "다 들었어요 → 문제 풀기") : null,
     quiz ? [x.questions.map((q, qi) => el("div", { class: "card q" },
