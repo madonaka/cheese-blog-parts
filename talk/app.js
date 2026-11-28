@@ -29,6 +29,13 @@ const LNAME = LANG === "en" ? "영어" : "일본어";
 const PAIR = LANG === "en" ? "한↔영" : "한↔일";
 function setLang(l) { localStorage.setItem("lang", l); location.reload(); }
 
+function holdScroll(root, key) {
+  const same = root.dataset.screen === key;
+  const y = root.scrollTop;
+  root.dataset.screen = key;
+  requestAnimationFrame(() => { root.scrollTop = same ? y : 0; });
+}
+
 let S = null;          // 서버 상태
 let M = null;          // 메타(상황, 단계 …)
 let busy = false;
@@ -264,7 +271,7 @@ function speak(text, { slow = false, btn = null } = {}) {
   u.lang = SPEECH;
   const lv = M.LEVELS[(S.current?.level || pick.level) - 1];
   const adj = Number(localStorage.getItem("rateAdj") || 0);
-  u.rate = Math.max(0.5, ((slow ? 0.7 : lv.rate) + adj) * (slow ? 1 : envOf().rate));
+  u.rate = Math.max(0.5, Math.min(2.6, slow ? 0.7 : lv.rate * speedMul() * envOf().rate));
   u.pitch = envOf().pitch;
   if (!slow) noiseOn();
   speakingBtn?.classList.remove("speaking");
@@ -368,6 +375,7 @@ function ring(val, max) {
 
 function renderHome() {
   const root = $("#view-home");
+  holdScroll(root, "home");
   const rk = S.rank;
   const toNext = rk.next ? rk.next - S.xp : 0;
   const pct = rk.next ? ((S.xp - rk.from) / (rk.next - rk.from)) * 100 : 100;
@@ -458,9 +466,8 @@ function renderHome() {
   // 목소리
   const sel = el("select", { onchange: (e) => { localStorage.setItem(LANG === "en" ? "voice_en" : "voice", e.target.value); speak(LANG === "en" ? "Hello! Let's practice together today." : "こんにちは。今日も頑張りましょう。"); } },
     voices.length ? voices.map((v) => el("option", { value: v.name, selected: bestVoice()?.name === v.name }, v.name)) : el("option", {}, `${LNAME} 목소리 없음`));
-  const rateAdj = Number(localStorage.getItem("rateAdj") || 0);
-  const rateSel = el("select", { onchange: (e) => { localStorage.setItem("rateAdj", e.target.value); speak(LANG === "en" ? "I will speak at this speed." : "この速さで話します。"); } },
-    [[-0.15, "느리게"], [0, "단계대로"], [0.15, "빠르게"]].map(([v, t]) => el("option", { value: v, selected: rateAdj === v }, t)));
+  localStorage.removeItem("rateAdj"); // 옛 「느리게·빠르게」(더하기 0.15)는 거의 티가 안 나서 없앰
+  const rateSel = el("div", { class: "chips", style: "margin:0" }, SPEEDS.map((v) => el("button", { class: "chip" + (speedMul() === v ? " on" : ""), onclick: () => { localStorage.setItem("aiSpeed", v); renderHome(); speak(LANG === "en" ? "I will speak at this speed." : "この速さで話します。"); } }, `${v}×`)));
 
   put(root, 
     idcard, today,
@@ -476,7 +483,8 @@ function renderHome() {
     el("div", { class: "h" }, pick.mode === "talk" ? "상황" : ""), startArea,
     el("div", { class: "h" }, "내 기록"), stats,
     el("div", { class: "h" }, "목소리"),
-    el("div", { class: "voice-row" }, sel, rateSel),
+    el("div", { class: "voice-row" }, sel),
+    el("div", { class: "h" }, "상대 말 속도 (수업·듣기·코스 모두)"), rateSel,
     el("div", { class: "voice-row" }, `모델 ${S.model} · 오늘 $${S.cost.today.toFixed(3)}`)
   );
 }
@@ -1029,6 +1037,7 @@ function perWeekPicker(onPick, current) {
 
 function renderCourse() {
   const root = $("#view-course");
+  holdScroll(root, CR && S.course && CR.key === S.course.key ? `day-${CR.step}-${CR.i}-${CR.graded ? "g" : ""}` : PL ? `pl-${PL.i}` : PICK ? "pick" : "course-main");
   if (CR && S.course && CR.key === S.course.key && S.course.v === 2) return renderDay(root);
   if (PL) return renderPlacement(root);
   const C = S.courseMeta;
@@ -1579,6 +1588,7 @@ function listenResult(root) {
 
 function renderRead() {
   const root = $("#view-read");
+  holdScroll(root, RM === "listen" ? `listen-${LS.phase}` : `read-${R.phase}`);
   if (RM === "listen") return renderListen(root);
   if (!R.reading && S.reading && R.phase === "idle") { R.reading = S.reading; R.phase = "ready"; }
   clearInterval(R.timer);
@@ -1891,6 +1901,7 @@ function renderReadResult(root) {
 let VS = { phase: "hub" }; // 단어 공부 진행
 function renderWeak() {
   const root = $("#view-weak");
+  holdScroll(root, VS.phase === "hub" ? "weak-hub" : `weak-${VS.phase}-${VS.i ?? ""}-${VS.li ?? ""}`);
   if (VS.phase === "learn") return vocabLearn(root);
   if (VS.phase === "quiz") return vocabQuiz(root);
   if (VS.phase === "done") return vocabDone(root);
