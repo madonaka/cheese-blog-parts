@@ -29,6 +29,38 @@ const LNAME = LANG === "en" ? "영어" : "일본어";
 const PAIR = LANG === "en" ? "한↔영" : "한↔일";
 function setLang(l) { localStorage.setItem("lang", l); location.reload(); }
 
+let COURSE_AWAY = false; // 회차를 하다가 코스 목록으로 나와 있음(진행은 그대로 남김)
+function backBar(label, fn) {
+  return el("div", { class: "back-bar" }, el("button", { class: "back-btn", onclick: fn }, "‹ 뒤로"), el("span", {}, label || ""));
+}
+// 지금 보는 화면에서 한 단계 뒤로. 더 갈 곳이 없으면 false
+function goBack() {
+  if (!$("#modal").hidden) { closeModal(); return true; }
+  if (rec) { try { rec.abort(); } catch {} }
+  const v = currentView;
+  if (v === "read") {
+    if (RM === "listen" && LS.phase !== "idle") { stopLines(); LS.phase = LS.result ? "idle" : LS.item ? "ready" : "idle"; if (LS.result) { LS.item = null; LS.result = null; } renderRead(); return true; }
+    if (RM === "read" && R.phase !== "idle" && R.phase !== "ready") { clearInterval(R.timer); speechSynthesis.cancel(); R.phase = R.result ? "idle" : R.reading ? "ready" : "idle"; if (R.result) { R.reading = null; R.result = null; } renderRead(); return true; }
+  }
+  if (v === "weak" && VS.phase !== "hub") {
+    if (VS.phase === "quiz" && Object.keys(VS.res || {}).length && !confirm("지금까지 푼 단어는 저장하지 않고 나갈까요?")) return true;
+    speechSynthesis.cancel(); VS = { phase: "hub" }; renderWeak(); return true;
+  }
+  if (v === "course") {
+    if (CR && !COURSE_AWAY) { speechSynthesis.cancel(); COURSE_AWAY = true; renderCourse(); return true; }
+    if (PL) { PL = null; renderCourse(); return true; }
+    if (PICK) { PICK = null; renderCourse(); return true; }
+  }
+  if (v !== "home") { speechSynthesis.cancel(); switchView("home"); return true; }
+  return false;
+}
+history.replaceState({ app: 0 }, "");
+history.pushState({ app: 1 }, "");
+addEventListener("popstate", () => {
+  if (goBack()) history.pushState({ app: 1 }, ""); // 앱 안에서 처리했으면 다시 한 칸 쌓아 둠
+  else history.back(); // 홈에서 더 갈 곳이 없으면 진짜로 나감
+});
+
 function holdScroll(root, key) {
   const same = root.dataset.screen === key;
   const y = root.scrollTop;
@@ -536,7 +568,7 @@ function renderLessonHead() {
         el("span", {}, (c.scenario ? "목표: " + c.scenario.goal + " · " : "") + lv.name + (c.twist ? " · 반전: " + c.twist : "") + (c.cost ? ` · 이번 수업 $${c.cost.toFixed(3)}` : ""))),
       el("div", { class: "score" }, el("b", {}, c.score || 0), el("span", {}, c.combo >= 2 ? `🔥 ${c.combo}콤보` : "")),
       el("div", { class: "lh-btns" },
-        el("button", { class: "mini", title: "수업은 그대로 두고 홈으로", onclick: () => switchView("home") }, "✕"),
+        el("button", { class: "mini", title: "수업은 그대로 두고 홈으로", onclick: () => switchView("home") }, "‹ 홈"),
         el("button", { class: "mini end", onclick: () => $("#endBtn").click() }, "끝내기"))),
     (c.goals || []).length ? el("div", { class: "goals" }, c.goals.map((g, i) => el("span", { class: "goal" + (g.done ? " done" : "") }, `${g.done ? "✓" : i + 1} ${g.text_ko}`))) : null,
     el("div", { class: "missions" }, (c.missions || []).map((m) =>
@@ -1038,8 +1070,8 @@ function perWeekPicker(onPick, current) {
 function renderCourse() {
   const root = $("#view-course");
   holdScroll(root, CR && S.course && CR.key === S.course.key ? `day-${CR.step}-${CR.i}-${CR.graded ? "g" : ""}` : PL ? `pl-${PL.i}` : PICK ? "pick" : "course-main");
-  if (CR && S.course && CR.key === S.course.key && S.course.v === 2) return renderDay(root);
-  if (PL) return renderPlacement(root);
+  if (CR && S.course && CR.key === S.course.key && S.course.v === 2 && !COURSE_AWAY) return renderDay(root);
+  if (PL) { renderPlacement(root); root.prepend(backBar(PL.check ? "4주 진단" : "진단 시험", goBack)); return; }
   const C = S.courseMeta;
   if (PICK) {
     const c = C.COURSES.find((x) => x.key === PICK.key);
@@ -1087,6 +1119,8 @@ function renderCourse() {
     needCheck
       ? el("button", { class: "challenge", onclick: () => { PL = { i: 0, answers: [], check: true }; renderCourse(); } },
           el("span", { class: "ico" }, "🏁"), el("div", {}, el("b", {}, "4주 끝! 진단 다시 보기"), el("span", {}, "처음 점수와 견주고, 통과하면 다음 반으로 올라가요.")))
+      : CR && CR.key === co.key && COURSE_AWAY ? el("button", { class: "challenge", onclick: () => openDay(CR.day) },
+          el("span", { class: "ico" }, "▶"), el("div", {}, el("b", {}, `${CR.day}회차 이어 하기`), el("span", {}, `하던 단계부터 · ${(stepsOf()[CR.step] || [])[1] || ""}`)))
       : el("button", { class: "challenge", onclick: () => openDay(next.n) },
           el("span", { class: "ico" }, next.test ? "📝" : "▶"),
           el("div", {}, el("b", {}, `${next.n}회차 ${next.test ? "주간 시험" : "시작"}`), el("span", {}, `${next.theme_ko} · ${next.pattern}`))),
@@ -1203,6 +1237,7 @@ function answerCard({ prompt, sub, hint, lang = SPEECH, limit = 0, onDone, big =
 
 async function openDay(day) {
   const root = $("#view-course");
+  COURSE_AWAY = false;
   if (CR && CR.day === day && CR.key === S.course.key) return renderCourse();
   put(root, el("div", { class: "card" }, thinkingEl(`${day}회차 수업을 준비하는 중 (처음 열 때 20초쯤)`)));
   try {
@@ -1221,7 +1256,7 @@ function renderDay(root) {
   const [key] = steps[CR.step] || ["done"];
   const p = CR.pkg;
   const head = el("div", { class: "day-head" },
-    el("div", {}, el("button", { class: "mini", onclick: () => { CR = null; saveCR(); renderCourse(); } }, "← 코스"),
+    el("div", {}, el("button", { class: "back-btn", onclick: goBack }, "‹ 코스"),
       el("b", {}, ` ${CR.day}회차 · ${p.theme_ko}`)),
     el("div", { class: "score" }, el("b", {}, CR.score), el("span", {}, "")),
   );
@@ -1613,9 +1648,10 @@ function listenResult(root) {
 function renderRead() {
   const root = $("#view-read");
   holdScroll(root, RM === "listen" ? `listen-${LS.phase}` : `read-${R.phase}`);
-  if (RM === "listen") return renderListen(root);
+  if (RM === "listen") { renderListen(root); if (LS.phase !== "idle" && LS.phase !== "ready") root.prepend(backBar(LS.item?.title_ko || "듣기", goBack)); return; }
   if (!R.reading && S.reading && R.phase === "idle") { R.reading = S.reading; R.phase = "ready"; }
   clearInterval(R.timer);
+  if (R.phase !== "idle" && R.phase !== "ready") setTimeout(() => { if (!root.querySelector(".back-bar")) root.prepend(backBar(R.reading?.title_ja || "읽기", goBack)); }, 0);
   if (R.phase === "reading") return renderReading(root);
   if (R.phase === "quiz") return renderQuiz(root);
   if (R.phase === "result") return renderReadResult(root);
@@ -1926,6 +1962,7 @@ let VS = { phase: "hub" }; // 단어 공부 진행
 function renderWeak() {
   const root = $("#view-weak");
   holdScroll(root, VS.phase === "hub" ? "weak-hub" : `weak-${VS.phase}-${VS.i ?? ""}-${VS.li ?? ""}`);
+  if (VS.phase !== "hub") setTimeout(() => { if (!root.querySelector(".back-bar")) root.prepend(backBar(VS.phase === "combo" ? "문형 × 단어" : "오늘의 단어", goBack)); }, 0);
   if (VS.phase === "learn") return vocabLearn(root);
   if (VS.phase === "quiz") return vocabQuiz(root);
   if (VS.phase === "done") return vocabDone(root);
@@ -1964,6 +2001,7 @@ async function startVocabToday() {
   try {
     const r = await api("/api/vocab/today", { method: "POST", body: "{}" });
     VB.vocab = r.vocab;
+    if (VS.phase !== "loading") return; // 기다리다 뒤로 나감
     const quiz = [...r.fresh, ...r.due].sort(() => Math.random() - 0.5);
     if (!quiz.length) { VS = { phase: "hub" }; toast("오늘 할 단어를 다 했어요!"); renderWeak(); return; }
     VS = { phase: r.fresh.length ? "learn" : "quiz", fresh: r.fresh, queue: quiz.map((x) => x.id), items: Object.fromEntries(quiz.map((x) => [x.id, x])), i: 0, li: 0, res: {}, tries: {} };
@@ -2041,6 +2079,7 @@ async function startCombo(n) {
   VS = { phase: "loading", msg: "배운 문형에 단어를 끼워 문장을 만드는 중 (15초쯤)" }; renderWeak();
   try {
     const r = await api("/api/vocab/combo", { method: "POST", body: JSON.stringify({ n }) });
+    if (VS.phase !== "loading") return; // 기다리다 뒤로 나감
     VS = { phase: "combo", items: r.items, i: 0, answers: [], graded: null };
   } catch (e) { toast(e.message); VS = { phase: "hub" }; }
   renderWeak();
