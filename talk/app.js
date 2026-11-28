@@ -215,6 +215,17 @@ function playerTools(text) {
   return [playB, restartB, againB, speedB, pos];
 }
 
+// ---------- 타일 그림(이모지) ----------
+const TILE_EMOJI = {
+  random: "🎲", variety: "🎤", vlog: "📹", drama: "🎬", office: "💼", life: "🏘️", trend: "📰", travel: "✈️", daily: "☕", phone: "📞", toeic: "🏢",
+  "w-standup": "🧑‍💻", "w-delay": "⏰", "w-client": "🤝", "w-1on1": "🗣️", "w-explain": "📋", "w-meeting": "🙋", "w-chat": "🍱",
+  "l-hospital": "🏥", "l-ward": "🏛️", "l-realestate": "🔧", "l-neighbor": "🚪", "l-salon": "💇", "l-phone": "📞",
+  "t-debate": "⚖️", "t-culture": "🇰🇷", "t-news": "📰", "t-interview": "👔", "t-hobby": "🎨",
+  "e-cafe": "☕", "e-hotel": "🏨", "e-way": "🗺️", "e-shop": "👕", "e-intro": "👋", "e-meeting": "📅", "e-report": "📊", "e-smalltalk": "🌤️", "e-korea": "🇰🇷",
+  beginner: "🌱", intermediate: "🌿", advanced: "🌳", master: "🏔️", intro: "🔤", basic: "🧱", preint: "🪜", toeic600: "🎯", toeic800: "🏆",
+};
+const tileEmoji = (k) => TILE_EMOJI[k] || "💬";
+
 // ---------- 머리 ----------
 function renderTop() {
   document.title = `${LNAME} 회화반`;
@@ -285,11 +296,11 @@ function renderHome() {
     const cats = [...new Set(M.SCENARIOS.map((s) => s.cat))];
     startArea = el("div", {},
       el("div", { class: "gen-grid" }, [{ key: "random", name: "아무거나" }, ...M.STYLES].map((st) =>
-        el("button", { class: "gen", onclick: () => start("talk", "gen:" + st.key) }, el("b", {}, st.name), el("span", {}, st.key === "random" ? "분위기까지 무작위" : "매번 새 장면")))),
+        el("button", { class: "gen tile", onclick: () => start("talk", "gen:" + st.key) }, el("b", {}, st.name), el("span", {}, st.key === "random" ? "분위기까지 무작위" : "매번 새 장면"), el("i", { class: "tile-emoji" }, tileEmoji(st.key))))),
       el("details", { class: "fixed-scenes" }, el("summary", {}, "기본 상황 18가지에서 고르기"),
       el("div", { class: "chips" }, cats.map((c) => el("button", { class: "chip" + (pick.cat === c ? " on" : ""), onclick: () => { pick.cat = c; renderHome(); } }, c))),
       el("div", { class: "scenes" }, M.SCENARIOS.filter((s) => s.cat === pick.cat).map((s) =>
-        el("button", { class: "scene", onclick: () => start("talk", s.id) }, el("small", {}, s.cat), el("b", {}, s.title), el("span", {}, "목표: " + s.goal))))));
+        el("button", { class: "scene tile", onclick: () => start("talk", s.id) }, el("small", {}, s.cat), el("b", {}, s.title), el("span", {}, "목표: " + s.goal), el("i", { class: "tile-emoji" }, tileEmoji(s.id)))))));
   } else if (pick.mode === "video") {
     const ta = el("textarea", { class: "paste", rows: 7, lang: "ja", placeholder: "유튜브에서 「…더보기 → 스크립트 표시」를 열고 자막을 통째로 복사해 붙여 넣으세요. 예능·드라마 자막도 됩니다." });
     const ti = el("input", { class: "paste-title", placeholder: "영상 제목 (없어도 됨)" });
@@ -305,7 +316,7 @@ function renderHome() {
     startArea = el("div", {},
       el("div", { class: "sub-h" }, "① 영상 없이: AI가 대본을 지어 들려줘요"),
       el("div", { class: "gen-grid" }, [{ key: "random", name: "아무거나" }, ...M.STYLES].map((st) =>
-        el("button", { class: "gen", onclick: () => start("video", null, { scriptStyle: st.key }) }, el("b", {}, st.name), el("span", {}, "새 대본 듣고 대화")))),
+        el("button", { class: "gen tile", onclick: () => start("video", null, { scriptStyle: st.key }) }, el("b", {}, st.name), el("span", {}, "새 대본 듣고 대화"), el("i", { class: "tile-emoji" }, tileEmoji(st.key))))),
       el("div", { class: "sub-h" }, "② 진짜 영상으로: 찾아서 자막 붙여 넣기"),
       el("div", { class: "find" }, FIND.map(([t, q]) => el("a", { href: yt(q), target: "_blank", rel: "noopener" }, t, " ↗"))),
       el("div", { class: "level-desc", style: "margin-bottom:8px" }, "영상 아래 「…더보기 → 스크립트 표시」를 열고 자막을 길게 눌러 전부 복사해 오세요. PC 가 편해요."),
@@ -775,8 +786,8 @@ function renderCourse() {
         el("span", { class: "ico" }, "📝"), el("div", {}, el("b", {}, "5분 진단 시험 보고 반 정하기"), el("span", {}, `한국어 문장 6개를 ${LNAME}로 말해요.${LANG === "en" ? " 하나도 못 해도 괜찮아요. 입문반부터 시작해요." : ""}`))),
       S.placement ? el("div", { class: "card" }, el("b", {}, "지난 진단 결과: " + (C.COURSES.find((c) => c.key === S.placement.course)?.name || "")), el("div", { class: "note" }, S.placement.comment_ko)) : null,
       el("div", { class: "h" }, "반 바로 고르기"),
-      el("div", { class: "scenes" }, C.COURSES.map((c) => el("button", { class: "scene", onclick: () => { PICK = { key: c.key }; renderCourse(); } },
-        S.placement?.course === c.key ? el("small", {}, "추천") : null, el("b", {}, c.name), el("span", {}, c.desc)))));
+      el("div", { class: "scenes" }, C.COURSES.map((c) => el("button", { class: "scene tile", onclick: () => { PICK = { key: c.key }; renderCourse(); } },
+        S.placement?.course === c.key ? el("small", {}, "추천") : null, el("b", {}, c.name), el("span", {}, c.desc), el("i", { class: "tile-emoji" }, tileEmoji(c.key))))));
     return;
   }
   const co = S.course;
@@ -880,7 +891,10 @@ function answerCard({ prompt, sub, hint, lang = SPEECH, limit = 0, onDone, big =
   const skipB = el("button", { class: "ghost-btn" }, "모르겠어요");
   let t0 = 0, sec = 99, timer = null, said = "", state = "idle";
   const row = el("div", { class: "ans-row" });
+  const pill = el("span", { class: "speak-pill" });
   function draw() {
+    pill.textContent = state === "recording" ? "말하는 중…" : state === "review" ? "이렇게 들었어요" : "말해 보세요";
+    pill.className = "speak-pill" + (state === "recording" ? " rec" : state === "review" ? " rv" : "");
     // idle: [입력칸][모르겠어요][마이크]  recording: [취소][마이크(멈춤)]  review: [다시 말하기][입력칸(고쳐 적기)] + 제출
     if (state === "recording") row.replaceChildren(cancelB, el("span", { style: "flex:1;font-size:13px;color:var(--muted)" }, "다 말하면 마이크를 다시 누르세요"), micB);
     else if (state === "review") row.replaceChildren(retryB, typed);
@@ -907,6 +921,7 @@ function answerCard({ prompt, sub, hint, lang = SPEECH, limit = 0, onDone, big =
   typed.addEventListener("input", () => { if (state === "idle") skipB.textContent = typed.value.trim() ? "보내기" : "모르겠어요"; });
   draw();
   return el("div", { class: "card ans" },
+    pill,
     emoji ? el("div", { class: "ans-emoji" }, emoji) : null,
     el("div", { class: "ans-q" + (big ? " big" : ""), lang: /[ぁ-んァ-ン一-龥]/.test(prompt) && !/[가-힣]/.test(prompt) ? "ja" : "ko" }, prompt),
     sub ? el("div", { class: "note tip", style: "text-align:center" }, sub) : null,
@@ -939,7 +954,8 @@ function renderDay(root) {
       el("b", {}, ` ${CR.day}회차 · ${p.theme_ko}`)),
     el("div", { class: "score" }, el("b", {}, CR.score), el("span", {}, "")),
   );
-  const dots = el("div", { class: "stepdots" }, steps.map(([k, t], i) => el("span", { class: i < CR.step ? "ok" : i === CR.step ? "now" : "" }, t)));
+  const dots = el("div", {}, el("div", { class: "stepdots" }, steps.map(([k, t], i) => el("span", { class: i < CR.step ? "ok" : i === CR.step ? "now" : "", title: t }))),
+    el("div", { class: "step-name" }, `${Math.min(CR.step + 1, steps.length)} / ${steps.length} · ${(steps[CR.step] || steps[steps.length - 1])[1]}`));
   const body = el("div");
   put(root, head, dots, body);
   ({ pattern: stepPattern, drills: stepDrills, test: stepDrills, expr: stepCards, words: stepCards, trans: stepTrans, toeic: stepToeic, talk: stepTalk, review: stepCards, done: stepDone })[key](body, key);
