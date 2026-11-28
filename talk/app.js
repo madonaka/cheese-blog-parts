@@ -43,18 +43,18 @@ function goBack() {
   const v = currentView;
   if (v === "read") {
     if (RM === "listen" && LS.phase !== "idle") { stopLines(); LS.phase = LS.result ? "idle" : LS.item ? "ready" : "idle"; if (LS.result) { LS.item = null; LS.result = null; } renderRead(); return true; }
-    if (RM === "read" && R.phase !== "idle" && R.phase !== "ready") { clearInterval(R.timer); speechSynthesis.cancel(); R.phase = R.result ? "idle" : R.reading ? "ready" : "idle"; if (R.result) { R.reading = null; R.result = null; } renderRead(); return true; }
+    if (RM === "read" && R.phase !== "idle" && R.phase !== "ready") { clearInterval(R.timer); stopSpeak(); R.phase = R.result ? "idle" : R.reading ? "ready" : "idle"; if (R.result) { R.reading = null; R.result = null; } renderRead(); return true; }
   }
   if (v === "weak" && VS.phase !== "hub") {
     if (VS.phase === "quiz" && Object.keys(VS.res || {}).length && !confirm("지금까지 푼 단어는 저장하지 않고 나갈까요?")) return true;
-    speechSynthesis.cancel(); VS = { phase: "hub" }; renderWeak(); return true;
+    stopSpeak(); VS = { phase: "hub" }; renderWeak(); return true;
   }
   if (v === "course") {
-    if (CR && !COURSE_AWAY) { speechSynthesis.cancel(); COURSE_AWAY = true; renderCourse(); return true; }
+    if (CR && !COURSE_AWAY) { stopSpeak(); stopLines(); COURSE_AWAY = true; renderCourse(); return true; }
     if (PL) { PL = null; renderCourse(); return true; }
     if (PICK) { PICK = null; renderCourse(); return true; }
   }
-  if (v !== "home") { speechSynthesis.cancel(); switchView("home"); return true; }
+  if (v !== "home") { stopSpeak(); stopLines(); switchView("home"); return true; }
   return false;
 }
 history.replaceState({ app: 0 }, "");
@@ -339,30 +339,172 @@ function noiseOff() {
   NOISE.nodes = [];
 }
 
+// ---------- Google Cloud TTS (Neural2) 통합 엔진 + Cache API 영구 캐시 + 브라우저 자동 폴백 ----------
+let TTS_BROKEN = false; // 서버 인증 없음/월 한도 초과 시 세션 중 반복 지연 방지
+let TTS_WARNED = false;
+const TTS_VOICES = [
+  ["f", "여성 1 (추천)"],
+  ["f2", "여성 2"],
+  ["m", "남성 1"],
+  ["m2", "남성 2"],
+];
+const ttsEngine = () => getPref("ttsEngine", "google");
+const ttsVoice = () => getPref("ttsVoice", "f");
+const useGoogleTts = () => ttsEngine() !== "browser" && !TTS_BROKEN;
+const GTTS = { el: null, gen: 0, mem: new Map(), inflight: new Map() };
+
+function ttsHash(s) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0).toString(36);
+}
+function gttsRate(slow = false) {
+  const lv = M?.LEVELS?.[(S?.current?.level || pick.level || 1) - 1] || { rate: 1 };
+  return Math.max(0.5, Math.min(2.2, slow ? 0.72 : lv.rate * speedMul() * envOf().rate));
+}
+function gttsRemember(ck, url) {
+  GTTS.mem.set(ck, url);
+  if (GTTS.mem.size > 150) {
+    const firstKey = GTTS.mem.keys().next().value;
+    const oldUrl = GTTS.mem.get(firstKey);
+    GTTS.mem.delete(firstKey);
+    try { URL.revokeObjectURL(oldUrl); } catch {}
+  }
+  return url;
+}
+function fetchTtsUrl(text, voice = ttsVoice()) {
+  const clean = String(text || "").trim().slice(0, 1200);
+  if (!clean) return Promise.reject(new Error("empty"));
+  const h = ttsHash(clean);
+  const ck = `${LANG}:${voice}:${h}:${clean.length}`;
+  if (GTTS.mem.has(ck)) return Promise.resolve(GTTS.mem.get(ck));
+  if (GTTS.inflight.has(ck)) return GTTS.inflight.get(ck);
+  const cachePath = `/talk-tts/${LANG}/${voice}/${h}-${clean.length}`;
+  const p = (async () => {
+    try {
+      const cache = "caches" in window ? await caches.open("talk-tts-v1").catch(() => null) : null;
+      const hit = cache && (await cache.match(cachePath));
+      if (hit) {
+        const blob = await hit.blob();
+        return gttsRemember(ck, URL.createObjectURL(blob));
+      }
+      const r = await api("/api/tts/speak", { method: "POST", body: JSON.stringify({ text: clean, voice }) });
+      const blob = b64Blob(r.mp3);
+      if (S?.tts && r.used != null) S.tts.used = r.used;
+      cache?.put(cachePath, new Response(blob, { headers: { "content-type": "audio/mpeg" } })).catch(() => {});
+      return gttsRemember(ck, URL.createObjectURL(blob));
+    } catch (e) {
+      const msg = String(e?.message || "");
+      if (!IS_REMOTE || /한도|credential|auth|token|실패|Could not load|401|403|500/i.test(msg)) {
+        TTS_BROKEN = true;
+        if (!TTS_WARNED) {
+          TTS_WARNED = true;
+          toast(/한도/.test(msg) ? `${msg} (브라우저 음성으로 전환했어요)` : "Google 음성을 쓸 수 없어 브라우저 음성으로 전환했어요");
+        }
+      }
+      throw e;
+    } finally {
+      GTTS.inflight.delete(ck);
+    }
+  })();
+  GTTS.inflight.set(ck, p);
+  return p;
+}
+
 let speakingBtn = null;
-function speak(text, { slow = false, btn = null } = {}) {
+function gttsStop() {
+  GTTS.gen++;
+  if (GTTS.el) {
+    GTTS.el.onended = GTTS.el.onerror = null;
+    try { GTTS.el.pause(); } catch {}
+  }
+  speakingBtn?.classList.remove("speaking");
+  speakingBtn = null;
+  noiseOff();
+}
+function stopSpeak() {
+  try { speechSynthesis.cancel(); } catch {}
+  gttsStop();
+}
+const SILENT_WAV = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+function unlockAudio() {
+  try { speechSynthesis.speak(new SpeechSynthesisUtterance("")); } catch {}
+  if (GTTS.unlocked) return;
+  try {
+    const a = (GTTS.el ||= Object.assign(new Audio(), { preload: "auto" }));
+    a.muted = true;
+    a.src = SILENT_WAV;
+    const pr = a.play();
+    const done = () => { if (a.src === SILENT_WAV) { try { a.pause(); } catch {} } a.muted = false; GTTS.unlocked = true; };
+    if (pr && pr.then) pr.then(done).catch(() => { a.muted = false; });
+    else done();
+  } catch {}
+}
+function gttsPlayUrl(url, { rate, slow = false, onEnd, onErr, gen }) {
+  if (gen !== GTTS.gen) return;
+  const a = (GTTS.el ||= Object.assign(new Audio(), { preload: "auto" }));
+  a.onended = a.onerror = null;
+  try { a.pause(); } catch {}
+  a.muted = false;
+  a.src = url;
+  a.playbackRate = rate;
+  a.defaultPlaybackRate = rate;
+  if (!slow) noiseOn();
+  a.onended = () => { if (gen !== GTTS.gen) return; a.onended = a.onerror = null; onEnd?.(); };
+  a.onerror = () => { if (gen !== GTTS.gen) return; a.onended = a.onerror = null; onErr?.(); };
+  const pr = a.play();
+  if (pr && pr.catch) pr.catch((e) => { if (gen !== GTTS.gen) return; a.onended = a.onerror = null; onErr?.(e); });
+}
+
+function speakBrowser(text, { slow = false, btn = null } = {}) {
   if (!("speechSynthesis" in window) || !text) return;
-  if (AP.playing) plPause();
-  speechSynthesis.cancel();
+  try { speechSynthesis.cancel(); } catch {}
   const u = new SpeechSynthesisUtterance(text);
   const v = bestVoice();
   if (v) u.voice = v;
   u.lang = SPEECH;
   const lv = M.LEVELS[(S.current?.level || pick.level) - 1];
-  const adj = Number(localStorage.getItem("rateAdj") || 0);
   u.rate = Math.max(0.5, Math.min(2.6, slow ? 0.7 : lv.rate * speedMul() * envOf().rate));
   u.pitch = envOf().pitch;
   if (!slow) noiseOn();
   speakingBtn?.classList.remove("speaking");
   speakingBtn = btn;
   btn?.classList.add("speaking");
-  u.onend = u.onerror = () => { btn?.classList.remove("speaking"); noiseOff(); };
+  u.onend = u.onerror = () => { btn?.classList.remove("speaking"); if (speakingBtn === btn) speakingBtn = null; noiseOff(); };
   speechSynthesis.speak(u);
+}
+
+function speak(text, { slow = false, btn = null } = {}) {
+  if (!text) return;
+  if (AP.playing) plPause();
+  if (LA.el && !LA.el.paused) audioStop();
+  stopSpeak();
+  if (!useGoogleTts()) return speakBrowser(text, { slow, btn });
+  const gen = GTTS.gen;
+  speakingBtn = btn;
+  btn?.classList.add("speaking");
+  const fallback = () => {
+    if (gen !== GTTS.gen) return;
+    btn?.classList.remove("speaking");
+    if (speakingBtn === btn) speakingBtn = null;
+    noiseOff();
+    speakBrowser(text, { slow, btn });
+  };
+  fetchTtsUrl(text).then((url) => {
+    if (gen !== GTTS.gen) return;
+    gttsPlayUrl(url, {
+      rate: gttsRate(slow),
+      slow,
+      gen,
+      onEnd: () => { btn?.classList.remove("speaking"); if (speakingBtn === btn) speakingBtn = null; noiseOff(); },
+      onErr: fallback,
+    });
+  }).catch(fallback);
 }
 
 
 // ---------- 상대 말 재생기: 문장 단위로 읽어서 멈춤·이어 듣기·한 문장 다시·처음부터·속도 ----------
-// speechSynthesis.pause 는 안드로이드에서 잘 안 먹어서, 문장마다 끊어 읽고 멈춘 문장부터 다시 읽는다.
+// Google Neural2 MP3(기본, 다음 문장 미리받기 + 영구 캐시) 또는 브라우저 speechSynthesis 로 문장 단위 재생
 const SPEEDS = [0.75, 1, 1.25, 1.5, 1.75, 2, 2.25];
 const AP = { text: "", sents: [], i: 0, playing: false, gen: 0, views: new Set() };
 function speedMul() { return Number(getPref("aiSpeed", "1")) || 1; }
@@ -396,17 +538,17 @@ function splitSents(text) {
   return out;
 }
 function plLoad(text) { if (AP.text === text) return; plStop(); AP.text = text; AP.sents = splitSents(text); AP.i = 0; }
-function plStop() { AP.playing = false; AP.gen++; try { speechSynthesis.cancel(); } catch {} noiseOff(); plNotify(); }
+function plStop() { AP.playing = false; AP.gen++; stopSpeak(); plNotify(); }
 function plPlay(from) {
   if (from != null) AP.i = from;
   if (AP.i >= AP.sents.length) AP.i = 0;
-  try { speechSynthesis.cancel(); } catch {}
+  if (LA.el && !LA.el.paused) audioStop();
+  stopSpeak();
   AP.playing = true; AP.gen++;
   const gen = AP.gen;
-  const next = () => {
-    if (gen !== AP.gen || !AP.playing) return;
-    if (AP.i >= AP.sents.length) { AP.playing = false; AP.i = AP.sents.length; plNotify(); return; }
-    const u = new SpeechSynthesisUtterance(AP.sents[AP.i]);
+  const playSentBrowser = (sent) => {
+    if (!("speechSynthesis" in window)) { AP.playing = false; noiseOff(); plNotify(); return; }
+    const u = new SpeechSynthesisUtterance(sent);
     const v = bestVoice(); if (v) u.voice = v;
     u.lang = SPEECH;
     const lv = M.LEVELS[(S.current?.level || pick.level) - 1];
@@ -415,12 +557,34 @@ function plPlay(from) {
     noiseOn();
     u.onend = () => { if (gen !== AP.gen) return; AP.i++; if (AP.i >= AP.sents.length) noiseOff(); next(); };
     u.onerror = () => { noiseOff(); if (gen !== AP.gen) return; AP.playing = false; plNotify(); };
-    plNotify();
     speechSynthesis.speak(u);
+  };
+  const next = () => {
+    if (gen !== AP.gen || !AP.playing) return;
+    if (AP.i >= AP.sents.length) { AP.playing = false; AP.i = AP.sents.length; noiseOff(); plNotify(); return; }
+    const sent = AP.sents[AP.i];
+    plNotify();
+    if (!useGoogleTts()) return playSentBrowser(sent);
+    // 다음 문장 백그라운드 미리받기(문장 전환 끊김 최소화)
+    if (AP.i + 1 < AP.sents.length) fetchTtsUrl(AP.sents[AP.i + 1]).catch(() => {});
+    const gGen = GTTS.gen;
+    fetchTtsUrl(sent).then((url) => {
+      if (gen !== AP.gen || !AP.playing) return;
+      gttsPlayUrl(url, {
+        rate: gttsRate(false),
+        slow: false,
+        gen: gGen,
+        onEnd: () => { if (gen !== AP.gen) return; AP.i++; if (AP.i >= AP.sents.length) noiseOff(); next(); },
+        onErr: () => { if (gen !== AP.gen || !AP.playing) return; playSentBrowser(sent); },
+      });
+    }).catch(() => {
+      if (gen !== AP.gen || !AP.playing) return;
+      playSentBrowser(sent);
+    });
   };
   next();
 }
-function plPause() { if (!AP.playing) return; AP.playing = false; AP.gen++; try { speechSynthesis.cancel(); } catch {} noiseOff(); plNotify(); }
+function plPause() { if (!AP.playing) return; AP.playing = false; AP.gen++; stopSpeak(); plNotify(); }
 function plNotify() { AP.views.forEach((f) => f()); }
 function playReply(text) { plLoad(text); AP.text = text; plPlay(0); }
 
@@ -442,7 +606,19 @@ function playerTools(text) {
   playB.onclick = () => { if (mine() && AP.playing) plPause(); else { plLoad(text); plPlay(); } };
   restartB.onclick = () => { plLoad(text); plPlay(0); };
   againB.onclick = () => { plLoad(text); const i = AP.playing || AP.i >= AP.sents.length ? Math.max(0, AP.i - (AP.playing ? 0 : 1)) : AP.i; plPlay(Math.min(i, AP.sents.length - 1)); };
-  speedB.onclick = () => { const k = SPEEDS.indexOf(speedMul()); setPref("aiSpeed", SPEEDS[(k + 1) % SPEEDS.length]); plNotify(); toast(`상대 말 속도 ${speedMul()}× (다음 문장부터)`); };
+  speedB.onclick = () => {
+    const k = SPEEDS.indexOf(speedMul());
+    setPref("aiSpeed", SPEEDS[(k + 1) % SPEEDS.length]);
+    plNotify();
+    if (GTTS.el && !GTTS.el.paused) {
+      const r = gttsRate(false);
+      GTTS.el.playbackRate = r;
+      GTTS.el.defaultPlaybackRate = r;
+      toast(`상대 말 속도 ${speedMul()}×`);
+    } else {
+      toast(`상대 말 속도 ${speedMul()}× (다음 문장부터)`);
+    }
+  };
   AP.views.add(draw);
   draw();
   return [playB, restartB, againB, speedB, pos];
@@ -517,6 +693,7 @@ function openSettingsModal() {
     el("div", { class: "chips" }, SPEEDS.map((v) => el("button", { class: "chip" + (speedMul() === v ? " on" : ""), onclick: () => {
       setPref("aiSpeed", v); plNotify();
       if (LA.el && !LA.el.paused) { LA.el.playbackRate = listenRate(); LA.el.defaultPlaybackRate = LA.el.playbackRate; }
+      else if (GTTS.el && !GTTS.el.paused) { const r = gttsRate(false); GTTS.el.playbackRate = r; GTTS.el.defaultPlaybackRate = r; }
       else speak(LANG === "en" ? "I will speak at this speed." : "この速さで話します。");
       if (currentView === "home") renderHome();
       openSettingsModal();
@@ -556,12 +733,31 @@ function openSettingsModal() {
       setPref("myRec", v ? "1" : "0"); openSettingsModal();
     } }, t))),
     el("div", { class: "level-desc" }, DUAL_MIC_OK ? "말하는 동안 내 목소리를 녹음해 원어민 발음과 비교해요." : "폰에서는 녹음과 음성 인식이 마이크를 같이 못 써서, 켜면 「잘 못 들었어요」가 자꾸 나올 수 있어요. 그래서 기본은 꺼 두었어요."),
-    el("div", { class: "h" }, "목소리"),
-    el("div", { class: "voice-row", style: "margin-top:0" }, sel),
+    el("div", { class: "h" }, "음성 엔진 (전체 앱 적용)"),
+    el("div", { class: "chips" }, [["google", "✨ Google 원어민 (Neural2)"], ["browser", "브라우저 기본 음성"]].map(([k, t]) => el("button", { class: "chip" + (ttsEngine() === k ? " on" : ""), onclick: () => {
+      setPref("ttsEngine", k);
+      if (k === "google") { TTS_BROKEN = false; TTS_WARNED = false; LA.failed = null; }
+      openSettingsModal();
+      speak(LANG === "en" ? "Hello! Let's practice together today." : "こんにちは。今日も頑張りましょう。");
+    } }, t))),
+    ...(ttsEngine() !== "browser" ? [
+      el("div", { class: "h" }, "원어민 목소리"),
+      el("div", { class: "chips" }, TTS_VOICES.map(([k, t]) => el("button", { class: "chip" + (ttsVoice() === k ? " on" : ""), onclick: () => {
+        setPref("ttsVoice", k); TTS_BROKEN = false; TTS_WARNED = false; LA.failed = null;
+        openSettingsModal();
+        speak(LANG === "en" ? "Hello! Let's practice together today." : "こんにちは。今日も頑張りましょう。");
+      } }, t))),
+      el("div", { class: "level-desc" }, TTS_BROKEN
+        ? "현재 서버에서 Google 음성을 불러올 수 없어 브라우저 음성으로 자동 전환된 상태예요. 위 버튼을 다시 눌러 재시도할 수 있어요."
+        : "수업·코스·단어장·듣기·토익 전체에 Google Neural2 음성을 쓰며, 한 번 들은 문장은 기기에 캐시되어 즉시 재생돼요."),
+    ] : [
+      el("div", { class: "h" }, "브라우저 목소리"),
+      el("div", { class: "voice-row", style: "margin-top:0" }, sel),
+    ]),
     el("div", { class: "h" }, `하루 목표 점수 (현재 ${S.profile.dailyGoal}점)`),
     el("div", { class: "chips" }, [100, 200, 300, 500, 800].map((v) => el("button", { class: "chip" + (S.profile.dailyGoal === v ? " on" : ""), onclick: () => setDailyGoal(v) }, `${v}점`))),
     el("div", { class: "goal-row" }, goalIn, goalSave),
-    el("div", { class: "voice-row", style: "margin-top:14px" }, `모델 ${S.model} · 오늘 $${S.cost.today.toFixed(3)} · 이번 달 $${S.cost.month.toFixed(2)}` + (S.tts ? ` · 듣기 음성 ${Math.round(S.tts.used / 1000)}천 / ${S.tts.cap / 10000}만 자` : "")),
+    el("div", { class: "voice-row", style: "margin-top:14px" }, `모델 ${S.model} · 오늘 $${S.cost.today.toFixed(3)} · 이번 달 $${S.cost.month.toFixed(2)}` + (S.tts ? ` · Google 음성 ${Math.round(S.tts.used / 1000)}천 / ${S.tts.cap / 10000}만 자` : "")),
     el("button", { class: "primary", style: "margin-top:14px", onclick: closeModal }, "완료")
   );
   $("#modal").hidden = false;
@@ -706,13 +902,13 @@ async function start(mode, scenarioId, extra = {}) {
   if (S.current && !confirm("하던 수업이 있어요. 끝내고 새로 시작할까요?")) return;
   if (S.current) await endLesson(true);
   busy = true;
-  speechSynthesis?.cancel();
+  stopSpeak();
   PG = { fb: false, stage: "fix", tried: false };
   retryTarget = null;
   PG_SPOKEN = "";
   showReview(false);
-  // 소리 재생은 사용자가 누른 직후여야 막히지 않는다(모바일). 빈 말로 길을 열어 둔다.
-  try { speechSynthesis.speak(new SpeechSynthesisUtterance("")); } catch {}
+  // 소리 재생은 사용자가 누른 직후여야 막히지 않는다(모바일). 빈 소리로 길을 열어 둔다.
+  unlockAudio();
   S.current = { mode, level: pick.level, scenario: scenarioId && scenarioId !== "random" ? M.SCENARIOS.find((s) => s.id === scenarioId) || null : null, missions: [], combo: 0, score: 0, display: [] };
   switchView("lesson");
   renderLessonHead();
@@ -1001,7 +1197,7 @@ function myAudioBtn(url, label = "🎙 내 발음") {
     e.stopPropagation();
     if (MY_AUDIO_BTN === b && MY_AUDIO_EL && !MY_AUDIO_EL.paused) { stopMyAudio(); return; }
     if (AP.playing) plPause();
-    speechSynthesis?.cancel();
+    stopSpeak();
     stopLines();
     stopMyAudio();
     MY_AUDIO_EL ||= new Audio();
@@ -1120,24 +1316,20 @@ function videoEl(v) {
   let script = null;
   if (v.script?.length) {
     const names = [...new Set(v.script.map((l) => l.speaker))];
+    const scriptLines = v.script.map((l) => ({ speaker: l.speaker, gender: names.indexOf(l.speaker) % 2 ? "m" : "f", text: l.ja }));
+    const cacheId = "vscript-" + ttsHash(scriptLines.map((l) => `${l.speaker}:${l.text}`).join("|"));
     const rows = v.script.map((l) => el("div", { class: "sc-line" }, el("span", { class: "sc-who" }, l.speaker), el("span", { class: "sc-ja hidden", lang: LANG, onclick: (e) => e.target.classList.remove("hidden") }, l.ja)));
     let playing = false;
     const playBtn = el("button", { class: "tool" }, "▶ 대본 전체 듣기");
     const subBtn = el("button", { class: "tool", onclick: () => { const on = !subBtn.classList.contains("on"); subBtn.classList.toggle("on", on); rows.forEach((r) => r.lastChild.classList.toggle("hidden", !on)); } }, "자막");
     playBtn.onclick = () => {
-      if (playing) { playing = false; speechSynthesis.cancel(); playBtn.textContent = "▶ 대본 전체 듣기"; return; }
+      if (playing) { playing = false; stopLines(); rows.forEach((r) => r.classList.remove("now")); playBtn.textContent = "▶ 대본 전체 듣기"; return; }
       playing = true; playBtn.textContent = "⏹ 멈추기";
-      speechSynthesis.cancel();
-      v.script.forEach((l, i) => {
-        const u = new SpeechSynthesisUtterance(l.ja);
-        const vo = bestVoice(); if (vo) u.voice = vo;
-        u.lang = SPEECH;
-        u.rate = M.LEVELS[(S.current?.level || pick.level) - 1].rate + Number(localStorage.getItem("rateAdj") || 0);
-        u.pitch = [1, 0.75, 1.3, 0.9][names.indexOf(l.speaker) % 4]; // 인물마다 목소리 높이를 달리함
-        u.onstart = () => { rows.forEach((r) => r.classList.remove("now")); rows[i].classList.add("now"); rows[i].scrollIntoView({ block: "nearest", behavior: "smooth" }); };
-        if (i === v.script.length - 1) u.onend = () => { playing = false; playBtn.textContent = "▶ 다시 듣기"; rows[i].classList.remove("now"); };
-        speechSynthesis.speak(u);
-      });
+      playMultiLines(scriptLines, cacheId, (i) => {
+        rows.forEach((r) => r.classList.remove("now"));
+        if (i >= 0 && rows[i]) { rows[i].classList.add("now"); rows[i].scrollIntoView({ block: "nearest", behavior: "smooth" }); }
+        else { playing = false; playBtn.textContent = "▶ 다시 듣기"; }
+      }, playBtn);
     };
     script = el("details", { open: true }, el("summary", {}, `대본 듣기 ${v.script.length}줄 (먼저 자막 없이 들어 보세요)`),
       el("div", { class: "model-tools", style: "margin-bottom:6px" }, playBtn, subBtn), rows);
@@ -1292,9 +1484,9 @@ async function say(text, audioUrl = null) {
   if (audioUrl) MY_TURN_AUDIO.set(text, audioUrl);
   const hint = HINT;
   busy = true;
-  speechSynthesis?.cancel();
+  stopSpeak();
   stopMyAudio();
-  try { speechSynthesis.speak(new SpeechSynthesisUtterance("")); } catch {}
+  unlockAudio();
   const feed = $("#feed");
   const pending = el("div", { class: "turn-me" }, el("div", { class: "me-text", lang: LANG }, text));
   const think = thinkingEl("듣는 중");
@@ -1335,7 +1527,8 @@ async function say(text, audioUrl = null) {
 
 async function endLesson(silent = false) {
   if (!S.current) return;
-  speechSynthesis?.cancel();
+  stopSpeak();
+  stopLines();
   stopMyAudio();
   PG = { fb: false, stage: "fix", tried: false };
   retryTarget = null;
@@ -1419,7 +1612,7 @@ function fixDrill(r) {
         put(sheet, el("div", { class: "card ans" }, el("div", { class: "ans-emoji" }, ok ? "⭕" : "❌"), el("div", { class: "note" }, `내 말: ${said || "(무응답)"} · 일치 ${pct}%`),
           el("div", { class: "model", lang: LANG }, it.model), it.why ? el("div", { class: "note tip" }, it.why) : null, el("div", { class: "model-tools", style: "justify-content:center" }, sp2, myAudioBtn(audioUrl, "🎙 내 발음"), starBtn({ text: it.model, meaning_ko: it.prompt, kind: "sentence" })),
           !ok && tries + 1 < 3 ? el("div", { class: "note tip" }, "끝에서 모범 문장을 보며 한 번 더 해요.") : null,
-          el("button", { class: "primary", onclick: () => { speechSynthesis.cancel(); stopMyAudio(); step(); } }, "다음")));
+          el("button", { class: "primary", onclick: () => { stopSpeak(); stopMyAudio(); step(); } }, "다음")));
         if (!ok) speak(it.model);
       } }));
   };
@@ -1429,7 +1622,7 @@ function fixDrill(r) {
 
 function closeModal() {
   if (rec) { try { rec.abort(); } catch {} }
-  speechSynthesis?.cancel();
+  stopSpeak();
   stopMyAudio();
   delete $("#sheet").dataset.modal;
   $("#modal").hidden = true;
@@ -1866,7 +2059,7 @@ function stepDrills(body, key) {
         put(body, el("div", { class: "card ans" }, el("div", { class: "note" }, "모범 답"), el("div", { class: "model", lang: LANG }, d.ja),
           el("div", { class: "note", lang: LANG }, "내 답: " + (said || "(무응답)")),
           el("div", { class: "model-tools", style: "justify-content:center" }, sp, myAudioBtn(audioUrl, "🎙 내 발음")),
-          el("button", { class: "primary", onclick: () => { speechSynthesis.cancel(); stopMyAudio(); renderCourse(); } }, CR.i < list.length ? "다음 문제" : "채점하기")));
+          el("button", { class: "primary", onclick: () => { stopSpeak(); stopMyAudio(); renderCourse(); } }, CR.i < list.length ? "다음 문제" : "채점하기")));
         speak(d.ja);
       } }));
     return;
@@ -2060,8 +2253,8 @@ function stepCourseBlitz(body) {
         }
         const sp = el("button", { class: "tool" }, "🔊 모범 듣기"); sp.onclick = () => speak(it.ja, { btn: sp });
         const slow = el("button", { class: "tool" }, "🐢 천천히"); slow.onclick = () => speak(it.ja, { slow: true, btn: slow });
-        const nextBtn = el("button", { class: "primary", onclick: () => { speechSynthesis.cancel(); stopMyAudio(); B.i++; saveCR(); renderCourse(); } }, B.i + 1 < total ? "다음 문장 ▶" : "결과 보기");
-        const retryBtn = el("button", { class: "secondary", onclick: () => { speechSynthesis.cancel(); stopMyAudio(); renderCourse(); } }, "🎤 이 문장 다시");
+        const nextBtn = el("button", { class: "primary", onclick: () => { stopSpeak(); stopMyAudio(); B.i++; saveCR(); renderCourse(); } }, B.i + 1 < total ? "다음 문장 ▶" : "결과 보기");
+        const retryBtn = el("button", { class: "secondary", onclick: () => { stopSpeak(); stopMyAudio(); renderCourse(); } }, "🎤 이 문장 다시");
         put(body, head,
           el("div", { class: "card ans" },
             el("div", { class: "verdict " + (ok ? "v-ok" : pct >= 55 ? "v-mid" : "v-bad") }, `${ok ? "⭕ 통과!" : "❌ 다시 확인"} · 일치 ${pct}%${ok && sec <= 5 ? ` · ⚡${sec.toFixed(1)}초` : ""}`),
@@ -2148,7 +2341,7 @@ function redoCard(body, items) {
         el("div", { class: "note", lang: LANG }, "내 말: " + (said || "(무응답)") + ` · 일치 ${pct}%`),
         el("div", { class: "model", lang: LANG }, model), el("div", { class: "model-tools", style: "justify-content:center" }, sp2, myAudioBtn(audioUrl, "🎙 내 발음")),
         !ok && tries + 1 < 3 ? el("div", { class: "note tip" }, "이 문장은 끝에서 모범 답을 보며 한 번 더 해요.") : null,
-        el("button", { class: "primary", onclick: () => { speechSynthesis.cancel(); stopMyAudio(); renderCourse(); } }, R2.i < R2.q.length ? "다음" : "결과로")));
+        el("button", { class: "primary", onclick: () => { stopSpeak(); stopMyAudio(); renderCourse(); } }, R2.i < R2.q.length ? "다음" : "결과로")));
       if (!ok) speak(model);
     } }));
 }
@@ -2189,7 +2382,7 @@ function stepCards(body, key) {
         !ok && tries + 1 < 3 ? el("div", { class: "note tip", style: "text-align:center" }, "이 낱말은 끝에서 한 번 더 나와요. 소리 내어 두세 번 따라 해 두세요.") : null,
         w.example_ja ? el("div", { class: "model", lang: LANG }, w.example_ja, el("div", { class: "note" }, w.example_ko)) : null,
         el("div", { class: "model-tools", style: "justify-content:center" }, sp, myAudioBtn(audioUrl, "🎙 내 발음"), starBtn({ text: w.ja, reading: w.reading, meaning_ko: w.meaning_ko, ex_ja: w.example_ja || "", ex_ko: w.example_ko || "" })),
-        el("button", { class: "primary", onclick: () => { speechSynthesis.cancel(); stopMyAudio(); renderCourse(); } }, "다음")));
+        el("button", { class: "primary", onclick: () => { stopSpeak(); stopMyAudio(); renderCourse(); } }, "다음")));
       speak(w.ja);
     } }));
 }
@@ -2306,8 +2499,10 @@ function stepToeic(body) {
     setTimeout(() => playAll(listenB), 300);
   } else if (isPart34) {
     const lines = q.script?.length ? q.script : [{ speaker: "Speaker", gender: "f", text: q.passage || q.q || "" }];
+    const cacheId = `toeic-${CR.day || 0}-${CR.i}-${ttsHash(lines.map((l) => `${l.speaker}:${l.text}`).join("|"))}`;
+    const qIdx = CR.i;
     const playB = el("button", { class: "tool" }, q.part === "3" ? "▶ 대화 듣기" : "▶ 안내 방송 듣기");
-    playB.onclick = () => { plStop(); playLines(lines, 0, null); };
+    playB.onclick = () => { plStop(); playMultiLines(lines, cacheId, null, playB); };
     const stopB = el("button", { class: "tool" }, "⏹ 멈춤");
     stopB.onclick = () => stopLines();
     listenBox = [
@@ -2317,11 +2512,11 @@ function stepToeic(body) {
     scriptBox = el("div", { class: "toeic-script", hidden: !allDone(), lang: "en" },
       el("div", { class: "lab blue", style: "margin-bottom:6px" }, "📜 듣기 대본"),
       lines.map((l) => el("div", { class: "ts-line" }, el("b", {}, l.speaker + ": "), el("span", {}, l.text))));
-    setTimeout(() => { if (!allDone()) playLines(lines, 0, null); }, 350);
+    setTimeout(() => { if (!allDone() && currentView === "course" && !COURSE_AWAY && CR?.i === qIdx) playMultiLines(lines, cacheId, null, playB); }, 350);
   }
 
   const nextWrap = el("div", { hidden: !allDone() },
-    el("button", { class: "primary", style: "margin-top:10px", onclick: () => { speechSynthesis.cancel(); stopLines(); CR.i++; saveCR(); renderCourse(); } }, CR.i + 1 < list.length ? "다음 파트 ▶" : "결과 보기"));
+    el("button", { class: "primary", style: "margin-top:10px", onclick: () => { stopSpeak(); stopLines(); CR.i++; saveCR(); renderCourse(); } }, CR.i + 1 < list.length ? "다음 파트 ▶" : "결과 보기"));
 
   const subCards = subs.map((sq, si) => {
     const fb = el("div");
@@ -2456,6 +2651,7 @@ async function loadListenAudio(item) {
       return true;
     } catch (e) {
       LA.failed = item.id; console.warn(e);
+      if (!IS_REMOTE || /한도|credential|auth|token|실패|Could not load|401|403|500/i.test(String(e?.message || ""))) TTS_BROKEN = true;
       toast("음성 파일을 못 만들어서 브라우저 음성으로 들려줘요 (화면이 꺼지면 멈춰요)");
       return false;
     } finally { LA.loading = null; }
@@ -2470,7 +2666,7 @@ function audioStop() { const a = LA.el; if (a) a.pause(); clearInterval(LA.timer
 function audioPlay(item, from, onLine, only) {
   const a = audioEl();
   LS.gen++;
-  speechSynthesis.cancel();
+  stopSpeak();
   if (AP.playing) plPause();
   audioStop();
   noiseOn();
@@ -2497,8 +2693,9 @@ function audioPlay(item, from, onLine, only) {
       try { navigator.mediaSession.setActionHandler(act, fn); } catch {}
   }
 }
-// 듣기 화면의 재생: 음성 파일이 있으면 그걸로, 없으면 받아 오고, 못 받으면 브라우저 음성
+// 듣기 화면의 재생: Google 음성 파일(기본)이 있으면 그걸로, 없으면 받아 오고, 못 받거나 브라우저 설정이면 브라우저 음성
 async function playItem(item, from, onLine, only, btn) {
+  if (!useGoogleTts()) return playLines(only ? [item.lines[from]] : item.lines, only ? 0 : from, only ? null : onLine);
   if (LA.id === item.id && LA.url) return audioPlay(item, from, onLine, only);
   if (LA.failed !== item.id) {
     const t = btn?.textContent; if (btn) { btn.disabled = true; btn.textContent = "음성 준비 중…"; }
@@ -2509,11 +2706,30 @@ async function playItem(item, from, onLine, only, btn) {
   playLines(only ? [item.lines[from]] : item.lines, only ? 0 : from, only ? null : onLine);
 }
 
+// 다화자 대본 재생(토익 Part 3/4 · AI 영상 대본): Google Neural2 다화자 MP3 + Cache API + 브라우저 자동 폴백
+async function playMultiLines(lines, cacheId, onLine, btn) {
+  if (!lines?.length) return;
+  if (!useGoogleTts()) return playLines(lines, 0, onLine);
+  const item = { id: cacheId, lines, title_ko: "대화 듣기", genreName: "" };
+  if (LA.id === item.id && LA.url) return audioPlay(item, 0, onLine, false);
+  const reqGen = ++LS.gen;
+  if (LA.failed !== item.id) {
+    const t = btn?.textContent;
+    if (btn) { btn.disabled = true; btn.textContent = "음성 준비 중…"; }
+    const ok = await loadListenAudio(item);
+    if (btn) { btn.disabled = false; btn.textContent = t; }
+    if (reqGen !== LS.gen) return;
+    if (ok) return audioPlay(item, 0, onLine, false);
+  }
+  if (reqGen !== LS.gen) return;
+  playLines(lines, 0, onLine);
+}
+
 function playLines(lines, from = 0, onLine) {
   LS.gen++;
   audioStop();
   const gen = LS.gen;
-  speechSynthesis.cancel();
+  stopSpeak();
   if (AP.playing) plPause();
   const vm = voiceFor("m"), vf = voiceFor("f");
   const same = vm === vf;
@@ -2537,7 +2753,7 @@ function playLines(lines, from = 0, onLine) {
   };
   next();
 }
-function stopLines() { LS.gen++; speechSynthesis.cancel(); audioStop(); noiseOff(); }
+function stopLines() { LS.gen++; stopSpeak(); audioStop(); noiseOff(); }
 
 function renderListen(root) {
   if (LS.phase === "idle" && S.listening && !LS.item) { LS.item = S.listening; LS.phase = "ready"; }
@@ -3132,7 +3348,7 @@ function vocabLearn(root) {
       el("div", { class: "pt-mean", style: "text-align:center;margin:6px 0 10px" }, w.m),
       el("div", { class: "model", lang: LANG, style: "text-align:left" }, w.ex_ja, el("div", { class: "note" }, w.ex_ko)),
       el("div", { class: "model-tools", style: "justify-content:center" }, sp, sp2, starBtn({ text: w.w, reading: w.r, meaning_ko: w.m, ex_ja: w.ex_ja, ex_ko: w.ex_ko }))),
-    el("button", { class: "primary", onclick: () => { VS.li++; speechSynthesis.cancel(); renderWeak(); } }, VS.li + 1 < VS.fresh.length ? "다음 단어" : "이제 시험 보기"),
+    el("button", { class: "primary", onclick: () => { VS.li++; stopSpeak(); renderWeak(); } }, VS.li + 1 < VS.fresh.length ? "다음 단어" : "이제 시험 보기"),
     el("button", { class: "secondary", style: "width:100%;margin-top:8px", onclick: () => { VS.phase = "quiz"; renderWeak(); } }, "익히기 건너뛰고 바로 시험"));
   speak(w.w);
 }
@@ -3171,7 +3387,7 @@ function altCard(target, said, ko = "", onVerdict = null) {
 }
 // 단어 사이 옮겨 다니기: 이전·다음·목록
 function vocabNav(root) {
-  const go = (i) => { speechSynthesis.cancel(); stopMyAudio(); if (rec) { try { rec.abort(); } catch {} } VS.i = Math.max(0, Math.min(VS.queue.length - 1, i)); VS.list = false; renderWeak(); };
+  const go = (i) => { stopSpeak(); stopMyAudio(); if (rec) { try { rec.abort(); } catch {} } VS.i = Math.max(0, Math.min(VS.queue.length - 1, i)); VS.list = false; renderWeak(); };
   const mark = (id) => (id in VS.res ? (VS.res[id] ? "⭕" : "❌") : "·");
   const nav = el("div", { class: "vnav" },
     el("button", { class: "mini", disabled: VS.i <= 0, onclick: () => go(VS.i - 1) }, "‹ 이전"),
@@ -3219,7 +3435,7 @@ function vocabQuiz(root) {
       !ok && said && how.spoken ? pronTipCard(w.w, said, w.r || "") : null,
       w.ex_ja ? el("div", { class: "model", lang: LANG }, w.ex_ja, el("div", { class: "note" }, w.ex_ko)) : null,
       el("div", { class: "model-tools", style: "justify-content:center" }, sp, myAudioBtn(audioUrl, "🎙 내 발음"), starBtn({ text: w.w, reading: w.r, meaning_ko: w.m, ex_ja: w.ex_ja, ex_ko: w.ex_ko }))),
-      el("button", { class: "primary", onclick: () => { speechSynthesis.cancel(); stopMyAudio(); renderWeak(); } }, "다음"));
+      el("button", { class: "primary", onclick: () => { stopSpeak(); stopMyAudio(); renderWeak(); } }, "다음"));
     speak(w.w);
   } }));
 }
@@ -3285,7 +3501,7 @@ function comboRun(root) {
       const sp = el("button", { class: "tool" }, "🔊"); sp.onclick = () => speak(it.ja, { btn: sp });
       put(root, el("div", { class: "card ans" }, el("div", { class: "note" }, "모범 문장"), el("div", { class: "model", lang: LANG }, it.ja), el("div", { class: "note", lang: LANG }, "내 답: " + (said || "(무응답)")),
         el("div", { class: "model-tools", style: "justify-content:center" }, sp, myAudioBtn(audioUrl, "🎙 내 발음"), starBtn({ text: it.ja, meaning_ko: it.ko, kind: "sentence" }))),
-        el("button", { class: "primary", onclick: () => { speechSynthesis.cancel(); stopMyAudio(); renderWeak(); } }, VS.i < list.length ? "다음 문장" : "채점하기"));
+        el("button", { class: "primary", onclick: () => { stopSpeak(); stopMyAudio(); renderWeak(); } }, VS.i < list.length ? "다음 문장" : "채점하기"));
       speak(it.ja);
     } }));
 }
@@ -3379,7 +3595,7 @@ const DUAL_MIC_OK = !/Android|iPhone|iPad/i.test(navigator.userAgent);
 const myRecOn = () => getPref("myRec", DUAL_MIC_OK ? "1" : "0") === "1";
 function startRec({ onFinal, onLive, lang = SPEECH, expect = "", expectReading = "" }) {
   if (AP.playing) plPause();
-  speechSynthesis?.cancel();
+  stopSpeak();
   stopMyAudio();
   let acc = "";   // 끝난 토막들
   let part = "";  // 지금 토막
