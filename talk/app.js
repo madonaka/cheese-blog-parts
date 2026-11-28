@@ -1659,18 +1659,48 @@ function renderListen(root) {
       ? el("div", { class: "ready-pair" },
           el("button", { class: "primary", onclick: () => { LS.phase = "play"; LS.plays = 0; LS.answers = []; renderRead(); } }, `이어서 듣기: ${LS.item.title_ko}`),
           el("button", { class: "ghost", disabled: LS.loading, onclick: fetchListening }, LS.loading ? "새로 만드는 중…" : "위에서 고른 대로 새로 만들기"),
-          el("div", { class: "hint-line" }, `지난번에 만들어 두고 아직 안 푼 듣기예요 (${LS.item.genreName || ""}). 새로 만들면 이건 사라져요.`))
+          el("div", { class: "hint-line" }, `지난번에 만들어 두고 아직 안 푼 듣기예요 (${LS.item.genreName || ""}). 새로 만들어도 아래 「만들어 둔 듣기」에 남아요.`))
       : el("button", { class: "primary", disabled: LS.loading, onclick: fetchListening }, LS.loading ? `들을 거리를 만드는 중… (${{ short: "15초", mid: "30초", long: "1분", xl: "1~2분" }[LS.length] || "15초"}쯤)` : "새 듣기 받기"),
-    hist.length ? [el("div", { class: "h" }, "최근 기록"), el("div", { class: "rec-list" }, hist.slice(-8).reverse().map((r) =>
-      el("div", { class: "rec" }, el("div", { class: `stamp sm g-${r.correct === r.total ? "S" : r.correct >= r.total - 1 ? "A" : "C"}` }, `${r.correct}`),
-        el("div", { class: "mid" }, el("b", {}, r.title), el("span", {}, `${r.date} · ${r.genreName} · ${r.level}단계 · ${r.plays}번 들음`)), el("div", { class: "sc" }, `+${r.score}`))))] : null);
+    libList());
+}
+// 만들어 둔 듣기: 눌러서 다시 듣고 다시 풀기
+const LEN_NAME = { short: "1분", mid: "3분", long: "5분", xl: "10분" };
+function libList() {
+  const lib = S.listenLib || [];
+  if (!lib.length) return null;
+  const shown = LS.libAll ? lib : lib.slice(0, 8);
+  return [el("div", { class: "h" }, `만들어 둔 듣기 ${lib.length}편 · 눌러서 다시 듣기`),
+    el("div", { class: "rec-list" }, shown.map((e) => {
+      const g = e.best == null ? "N" : e.best === e.total ? "S" : e.best >= e.total - 1 ? "A" : "C";
+      const del = el("button", { class: "mini lib-del", title: "보관함에서 지우기", onclick: async (ev) => {
+        ev.stopPropagation();
+        if (!confirm(`「${e.title_ko}」를 보관함에서 지울까요?`)) return;
+        try { const r = await api("/api/listen/delete", { method: "POST", body: JSON.stringify({ id: e.id }) }); S.listenLib = r.listenLib; if (LS.item?.id === e.id) { LS.item = null; LS.phase = "idle"; S.listening = null; } renderRead(); } catch (err) { toast(err.message); }
+      } }, "🗑");
+      return el("div", { class: "rec lib-item", role: "button", tabindex: "0", onclick: () => openLib(e.id) },
+        el("div", { class: `stamp sm g-${g}` }, e.best == null ? "새" : `${e.best}`),
+        el("div", { class: "mid" }, el("b", {}, e.title_ko),
+          el("span", {}, `${e.genreName} · ${LEN_NAME[e.length] || ""} · ${e.level}단계 · ${e.date.slice(5).replace("-", "/")}${e.tries ? ` · ${e.tries}번 풂` : " · 아직 안 풂"}`)),
+        del);
+    })),
+    lib.length > 8 ? el("button", { class: "chip more", style: "margin-top:8px", onclick: () => { LS.libAll = !LS.libAll; renderRead(); } }, LS.libAll ? "접기" : `${lib.length - 8}편 더 보기`) : null];
+}
+async function openLib(id) {
+  if (LS.opening) return;
+  LS.opening = true;
+  try {
+    const r = await api("/api/listen/open", { method: "POST", body: JSON.stringify({ id }) });
+    LS.item = r.listening; S.listening = r.listening; LS.phase = "play"; LS.plays = 0; LS.answers = []; if (r.listenLib) S.listenLib = r.listenLib; LS.result = null;
+  } catch (e) { toast(e.message); }
+  LS.opening = false;
+  if (currentView === "read") renderRead();
 }
 async function fetchListening() {
   LS.loading = true; renderRead();
   try {
     const r = await api("/api/listen/new", { method: "POST", body: JSON.stringify({ level: pick.level, genre: LS.genre, length: LS.length, sub: LS.sub,
       custom: LS.sub === "custom" && LS.custom.trim() ? { name: LS.custom.trim(), hint: "" } : (LS.more[LS.genre] || []).find((x) => x.key === LS.sub) || null }) });
-    LS.item = r.listening; S.listening = r.listening; LS.phase = "play"; LS.plays = 0; LS.answers = [];
+    LS.item = r.listening; S.listening = r.listening; LS.phase = "play"; LS.plays = 0; LS.answers = []; if (r.listenLib) S.listenLib = r.listenLib;
   } catch (e) { toast(e.message); }
   LS.loading = false;
   if (currentView === "read") renderRead();
@@ -1703,6 +1733,7 @@ async function submitListenUI() {
   try {
     const r = await api("/api/listen/submit", { method: "POST", body: JSON.stringify({ id: LS.item.id, answers: LS.answers, plays: LS.plays }) });
     LS.result = r; LS.phase = "result"; S.listening = null;
+    if (r.listenLib) S.listenLib = r.listenLib;
     S.listenings = [...(S.listenings || []), r.result]; S.xp = r.xp; S.todayXp = r.todayXp; renderTop();
     renderRead();
   } catch (e) { toast(e.message); }
