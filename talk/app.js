@@ -579,9 +579,6 @@ function renderHome() {
   const challenge = el("button", { class: "challenge", onclick: () => start("talk", "random") },
     el("span", { class: "ico" }, "🎲"),
     el("div", {}, el("b", {}, "오늘의 랜덤 도전"), el("span", {}, "상황과 반전을 무작위로 뽑아요. 무엇이 나올지 몰라요.")));
-  const blitzCard = el("button", { class: "challenge", onclick: () => openBlitzLauncher() },
-    el("span", { class: "ico" }, "🔥"),
-    el("div", {}, el("b", {}, "50문장 폭격 드릴"), el("span", {}, "약점·문형을 50문장 연속 고속 말하기 + 내 발음 바로 듣기")));
 
   const modes = el("div", { class: "modes" }, Object.entries(M.MODES).map(([k, m]) =>
     el("button", { class: "mode" + (pick.mode === k ? " on" : ""), onclick: () => { pick.mode = k; renderHome(); } }, el("b", {}, m.name), el("span", {}, m.desc))));
@@ -653,7 +650,7 @@ function renderHome() {
   put(root, 
     idcard, today,
     !S.hasKey ? el("div", { class: "err-msg", style: "margin-left:0" }, ".env 에 ANTHROPIC_API_KEY 가 없어서 수업을 할 수 없어요.") : null,
-    courseCard, cont, blitzCard, challenge,
+    courseCard, cont, challenge,
     el("div", { class: "h" }, "수업 고르기"), modes,
     el("div", { class: "h" }, "단계"), levels,
     setBar,
@@ -1331,229 +1328,10 @@ function fixDrill(r) {
   $("#modal").hidden = false;
 }
 
-// ---------- 50문장 폭격 드릴 ----------
-let BZ = null;
-function openBlitzLauncher(preset = {}) {
-  const sheet = $("#sheet");
-  sheet.dataset.modal = "blitz";
-  const coursePattern = preset.pattern || (CR?.pkg?.pattern?.form) || (S.course?.plan?.find((d) => !S.course.done?.[d.n] && !d.test)?.pattern) || "";
-  const coursePatternKo = preset.pattern_ko || (CR?.pkg?.pattern?.meaning_ko) || (S.course?.plan?.find((d) => !S.course.done?.[d.n] && !d.test)?.pattern_ko) || "";
-  const st = {
-    count: preset.count || 50,
-    source: preset.source || (coursePattern && preset.pattern ? "pattern" : "mixed"),
-    pattern: coursePattern,
-    pattern_ko: coursePatternKo,
-  };
-  const sources = [
-    ["mixed", "🎲 실전 랜덤 폭격", "배운 문형·약점·생활/업무 표현 골고루"],
-    ["weak", "📌 약점·단어 집중", "약점 노트와 단어장 표현을 입에 붙이기"],
-    ...(st.pattern ? [["pattern", `🎯 문형 집중: ${st.pattern}`, st.pattern_ko || "한 문형을 50개 다른 상황으로 치환"]] : []),
-  ];
-  const draw = () => {
-    put(sheet,
-      el("div", { class: "set-head" }, el("h2", {}, "🔥 50문장 폭격 드릴"), el("button", { class: "ghost-btn", onclick: () => closeModal(true) }, "닫기")),
-      el("div", { class: "note" }, "한국어 뜻을 보고 5초 안에 바로 입으로 뱉는 대량 반복 훈련이에요. 18문장씩 백그라운드에서 미리 준비해서 끊김 없이 50문장까지 달릴 수 있어요."),
-      el("div", { class: "h" }, "문장 수"),
-      el("div", { class: "chips" }, [50, 30, 20].map((n) => el("button", { class: "chip" + (st.count === n ? " on" : ""), onclick: () => { st.count = n; draw(); } }, `${n}문장${n === 50 ? " 🔥" : ""}`))),
-      el("div", { class: "h" }, "훈련 방식"),
-      el("div", { class: "rec-list" }, sources.map(([k, title, desc]) =>
-        el("button", { class: "rec" + (st.source === k ? " picked" : ""), style: st.source === k ? "border-color:var(--blue);background:var(--blue-tint)" : "", onclick: () => { st.source = k; draw(); } },
-          el("div", { class: "mid" }, el("b", {}, title), el("span", {}, desc)),
-          el("div", { class: "sc" }, st.source === k ? "✓" : "")))),
-      el("div", { class: "level-desc", style: "margin-top:8px" }, "마이크를 멈추면 즉시 채점되고, 내 발음(🎙)과 모범 발음(🔊)을 바로 비교할 수 있어요."),
-      el("button", { class: "primary", style: "margin-top:12px", onclick: () => startBlitz(st) }, `🔥 ${st.count}문장 폭격 시작`));
-  };
-  draw();
-  $("#modal").hidden = false;
-}
-
-async function startBlitz(opts) {
-  BZ = {
-    target: opts.count || 50,
-    source: opts.source || "mixed",
-    pattern: opts.pattern || "",
-    pattern_ko: opts.pattern_ko || "",
-    items: [],
-    i: 0,
-    passed: 0,
-    streak: 0,
-    bestStreak: 0,
-    wrong: [],
-    scored: new Set(),
-    fetching: false,
-    fetchErr: "",
-    waiting: false,
-    done: false,
-    started: Date.now(),
-    mode: "main",
-  };
-  renderBlitz();
-  await prefetchBlitz(true);
-}
-
-async function prefetchBlitz(force = false) {
-  if (!BZ || BZ.fetching || BZ.done || BZ.mode !== "main") return;
-  const remain = BZ.target - BZ.items.length;
-  if (remain <= 0) return;
-  if (!force && BZ.items.length - BZ.i > 10) return;
-  BZ.fetching = true;
-  BZ.fetchErr = "";
-  const cur = BZ;
-  const batchCount = Math.min(18, remain);
-  try {
-    const r = await api("/api/drill/blitz", {
-      method: "POST",
-      body: JSON.stringify({
-        source: cur.source,
-        pattern: cur.pattern,
-        pattern_ko: cur.pattern_ko,
-        count: batchCount,
-        exclude: cur.items.map((x) => x.ja),
-      }),
-    });
-    if (BZ !== cur) return;
-    const added = (r.items || []).filter((x) => x && x.ko && x.ja);
-    cur.items.push(...added);
-    if (!added.length) cur.fetchErr = "문장을 더 가져오지 못했어요.";
-  } catch (e) {
-    if (BZ !== cur) return;
-    cur.fetchErr = e.message || "불러오기 오류";
-  } finally {
-    if (BZ === cur) {
-      cur.fetching = false;
-      if (cur.waiting) { cur.waiting = false; renderBlitz(); }
-    }
-  }
-}
-
-function renderBlitz() {
-  if (!BZ) return;
-  const sheet = $("#sheet");
-  sheet.dataset.modal = "blitz";
-  const total = BZ.mode === "retry" ? BZ.items.length : BZ.target;
-  // 완료 화면
-  if (BZ.i >= total) {
-    BZ.done = true;
-    const elapsed = fmtTime((Date.now() - BZ.started) / 1000);
-    const acc = Math.round((BZ.passed / Math.max(1, total)) * 100);
-    const wrongItems = BZ.wrong.map((idx) => BZ.items[idx]).filter(Boolean);
-    const xpLine = el("div", { class: "sub" }, `${total}문장 완료 · 소요 ${elapsed} · 최장 ${BZ.bestStreak}연속`);
-    if (BZ.mode === "main" && !BZ.reported) {
-      BZ.reported = true;
-      api("/api/drill/blitz-done", { method: "POST", body: JSON.stringify({ passed: BZ.passed, total }) })
-        .then((r) => {
-          S.xp = r.xp; S.todayXp = r.todayXp; renderTop();
-          xpLine.textContent = `${total}문장 완료 · +${r.earned} XP · 소요 ${elapsed} · 최장 ${BZ.bestStreak}연속`;
-          toast(`🔥 폭격 드릴 완료! +${r.earned} XP`, "gold");
-        }).catch(() => {});
-    }
-    put(sheet,
-      el("h2", {}, BZ.mode === "retry" ? "🔥 틀린 문장 복습 끝" : `🔥 ${total}문장 폭격 완료!`),
-      el("div", { class: "report-top" },
-        el("div", { class: `stamp txt ${acc >= 85 ? "g-S" : acc >= 65 ? "g-A" : "g-B"}` }, `${BZ.passed}/${total}`),
-        el("div", {}, el("div", { class: "big" }, `정답률 ${acc}%`), xpLine)),
-      wrongItems.length
-        ? el("button", { class: "primary", style: "margin-bottom:8px", onclick: () => {
-            BZ = {
-              ...BZ,
-              items: wrongItems,
-              target: wrongItems.length,
-              i: 0,
-              passed: 0,
-              streak: 0,
-              bestStreak: 0,
-              wrong: [],
-              scored: new Set(),
-              done: false,
-              started: Date.now(),
-              mode: "retry",
-            };
-            renderBlitz();
-          } }, `🔥 틀린 ${wrongItems.length}문장만 다시 폭격`)
-        : el("div", { class: "note good", style: "margin-bottom:10px" }, "전 문장을 돌파했어요! 입 근육에 확실히 새겨졌어요 👏"),
-      wrongItems.length ? [
-        el("div", { class: "h" }, `틀렸던 문장 (${wrongItems.length})`),
-        el("div", { class: "hard" }, wrongItems.map((it) => {
-          const sp = el("button", { class: "mini" }, "🔊"); sp.onclick = () => speak(it.ja, { btn: sp });
-          return el("div", { class: "hard-item" }, el("b", { lang: LANG }, it.ja), el("span", { class: "mn" }, it.ko), sp, starBtn({ text: it.ja, reading: it.reading || "", meaning_ko: it.ko, kind: "sentence" }));
-        })),
-      ] : null,
-      el("button", { class: wrongItems.length ? "secondary" : "primary", style: "width:100%;margin-top:10px", onclick: () => closeModal(true) }, "닫기"));
-    return;
-  }
-
-  // 배치 로딩 대기 중
-  if (BZ.i >= BZ.items.length) {
-    BZ.waiting = true;
-    put(sheet,
-      el("div", { class: "set-head" }, el("h2", {}, `🔥 폭격 드릴 (${BZ.i + 1}/${total})`), el("button", { class: "ghost-btn", onclick: () => closeModal() }, "그만")),
-      BZ.fetchErr
-        ? [el("div", { class: "err-msg" }, BZ.fetchErr), el("button", { class: "primary", onclick: () => { BZ.waiting = true; prefetchBlitz(true); renderBlitz(); } }, "다시 불러오기")]
-        : el("div", { class: "card" }, thinkingEl(BZ.items.length ? "다음 18문장을 가져오는 중…" : "첫 18문장을 준비하는 중… (10~15초)")));
-    if (!BZ.fetching && !BZ.fetchErr) prefetchBlitz(true);
-    return;
-  }
-
-  // 백그라운드 프리페치 트리거
-  prefetchBlitz(false);
-
-  const it = BZ.items[BZ.i];
-  const pctBar = Math.round((BZ.i / total) * 100);
-  const head = el("div", { style: "margin-bottom:8px" },
-    el("div", { class: "set-head", style: "margin-bottom:6px" },
-      el("div", { style: "display:flex;align-items:center;gap:8px;flex-wrap:wrap" },
-        el("b", {}, `🔥 ${BZ.i + 1} / ${total}`),
-        el("span", { class: "mini", style: "pointer-events:none" }, `통과 ${BZ.passed}`),
-        BZ.streak >= 2 ? el("span", { class: "combo" }, `🔥 ${BZ.streak}연속`) : null),
-      el("button", { class: "ghost-btn", onclick: () => closeModal() }, "그만")),
-    el("div", { class: "limit" }, el("i", { style: `width:${pctBar}%;background:var(--blue)` })));
-
-  put(sheet, head,
-    answerCard({
-      prompt: it.ko,
-      sub: it.tag || "",
-      limit: 5,
-      big: true,
-      expect: it.ja,
-      expectReading: it.reading || "",
-      instant: true,
-      hint: "마이크 누르고 말한 뒤 멈추면 즉시 채점돼요",
-      onDone: (said, sec, audioUrl) => {
-        if (!BZ) return;
-        const diff = pronDiff(it.ja, said, it.reading || "");
-        const pct = Math.max(diff.pct, similarity(it.ja, said, it.reading || ""));
-        const ok = pct >= 75;
-        if (!BZ.scored.has(BZ.i)) {
-          BZ.scored.add(BZ.i);
-          if (ok) { BZ.passed++; BZ.streak++; if (BZ.streak > BZ.bestStreak) BZ.bestStreak = BZ.streak; }
-          else { BZ.streak = 0; BZ.wrong.push(BZ.i); }
-        }
-        const sp = el("button", { class: "tool" }, "🔊 모범 듣기"); sp.onclick = () => speak(it.ja, { btn: sp });
-        const slow = el("button", { class: "tool" }, "🐢 천천히"); slow.onclick = () => speak(it.ja, { slow: true, btn: slow });
-        const nextBtn = el("button", { class: "primary", onclick: () => { speechSynthesis.cancel(); stopMyAudio(); BZ.i++; renderBlitz(); } }, BZ.i + 1 < total ? "다음 문장 ▶" : "결과 보기");
-        const retryBtn = el("button", { class: "secondary", onclick: () => { speechSynthesis.cancel(); stopMyAudio(); renderBlitz(); } }, "🎤 이 문장 다시");
-        put(sheet, head,
-          el("div", { class: "card ans" },
-            el("div", { class: "verdict " + (ok ? "v-ok" : pct >= 55 ? "v-mid" : "v-bad") }, `${ok ? "⭕ 통과!" : "❌ 다시 확인"} · 일치 ${pct}%${ok && sec <= 5 ? ` · ⚡${sec.toFixed(1)}초` : ""}`),
-            el("div", { class: "note", style: "text-align:center;margin-bottom:4px" }, it.ko),
-            diff.node,
-            LANG === "ja" && it.reading ? el("div", { class: "note", style: "text-align:center;margin-top:4px" }, it.reading) : null,
-            el("div", { class: "note", lang: LANG, style: "text-align:center" }, "내 말(인식): " + (said || "(무응답)")),
-            el("div", { class: "model-tools", style: "justify-content:center" }, sp, slow, myAudioBtn(audioUrl, "🎙 내 발음"), starBtn({ text: it.ja, reading: it.reading || "", meaning_ko: it.ko, kind: "sentence" })),
-            el("div", { class: "row-btns", style: "margin-top:10px" }, retryBtn, nextBtn)));
-        if (!ok) speak(it.ja); else passFx();
-      },
-    }));
-}
-
-function closeModal(force = false) {
-  if (!force && BZ && !BZ.done && BZ.i > 0) {
-    if (!confirm("폭격 드릴 진행 중이에요. 그만하고 나갈까요?")) return;
-  }
+function closeModal() {
   if (rec) { try { rec.abort(); } catch {} }
   speechSynthesis?.cancel();
   stopMyAudio();
-  BZ = null;
   delete $("#sheet").dataset.modal;
   $("#modal").hidden = true;
 }
@@ -1599,14 +1377,15 @@ function renderRecord() {
 // ---------- 코스(주 단위 목표) ----------
 // 진행 상태는 폰을 껐다 켜도 이어지게 localStorage 에 둔다(언어별).
 const CR_KEY = LANG === "en" ? "course_run_en" : "course_run";
-let CR = JSON.parse(localStorage.getItem(CR_KEY) || "null"); // { key, day(=회차), step, score, pkg, review, plan, answers, graded, i }
+let CR = JSON.parse(localStorage.getItem(CR_KEY) || "null"); // { key, day(=회차), step, score, pkg, review, plan, answers, graded, i, blitz }
 const saveCR = () => localStorage.setItem(CR_KEY, JSON.stringify(CR));
 const stepsOf = () => {
   if (CR?.pkg?.test) return [["test", "주간 시험"], ["talk", "미니 회화"], ["done", "완료"]];
-  const s2 = [["pattern", "문형"], ["drills", "바꿔 말하기"], ["expr", "표현 5"], ["words", "단어 10"], ["trans", PAIR]];
+  const s2 = [["pattern", "문형"], ["expr", "표현 5"], ["words", "단어 10"], ["drills", "🔥 폭격 드릴"], ["trans", PAIR]];
   if (CR?.pkg?.toeic?.length) s2.push(["toeic", "토익"]);
   return [...s2, ["talk", "미니 회화"], ["review", "복습"], ["done", "완료"]];
 };
+let CR_BLITZ_NET = { fetching: false, err: "", waiting: false };
 let PL = null;   // 진단 진행 { i, answers, result, check }
 let PICK = null; // 반을 고른 뒤 주 횟수 고르기 { key }
 
@@ -1646,7 +1425,7 @@ function perWeekPicker(onPick, current) {
 
 function renderCourse() {
   const root = $("#view-course");
-  holdScroll(root, CR && S.course && CR.key === S.course.key ? `day-${CR.step}-${CR.i}-${CR.graded ? "g" : ""}` : PL ? `pl-${PL.i}` : PICK ? "pick" : "course-main");
+  holdScroll(root, CR && S.course && CR.key === S.course.key ? `day-${CR.step}-${CR.i}-${CR.blitz?.i ?? ""}-${CR.blitz?.done ? "d" : ""}-${CR.graded ? "g" : ""}` : PL ? `pl-${PL.i}` : PICK ? "pick" : "course-main");
   if (CR && S.course && CR.key === S.course.key && S.course.v === 2 && !COURSE_AWAY) return renderDay(root);
   if (PL) { renderPlacement(root); root.prepend(backBar(PL.check ? "4주 진단" : "진단 시험", goBack)); return; }
   const C = S.courseMeta;
@@ -1661,7 +1440,7 @@ function renderCourse() {
     put(root,
       el("div", { class: "card idcard" },
         el("div", { class: "id-sub" }, `${LNAME} 코스`), el("div", { class: "id-rank" }, "주 몇 회 목표로, 4주씩 쌓기"),
-        el("div", { class: "id-sub", style: "margin-top:6px" }, `문형 바꿔 말하기 → 표현 5 → 그림 단어 10 → ${PAIR}${LANG === "en" ? " → (토익반은 토익 문제)" : ""} → 미니 회화 → 복습. 매주 마지막 회차는 주간 시험, 4주마다 진단을 다시 봐서 반을 올려요.`)),
+        el("div", { class: "id-sub", style: "margin-top:6px" }, `문형 → 표현 5 → 그림 단어 10 → 🔥 폭격 드릴(최대 50문장) → ${PAIR}${LANG === "en" ? " → (토익반은 토익 문제)" : ""} → 미니 회화 → 복습. 매주 마지막 회차는 주간 시험, 4주마다 진단을 다시 봐서 반을 올려요.`)),
       el("button", { class: "challenge", onclick: () => { PL = { i: 0, answers: [] }; renderCourse(); } },
         el("span", { class: "ico" }, "📝"), el("div", {}, el("b", {}, "5분 진단 시험 보고 반 정하기"), el("span", {}, `한국어 문장 6개를 ${LNAME}로 말해요.${LANG === "en" ? " 하나도 못 해도 괜찮아요. 입문반부터 시작해요." : ""}`))),
       S.placement ? el("div", { class: "card" }, el("b", {}, "지난 진단 결과: " + (C.COURSES.find((c) => c.key === S.placement.course)?.name || "")), el("div", { class: "note" }, S.placement.comment_ko)) : null,
@@ -1845,7 +1624,11 @@ async function openDay(day) {
 }
 
 function addScore(n) { CR.score += n; saveCR(); }
-function nextStep() { CR.step++; CR.i = 0; CR.answers = []; CR.graded = null; CR.queue = null; CR.tries = null; CR.redo = null; saveCR(); renderCourse(); $("#view-course").scrollTop = 0; }
+function nextStep() {
+  CR.step++; CR.i = 0; CR.answers = []; CR.graded = null; CR.queue = null; CR.tries = null; CR.redo = null; CR.blitz = null;
+  CR_BLITZ_NET = { fetching: false, err: "", waiting: false };
+  saveCR(); renderCourse(); $("#view-course").scrollTop = 0;
+}
 
 function renderDay(root) {
   const steps = stepsOf();
@@ -1875,17 +1658,17 @@ function stepPattern(body) {
       const sh = el("button", { class: "tool", onclick: () => shadowing(x.ja, sh, out, (pct) => { if (pct >= 80 && !got) { got = true; addScore(5); } }, x.reading || "") }, "🎙 따라 말하기");
       return el("div", { class: "card" }, el("div", { class: "model", lang: LANG }, x.ja), el("div", { class: "note" }, x.ko), el("div", { class: "model-tools" }, sp, sh, starBtn({ text: x.ja, meaning_ko: x.ko, kind: "sentence" }), out));
     }),
-    el("button", { class: "primary", onclick: nextStep }, "다음: 바꿔 말하기"),
-    el("button", { class: "secondary", style: "width:100%;margin-top:8px", onclick: () => openBlitzLauncher({ source: "pattern", pattern: p.form, pattern_ko: p.meaning_ko }) }, "🔥 이 문형으로 50문장 폭격 드릴"));
+    el("button", { class: "primary", onclick: nextStep }, "다음: 표현 5"));
 }
 
-// 바꿔 말하기(드릴)와 주간 시험: 한국어 보고 5초 안에 → 끝나면 한 번에 채점
+// 일반 회차는 방금 배운 문형+표현+단어를 50문장까지 바로 쏟아내는 코스 내장 폭격 드릴, 주간 시험은 AI 엄격 채점
 function stepDrills(body, key) {
+  if (key !== "test") return stepCourseBlitz(body);
   const list = CR.pkg.drills;
-  if (CR.graded) return showGraded(body, list.map((d) => ({ kind: "ko2ja", prompt: d.ko, expected: d.ja, reading: d.reading || "" })), key === "test");
+  if (CR.graded) return showGraded(body, list.map((d) => ({ kind: "ko2ja", prompt: d.ko, expected: d.ja, reading: d.reading || "" })), true);
   if (CR.i < list.length) {
     const d = list[CR.i];
-    put(body, el("div", { class: "h" }, `${key === "test" ? "주간 시험" : "바꿔 말하기"} ${CR.i + 1} / ${list.length} · 5초 안에 말하면 +3`),
+    put(body, el("div", { class: "h" }, `주간 시험 ${CR.i + 1} / ${list.length} · 5초 안에 말하면 +3`),
       answerCard({ prompt: d.ko, limit: 5, big: true, expect: d.ja, expectReading: d.reading || "", onDone: (said, sec, audioUrl) => {
         CR.answers[CR.i] = { said, sec };
         CR.i++; saveCR();
@@ -1899,6 +1682,210 @@ function stepDrills(body, key) {
     return;
   }
   gradeNow(body, list.map((d, i) => ({ kind: "ko2ja", prompt: d.ko, expected: d.ja, said: CR.answers[i]?.said || "" })));
+}
+
+// ---------- 코스 내장 폭격 드릴: 오늘 배운 문형 + 표현 5 + 단어 10을 최대 50문장 연속 발화 ----------
+async function prefetchCourseBlitz(force = false) {
+  const B = CR?.blitz;
+  if (!B || CR_BLITZ_NET.fetching || B.done || B.mode !== "main") return;
+  const remain = B.target - B.items.length;
+  if (remain <= 0) return;
+  if (!force && B.items.length - B.i > 10) return;
+  CR_BLITZ_NET.fetching = true;
+  CR_BLITZ_NET.err = "";
+  const runDay = CR.day;
+  const batchCount = Math.min(18, remain);
+  const stage = B.items.length < 18 ? "early" : B.items.length < 34 ? "mid" : "late";
+  try {
+    const r = await api("/api/drill/blitz", {
+      method: "POST",
+      body: JSON.stringify({
+        source: "course",
+        pattern: CR.pkg.pattern?.form || "",
+        pattern_ko: CR.pkg.pattern?.meaning_ko || "",
+        theme_ko: CR.pkg.theme_ko || "",
+        expressions: (CR.pkg.expressions || []).map((e) => ({ ja: e.ja, meaning_ko: e.meaning_ko })),
+        words: (CR.pkg.words || []).map((w) => ({ ja: w.ja, meaning_ko: w.meaning_ko })),
+        stage,
+        count: batchCount,
+        exclude: B.items.map((x) => x.ja),
+      }),
+    });
+    if (!CR || CR.day !== runDay || !CR.blitz) return;
+    const added = (r.items || []).filter((x) => x && x.ko && x.ja);
+    CR.blitz.items.push(...added);
+    saveCR();
+    if (!added.length) CR_BLITZ_NET.err = "문장을 더 가져오지 못했어요.";
+  } catch (e) {
+    CR_BLITZ_NET.err = e.message || "불러오기 오류";
+  } finally {
+    CR_BLITZ_NET.fetching = false;
+    if (CR_BLITZ_NET.waiting) {
+      CR_BLITZ_NET.waiting = false;
+      if (currentView === "course") renderCourse();
+    }
+  }
+}
+
+function stepCourseBlitz(body) {
+  const p = CR.pkg;
+  if (!CR.blitz) {
+    const defTarget = Number(getPref("courseBlitzCount", "50")) || 50;
+    CR.blitz = {
+      target: [20, 30, 50].includes(defTarget) ? defTarget : 50,
+      items: (p.drills || []).map((d) => ({ ko: d.ko, ja: d.ja, reading: d.reading || "", tag: "핵심 문형" })),
+      i: 0,
+      passed: 0,
+      streak: 0,
+      bestStreak: 0,
+      wrong: [],
+      missedMap: {},
+      scored: [],
+      mode: "main",
+      done: false,
+      reported: false,
+      started: Date.now(),
+    };
+    saveCR();
+  }
+  const B = CR.blitz;
+  const total = B.mode === "retry" ? B.items.length : B.target;
+
+  // 완료 화면
+  if (B.i >= total || B.done) {
+    B.done = true;
+    const doneTotal = B.mode === "retry" ? B.items.length : Math.max(1, B.scored.length || total);
+    const elapsed = fmtTime((Date.now() - (B.started || Date.now())) / 1000);
+    const acc = Math.round((B.passed / doneTotal) * 100);
+    const wrongItems = B.wrong.map((idx) => B.items[idx]).filter(Boolean);
+    const xpLine = el("div", { class: "sub" }, `${doneTotal}문장 완료 · 소요 ${elapsed} · 최장 ${B.bestStreak}연속`);
+    if (B.mode === "main" && !B.reported) {
+      B.reported = true;
+      saveCR();
+      const missed = wrongItems.map((it, idx) => ({ ja: it.ja, reading: it.reading || "", ko: it.ko, said: B.missedMap?.[B.wrong[idx]] || "" }));
+      api("/api/drill/blitz-done", { method: "POST", body: JSON.stringify({ passed: B.passed, total: doneTotal, missed, day: CR.day }) })
+        .then((r) => {
+          S.xp = r.xp; S.todayXp = r.todayXp; if (r.weak) S.weak = r.weak; renderTop();
+          xpLine.textContent = `${doneTotal}문장 완료 · +${r.earned} XP · 소요 ${elapsed} · 최장 ${B.bestStreak}연속`;
+          toast(`🔥 코스 폭격 드릴 완료! +${r.earned} XP`, "gold");
+        }).catch(() => {});
+    }
+    put(body,
+      el("div", { class: "card" },
+        el("div", { class: "report-top" },
+          el("div", { class: `stamp txt ${acc >= 85 ? "g-S" : acc >= 65 ? "g-A" : "g-B"}` }, `${B.passed}/${doneTotal}`),
+          el("div", {}, el("div", { class: "big" }, B.mode === "retry" ? "🔥 틀린 문장 복습 완료" : `🔥 폭격 드릴 정답률 ${acc}%`), xpLine)),
+        wrongItems.length ? el("div", { class: "note tip", style: "margin-top:8px" }, "틀린 문장은 약점 노트에 자동으로 담았어요.") : null),
+      wrongItems.length
+        ? el("button", { class: "primary", style: "margin-bottom:8px", onclick: () => {
+            CR.blitz = {
+              target: wrongItems.length,
+              items: wrongItems,
+              i: 0,
+              passed: 0,
+              streak: 0,
+              bestStreak: 0,
+              wrong: [],
+              missedMap: {},
+              scored: [],
+              mode: "retry",
+              done: false,
+              reported: true,
+              started: Date.now(),
+            };
+            saveCR();
+            renderCourse();
+          } }, `🔥 틀린 ${wrongItems.length}문장만 다시 폭격`)
+        : el("div", { class: "note good", style: "margin-bottom:10px" }, "전 문장을 돌파했어요! 오늘 문형·표현·단어가 입에 확실히 붙었어요 👏"),
+      wrongItems.length ? [
+        el("div", { class: "h" }, `틀렸던 문장 (${wrongItems.length})`),
+        el("div", { class: "hard" }, wrongItems.map((it) => {
+          const sp = el("button", { class: "mini" }, "🔊"); sp.onclick = () => speak(it.ja, { btn: sp });
+          return el("div", { class: "hard-item" }, el("b", { lang: LANG }, it.ja), el("span", { class: "mn" }, it.ko), sp, starBtn({ text: it.ja, reading: it.reading || "", meaning_ko: it.ko, kind: "sentence" }));
+        })),
+      ] : null,
+      el("button", { class: wrongItems.length ? "secondary" : "primary", style: "width:100%;margin-top:10px", onclick: nextStep }, `다음: ${PAIR}`));
+    return;
+  }
+
+  // 배치 로딩 대기 중
+  if (B.i >= B.items.length) {
+    CR_BLITZ_NET.waiting = true;
+    put(body,
+      el("div", { class: "h" }, `🔥 폭격 드릴 (${B.i + 1} / ${total})`),
+      CR_BLITZ_NET.err
+        ? [el("div", { class: "err-msg" }, CR_BLITZ_NET.err), el("button", { class: "primary", onclick: () => { CR_BLITZ_NET.waiting = true; prefetchCourseBlitz(true); renderCourse(); } }, "다시 불러오기")]
+        : el("div", { class: "card" }, thinkingEl("오늘 문형·표현·단어를 조합한 다음 문장을 준비하는 중… (10~15초)")),
+      B.i >= 8 ? el("button", { class: "secondary", style: "width:100%;margin-top:8px", onclick: () => { B.done = true; saveCR(); renderCourse(); } }, `여기까지(${B.i}문장) 마치고 결과 보기`) : null);
+    if (!CR_BLITZ_NET.fetching && !CR_BLITZ_NET.err) prefetchCourseBlitz(true);
+    return;
+  }
+
+  // 백그라운드 프리페치 (1번 문장 풀 때부터 다음 18문장을 미리 준비해 끊김 0초)
+  prefetchCourseBlitz(false);
+
+  const it = B.items[B.i];
+  const pctBar = Math.round((B.i / total) * 100);
+  const head = el("div", { style: "margin-bottom:10px" },
+    el("div", { style: "display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:6px" },
+      el("div", { style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap" },
+        el("b", {}, `🔥 ${B.i + 1} / ${total}`),
+        el("span", { class: "mini", style: "pointer-events:none" }, `통과 ${B.passed}`),
+        B.streak >= 2 ? el("span", { class: "combo" }, `🔥 ${B.streak}연속`) : null),
+      B.mode === "main"
+        ? el("div", { style: "display:flex;gap:4px" }, [20, 30, 50].map((n) =>
+            el("button", { class: "mini" + (B.target === n ? " on" : ""), style: B.target === n ? "background:var(--brand);color:#fff;border-color:var(--brand)" : "", onclick: () => {
+              if (n < B.i + 1) { toast(`이미 ${B.i + 1}번째 문장 진행 중이에요`); return; }
+              B.target = n; setPref("courseBlitzCount", n); saveCR(); prefetchCourseBlitz(false); renderCourse();
+            } }, `${n}`)))
+        : null),
+    el("div", { class: "limit" }, el("i", { style: `width:${pctBar}%;background:var(--brand)` })),
+    p.pattern?.form ? el("div", { class: "level-desc", style: "margin-top:6px" }, `오늘 배운 것 총동원: ${p.pattern.form} · 표현 ${p.expressions?.length || 0} · 단어 ${p.words?.length || 0}`) : null);
+
+  put(body, head,
+    answerCard({
+      prompt: it.ko,
+      sub: it.tag || "",
+      limit: 5,
+      big: true,
+      expect: it.ja,
+      expectReading: it.reading || "",
+      instant: true,
+      hint: "마이크 누르고 말한 뒤 멈추면 즉시 채점돼요",
+      onDone: (said, sec, audioUrl) => {
+        const diff = pronDiff(it.ja, said, it.reading || "");
+        const pct = Math.max(diff.pct, similarity(it.ja, said, it.reading || ""));
+        const ok = pct >= 75;
+        if (!B.scored.includes(B.i)) {
+          B.scored.push(B.i);
+          if (ok) {
+            B.passed++; B.streak++; if (B.streak > B.bestStreak) B.bestStreak = B.streak;
+            addScore(2 + (sec <= 5 ? 1 : 0));
+          } else {
+            B.streak = 0; B.wrong.push(B.i);
+            (B.missedMap ||= {})[B.i] = said || "";
+          }
+          saveCR();
+        }
+        const sp = el("button", { class: "tool" }, "🔊 모범 듣기"); sp.onclick = () => speak(it.ja, { btn: sp });
+        const slow = el("button", { class: "tool" }, "🐢 천천히"); slow.onclick = () => speak(it.ja, { slow: true, btn: slow });
+        const nextBtn = el("button", { class: "primary", onclick: () => { speechSynthesis.cancel(); stopMyAudio(); B.i++; saveCR(); renderCourse(); } }, B.i + 1 < total ? "다음 문장 ▶" : "결과 보기");
+        const retryBtn = el("button", { class: "secondary", onclick: () => { speechSynthesis.cancel(); stopMyAudio(); renderCourse(); } }, "🎤 이 문장 다시");
+        put(body, head,
+          el("div", { class: "card ans" },
+            el("div", { class: "verdict " + (ok ? "v-ok" : pct >= 55 ? "v-mid" : "v-bad") }, `${ok ? "⭕ 통과!" : "❌ 다시 확인"} · 일치 ${pct}%${ok && sec <= 5 ? ` · ⚡${sec.toFixed(1)}초` : ""}`),
+            el("div", { class: "note", style: "text-align:center;margin-bottom:4px" }, it.ko),
+            diff.node,
+            LANG === "ja" && it.reading ? el("div", { class: "note", style: "text-align:center;margin-top:4px" }, it.reading) : null,
+            el("div", { class: "note", lang: LANG, style: "text-align:center" }, "내 말(인식): " + (said || "(무응답)")),
+            el("div", { class: "model-tools", style: "justify-content:center" }, sp, slow, myAudioBtn(audioUrl, "🎙 내 발음"), starBtn({ text: it.ja, reading: it.reading || "", meaning_ko: it.ko, kind: "sentence" })),
+            el("div", { class: "row-btns", style: "margin-top:10px" }, retryBtn, nextBtn)));
+        if (!ok) speak(it.ja); else passFx();
+      },
+    }),
+    B.mode === "main" && B.i >= 10
+      ? el("button", { class: "secondary", style: "width:100%;margin-top:8px", onclick: () => { if (confirm(`${B.i}문장까지 한 결과로 폭격 드릴을 마칠까요?`)) { B.done = true; saveCR(); renderCourse(); } } }, `여기까지(${B.i}문장) 마치고 결과 보기`)
+      : null);
 }
 
 async function gradeNow(body, items) {
@@ -1933,7 +1920,6 @@ function showGraded(body, items, isTest) {
         el("div", { class: "note", lang: LANG }, "내 답: " + (CR.answers[i]?.said || "(무응답)")),
         el("div", { class: "model", lang: LANG }, x.fix || it.expected, " ", sp), x.why_ko ? el("div", { class: "note tip" }, x.why_ko) : null);
     }),
-    !isTest && CR.pkg?.pattern?.form ? el("button", { class: "secondary", style: "width:100%;margin-top:8px", onclick: () => openBlitzLauncher({ source: "pattern", pattern: CR.pkg.pattern.form, pattern_ko: CR.pkg.pattern.meaning_ko }) }, "🔥 이 문형 50문장 폭격 드릴 더 하기") : null,
     isTest && !pass
       ? el("button", { class: left.length ? "secondary" : "primary", style: "width:100%;margin-top:8px", onclick: () => { CR.i = 0; CR.answers = []; CR.graded = null; CR.redo = null; saveCR(); renderCourse(); } }, "시험 다시 보기")
       : el("button", { class: left.length ? "secondary" : "primary", style: "width:100%;margin-top:8px", onclick: nextStep }, left.length ? "다시 말하기 건너뛰고 다음" : "다음"));
@@ -2767,7 +2753,6 @@ function renderWeak() {
       el("div", { class: "id-foot", style: "margin-top:10px" }, el("span", {}, `저장 ${v.saved} · 오래 기억 ${v.mastered}`), el("span", {}, "1·3·7·14·30·60일 간격으로 다시 나와요"))),
     el("button", { class: "challenge", onclick: startVocabToday }, el("span", { class: "ico" }, "📚"), el("div", {}, el("b", {}, "오늘의 단어 시작"), el("span", {}, `새 단어는 먼저 익히고, 그림·뜻을 보고 3초 안에 말하기. 틀린 건 내일 다시.`))),
     el("button", { class: "challenge", onclick: () => startCombo(10) }, el("span", { class: "ico" }, "🧩"), el("div", {}, el("b", {}, "문형 × 단어 10문장"), el("span", {}, "배운 문형에 단어장 낱말을 끼워 여러 상황에서 바로 말하기"))),
-    el("button", { class: "challenge", onclick: () => openBlitzLauncher({ source: "weak" }) }, el("span", { class: "ico" }, "🔥"), el("div", {}, el("b", {}, "약점·단어 50문장 폭격 드릴"), el("span", {}, "약점 노트와 단어장 표현을 입 근육에 붙을 때까지 50문장 연속 말하기"))),
     el("div", { class: "h" }, "하루 새 단어"),
     el("div", { class: "chips" }, [10, 20, 30, 40].map((n) => el("button", { class: "chip" + (v.newPerDay === n ? " on" : ""), onclick: () => vocabSet({ newPerDay: n }) }, `${n}개`))),
     el("div", { class: "h" }, "급수 (여러 개 고르면 섞어서)"),
