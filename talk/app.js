@@ -698,6 +698,8 @@ function openSettingsModal() {
   if (!S) return;
   localStorage.removeItem("rateAdj"); // 옛 「느리게·빠르게」(더하기 0.15)는 거의 티가 안 나서 없앰
   const sheet = $("#sheet");
+  const wasSettings = !$("#modal").hidden && sheet.dataset.modal === "settings";
+  const prevScroll = wasSettings ? sheet.scrollTop : 0;
   sheet.dataset.modal = "settings";
   const curEnv = getPref("listenEnv", "normal");
   const sel = el("select", { onchange: (e) => { setPref("voice", e.target.value); speak(LANG === "en" ? "Hello! Let's practice together today." : "こんにちは。今日も頑張りましょう。"); } },
@@ -783,6 +785,7 @@ function openSettingsModal() {
     el("button", { class: "primary", style: "margin-top:14px", onclick: closeModal }, "완료")
   );
   $("#modal").hidden = false;
+  if (wasSettings) sheet.scrollTop = prevScroll;
 }
 
 // ---------- 홈 ----------
@@ -990,7 +993,7 @@ function renderLessonHead() {
   if (!c) { head.replaceChildren(); return; }
   const lv = M.LEVELS[c.level - 1];
   const faceOn = lessonFaceOn();
-  const faceBtn = el("button", { class: "mini" + (faceOn ? " on" : ""), title: "원어민 대면 화면 켜기/끄기", onclick: () => { setPref("lessonFace", faceOn ? "0" : "1"); renderLessonHead(); } }, faceOn ? "🎥 대면 켜짐" : "🎥 대면");
+  const faceBtn = el("button", { class: "mini lh-face" + (faceOn ? " on" : ""), title: "원어민 대면 화면 켜기/끄기", onclick: () => { setPref("lessonFace", faceOn ? "0" : "1"); renderLessonHead(); } }, "🎥 대면");
   let coachNode = null;
   if (faceOn) {
     const lastMe = [...(c.display || [])].reverse().find((x) => x.role === "me");
@@ -1009,8 +1012,8 @@ function renderLessonHead() {
         el("b", {}, c.scenario ? c.scenario.title : M.MODES[c.mode].name),
         el("span", {}, (c.scenario ? "목표: " + c.scenario.goal + " · " : "") + lv.name + (c.twist ? " · 반전: " + c.twist : "") + (c.cost ? ` · 이번 수업 $${c.cost.toFixed(3)}` : ""))),
       el("div", { class: "score" }, el("b", {}, c.score || 0), el("span", {}, c.combo >= 2 ? `🔥 ${c.combo}콤보` : "")),
+      faceBtn,
       el("div", { class: "lh-btns" },
-        faceBtn,
         el("button", { class: "mini", title: "수업은 그대로 두고 홈으로", onclick: () => switchView("home") }, "‹ 홈"),
         el("button", { class: "mini end", onclick: () => $("#endBtn").click() }, "끝내기"))),
     coachNode,
@@ -2035,12 +2038,13 @@ function toggleCoach(onChange) {
 function coachAvatarBtn({ mood = "listen", onSwitch = null, showName = false } = {}) {
   const c = activeCoach();
   preloadCoach(c);
-  const img = el("img", { class: "spk-avatar" + (mood === "ask" ? " speaking" : mood === "smile" ? " smile" : ""), src: coachImg(c, mood), alt: c.name });
+  const img = el("img", { src: coachImg(c, mood), alt: c.name });
+  const wrap = el("span", { class: "spk-avatar" + (mood === "ask" ? " speaking" : mood === "smile" ? " smile" : "") }, img);
   const btn = el("button", { type: "button", class: "spk-avatar-btn", title: `${c.name} (${c.role}) · 누르면 코치 바꾸기`, onclick: () => { toggleCoach(); onSwitch?.(); } },
-    img, showName ? el("span", {}, c.name) : null);
+    wrap, showName ? el("span", {}, c.name) : null);
   btn.setMood = (m) => {
     img.src = coachImg(activeCoach(), m);
-    img.className = "spk-avatar" + (m === "ask" ? " speaking" : m === "smile" ? " smile" : "");
+    wrap.className = "spk-avatar" + (m === "ask" ? " speaking" : m === "smile" ? " smile" : "");
   };
   return btn;
 }
@@ -2054,7 +2058,13 @@ function coachVideoFrame({ coach = activeCoach(), mood = "ask", subJa = "", subK
     smile: el("img", { src: coachImg(coach, "smile"), alt: `${coach.name} 미소`, class: mood === "smile" ? "on" : "" }),
   };
   const vid = videoSrc ? el("video", { src: videoSrc, playsinline: true, muted: false, class: "on" }) : null;
-  const statusTxt = el("span", {}, `${coach.name} · ${coach.role}`);
+  let curCoach = coach;
+  const moodText = (m, anim) => {
+    if (anim === "speaking" || (anim === "" && m === "ask")) return `${curCoach.name} 말하는 중`;
+    if (m === "smile") return `${curCoach.name} · 좋아요!`;
+    return `${curCoach.name} 듣는 중`;
+  };
+  const statusTxt = el("span", {}, moodText(mood, ""));
   let subHidden = !!maskedSub;
   const subJaEl = el("div", { class: "cs-ja", lang: LANG }, subJa);
   const subKoEl = el("div", { class: "cs-ko" }, subKo);
@@ -2072,9 +2082,20 @@ function coachVideoFrame({ coach = activeCoach(), mood = "ask", subJa = "", subK
   const replayBtn = onReplay
     ? el("button", { type: "button", class: "coach-hud-btn", onclick: (e) => { e.stopPropagation(); onReplay(); } }, "🔊 다시 듣기")
     : null;
+  let isMini = compact && getPref("lessonFaceMini", "0") === "1";
+  const sizeBtn = compact
+    ? el("button", { type: "button", class: "coach-hud-btn", title: "얼굴 화면 크기 조절", onclick: (e) => {
+        e.stopPropagation();
+        isMini = !isMini;
+        setPref("lessonFaceMini", isMini ? "1" : "0");
+        frame.classList.toggle("mini-view", isMini);
+        sizeBtn.textContent = isMini ? "△ 크게" : "▽ 작게";
+      } }, isMini ? "△ 크게" : "▽ 작게")
+    : null;
   const switchBtn = el("button", { type: "button", class: "coach-hud-btn", onclick: (e) => {
     e.stopPropagation();
     const next = toggleCoach();
+    curCoach = next;
     imgs.ask.src = coachImg(next, "ask");
     imgs.listen.src = coachImg(next, "listen");
     imgs.smile.src = coachImg(next, "smile");
@@ -2082,17 +2103,18 @@ function coachVideoFrame({ coach = activeCoach(), mood = "ask", subJa = "", subK
     onSwitchCoach?.(next);
   } }, "🔄 코치");
 
-  const frame = el("div", { class: "coach-frame" + (compact ? " compact" : "") + (mood === "ask" ? " speaking" : mood === "listen" ? " listening" : "") },
+  const frame = el("div", { class: "coach-frame" + (compact ? " compact" : "") + (isMini ? " mini-view" : "") + (mood === "ask" ? " speaking" : mood === "listen" ? " listening" : "") },
     imgs.ask, imgs.listen, imgs.smile, vid,
     el("div", { class: "coach-hud" },
-      el("span", { class: "coach-badge" }, el("i", { class: "coach-dot" }), statusTxt),
-      el("div", { class: "coach-hud-btns" }, replayBtn, subToggle, switchBtn)),
+      el("span", { class: "coach-badge" }, el("i", { class: "coach-dot" }), statusTxt, el("span", { class: "coach-eq", "aria-hidden": "true" }, el("i"), el("i"), el("i"))),
+      el("div", { class: "coach-hud-btns" }, replayBtn, subToggle, sizeBtn, switchBtn)),
     subBar);
 
   function setMood(m, anim = "") {
     for (const k of ["ask", "listen", "smile"]) imgs[k].classList.toggle("on", k === m);
     frame.classList.toggle("speaking", anim === "speaking" || (anim === "" && m === "ask"));
     frame.classList.toggle("listening", anim === "listening" || (anim === "" && m === "listen"));
+    statusTxt.textContent = moodText(m, anim);
   }
   function setSubtitle(ja, ko = "") {
     subJaEl.textContent = ja || "";
@@ -3988,7 +4010,23 @@ function renderAloud(root) {
   const renderMyPlay = () => { myPlaySlot.replaceChildren(...(R.lastAloudAudio ? [myAudioBtn(R.lastAloudAudio, "🎙 방금 내 발음")] : [])); };
   renderMyPlay();
   const clock = el("b", { class: "clock" }, fmtTime(A.started ? (Date.now() - A.started) / 1000 : 0));
-  const doneNextB = el("button", { class: "ghost-btn", style: "color:var(--brand);font-weight:700", onclick: () => { res.ok = !res.stuck.length; finishSentence(false); } }, "✓ 다 읽음");
+  let heard = "", lastMove = Date.now(), best = 0, bestCov = 0, stuckShown = new Set();
+  const res = (A.results[si] ||= { ok: false, stuck: [], tries: 0 });
+  const doneNextB = el("button", { class: "ghost-btn", onclick: () => {
+    if (bestCov >= 0.45) {
+      res.ok = !res.stuck.length;
+      finishSentence("manual");
+    } else {
+      finishSentence("skip");
+    }
+  } }, "건너뛰기");
+  const syncDoneBtn = () => {
+    if (bestCov >= 0.45) {
+      doneNextB.textContent = "✓ 다 읽음";
+      doneNextB.style.color = "var(--brand)";
+      doneNextB.style.fontWeight = "700";
+    }
+  };
   put(root,
     el("div", { class: "read-head" }, el("div", {}, el("span", { class: "rd-genre" }, `${r.genreName} · 소리 내어 읽기${A.queue ? " · 막힌 문장 다시" : ""}`), el("h2", { lang: LANG }, r.title_ja)), clock),
     el("div", { class: "al-progress" }, el("span", {}, `${A.i + 1} / ${order.length} 문장`), el("div", { class: "limit" }, el("i", { style: `width:${(A.i / order.length) * 100}%;background:var(--navy)` }))),
@@ -3998,13 +4036,11 @@ function renderAloud(root) {
     nextS ? el("div", { class: "al-side", lang: LANG }, nextS) : null,
     el("div", { class: "aloud-dock" },
       el("button", { class: "ghost-btn", disabled: A.i === 0, onclick: () => { if (rec) rec.stop(); A.i--; renderRead(); } }, "← 이전"),
-      el("button", { class: "ghost-btn", onclick: () => { finishSentence(true); } }, "막힘"),
+      el("button", { class: "ghost-btn", onclick: () => { finishSentence("stuck"); } }, "막힘"),
       doneNextB,
       el("span", { style: "flex:1" }), micB),
     el("button", { class: "secondary", style: "width:100%;margin-top:8px", onclick: () => { if (rec) rec.stop(); A.i = order.length; renderRead(); } }, "여기서 그만 읽고 결과 보기"));
 
-  let heard = "", lastMove = Date.now(), best = 0, stuckShown = new Set();
-  const res = (A.results[si] ||= { ok: false, stuck: [], tries: 0 });
   function paint(cov, posKana) {
     // 가나 기준 위치를 조각 경계로 바꿔 그 앞까지 칠함
     let acc = 0;
@@ -4031,8 +4067,9 @@ function renderAloud(root) {
       const cov = enTarget.length ? m.hit / enTarget.length : 0;
       const posKana = Math.round((m.pos / Math.max(1, enTarget.length)) * kanaStr.length);
       if (posKana > best) { best = posKana; lastMove = Date.now(); }
+      if (cov > bestCov) { bestCov = cov; syncDoneBtn(); }
       paint(cov, best);
-      if (cov >= 0.78 && m.pos >= Math.max(1, enTarget.length - 1)) { res.ok = !res.stuck.length; finishSentence(false); }
+      if (cov >= 0.78 && m.pos >= Math.max(1, enTarget.length - 1)) { res.ok = !res.stuck.length; finishSentence("auto"); }
       return;
     }
     const hJa = jaPhoneticNorm(heard);
@@ -4047,6 +4084,7 @@ function renderAloud(root) {
     const simCov = similarity(s.ja, heard, kanaStr) / 100;
     const cov = Math.min(1, Math.max(ordCov, simCov));
     if (posKana > best) { best = posKana; lastMove = Date.now(); }
+    if (cov > bestCov) { bestCov = cov; syncDoneBtn(); }
     paint(Math.max(cov, best / Math.max(1, kanaStr.length)), best);
     const endSlack = kanaStr.length >= 14 ? 3 : 2;
     const endReached = best >= Math.max(1, kanaStr.length - endSlack);
@@ -4056,16 +4094,27 @@ function renderAloud(root) {
     // 충분한 발음 일치율(cov) + 문장 끝 도달(또는 문장 끝소리 확인) 시 자연스럽게 다음 문장으로 이동
     if (cov >= reqCov && (endReached || (tailHeard && best >= Math.floor(kanaStr.length * 0.65)))) {
       res.ok = !res.stuck.length;
-      finishSentence(false);
+      finishSentence("auto");
     }
   }
-  function finishSentence(skipped) {
+  function finishSentence(mode) {
     if (finishSentence.done) return;
     finishSentence.done = true;
     clearInterval(R.timer);
-    if (skipped) { const x = currentPiece(best); if (x?.p.r) markWord(x.p); res.ok = false; res.skipped = true; }
-    else { if (res.ok) passFx({ vol: 0.07 }); addSpokenCount(1); }
-    res.tries++;
+    if (mode === "stuck") {
+      const x = currentPiece(best); if (x?.p.r) markWord(x.p);
+      res.ok = false; res.skipped = true; res.tries++;
+    } else if (mode === "skip") {
+      res.ok = false; res.skipped = true;
+    } else if (mode === "manual") {
+      res.tries++;
+      addSpokenCount(1);
+    } else {
+      // auto: 마이크로 실제 발음 인식 통과했을 때만 초록 체크와 띵동 소리 재생
+      if (res.ok) passFx({ vol: 0.07 });
+      res.tries++;
+      addSpokenCount(1);
+    }
     A.i++;
     saveAl();
     // 마이크는 켠 채로 다음 문장으로(버퍼는 다음 렌더에서 rec.resetText()로 깨끗하게 비움)
