@@ -822,6 +822,70 @@ function similarity(a, b, aReading = "") {
   return Math.max(p1, p2);
 }
 
+// ---------- 말하기 통과 판정 ----------
+// 일치율(%)만 보면 「行きません」 자리에 「出ません」을 말해도 글자가 대부분 같아 86%로 통과했다.
+// 그래서 비율과 함께 「빠진 자리」를 본다: 모범에서 두 글자(영어는 내용어 한 낱말) 이상 이어서 빠지면 다른 말을 한 것.
+const EN_FUNC = new Set("a an the to of in on at for and or but is am are was were be do does did i you he she it we they my your his her its our their this that".split(" "));
+const JA_PARTICLES = new Set([..."がをにでともの"]); // は·へ 는 인식이 わ·え 로 적기도 해서 뺌
+function runsOf(bools) { let max = 0, cur = 0, n = 0; for (const b of bools) { if (!b) { cur++; n++; if (cur > max) max = cur; } else cur = 0; } return { max, n }; }
+function judgeSpeech(target, said, reading = "", base = 75) {
+  said = String(said || "");
+  if (!said.trim()) return { ok: false, pct: 0, why: "" };
+  if (LANG === "en") {
+    const t = normEnTokens(target), h = normEnTokens(said);
+    if (!t.length) return { ok: false, pct: 0, why: "" };
+    const hitT = lcsSeq(t, h), hitH = lcsSeq(h, t);
+    const pct = Math.round((2 * hitT.filter(Boolean).length / (t.length + h.length)) * 100);
+    const missed = t.filter((_, i) => !hitT[i]);
+    const content = missed.filter((w) => !EN_FUNC.has(w));
+    const slack = Math.floor(t.length / 8);
+    const ok = pct >= base && content.length === 0 && missed.length <= slack && runsOf(hitH).n <= 1 + slack;
+    return { ok, pct, why: ok ? "" : content.length ? `「${content.slice(0, 3).join(", ")}」가 다르게 들렸어요` : "" };
+  }
+  const strip = (x) => normJaStr(x);
+  const map = reading ? extractKanjiReadings(target, reading) : [];
+  // 읽기(히라가나)끼리 견준 것과 글자 그대로 견준 것 가운데 나은 쪽(말한 쪽에 모범에 없는 한자가 섞여도 억울하지 않게)
+  const tries = [];
+  if (reading) tries.push([[...strip(reading)], [...applyReadings(said, map)]]);
+  tries.push([[...strip(target)], [...strip(said)]]);
+  let best = null;
+  const isKanji = (c) => /[一-鿿㐀-䶿々]/.test(c);
+  for (const [ti, [t, h]] of tries.entries()) {
+    if (!t.length) continue;
+    const hitT = lcsSeq(t, h), hitH = lcsSeq(h, t);
+    // 틈마다 살펴봄: 조사가 다른 조사로 바뀐 자리(に→が)는 한 글자라도 틀림.
+    // 글자 그대로 견줄 때(마지막 시도)는 모범이 가나인데 인식이 한자로 적은 자리(いただ↔頂, こぼ↔零)를 같은 말로 봐 줌
+    let particle = "";
+    {
+      let i = 0, j = 0;
+      while (i < t.length || j < h.length) {
+        if (i < t.length && j < h.length && hitT[i] && hitH[j] && t[i] === h[j]) { i++; j++; continue; }
+        const i0 = i, j0 = j;
+        while (i < t.length && !hitT[i]) i++;
+        while (j < h.length && !hitH[j]) j++;
+        const tg = t.slice(i0, i), hg = h.slice(j0, j);
+        if (tg.length === 1 && hg.length === 1 && JA_PARTICLES.has(tg[0]) && JA_PARTICLES.has(hg[0])) particle ||= `조사 「${tg[0]}」가 「${hg[0]}」로 들렸어요`;
+        else if (ti === tries.length - 1 && tg.length && hg.length && hg.every(isKanji) && !tg.some(isKanji) && tg.length <= hg.length * 3) {
+          for (let k = i0; k < i; k++) hitT[k] = true;
+          for (let k = j0; k < j; k++) hitH[k] = true;
+        }
+        if (i === i0 && j === j0) { i++; j++; }
+      }
+    }
+    const pct = Math.round(((hitT.filter(Boolean).length + hitH.filter(Boolean).length) / (t.length + h.length)) * 100);
+    const m = runsOf(hitT), x = runsOf(hitH);
+    const allow = t.length <= 12 ? 1 : t.length <= 30 ? 2 : 3;
+    const ok = !particle && pct >= base && m.max < 2 && x.max < 3 && m.n <= allow && x.n <= allow + 1;
+    // 빠진 덩어리를 보여 줄 글
+    let gap = "", cur = "";
+    t.forEach((c, i) => { if (!hitT[i]) cur += c; else { if (cur.length > gap.length) gap = cur; cur = ""; } });
+    if (cur.length > gap.length) gap = cur;
+    const r = { ok, pct, why: ok ? "" : particle ? particle : gap.length >= 2 ? `「${gap}」 부분이 다르게 들렸어요` : m.n + x.n > allow ? "글자가 여러 군데 달라요" : "" };
+    if (!best || (r.ok && !best.ok) || (r.ok === best.ok && r.pct > best.pct)) best = r;
+  }
+  return best || { ok: false, pct: 0, why: "" };
+}
+
 // 발음 확인: 모범 문장과 내가 말한 것(음성 인식)을 맞춰 들린 곳은 초록, 안 들린 곳은 빨강
 // 일본어는 가타카나↔히라가나·한자↔가나 표기 차이를 자동 보정해 발음이 같으면 초록으로 표시한다.
 function pronDiff(target, said, reading = "") {
@@ -963,7 +1027,8 @@ function renderPage(feed) {
       answerCard({ prompt: "🎤 따라 말하기", sub: "다 말하면 들린 곳은 초록, 안 들린 곳은 빨강으로 보여 줘요", expect: model, expectReading: modelReading, onDone: (said, sec, audioUrl) => {
         const r = pronDiff(model, said, modelReading);
         PG.tried = true;
-        const pass = r.pct >= 80;
+        const jg = judgeSpeech(model, said, modelReading, 80);
+        const pass = jg.ok;
         if (pass) { retryTarget = null; passFx(); }
         nextB.disabled = false;
         const spR = el("button", { class: "tool" }, "🔊 모범 듣기"); spR.onclick = () => speak(model, { btn: spR });
@@ -1310,8 +1375,8 @@ function fixDrill(r) {
     put(sheet, el("div", { class: "step-name" }, `다시 말하기 ${D.i + 1} / ${D.q.length}${tries ? " · 🔁 모범을 보고 다시" : ""}`),
       tries ? el("div", { class: "card" }, el("div", { class: "note" }, "모범 문장을 듣고 따라 말하세요"), el("div", { class: "model", lang: LANG }, it.model), el("div", { class: "model-tools" }, sp)) : null,
       answerCard({ prompt: it.prompt, sub: it.sub, big: true, expect: it.model, expectReading: it.reading, onDone: (said, _sec, audioUrl) => {
-        const pct = similarity(it.model, said, it.reading);
-        const ok = pct >= 75;
+        const jg = judgeSpeech(it.model, said, it.reading), pct = jg.pct;
+        const ok = jg.ok;
         D.tries[k] = tries + 1;
         if (ok && !tries) D.ok++;
         if (!ok && tries + 1 < 3) D.q.push(k);
@@ -1858,8 +1923,9 @@ function stepCourseBlitz(body) {
       hint: "마이크 누르고 말한 뒤 멈추면 즉시 채점돼요",
       onDone: (said, sec, audioUrl) => {
         const diff = pronDiff(it.ja, said, it.reading || "");
-        const pct = Math.max(diff.pct, similarity(it.ja, said, it.reading || ""));
-        const ok = pct >= 75;
+        const jg = judgeSpeech(it.ja, said, it.reading || "");
+        const pct = jg.pct;
+        const ok = jg.ok;
         if (!B.scored.includes(B.i)) {
           B.scored.push(B.i);
           if (ok) {
@@ -1878,6 +1944,7 @@ function stepCourseBlitz(body) {
         put(body, head,
           el("div", { class: "card ans" },
             el("div", { class: "verdict " + (ok ? "v-ok" : pct >= 55 ? "v-mid" : "v-bad") }, `${ok ? "⭕ 통과!" : "❌ 다시 확인"} · 일치 ${pct}%${ok && sec <= 5 ? ` · ⚡${sec.toFixed(1)}초` : ""}`),
+            jg.why ? el("div", { class: "note", style: "text-align:center;color:#b91c1c;font-weight:700" }, jg.why) : null,
             el("div", { class: "note", style: "text-align:center;margin-bottom:4px" }, it.ko),
             diff.node,
             LANG === "ja" && it.reading ? el("div", { class: "note", style: "text-align:center;margin-top:4px" }, it.reading) : null,
@@ -1942,8 +2009,8 @@ function redoCard(body, items) {
   put(body, el("div", { class: "h" }, `🔁 다시 말하기 · 남은 ${R2.q.length - R2.i}개${tries ? ` · ${tries + 1}번째` : ""}`),
     tries ? el("div", { class: "card" }, el("div", { class: "note" }, "모범 답을 듣고 그대로 말해 보세요"), el("div", { class: "model", lang: LANG }, model), el("div", { class: "model-tools" }, sp)) : null,
     answerCard({ prompt: it.prompt, big: true, expect: model, expectReading: modelReading, hint: tries ? "" : "이번엔 고친 문장을 떠올리며 말해 보세요", onDone: (said, _sec, audioUrl) => {
-      const pct = similarity(model, said, modelReading);
-      const ok = pct >= 75;
+      const jg = judgeSpeech(model, said, modelReading), pct = jg.pct;
+      const ok = jg.ok;
       R2.tries[i] = tries + 1;
       if (ok) { R2.done[i] = true; addScore(3); }
       else if (tries + 1 < 3) R2.q.push(i);
@@ -1980,8 +2047,8 @@ function stepCards(body, key) {
   const label = CR.i < list.length ? `${title} ${CR.i + 1} / ${list.length} · 3초 안에 말하면 +3` : `🔁 틀린 것 다시 · 남은 ${CR.queue.length - CR.i}개`;
   put(body, el("div", { class: "h" }, label + (w.from ? " · " + w.from : "")),
     answerCard({ prompt: w.meaning_ko, emoji: w.emoji, limit: 3, big: true, expect: w.ja, expectReading: w.reading || "", hint: tries ? `힌트: ${w.reading || w.ja}`.slice(0, 4 + Math.ceil((w.reading || w.ja).length / 2)) + "…" : "", onDone: (said, sec, audioUrl) => {
-      const pct = similarity(w.ja, said, w.reading || "");
-      const ok = pct >= 70;
+      const jg = judgeSpeech(w.ja, said, w.reading || "", 70), pct = jg.pct;
+      const ok = jg.ok;
       CR.tries[idx] = tries + 1;
       if (!tries) { CR.answers[idx] = { said, sec, ok }; if (ok) addScore(5 + (sec <= 3 ? 3 : 0)); }
       else if (ok) { CR.answers[idx].fixed = true; addScore(3); }
@@ -2860,8 +2927,8 @@ function vocabQuiz(root) {
   }
   put(root, head, answerCard({ prompt: w.m, emoji: w.emoji, limit: 3, big: true, expect: w.w, expectReading: w.r || "", instant: true, autoStop: 85,
     hint: "마이크를 누르고 말하면 맞는 순간 바로 넘어가요. 안 넘어가면 마이크를 한 번 더 누르세요", onDone: (said, sec, audioUrl, how = {}) => {
-    const pct = similarity(w.w, said, w.r || "");
-    const ok = pct >= 70;
+    const jg = judgeSpeech(w.w, said, w.r || "", 70), pct = jg.pct;
+    const ok = jg.ok;
     record(ok);
     const diff = !ok && said ? pronDiff(w.w, said, w.r || "") : null;
     const sp = el("button", { class: "tool" }, "🔊"); sp.onclick = () => speak(w.ex_ja || w.w, { btn: sp });
