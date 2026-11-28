@@ -157,48 +157,101 @@ function bestVoice() {
 }
 // ---------- 듣기 환경: 브라우저 음성은 바꿀 수 있는 게 높낮이·빠르기뿐이라, 배경 잡음을 같이 틀어 「잘 안 들리는 상황」을 흉내 낸다 ----------
 const ENVS = {
-  normal: { name: "보통", pitch: 1, rate: 1, noise: 0 },
-  cafe: { name: "☕ 카페 잡음", pitch: 1, rate: 1, noise: 0.10, color: "pink" },
-  station: { name: "🚉 역·거리 잡음", pitch: 1, rate: 1.05, noise: 0.22, color: "brown" },
-  phone: { name: "📞 전화처럼 흐리게", pitch: 1.1, rate: 1.05, noise: 0.07, color: "white" },
-  elder: { name: "👴 낮고 느린 목소리", pitch: 0.55, rate: 0.85, noise: 0.06, color: "brown" },
+  normal: { name: "보통", pitch: 1, rate: 1 },
+  cafe: { name: "☕ 카페", pitch: 1, rate: 1, scene: "cafe" },
+  station: { name: "🚉 역·거리", pitch: 1, rate: 1.05, scene: "station" },
+  izakaya: { name: "🍺 시끄러운 술집", pitch: 1, rate: 1.05, scene: "izakaya" },
+  elder: { name: "👴 낮고 느린 목소리", pitch: 0.55, rate: 0.85, scene: "room" },
 };
 const envOf = () => ENVS[localStorage.getItem("listenEnv")] || ENVS.normal;
+// 배경 소리는 녹음 파일 없이 만든다: 사람 목소리 대역만 통과시킨 잡음을 음절처럼 들썩이게 여러 겹 겹쳐 웅성거림을,
+// 짧은 고음 울림으로 컵·그릇 소리를, 낮은 웅웅거림과 쓸려 가는 소리로 전철을 흉내 낸다.
 let NOISE = null;
+function audioCtx() {
+  if (!NOISE) {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const len = ctx.sampleRate * 4;
+    const white = ctx.createBuffer(1, len, ctx.sampleRate), brown = ctx.createBuffer(1, len, ctx.sampleRate);
+    const w = white.getChannelData(0), b = brown.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < len; i++) { const r = Math.random() * 2 - 1; w[i] = r * 0.5; last = (last + 0.02 * r) / 1.02; b[i] = last * 3.5; }
+    NOISE = { ctx, white, brown, nodes: [], timers: [], on: false };
+  }
+  return NOISE;
+}
+function loopNoise(N, buf, dest) {
+  const s = N.ctx.createBufferSource(); s.buffer = buf; s.loop = true; s.loopStart = Math.random(); s.connect(dest); s.start(0, Math.random() * 3); N.nodes.push(s); return s;
+}
+function addBabble(N, out, voices, level) {
+  for (let v = 0; v < voices; v++) {
+    const bp = N.ctx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 350 + Math.random() * 900; bp.Q.value = 2.5 + Math.random() * 2;
+    const bp2 = N.ctx.createBiquadFilter(); bp2.type = "bandpass"; bp2.frequency.value = 1400 + Math.random() * 1200; bp2.Q.value = 4;
+    const g = N.ctx.createGain(); g.gain.value = 0;
+    loopNoise(N, N.white, bp); loopNoise(N, N.white, bp2);
+    bp.connect(g); bp2.connect(g); g.connect(out); N.nodes.push(bp, bp2, g);
+    // 음절처럼 들썩이는 크기, 말하다 쉬다 하는 사람처럼
+    const tick = () => {
+      if (!N.on) return;
+      const t = N.ctx.currentTime;
+      const talking = Math.random() < 0.75;
+      g.gain.setTargetAtTime(talking ? level * (0.4 + Math.random() * 0.6) : 0, t, 0.03);
+      bp.frequency.setTargetAtTime(300 + Math.random() * 1000, t, 0.05);
+      N.timers.push(setTimeout(tick, talking ? 90 + Math.random() * 160 : 300 + Math.random() * 900));
+    };
+    tick();
+  }
+}
+function addClinks(N, out, level, every) {
+  const clink = () => {
+    if (!N.on) return;
+    const t = N.ctx.currentTime;
+    for (const f of [2200 + Math.random() * 1800, 5200 + Math.random() * 1500]) {
+      const o = N.ctx.createOscillator(); o.type = "sine"; o.frequency.value = f;
+      const g = N.ctx.createGain(); g.gain.setValueAtTime(level, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35 + Math.random() * 0.3);
+      o.connect(g); g.connect(out); o.start(t); o.stop(t + 0.8);
+    }
+    N.timers.push(setTimeout(clink, every * (0.5 + Math.random())));
+  };
+  N.timers.push(setTimeout(clink, 600 + Math.random() * 1500));
+}
+function addRumble(N, out, level) {
+  const lp = N.ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 180;
+  const g = N.ctx.createGain(); g.gain.value = level;
+  loopNoise(N, N.brown, lp); lp.connect(g); g.connect(out); N.nodes.push(lp, g);
+  // 이따금 전철이 지나가는 소리
+  const pass = () => {
+    if (!N.on) return;
+    const t = N.ctx.currentTime;
+    const bp = N.ctx.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 0.8;
+    bp.frequency.setValueAtTime(200, t); bp.frequency.linearRampToValueAtTime(900, t + 2.5); bp.frequency.linearRampToValueAtTime(250, t + 5);
+    const pg = N.ctx.createGain(); pg.gain.setValueAtTime(0, t); pg.gain.linearRampToValueAtTime(level * 2.2, t + 2); pg.gain.linearRampToValueAtTime(0, t + 5);
+    const s = loopNoise(N, N.white, bp); bp.connect(pg); pg.connect(out); s.stop(t + 5.2);
+    N.timers.push(setTimeout(pass, 9000 + Math.random() * 9000));
+  };
+  N.timers.push(setTimeout(pass, 1500));
+}
 function noiseOn() {
   const env = envOf();
-  if (!env.noise) return;
+  if (!env.scene) return;
   try {
-    if (!NOISE) {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const len = ctx.sampleRate * 3;
-      const bufs = {};
-      for (const color of ["white", "pink", "brown"]) {
-        const b = ctx.createBuffer(1, len, ctx.sampleRate), d = b.getChannelData(0);
-        let last = 0, b0 = 0, b1 = 0, b2 = 0;
-        for (let i = 0; i < len; i++) {
-          const w = Math.random() * 2 - 1;
-          if (color === "brown") { last = (last + 0.02 * w) / 1.02; d[i] = last * 3.5; }
-          else if (color === "pink") { b0 = 0.99765 * b0 + w * 0.099; b1 = 0.963 * b1 + w * 0.2965; b2 = 0.57 * b2 + w * 1.0527; d[i] = (b0 + b1 + b2 + w * 0.1848) * 0.2; }
-          else d[i] = w * 0.5;
-        }
-        bufs[color] = b;
-      }
-      NOISE = { ctx, bufs, src: null, gain: ctx.createGain() };
-      NOISE.gain.connect(ctx.destination);
-    }
-    if (NOISE.src) return;
-    NOISE.ctx.resume?.();
-    const src = NOISE.ctx.createBufferSource();
-    src.buffer = NOISE.bufs[env.color || "brown"];
-    src.loop = true;
-    NOISE.gain.gain.value = env.noise;
-    src.connect(NOISE.gain);
-    src.start();
-    NOISE.src = src;
+    const N = audioCtx();
+    if (N.on) return;
+    N.ctx.resume?.();
+    N.on = true;
+    const out = N.ctx.createGain(); out.connect(N.ctx.destination); N.nodes.push(out);
+    if (env.scene === "cafe") { out.gain.value = 0.9; addBabble(N, out, 6, 0.09); addClinks(N, out, 0.05, 2500); addRumble(N, out, 0.05); }
+    if (env.scene === "station") { out.gain.value = 1; addRumble(N, out, 0.16); addBabble(N, out, 5, 0.07); }
+    if (env.scene === "izakaya") { out.gain.value = 1; addBabble(N, out, 10, 0.12); addClinks(N, out, 0.07, 1200); }
+    if (env.scene === "room") { out.gain.value = 1; addRumble(N, out, 0.06); addBabble(N, out, 1, 0.03); }
   } catch {}
 }
-function noiseOff() { try { NOISE?.src?.stop(); } catch {} if (NOISE) NOISE.src = null; }
+function noiseOff() {
+  if (!NOISE || !NOISE.on) return;
+  NOISE.on = false;
+  NOISE.timers.forEach(clearTimeout); NOISE.timers = [];
+  NOISE.nodes.forEach((n) => { try { n.stop?.(); } catch {} try { n.disconnect(); } catch {} });
+  NOISE.nodes = [];
+}
 
 let speakingBtn = null;
 function speak(text, { slow = false, btn = null } = {}) {
@@ -419,7 +472,7 @@ function renderHome() {
     el("div", { class: "chips" }, REGISTERS.map(([k, t]) => el("button", { class: "chip" + (pick.register === k ? " on" : ""), onclick: () => { pick.register = k; localStorage.setItem("register", k); renderHome(); } }, t))),
     el("div", { class: "h" }, "듣기 환경 (상대 목소리)"),
     el("div", { class: "chips" }, Object.entries(ENVS).map(([k, e]) => el("button", { class: "chip" + ((localStorage.getItem("listenEnv") || "normal") === k ? " on" : ""), onclick: () => { localStorage.setItem("listenEnv", k); renderHome(); speak(LANG === "en" ? "Can you hear me okay?" : "ちゃんと聞こえますか。今日はよろしくお願いします。"); } }, e.name))),
-    el("div", { class: "level-desc" }, "브라우저 음성이라 진짜 어르신 목소리는 못 내요. 높낮이·빠르기를 바꾸고 배경 잡음을 같이 틀어서 잘 안 들리는 상황을 흉내 내요."),
+    el("div", { class: "level-desc" }, "상대가 말하는 동안 배경 소리(사람들 웅성거림, 컵 소리, 전철 소리)가 깔려요. 녹음이 아니라 만든 소리라 진짜와 똑같지는 않아요. 진짜 어르신 목소리는 못 내서 「어르신 말투」와 함께 쓰세요."),
     el("div", { class: "h" }, pick.mode === "talk" ? "상황" : ""), startArea,
     el("div", { class: "h" }, "내 기록"), stats,
     el("div", { class: "h" }, "목소리"),
