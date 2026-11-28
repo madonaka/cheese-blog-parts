@@ -1576,7 +1576,10 @@ function renderListen(root) {
     el("div", { class: "levels" }, M.LEVELS.map((l) => el("button", { class: pick.level === l.n ? "on" : "", onclick: () => { setLevel(l.n); renderRead(); } }, l.n))),
     el("div", { class: "level-desc" }, M.LEVELS[pick.level - 1].name),
     LS.phase === "ready" && LS.item
-      ? el("button", { class: "primary", onclick: () => { LS.phase = "play"; LS.plays = 0; LS.answers = []; renderRead(); } }, `받아 둔 듣기 시작: ${LS.item.title_ko}`)
+      ? el("div", { class: "ready-pair" },
+          el("button", { class: "primary", onclick: () => { LS.phase = "play"; LS.plays = 0; LS.answers = []; renderRead(); } }, `이어서 듣기: ${LS.item.title_ko}`),
+          el("button", { class: "ghost", disabled: LS.loading, onclick: fetchListening }, LS.loading ? "새로 만드는 중…" : "위에서 고른 대로 새로 만들기"),
+          el("div", { class: "hint-line" }, `지난번에 만들어 두고 아직 안 푼 듣기예요 (${LS.item.genreName || ""}). 새로 만들면 이건 사라져요.`))
       : el("button", { class: "primary", disabled: LS.loading, onclick: fetchListening }, LS.loading ? `들을 거리를 만드는 중… (${{ short: "15초", mid: "30초", long: "1분", xl: "1~2분" }[LS.length] || "15초"}쯤)` : "새 듣기 받기"),
     hist.length ? [el("div", { class: "h" }, "최근 기록"), el("div", { class: "rec-list" }, hist.slice(-8).reverse().map((r) =>
       el("div", { class: "rec" }, el("div", { class: `stamp sm g-${r.correct === r.total ? "S" : r.correct >= r.total - 1 ? "A" : "C"}` }, `${r.correct}`),
@@ -1679,7 +1682,10 @@ function renderRead() {
       ? "소리 내어 읽기: 노래방처럼 읽은 곳이 칠해지고, 지금 문장 아래에 내가 읽은 말이 떠요. 4초 넘게 막힌 낱말은 빨갛게 표시돼서 끝나고 읽는 법과 뜻을 알려 주고 약점 노트에 담아요."
       : "페이스: 정해진 속도로 문장이 하나씩 밝아져요. 눈이 따라가며 집중을 붙잡는 연습이에요."),
     R.phase === "ready" && R.reading
-      ? el("button", { class: "primary", onclick: beginReading }, `받아 둔 글 읽기 시작 (${R.reading.chars}${UNIT})`)
+      ? el("div", { class: "ready-pair" },
+          el("button", { class: "primary", onclick: beginReading }, `이어서 읽기: ${R.reading.title_ja || ""} (${R.reading.chars}${UNIT})`),
+          el("button", { class: "ghost", disabled: R.loading, onclick: fetchReading }, R.loading ? "새로 만드는 중…" : "위에서 고른 대로 새 글 만들기"),
+          el("div", { class: "hint-line" }, "지난번에 만들어 두고 아직 안 읽은 글이에요. 새로 만들면 이건 사라져요."))
       : el("button", { class: "primary", disabled: R.loading, onclick: fetchReading }, R.loading ? "글을 만드는 중… (20초쯤)" : "새 글 받기"),
     last.length ? [el("div", { class: "h" }, "최근 기록"), el("div", { class: "rec-list" }, last.map((r) =>
       el("div", { class: "rec" }, el("div", { class: `stamp sm g-${r.acc >= 1 ? "S" : r.acc >= 0.8 ? "A" : r.acc >= 0.6 ? "B" : "C"}` }, `${r.correct}`),
