@@ -2057,7 +2057,16 @@ function stepDrills(body, key) {
         CR.answers[CR.i] = { said, sec };
         CR.i++; saveCR();
         const sp = el("button", { class: "tool" }, "🔊 모범 듣기"); sp.onclick = () => speak(d.ja, { btn: sp });
-        put(body, el("div", { class: "card ans" }, el("div", { class: "note" }, "모범 답"), el("div", { class: "model", lang: LANG }, d.ja),
+        // 바로 판정(모범과 같은지). 뜻이 통하는 다른 표현은 끝에 AI 채점이 따로 인정해 줌
+        const jg = judgeSpeech(d.ja, said, d.reading || "");
+        const diff = said ? pronDiff(d.ja, said, d.reading || "") : null;
+        if (jg.ok) passFx();
+        put(body, el("div", { class: "card ans" },
+          el("div", { class: "verdict " + (jg.ok ? "v-ok" : jg.pct >= 55 ? "v-mid" : "v-bad") }, jg.ok ? `⭕ 정답 · 일치 ${jg.pct}%` : said ? `❌ 모범과 달라요 · 일치 ${jg.pct}%` : "❌ 무응답"),
+          jg.why ? el("div", { class: "note", style: "text-align:center;color:#b91c1c;font-weight:700" }, jg.why) : null,
+          !jg.ok && said ? el("div", { class: "note", style: "text-align:center" }, "뜻이 통하는 다른 표현이면 끝의 채점에서 △나 ⭕로 인정돼요") : null,
+          el("div", { class: "note" }, "모범 답"), el("div", { class: "model", lang: LANG }, d.ja),
+          diff ? diff.node : null,
           el("div", { class: "note", lang: LANG }, "내 답: " + (said || "(무응답)")),
           el("div", { class: "model-tools", style: "justify-content:center" }, sp, myAudioBtn(audioUrl, "🎙 내 발음")),
           el("button", { class: "primary", onclick: () => { stopSpeak(); stopMyAudio(); renderCourse(); } }, CR.i < list.length ? "다음 문제" : "채점하기")));
