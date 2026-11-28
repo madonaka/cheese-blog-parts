@@ -1501,7 +1501,7 @@ async function say(text, audioUrl = null) {
     S.xp = r.xp; S.todayXp = r.todayXp;
     if (LV === "page") {
       // 교정 장부터 보여 주고, 상대의 다음 말은 「다음」을 누르면 읽는다
-      retryTarget = r.turn.feedback?.verdict && r.turn.feedback.verdict !== "natural" && r.turn.feedback.natural ? r.turn.feedback.natural : null;
+      retryTarget = r.turn.feedback?.verdict && r.turn.feedback.verdict !== "natural" && r.turn.feedback.natural ? r.turn.feedback.natural : null; if (r.turn.feedback?.verdict === "natural") passFx();
       PG = { fb: true, stage: "fix", tried: false };
       HINT = 0;
       renderLesson();
@@ -1510,7 +1510,7 @@ async function say(text, audioUrl = null) {
       return;
     }
     pending.replaceWith(meEl(r.turn, true));
-    retryTarget = r.turn.feedback?.verdict && r.turn.feedback.verdict !== "natural" && r.turn.feedback.natural ? r.turn.feedback.natural : null;
+    retryTarget = r.turn.feedback?.verdict && r.turn.feedback.verdict !== "natural" && r.turn.feedback.natural ? r.turn.feedback.natural : null; if (r.turn.feedback?.verdict === "natural") passFx();
     document.querySelectorAll("#feed .mission-card").forEach((x) => x.remove()); // 지난 차례의 할 일은 치움
     think.replaceWith(aiEl(S.current.display[S.current.display.length - 1], true));
     HINT = 0;
@@ -1604,6 +1604,7 @@ function fixDrill(r) {
       answerCard({ prompt: it.prompt, sub: it.sub, big: true, expect: it.model, expectReading: it.reading, onDone: (said, _sec, audioUrl) => {
         const jg = judgeSpeech(it.model, said, it.reading), pct = jg.pct;
         const ok = jg.ok;
+        if (ok) passFx();
         D.tries[k] = tries + 1;
         if (ok && !tries) D.ok++;
         if (!ok && tries + 1 < 3) D.q.push(k);
@@ -2286,6 +2287,7 @@ async function gradeNow(body, items) {
   try {
     const r = await api("/api/course/grade", { method: "POST", body: JSON.stringify({ items, day: CR.day }) });
     CR.graded = r.results;
+    if (r.results.some((x) => x.verdict === "ok")) passFx();
     r.results.forEach((x, i) => addScore(x.verdict === "ok" ? 10 : x.verdict === "awkward" ? 5 : 0) || ((CR.answers[i]?.sec ?? 99) <= 5 && x.verdict !== "wrong" ? addScore(3) : 0));
     saveCR();
     renderCourse();
@@ -2332,6 +2334,7 @@ function redoCard(body, items) {
     answerCard({ prompt: it.prompt, big: true, expect: model, expectReading: modelReading, hint: tries ? "" : "이번엔 고친 문장을 떠올리며 말해 보세요", onDone: (said, _sec, audioUrl) => {
       const jg = judgeSpeech(model, said, modelReading), pct = jg.pct;
       const ok = jg.ok;
+      if (ok) passFx();
       R2.tries[i] = tries + 1;
       if (ok) { R2.done[i] = true; addScore(3); }
       else if (tries + 1 < 3) R2.q.push(i);
@@ -2370,6 +2373,7 @@ function stepCards(body, key) {
     answerCard({ prompt: w.meaning_ko, emoji: w.emoji, limit: 3, big: true, expect: w.ja, expectReading: w.reading || "", hint: tries ? `힌트: ${w.reading || w.ja}`.slice(0, 4 + Math.ceil((w.reading || w.ja).length / 2)) + "…" : "", onDone: (said, sec, audioUrl) => {
       const jg = judgeSpeech(w.ja, said, w.reading || "", 70), pct = jg.pct;
       const ok = jg.ok;
+      if (ok) passFx();
       CR.tries[idx] = tries + 1;
       if (!tries) { CR.answers[idx] = { said, sec, ok }; if (ok) addScore(5 + (sec <= 3 ? 3 : 0)); }
       else if (ok) { CR.answers[idx].fixed = true; addScore(3); }
