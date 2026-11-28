@@ -1471,7 +1471,7 @@ function voiceFor(gender) {
   const v = voices.find((x) => re.test(x.name));
   return v || bestVoice();
 }
-const LS = { phase: "idle", item: null, plays: 0, answers: [], result: null, genre: "random", sub: "random", gen: 0, loading: false, length: localStorage.getItem("listenLen") || "short" };
+const LS = { phase: "idle", item: null, plays: 0, answers: [], result: null, genre: "random", sub: "random", more: {}, custom: "", moreLoading: false, gen: 0, loading: false, length: localStorage.getItem("listenLen") || "short" };
 function playLines(lines, from = 0, onLine) {
   LS.gen++;
   const gen = LS.gen;
@@ -1515,9 +1515,25 @@ function renderListen(root) {
     el("div", { class: "h" }, "들을 거리"),
     el("div", { class: "gen-grid pick-grid" }, [{ key: "random", name: "아무거나" }, ...(S.listenGenres || [])].map((g) =>
       el("button", { class: "gen tile" + (LS.genre === g.key ? " picked" : ""), onclick: () => { LS.genre = g.key; LS.sub = "random"; renderRead(); } }, el("b", {}, g.name), el("span", {}, LS.genre === g.key ? "✓ 골랐어요" : ""), el("i", { class: "tile-emoji" }, { random: "🎲", talk2: "🗣️", phone: "📞", announce: "📢", news: "📺", interview: "🎙️", chat: "☕" }[g.key] || "🎧")))),
-    (() => { const g = (S.listenGenres || []).find((x) => x.key === LS.genre); return g?.subs ? [el("div", { class: "h" }, `${g.name}: 장소·상황`),
-      el("div", { class: "chips" }, [{ key: "random", name: "아무거나" }, ...g.subs].map((sb) => el("button", { class: "chip" + (LS.sub === sb.key ? " on" : ""), title: sb.hint || "", onclick: () => { LS.sub = sb.key; renderRead(); } }, sb.name))),
-      LS.sub !== "random" ? el("div", { class: "level-desc" }, g.subs.find((x) => x.key === LS.sub)?.hint || "") : null] : null; })(),
+    (() => {
+      const g = (S.listenGenres || []).find((x) => x.key === LS.genre);
+      if (!g?.subs) return null;
+      // 예시 목록 + AI 가 새로 만든 상황(🔄로 계속 더) + 직접 적기
+      const extra = (LS.more[g.key] ||= []);
+      const all = [...extra, ...g.subs];
+      const picked = all.find((x) => x.key === LS.sub);
+      const moreB = el("button", { class: "chip more", disabled: LS.moreLoading, onclick: async () => {
+        LS.moreLoading = true; renderRead();
+        try { const r = await api("/api/listen/more", { method: "POST", body: JSON.stringify({ genre: g.key, shown: all.map((x) => x.name) }) }); LS.more[g.key] = [...r.items, ...extra]; } catch (e) { toast(e.message); }
+        LS.moreLoading = false; renderRead();
+      } }, LS.moreLoading ? "만드는 중…" : "🔄 다른 상황 더");
+      const own = el("input", { class: "paste-title", placeholder: "직접 적기: 예) 동물병원 접수 창구, 이삿짐센터 견적 전화", value: LS.custom || "" });
+      own.addEventListener("input", () => { LS.custom = own.value; LS.sub = own.value.trim() ? "custom" : "random"; document.querySelectorAll("#view-read .sub-chips .chip").forEach((c) => c.classList.toggle("on", c.dataset.k === LS.sub)); });
+      return [el("div", { class: "h" }, `${g.name}: 장소·상황 (AI가 얼마든지 더 만들어요)`),
+        el("div", { class: "chips sub-chips" }, [{ key: "random", name: "아무거나(AI가 새로)" }, ...all].map((sb) => el("button", { class: "chip" + (LS.sub === sb.key ? " on" : ""), "data-k": sb.key, title: sb.hint || "", onclick: () => { LS.sub = sb.key; LS.custom = ""; renderRead(); } }, sb.name)), moreB),
+        own,
+        picked ? el("div", { class: "level-desc" }, picked.hint || "") : null];
+    })(),
     el("div", { class: "h" }, "길이"),
     el("div", { class: "chips" }, Object.entries(S.listenLengths || {}).map(([k, v]) => el("button", { class: "chip" + (LS.length === k ? " on" : ""), onclick: () => { LS.length = k; localStorage.setItem("listenLen", k); renderRead(); } }, v.name))),
     ["long", "xl"].includes(LS.length) ? el("div", { class: "level-desc" }, "긴 것은 만드는 데 1분쯤 걸려요. 들을 때 인물 이름을 누르면 그 줄부터 다시 들을 수 있어요.") : null,
@@ -1534,7 +1550,8 @@ function renderListen(root) {
 async function fetchListening() {
   LS.loading = true; renderRead();
   try {
-    const r = await api("/api/listen/new", { method: "POST", body: JSON.stringify({ level: pick.level, genre: LS.genre, length: LS.length, sub: LS.sub }) });
+    const r = await api("/api/listen/new", { method: "POST", body: JSON.stringify({ level: pick.level, genre: LS.genre, length: LS.length, sub: LS.sub,
+      custom: LS.sub === "custom" && LS.custom.trim() ? { name: LS.custom.trim(), hint: "" } : (LS.more[LS.genre] || []).find((x) => x.key === LS.sub) || null }) });
     LS.item = r.listening; S.listening = r.listening; LS.phase = "play"; LS.plays = 0; LS.answers = [];
   } catch (e) { toast(e.message); }
   LS.loading = false;
