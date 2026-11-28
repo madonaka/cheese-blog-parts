@@ -27,6 +27,9 @@ let LANG = localStorage.getItem("lang") === "en" ? "en" : "ja";
 const SPEECH = LANG === "en" ? "en-US" : "ja-JP";
 const LNAME = LANG === "en" ? "영어" : "일본어";
 const PAIR = LANG === "en" ? "한↔영" : "한↔일";
+const langKey = (k) => (LANG === "en" ? `${k}_en` : k);
+const getPref = (k, def = "") => localStorage.getItem(langKey(k)) ?? def;
+const setPref = (k, v) => localStorage.setItem(langKey(k), String(v));
 function setLang(l) { localStorage.setItem("lang", l); location.reload(); }
 
 let COURSE_AWAY = false; // 회차를 하다가 코스 목록으로 나와 있음(진행은 그대로 남김)
@@ -71,11 +74,21 @@ function holdScroll(root, key) {
 let S = null;          // 서버 상태
 let M = null;          // 메타(상황, 단계 …)
 let busy = false;
-let pick = { mode: "talk", cat: "업무", level: null, register: localStorage.getItem("register") || "std" };
 const REGISTERS = LANG === "en"
   ? [["std", "표준"], ["casual", "구어체·슬랭"], ["elder", "어르신 말투"]]
   : [["std", "표준"], ["casual", "구어체·반말"], ["kansai", "간사이벤"], ["elder", "어르신 말투"]];
-let showSub = localStorage.getItem("showSub") === "1"; // 자막 기본 가림
+const savedRegister = getPref("register", "std");
+let pick = { mode: "talk", cat: "업무", level: null, register: REGISTERS.some(([k]) => k === savedRegister) ? savedRegister : "std" };
+let showSub = getPref("showSub") === "1"; // 자막 기본 가림(언어별)
+function setShowSub(on) {
+  showSub = !!on;
+  setPref("showSub", showSub ? "1" : "0");
+}
+let autoSend = getPref("autoSend") === "1"; // 음성 인식 후 바로 전송(언어별)
+function setAutoSend(on) {
+  autoSend = !!on;
+  setPref("autoSend", autoSend ? "1" : "0");
+}
 let retryTarget = null; // 어색·틀림 판정 뒤 따라 말해야 할 모범 답안
 
 // ---------- 서버 ----------
@@ -185,9 +198,9 @@ let voices = [];
 function loadVoices() {
   voices = speechSynthesis.getVoices().filter((v) => v.lang.replace("_", "-").startsWith(LANG));
 }
-if ("speechSynthesis" in window) { loadVoices(); speechSynthesis.onvoiceschanged = () => { loadVoices(); if (currentView === "home") renderHome(); }; }
+if ("speechSynthesis" in window) { loadVoices(); speechSynthesis.onvoiceschanged = () => { loadVoices(); if (!S) return; if (currentView === "home") renderHome(); if (!$("#modal").hidden && $("#sheet").dataset.modal === "settings") openSettingsModal(); }; }
 function bestVoice() {
-  const saved = localStorage.getItem(LANG === "en" ? "voice_en" : "voice");
+  const saved = getPref("voice");
   const v = voices.find((x) => x.name === saved);
   if (v) return v;
   const pref = LANG === "en" ? [/Aria/i, /Jenny/i, /Guy/i, /Google US/i, /Samantha/i, /Google/i, /en-US/i] : [/Nanami/i, /Keita/i, /Google/i, /Kyoko/i, /O-?ren/i, /Haruka/i];
@@ -202,7 +215,7 @@ const ENVS = {
   izakaya: { name: "🍺 시끄러운 술집", pitch: 1, rate: 1.05, scene: "izakaya" },
   elder: { name: "👴 낮고 느린 목소리", pitch: 0.55, rate: 0.85, scene: "room" },
 };
-const envOf = () => ENVS[localStorage.getItem("listenEnv")] || ENVS.normal;
+const envOf = () => ENVS[getPref("listenEnv", "normal")] || ENVS.normal;
 // 배경 소리는 녹음 파일 없이 만든다: 사람 목소리 대역만 통과시킨 잡음을 음절처럼 들썩이게 여러 겹 겹쳐 웅성거림을,
 // 짧은 고음 울림으로 컵·그릇 소리를, 낮은 웅웅거림과 쓸려 가는 소리로 전철을 흉내 낸다.
 let NOISE = null;
@@ -318,9 +331,37 @@ function speak(text, { slow = false, btn = null } = {}) {
 // speechSynthesis.pause 는 안드로이드에서 잘 안 먹어서, 문장마다 끊어 읽고 멈춘 문장부터 다시 읽는다.
 const SPEEDS = [0.75, 1, 1.25, 1.5, 1.75, 2, 2.25];
 const AP = { text: "", sents: [], i: 0, playing: false, gen: 0, views: new Set() };
-function speedMul() { return Number(localStorage.getItem("aiSpeed") || 1); }
-function splitJa(text) { return (String(text).match(/[^。！？!?]+[。！？!?」』）)]*|[^。！？!?]+$/g) || [text]).map((x) => x.trim()).filter(Boolean); }
-function plLoad(text) { if (AP.text === text) return; plStop(); AP.text = text; AP.sents = splitJa(text); AP.i = 0; }
+function speedMul() { return Number(getPref("aiSpeed", "1")) || 1; }
+const EN_TITLE_ABBR = /\b(?:Mr|Mrs|Ms|Dr|Prof|Sr|Jr|St|No|Fig|vs|e\.g|i\.e)\.$/i;
+function splitSents(text) {
+  const s = String(text || "").trim();
+  if (!s) return [];
+  if (LANG !== "en") {
+    return (s.match(/[^。！？!?]+[。！？!?」』）)]*|[^。！？!?]+$/g) || [s]).map((x) => x.trim()).filter(Boolean);
+  }
+  const re = /[.!?]+["'”’)\]]*(?:\s+|$)/g;
+  const raw = [];
+  let start = 0, m;
+  while ((m = re.exec(s))) {
+    const end = m.index + m[0].length;
+    raw.push(s.slice(start, end).trim());
+    start = end;
+  }
+  if (start < s.length) raw.push(s.slice(start).trim());
+  const out = [];
+  for (const part of raw) {
+    if (!part) continue;
+    const prev = out[out.length - 1];
+    // 약어(Mr., Dr. 등)나 마침표 뒤 소문자로 이어지는 경우(p.m. in, Wait... what)는 한 문장으로 유지
+    if (prev && (EN_TITLE_ABBR.test(prev) || (/\.$/.test(prev) && /^[a-z]/.test(part)))) {
+      out[out.length - 1] = prev + " " + part;
+    } else {
+      out.push(part);
+    }
+  }
+  return out;
+}
+function plLoad(text) { if (AP.text === text) return; plStop(); AP.text = text; AP.sents = splitSents(text); AP.i = 0; }
 function plStop() { AP.playing = false; AP.gen++; try { speechSynthesis.cancel(); } catch {} noiseOff(); plNotify(); }
 function plPlay(from) {
   if (from != null) AP.i = from;
@@ -367,7 +408,7 @@ function playerTools(text) {
   playB.onclick = () => { if (mine() && AP.playing) plPause(); else { plLoad(text); plPlay(); } };
   restartB.onclick = () => { plLoad(text); plPlay(0); };
   againB.onclick = () => { plLoad(text); const i = AP.playing || AP.i >= AP.sents.length ? Math.max(0, AP.i - (AP.playing ? 0 : 1)) : AP.i; plPlay(Math.min(i, AP.sents.length - 1)); };
-  speedB.onclick = () => { const k = SPEEDS.indexOf(speedMul()); localStorage.setItem("aiSpeed", SPEEDS[(k + 1) % SPEEDS.length]); draw(); toast(`상대 말 속도 ${speedMul()}× (다음 문장부터)`); };
+  speedB.onclick = () => { const k = SPEEDS.indexOf(speedMul()); setPref("aiSpeed", SPEEDS[(k + 1) % SPEEDS.length]); plNotify(); toast(`상대 말 속도 ${speedMul()}× (다음 문장부터)`); };
   AP.views.add(draw);
   draw();
   return [playB, restartB, againB, speedB, pos];
@@ -387,22 +428,109 @@ const tileEmoji = (k) => TILE_EMOJI[k] || "💬";
 // ---------- 머리 ----------
 function renderTop() {
   document.title = `${LNAME} 회화반`;
+  document.body.dataset.lang = LANG;
   $("#input").placeholder = `${LNAME}로 말하거나 적기`;
+  $("#input").lang = LANG;
   const brandText = [...$(".brand").childNodes].find((n) => n.nodeType === 3);
   if (brandText) brandText.textContent = `${LNAME} 회화반`;
   $(".logo").textContent = LANG === "en" ? "A" : "話";
   if (!$("#langSw")) $(".top-right").prepend(el("button", { id: "langSw", class: "lang-sw", title: "언어 바꾸기", onclick: () => setLang(LANG === "en" ? "ja" : "en") }, el("b", { class: LANG === "ja" ? "on" : "" }, "日"), el("b", { class: LANG === "en" ? "on" : "" }, "EN")));
+  if (!$("#settingsBtn")) $(".top-right").append(el("button", { id: "settingsBtn", class: "icon-btn", title: "설정", "aria-label": "설정", onclick: () => openSettingsModal() }, svgEl(`<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 1 1 0 4h-.09c-.66 0-1.25.4-1.51 1Z"/></svg>`)));
   $("#rankBadge").textContent = S.rank.name;
   $("#topCost").textContent = `이번 달 $${S.cost.month.toFixed(2)}`;
+}
+
+// ---------- 설정 모달 (어느 탭에서든 바로 열기) ----------
+function syncSubDOM() {
+  document.querySelectorAll("#feed .turn-ai").forEach((n) => {
+    n.querySelector(".ja-text")?.classList.toggle("hidden", !showSub);
+    const h = n.querySelector(".hard"); if (h) h.hidden = !showSub;
+    n.querySelector(".sub-toggle")?.classList.toggle("on", showSub);
+  });
+  document.querySelectorAll(".sub-default-btn").forEach((b) => {
+    b.textContent = showSub ? "자막 항상: 켜짐" : "자막 항상: 꺼짐";
+  });
+}
+
+async function setDailyGoal(n) {
+  const v = Math.max(30, Math.min(2000, Math.round(Number(n) || 0)));
+  if (!v) return;
+  try {
+    S = { ...S, ...(await api("/api/profile", { method: "POST", body: JSON.stringify({ dailyGoal: v }) })) };
+    if (currentView === "home") renderHome();
+    if (!$("#modal").hidden && $("#sheet").dataset.modal === "settings") openSettingsModal();
+    toast(`하루 목표를 ${v}점으로 바꿨어요`);
+  } catch (e) { toast(e.message); }
+}
+
+function openSettingsModal() {
+  if (!S) return;
+  localStorage.removeItem("rateAdj"); // 옛 「느리게·빠르게」(더하기 0.15)는 거의 티가 안 나서 없앰
+  const sheet = $("#sheet");
+  sheet.dataset.modal = "settings";
+  const curEnv = getPref("listenEnv", "normal");
+  const sel = el("select", { onchange: (e) => { setPref("voice", e.target.value); speak(LANG === "en" ? "Hello! Let's practice together today." : "こんにちは。今日も頑張りましょう。"); } },
+    voices.length ? voices.map((v) => el("option", { value: v.name, selected: bestVoice()?.name === v.name }, v.name)) : el("option", {}, `${LNAME} 목소리 없음`));
+  const goalIn = el("input", { type: "number", min: 30, max: 2000, step: 10, value: S.profile.dailyGoal, placeholder: "30~2000" });
+  const goalSave = el("button", { type: "button", onclick: () => setDailyGoal(goalIn.value) }, "저장");
+  goalIn.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); setDailyGoal(goalIn.value); } });
+
+  put(sheet,
+    el("div", { class: "sheet-head" },
+      el("h2", {}, `${LNAME} 설정`),
+      el("button", { class: "mini", onclick: closeModal }, "닫기")),
+    el("div", { class: "h", style: "margin-top:4px" }, "상대 말 속도 (수업·듣기·코스 모두)"),
+    el("div", { class: "chips" }, SPEEDS.map((v) => el("button", { class: "chip" + (speedMul() === v ? " on" : ""), onclick: () => {
+      setPref("aiSpeed", v); plNotify();
+      if (LA.el && !LA.el.paused) { LA.el.playbackRate = listenRate(); LA.el.defaultPlaybackRate = LA.el.playbackRate; }
+      else speak(LANG === "en" ? "I will speak at this speed." : "この速さで話します。");
+      if (currentView === "home") renderHome();
+      openSettingsModal();
+    } }, `${v}×`))),
+    el("div", { class: "h" }, "듣기 환경 (배경 소리)"),
+    el("div", { class: "chips" }, Object.entries(ENVS).map(([k, e]) => el("button", { class: "chip" + (curEnv === k ? " on" : ""), onclick: () => {
+      setPref("listenEnv", k);
+      if (currentView === "home") renderHome();
+      openSettingsModal();
+      if (!LA.el || LA.el.paused) speak(LANG === "en" ? "Can you hear me okay?" : "ちゃんと聞こえますか。今日はよろしくお願いします。");
+    } }, e.name))),
+    el("div", { class: "level-desc" }, "상대가 말하는 동안 배경 소리가 깔려요. 진짜 어르신 목소리는 못 내서 「어르신 말투」와 함께 쓰세요."),
+    el("div", { class: "h" }, "상대 말투 (새 수업에 적용)"),
+    el("div", { class: "chips" }, REGISTERS.map(([k, t]) => el("button", { class: "chip" + (pick.register === k ? " on" : ""), onclick: () => {
+      pick.register = k; setPref("register", k);
+      if (currentView === "home") renderHome();
+      openSettingsModal();
+    } }, t))),
+    el("div", { class: "h" }, "상대 말 자막 (수업 기본값)"),
+    el("div", { class: "chips" }, [[false, "기본 가림 (눌러서 보기)"], [true, "항상 보이기"]].map(([v, t]) => el("button", { class: "chip" + (showSub === v ? " on" : ""), onclick: () => {
+      setShowSub(v); syncSubDOM();
+      if (currentView === "home") renderHome();
+      openSettingsModal();
+    } }, t))),
+    el("div", { class: "h" }, "음성 인식 후 전송 (수업)"),
+    el("div", { class: "chips" }, [[false, "확인 후 보내기"], [true, "⚡ 바로 자동 전송"]].map(([v, t]) => el("button", { class: "chip" + (autoSend === v ? " on" : ""), onclick: () => {
+      setAutoSend(v);
+      if (currentView === "home") renderHome();
+      openSettingsModal();
+    } }, t))),
+    el("div", { class: "h" }, "목소리"),
+    el("div", { class: "voice-row", style: "margin-top:0" }, sel),
+    el("div", { class: "h" }, `하루 목표 점수 (현재 ${S.profile.dailyGoal}점)`),
+    el("div", { class: "chips" }, [100, 200, 300, 500, 800].map((v) => el("button", { class: "chip" + (S.profile.dailyGoal === v ? " on" : ""), onclick: () => setDailyGoal(v) }, `${v}점`))),
+    el("div", { class: "goal-row" }, goalIn, goalSave),
+    el("div", { class: "voice-row", style: "margin-top:14px" }, `모델 ${S.model} · 오늘 $${S.cost.today.toFixed(3)} · 이번 달 $${S.cost.month.toFixed(2)}` + (S.tts ? ` · 듣기 음성 ${Math.round(S.tts.used / 1000)}천 / ${S.tts.cap / 10000}만 자` : "")),
+    el("button", { class: "primary", style: "margin-top:14px", onclick: closeModal }, "완료")
+  );
+  $("#modal").hidden = false;
 }
 
 // ---------- 홈 ----------
 function ring(val, max) {
   const r = 27, c = 2 * Math.PI * r, p = Math.min(1, val / max);
   return svgEl(`<svg class="ring" viewBox="0 0 64 64">` +
-    `<circle cx="32" cy="32" r="${r}" fill="none" stroke="#e4e5ea" stroke-width="7"/>` +
-    `<circle cx="32" cy="32" r="${r}" fill="none" stroke="${p >= 1 ? "#1f8a4c" : "#d62f2f"}" stroke-width="7" stroke-linecap="round" stroke-dasharray="${c * p} ${c}" transform="rotate(-90 32 32)"/>` +
-    `<text x="32" y="37" text-anchor="middle" font-size="14" font-weight="800" fill="#14213d">${Math.round(p * 100)}%</text></svg>`);
+    `<circle cx="32" cy="32" r="${r}" fill="none" stroke="#e5e8f0" stroke-width="6.5"/>` +
+    `<circle cx="32" cy="32" r="${r}" fill="none" stroke="${p >= 1 ? "#059669" : "#1e5bff"}" stroke-width="6.5" stroke-linecap="round" stroke-dasharray="${c * p} ${c}" transform="rotate(-90 32 32)"/>` +
+    `<text x="32" y="37" text-anchor="middle" font-size="14" font-weight="800" fill="#111827">${Math.round(p * 100)}%</text></svg>`);
 }
 
 function renderHome() {
@@ -453,18 +581,26 @@ function renderHome() {
   let startArea;
   if (pick.mode === "talk") {
     const cats = [...new Set(M.SCENARIOS.map((s) => s.cat))];
+    if (!cats.includes(pick.cat)) pick.cat = cats[0];
     startArea = el("div", {},
       el("div", { class: "gen-grid" }, [{ key: "random", name: "아무거나" }, ...M.STYLES].map((st) =>
         el("button", { class: "gen tile", onclick: () => start("talk", "gen:" + st.key) }, el("b", {}, st.name), el("span", {}, st.key === "random" ? "분위기까지 무작위" : "매번 새 장면"), el("i", { class: "tile-emoji" }, tileEmoji(st.key))))),
-      el("details", { class: "fixed-scenes" }, el("summary", {}, "기본 상황 18가지에서 고르기"),
+      el("details", { class: "fixed-scenes" }, el("summary", {}, `기본 상황 ${M.SCENARIOS.length}가지에서 고르기`),
       el("div", { class: "chips" }, cats.map((c) => el("button", { class: "chip" + (pick.cat === c ? " on" : ""), onclick: () => { pick.cat = c; renderHome(); } }, c))),
       el("div", { class: "scenes" }, M.SCENARIOS.filter((s) => s.cat === pick.cat).map((s) =>
         el("button", { class: "scene tile", onclick: () => start("talk", s.id) }, el("small", {}, s.cat), el("b", {}, s.title), el("span", {}, "목표: " + s.goal), el("i", { class: "tile-emoji" }, tileEmoji(s.id)))))));
   } else if (pick.mode === "video") {
-    const ta = el("textarea", { class: "paste", rows: 7, lang: "ja", placeholder: "유튜브에서 「…더보기 → 스크립트 표시」를 열고 자막을 통째로 복사해 붙여 넣으세요. 예능·드라마 자막도 됩니다." });
+    const ta = el("textarea", { class: "paste", rows: 7, lang: LANG, placeholder: "유튜브에서 「…더보기 → 스크립트 표시」를 열고 자막을 통째로 복사해 붙여 넣으세요. 예능·드라마 자막도 됩니다." });
     const ti = el("input", { class: "paste-title", placeholder: "영상 제목 (없어도 됨)" });
     const yt = (q) => "https://www.youtube.com/results?search_query=" + encodeURIComponent(q);
-    const FIND = [
+    const FIND = LANG === "en" ? [
+      ["일상 브이로그", "day in my life vlog english subtitles"],
+      ["시트콤·드라마 클립", "sitcom funny scenes english subtitles"],
+      ["토크쇼·인터뷰", "late night talk show interview clip"],
+      ["TED 강연 (짧은 영상)", "TED talk short english"],
+      ["IT·테크 리뷰", "tech review english"],
+      ["직장인 공감·스킷", "office comedy skit english"],
+    ] : [
       ["브이로그 (사회인 일상)", "社会人 vlog 一人暮らし 休日"],
       ["예능 토크 클립", "トーク バラエティ 公式 切り抜き"],
       ["유튜버 그룹 (東海オンエア)", "東海オンエア"],
@@ -495,11 +631,12 @@ function renderHome() {
     el("div", { class: "stat" }, el("b", {}, S.sessions.length ? Math.max(...S.sessions.map((s) => s.bestCombo || 0)) : "-"), el("span", {}, "최장 콤보")),
     el("div", { class: "stat" }, el("b", {}, `${grads}/${S.weak.length}`), el("span", {}, `약점 졸업 (남은 ${open})`)));
 
-  // 목소리
-  const sel = el("select", { onchange: (e) => { localStorage.setItem(LANG === "en" ? "voice_en" : "voice", e.target.value); speak(LANG === "en" ? "Hello! Let's practice together today." : "こんにちは。今日も頑張りましょう。"); } },
-    voices.length ? voices.map((v) => el("option", { value: v.name, selected: bestVoice()?.name === v.name }, v.name)) : el("option", {}, `${LNAME} 목소리 없음`));
-  localStorage.removeItem("rateAdj"); // 옛 「느리게·빠르게」(더하기 0.15)는 거의 티가 안 나서 없앰
-  const rateSel = el("div", { class: "chips", style: "margin:0" }, SPEEDS.map((v) => el("button", { class: "chip" + (speedMul() === v ? " on" : ""), onclick: () => { localStorage.setItem("aiSpeed", v); renderHome(); speak(LANG === "en" ? "I will speak at this speed." : "この速さで話します。"); } }, `${v}×`)));
+  const regName = (REGISTERS.find(([k]) => k === pick.register) || REGISTERS[0])[1];
+  const setBar = el("button", { class: "set-bar", onclick: openSettingsModal },
+    el("div", { class: "sb-main" },
+      el("b", {}, "⚙️ 소리·말투·목표 설정"),
+      el("span", {}, `${regName} · ${speedMul()}× · ${envOf().name} · 자막 ${showSub ? "항상" : "가림"}${autoSend ? " · 자동전송" : ""} · 목표 ${goal}점`)),
+    el("em", {}, "바꾸기 ›"));
 
   put(root, 
     idcard, today,
@@ -507,17 +644,9 @@ function renderHome() {
     courseCard, cont, challenge,
     el("div", { class: "h" }, "수업 고르기"), modes,
     el("div", { class: "h" }, "단계"), levels,
-    el("div", { class: "h" }, "상대 말투"),
-    el("div", { class: "chips" }, REGISTERS.map(([k, t]) => el("button", { class: "chip" + (pick.register === k ? " on" : ""), onclick: () => { pick.register = k; localStorage.setItem("register", k); renderHome(); } }, t))),
-    el("div", { class: "h" }, "듣기 환경 (상대 목소리)"),
-    el("div", { class: "chips" }, Object.entries(ENVS).map(([k, e]) => el("button", { class: "chip" + ((localStorage.getItem("listenEnv") || "normal") === k ? " on" : ""), onclick: () => { localStorage.setItem("listenEnv", k); renderHome(); speak(LANG === "en" ? "Can you hear me okay?" : "ちゃんと聞こえますか。今日はよろしくお願いします。"); } }, e.name))),
-    el("div", { class: "level-desc" }, "상대가 말하는 동안 배경 소리(사람들 웅성거림, 컵 소리, 전철 소리)가 깔려요. 녹음이 아니라 만든 소리라 진짜와 똑같지는 않아요. 진짜 어르신 목소리는 못 내서 「어르신 말투」와 함께 쓰세요."),
+    setBar,
     el("div", { class: "h" }, pick.mode === "talk" ? "상황" : ""), startArea,
-    el("div", { class: "h" }, "내 기록"), stats,
-    el("div", { class: "h" }, "목소리"),
-    el("div", { class: "voice-row" }, sel),
-    el("div", { class: "h" }, "상대 말 속도 (수업·듣기·코스 모두)"), rateSel,
-    el("div", { class: "voice-row" }, `모델 ${S.model} · 오늘 $${S.cost.today.toFixed(3)}` + (S.tts ? ` · 듣기 음성 이번 달 ${Math.round(S.tts.used / 1000)}천 / ${S.tts.cap / 10000}만 자` : ""))
+    el("div", { class: "h" }, "내 기록"), stats
   );
 }
 
@@ -535,6 +664,10 @@ async function start(mode, scenarioId, extra = {}) {
   if (S.current) await endLesson(true);
   busy = true;
   speechSynthesis?.cancel();
+  PG = { fb: false, stage: "fix", tried: false };
+  retryTarget = null;
+  PG_SPOKEN = "";
+  showReview(false);
   // 소리 재생은 사용자가 누른 직후여야 막히지 않는다(모바일). 빈 말로 길을 열어 둔다.
   try { speechSynthesis.speak(new SpeechSynthesisUtterance("")); } catch {}
   S.current = { mode, level: pick.level, scenario: scenarioId && scenarioId !== "random" ? M.SCENARIOS.find((s) => s.id === scenarioId) || null : null, missions: [], combo: 0, score: 0, display: [] };
@@ -548,6 +681,7 @@ async function start(mode, scenarioId, extra = {}) {
     renderLesson();
   } catch (err) {
     S.current = null;
+    renderLesson();
     feed.replaceChildren(el("div", { class: "err-msg" }, err.message));
   } finally { busy = false; }
 }
@@ -578,7 +712,12 @@ function renderLessonHead() {
 // ---------- 한 장씩 보기: ① 상대 말 → (내 답) → ② 바로 교정 → ③ 고쳐 말하기·발음 확인 → 다음 장 ----------
 let LV = localStorage.getItem("lessonView") || "page"; // page | chat
 let PG = { fb: false, stage: "fix", tried: false };     // fb: 방금 내 답의 교정 장을 보여 줄 차례
-function setLessonView(v) { LV = v; localStorage.setItem("lessonView", v); renderLesson(); }
+function setLessonView(v) {
+  LV = v;
+  localStorage.setItem("lessonView", v);
+  if (v === "page" && !PG.fb) retryTarget = null;
+  renderLesson();
+}
 
 // 발음 확인: 모범 문장과 내가 말한 것(음성 인식)을 글자(영어는 낱말) 단위로 맞춰 들린 곳은 초록, 안 들린 곳은 빨강
 function pronDiff(target, said) {
@@ -595,6 +734,16 @@ function pronDiff(target, said) {
 }
 
 let PG_SPOKEN = ""; // 이미 읽어 준 상대 말(같은 장을 다시 그릴 때 또 읽지 않게)
+function subDefaultBtn() {
+  const b = el("button", { class: "mini sub-default-btn", title: "앞으로 나오는 상대 말 자막을 기본으로 보이거나 가려요" });
+  b.onclick = () => {
+    setShowSub(!showSub);
+    syncSubDOM();
+    toast(showSub ? `${LNAME} 수업 자막을 기본으로 켜 둬요` : `${LNAME} 수업 자막을 기본으로 가려요`);
+  };
+  b.textContent = showSub ? "자막 항상: 켜짐" : "자막 항상: 꺼짐";
+  return b;
+}
 function renderPage(feed) {
   const d = S.current?.display || [];
   if (!d.length) return;
@@ -602,7 +751,7 @@ function renderPage(feed) {
   const me = d.length >= 2 && d[d.length - 2].role === "user" ? d[d.length - 2] : null;
   const turnNo = d.filter((x) => x.role === "user").length;
   const pageBar = el("div", { class: "page-bar" }, el("span", {}, PG.fb && me ? (PG.stage === "fix" ? `${turnNo}번째 답 · 교정` : `${turnNo}번째 답 · 고쳐 말하기`) : `${turnNo + 1}번째 차례 · 상대 말`),
-    el("button", { class: "mini", onclick: () => setLessonView("chat") }, "💬 대화 전체 보기"));
+    el("div", { style: "display:flex;gap:6px;align-items:center" }, !PG.fb ? subDefaultBtn() : null, el("button", { class: "mini", onclick: () => setLessonView("chat") }, "💬 대화 전체 보기")));
   // ② 교정 장
   if (PG.fb && me && PG.stage === "fix") {
     const f = me.feedback || {};
@@ -623,9 +772,9 @@ function renderPage(feed) {
     const nextB = el("button", { class: "primary", disabled: !PG.tried, onclick: () => { PG.fb = false; retryTarget = null; renderLesson(); } }, "다음 ▶ 상대 말 듣기");
     const skipB = el("button", { class: "secondary", style: "width:100%;margin-top:8px", onclick: () => { PG.fb = false; retryTarget = null; renderLesson(); } }, "이번만 건너뛰기");
     put(feed, pageBar,
-      el("div", { class: "card ans" }, el("span", { class: "speak-pill" }, "이 문장을 말해 보세요"), el("div", { class: "ans-q big", lang: "ja" }, model),
+      el("div", { class: "card ans" }, el("span", { class: "speak-pill" }, "이 문장을 말해 보세요"), el("div", { class: "ans-q big", lang: LANG }, model),
         f.meant_ko ? el("div", { class: "note", style: "text-align:center" }, f.meant_ko) : null,
-        f.corrected && f.natural && f.corrected !== f.natural ? el("div", { class: "next-level" }, el("span", { class: "hl" }, "한 단계 더"), el("span", { lang: "ja" }, f.natural)) : null,
+        f.corrected && f.natural && f.corrected !== f.natural ? el("div", { class: "next-level" }, el("span", { class: "hl" }, "한 단계 더"), el("span", { lang: LANG }, f.natural)) : null,
         el("div", { class: "model-tools", style: "justify-content:center" }, sp, slow, starBtn({ text: model, meaning_ko: f.meant_ko || "", kind: "sentence" }))),
       answerCard({ prompt: "🎤 따라 말하기", sub: "다 말하면 들린 글자는 초록, 안 들린 곳은 빨강으로 보여 줘요", expect: model, onDone: (said) => {
         const r = pronDiff(model, said);
@@ -656,11 +805,13 @@ function renderLesson() {
   const feed = $("#feed");
   feed.replaceChildren();
   feed.classList.toggle("paged", LV === "page");
+  // 한 장씩 보기에서 교정·고쳐 말하기 단계이거나 진행 중인 수업이 없으면 하단 입력줄(중복 마이크)을 숨김
+  $("#dock").hidden = !S.current || (LV === "page" && PG.fb);
   if (LV === "page" && S.current) { renderPage(feed); feed.scrollTop = 0; return; }
   const d = S.current?.display || [];
   d.forEach((t, i) => feed.append(t.role === "ai" ? aiEl(t, i === d.length - 1) : t.role === "video" ? videoEl(t.video) : meEl(t)));
   if (!S.current) feed.append(el("div", { class: "empty" }, "진행 중인 수업이 없어요. 홈에서 수업을 골라 주세요."));
-  else feed.prepend(el("div", { class: "page-bar" }, el("span", {}, "대화 전체"), el("button", { class: "mini", onclick: () => setLessonView("page") }, "📄 한 장씩 보기")));
+  else feed.prepend(el("div", { class: "page-bar" }, el("span", {}, "대화 전체"), el("div", { style: "display:flex;gap:6px;align-items:center" }, subDefaultBtn(), el("button", { class: "mini", onclick: () => setLessonView("page") }, "📄 한 장씩 보기"))));
   feed.scrollTop = feed.scrollHeight;
 }
 
@@ -670,21 +821,21 @@ function videoEl(v) {
     const sp = el("button", { class: "mini" }, "🔊");
     sp.onclick = () => speak(e.ja, { btn: sp });
     return el("div", { class: "vx" }, el("span", { class: "vx-n" }, "v" + i), el("div", { class: "vx-body" },
-      el("div", {}, el("b", { lang: "ja" }, e.ja), " ", el("span", { class: "rd" }, e.reading), " ", sp),
-      el("div", { class: "mn" }, e.meaning_ko), el("div", { class: "vx-line", lang: "ja" }, "「" + e.line + "」")));
+      el("div", {}, el("b", { lang: LANG }, e.ja), " ", el("span", { class: "rd" }, e.reading), " ", sp),
+      el("div", { class: "mn" }, e.meaning_ko), el("div", { class: "vx-line", lang: LANG }, "「" + e.line + "」")));
   });
   const lines = v.lines.map((l) => {
     const sp = el("button", { class: "tool" }, "🔊");
     sp.onclick = () => speak(l.ja, { btn: sp });
     const match = el("span", { class: "match" });
     const sh = el("button", { class: "tool", onclick: () => shadowing(l.ja, sh, match) }, "🎙 따라 말하기");
-    const ja = el("div", { class: "vl-ja hidden", lang: "ja", onclick: () => ja.classList.remove("hidden") }, l.ja);
+    const ja = el("div", { class: "vl-ja hidden", lang: LANG, onclick: () => ja.classList.remove("hidden") }, l.ja);
     return el("div", { class: "vl" }, ja, el("div", { class: "vl-ko" }, l.ko), el("div", { class: "model-tools" }, sp, sh, match));
   });
   let script = null;
   if (v.script?.length) {
     const names = [...new Set(v.script.map((l) => l.speaker))];
-    const rows = v.script.map((l) => el("div", { class: "sc-line" }, el("span", { class: "sc-who" }, l.speaker), el("span", { class: "sc-ja hidden", lang: "ja", onclick: (e) => e.target.classList.remove("hidden") }, l.ja)));
+    const rows = v.script.map((l) => el("div", { class: "sc-line" }, el("span", { class: "sc-who" }, l.speaker), el("span", { class: "sc-ja hidden", lang: LANG, onclick: (e) => e.target.classList.remove("hidden") }, l.ja)));
     let playing = false;
     const playBtn = el("button", { class: "tool" }, "▶ 대본 전체 듣기");
     const subBtn = el("button", { class: "tool", onclick: () => { const on = !subBtn.classList.contains("on"); subBtn.classList.toggle("on", on); rows.forEach((r) => r.lastChild.classList.toggle("hidden", !on)); } }, "자막");
@@ -716,7 +867,7 @@ function videoEl(v) {
 // 상대 말 칸
 function aiEl(t, latest = false) {
   const wrap = el("div");
-  const text = el("div", { class: "ja-text" + (showSub ? "" : " hidden"), lang: "ja" });
+  const text = el("div", { class: "ja-text" + (showSub ? "" : " hidden"), lang: LANG });
   const hard = el("div", { class: "hard", hidden: !showSub });
   function fill() {
     text.replaceChildren(...markHard(t.reply_ja || "", t.hard_words || []));
@@ -726,7 +877,7 @@ function aiEl(t, latest = false) {
   const ptools = playerTools(t.reply_ja || "");
   const koLine = t.reply_ko ? el("div", { class: "reply-ko", hidden: true }, t.reply_ko) : null;
   const koBtn = t.reply_ko ? el("button", { class: "tool", onclick: () => { koLine.hidden = !koLine.hidden; koBtn.classList.toggle("on", !koLine.hidden); } }, "뜻") : null;
-  const subBtn = el("button", { class: "tool" + (showSub ? " on" : ""), onclick: () => toggleSub() }, "자막");
+  const subBtn = el("button", { class: "tool sub-toggle" + (showSub ? " on" : ""), onclick: () => toggleSub() }, "자막");
   function toggleSub(force) {
     const on = force ?? text.classList.contains("hidden");
     text.classList.toggle("hidden", !on);
@@ -735,7 +886,7 @@ function aiEl(t, latest = false) {
   }
   text.addEventListener("click", () => { if (text.classList.contains("hidden")) toggleSub(true); });
   const n = (t.hard_words || []).length;
-  wrap.append(el("div", { class: "turn-ai" }, el("div", { class: "avatar", lang: "ja" }, LANG === "en" ? "T" : "相"),
+  wrap.append(el("div", { class: "turn-ai" }, el("div", { class: "avatar", lang: LANG }, LANG === "en" ? "T" : "相"),
     el("div", { class: "bubble" },
       el("div", { class: "ai-tools" }, ptools, subBtn, koBtn, starBtn({ text: t.reply_ja || "", meaning_ko: t.reply_ko || "", kind: "sentence" }), n ? el("span", { class: "tool", style: "border:0;color:var(--gold)" }, `어려운 말 ${n}개`) : null),
       text, koLine, hard)));
@@ -754,12 +905,12 @@ function missionCard(nx) {
   const draw = () => {
     const parts = [];
     if (HINT >= 1) parts.push(el("div", { class: "hint-l" }, el("span", { class: "hl" }, "할 말"), nx.say_ko));
-    if (HINT >= 2) parts.push(el("div", { class: "hint-l" }, el("span", { class: "hl" }, "첫마디"), el("b", { lang: "ja" }, nx.starter + " …")));
+    if (HINT >= 2) parts.push(el("div", { class: "hint-l" }, el("span", { class: "hl" }, "첫마디"), el("b", { lang: LANG }, nx.starter + " …")));
     if (HINT >= 3) {
       const sp = el("button", { class: "tool" }, "🔊"); sp.onclick = () => speak(nx.model, { btn: sp });
       const out = el("span", { class: "match" });
       const sh = el("button", { class: "tool", onclick: () => shadowing(nx.model, sh, out) }, "🎙 따라 말하기");
-      parts.push(el("div", { class: "hint-l" }, el("span", { class: "hl" }, "모범"), el("b", { lang: "ja" }, nx.model)), el("div", { class: "model-tools" }, sp, sh, out));
+      parts.push(el("div", { class: "hint-l" }, el("span", { class: "hl" }, "모범"), el("b", { lang: LANG }, nx.model)), el("div", { class: "model-tools" }, sp, sh, out));
     }
     box.replaceChildren(...parts);
     btn.textContent = HINT >= 3 ? "💡 힌트 다 봄 (점수 절반)" : `💡 힌트 ${HINT + 1}/3`;
@@ -794,7 +945,7 @@ function hardEl(w) {
   const b = el("button", { disabled: saved, onclick: async () => {
     try { const r = await api("/api/weak/add", { method: "POST", body: JSON.stringify({ text: w.word, reading: w.reading, meaning_ko: w.meaning_ko, kind: "listening" }) }); S.weak = r.weak; b.textContent = "담음 ✓"; b.disabled = true; } catch (e) { toast(e.message); }
   } }, saved ? "노트에 있음" : "+ 노트");
-  return el("div", { class: "hard-item" }, el("b", { lang: "ja" }, w.word), el("span", { class: "rd" }, w.reading), el("span", { class: "mn" }, w.meaning_ko), starBtn({ text: w.word, reading: w.reading, meaning_ko: w.meaning_ko }), b);
+  return el("div", { class: "hard-item" }, el("b", { lang: LANG }, w.word), el("span", { class: "rd" }, w.reading), el("span", { class: "mn" }, w.meaning_ko), starBtn({ text: w.word, reading: w.reading, meaning_ko: w.meaning_ko }), b);
 }
 
 // 내 말 + 빨간 펜
@@ -821,7 +972,7 @@ function meEl(t, animate = false) {
     const match = el("span", { class: "match" });
     const shadow = el("button", { class: "tool", onclick: () => shadowing(f.natural, shadow, match) }, "🎙 따라 말하기");
     const needFix = f.verdict && f.verdict !== "natural" && animate && LV !== "page";
-    parts.push(el("div", { class: "lab blue" }, needFix ? "✏️ 고쳐 말하기: 이 문장을 말해서 맞혀야 다음 차례로 넘어가요" : "모범 답안"), el("div", { class: "model", lang: "ja" }, f.natural), el("div", { class: "model-tools" }, btn, shadow, starBtn({ text: f.natural, kind: "sentence" }), match));
+    parts.push(el("div", { class: "lab blue" }, needFix ? "✏️ 고쳐 말하기: 이 문장을 말해서 맞혀야 다음 차례로 넘어가요" : "모범 답안"), el("div", { class: "model", lang: LANG }, f.natural), el("div", { class: "model-tools" }, btn, shadow, starBtn({ text: f.natural, kind: "sentence" }), match));
     if (needFix) {
       const skip = el("button", { class: "mini", onclick: () => { retryTarget = null; skip.remove(); toast("이번만 넘어가요. 끝나고 다시 연습해요"); } }, "이번만 건너뛰기");
       parts.push(el("div", { class: "fix-row" }, el("span", {}, "모범 답안을 보고 🎙 따라 말하기를 누르세요. 70% 넘으면 통과."), skip));
@@ -842,7 +993,7 @@ function meEl(t, animate = false) {
   }
   const p = t.points || {};
   return el("div", { class: "turn-me" },
-    el("div", { class: "me-text", lang: "ja" }, t.user),
+    el("div", { class: "me-text", lang: LANG }, t.user),
     el("div", { class: "pts" + (animate ? " pop" : "") }, `+${p.pts || 0}점`, p.mult > 1 ? el("span", { class: "combo" }, `×${p.mult.toFixed(1)} 콤보`) : null,
       p.bonus ? el("span", { class: "combo" }, ` 미션 +${p.bonus}`) : null),
     el("div", { class: "redpen" }, parts));
@@ -856,7 +1007,7 @@ async function say(text) {
   speechSynthesis?.cancel();
   try { speechSynthesis.speak(new SpeechSynthesisUtterance("")); } catch {}
   const feed = $("#feed");
-  const pending = el("div", { class: "turn-me" }, el("div", { class: "me-text", lang: "ja" }, text));
+  const pending = el("div", { class: "turn-me" }, el("div", { class: "me-text", lang: LANG }, text));
   const think = thinkingEl("듣는 중");
   if (LV === "page") feed.replaceChildren(el("div", { class: "page-lab" }, "내가 한 말"));
   feed.append(pending, think);
@@ -896,6 +1047,10 @@ async function say(text) {
 async function endLesson(silent = false) {
   if (!S.current) return;
   speechSynthesis?.cancel();
+  PG = { fb: false, stage: "fix", tried: false };
+  retryTarget = null;
+  PG_SPOKEN = "";
+  showReview(false);
   try {
     const r = await api("/api/session/end", { method: "POST", body: "{}" });
     S = { ...S, ...r.state };
@@ -916,6 +1071,7 @@ function showReport(r, readonly = false) {
     return el("em", { class: good ? "up-c" : "down-c" }, `${d > 0 ? "+" : ""}${Math.round(d * 10) / 10}${unit}`);
   };
   const sheet = $("#sheet");
+  delete sheet.dataset.modal;
   put(sheet, 
     el("h2", {}, readonly ? r.title : "수업 성적표"),
     el("div", { class: "report-top" },
@@ -950,17 +1106,18 @@ function fixDrill(r) {
   ];
   const D = { q: items.map((_, i) => i), i: 0, tries: {}, ok: 0 };
   const sheet = $("#sheet");
+  delete sheet.dataset.modal;
   const step = () => {
     if (D.i >= D.q.length) {
       put(sheet, el("h2", {}, "다시 말하기 연습 끝"), el("div", { class: "report-top" }, el("div", { class: "stamp txt g-A" }, `${D.ok}/${items.length}`), el("div", {}, el("div", { class: "sub" }, "한 번에 맞힌 문장 수예요. 틀렸던 문장은 단어장 ⭐에 담아 두면 다시 나와요."))),
-        items.map((it) => el("div", { class: "hard-item" }, el("b", { lang: "ja" }, it.model), starBtn({ text: it.model, meaning_ko: it.prompt, kind: "sentence" }))),
+        items.map((it) => el("div", { class: "hard-item" }, el("b", { lang: LANG }, it.model), starBtn({ text: it.model, meaning_ko: it.prompt, kind: "sentence" }))),
         el("button", { class: "primary", style: "margin-top:12px", onclick: closeModal }, "닫기"));
       return;
     }
     const k = D.q[D.i], it = items[k], tries = D.tries[k] || 0;
     const sp = el("button", { class: "tool" }, "🔊 모범 듣기"); sp.onclick = () => speak(it.model, { btn: sp });
     put(sheet, el("div", { class: "step-name" }, `다시 말하기 ${D.i + 1} / ${D.q.length}${tries ? " · 🔁 모범을 보고 다시" : ""}`),
-      tries ? el("div", { class: "card" }, el("div", { class: "note" }, "모범 문장을 듣고 따라 말하세요"), el("div", { class: "model", lang: "ja" }, it.model), el("div", { class: "model-tools" }, sp)) : null,
+      tries ? el("div", { class: "card" }, el("div", { class: "note" }, "모범 문장을 듣고 따라 말하세요"), el("div", { class: "model", lang: LANG }, it.model), el("div", { class: "model-tools" }, sp)) : null,
       answerCard({ prompt: it.prompt, sub: it.sub, big: true, expect: it.model, onDone: (said) => {
         const pct = similarity(it.model, said);
         const ok = pct >= 75;
@@ -970,7 +1127,7 @@ function fixDrill(r) {
         D.i++;
         const sp2 = el("button", { class: "tool" }, "🔊"); sp2.onclick = () => speak(it.model, { btn: sp2 });
         put(sheet, el("div", { class: "card ans" }, el("div", { class: "ans-emoji" }, ok ? "⭕" : "❌"), el("div", { class: "note" }, `내 말: ${said || "(무응답)"} · 일치 ${pct}%`),
-          el("div", { class: "model", lang: "ja" }, it.model), it.why ? el("div", { class: "note tip" }, it.why) : null, el("div", { class: "model-tools", style: "justify-content:center" }, sp2, starBtn({ text: it.model, meaning_ko: it.prompt, kind: "sentence" })),
+          el("div", { class: "model", lang: LANG }, it.model), it.why ? el("div", { class: "note tip" }, it.why) : null, el("div", { class: "model-tools", style: "justify-content:center" }, sp2, starBtn({ text: it.model, meaning_ko: it.prompt, kind: "sentence" })),
           !ok && tries + 1 < 3 ? el("div", { class: "note tip" }, "끝에서 모범 문장을 보며 한 번 더 해요.") : null,
           el("button", { class: "primary", onclick: () => { speechSynthesis.cancel(); step(); } }, "다음")));
         if (!ok) speak(it.model);
@@ -980,12 +1137,13 @@ function fixDrill(r) {
   $("#modal").hidden = false;
 }
 
-function closeModal() { $("#modal").hidden = true; }
+function closeModal() { delete $("#sheet").dataset.modal; $("#modal").hidden = true; }
 $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") closeModal(); });
 
 async function openLog(r) {
   const { display } = await api("/api/log?id=" + encodeURIComponent(r.id));
   const sheet = $("#sheet");
+  delete sheet.dataset.modal;
   put(sheet, el("h2", {}, r.title + " · " + r.date),
     ...display.map((t) => (t.role === "ai" ? aiEl(t) : t.role === "video" ? videoEl(t.video) : meEl(t))),
     el("button", { class: "primary", onclick: closeModal }, "닫기"));
@@ -1000,14 +1158,14 @@ function renderRecord() {
   const w = 600, h = 80, max = Math.max(35, ...pts);
   const xy = pts.map((v, i) => [pts.length === 1 ? w / 2 : (i / (pts.length - 1)) * (w - 20) + 10, h - 8 - (v / max) * (h - 16)]);
   const spark = svgEl(`<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">` +
-    [[30, "#b8891a"], [22, "#d62f2f"]].map(([g, c]) => `<line x1="0" x2="${w}" y1="${h - 8 - (g / max) * (h - 16)}" y2="${h - 8 - (g / max) * (h - 16)}" stroke="${c}" stroke-dasharray="4 4" stroke-width="1" opacity=".5"/>`).join("") +
-    `<polyline points="${xy.map((p) => p.join(",")).join(" ")}" fill="none" stroke="#14213d" stroke-width="2.5" vector-effect="non-scaling-stroke"/>` +
-    xy.map((p) => `<circle cx="${p[0]}" cy="${p[1]}" r="3.5" fill="#14213d"/>`).join("") + "</svg>");
+    [[30, "#d97706"], [22, "#1e5bff"]].map(([g, c]) => `<line x1="0" x2="${w}" y1="${h - 8 - (g / max) * (h - 16)}" y2="${h - 8 - (g / max) * (h - 16)}" stroke="${c}" stroke-dasharray="4 4" stroke-width="1" opacity=".45"/>`).join("") +
+    `<polyline points="${xy.map((p) => p.join(",")).join(" ")}" fill="none" stroke="#1e5bff" stroke-width="2.5" vector-effect="non-scaling-stroke"/>` +
+    xy.map((p) => `<circle cx="${p[0]}" cy="${p[1]}" r="3.5" fill="#1e5bff"/>`).join("") + "</svg>");
   const counts = { S: 0, A: 0, B: 0, C: 0 };
   S.sessions.forEach((s) => counts[s.grade]++);
   put(root, 
     el("div", { class: "card" },
-      el("div", { class: "h", style: "margin-top:0" }, "한 마디 평균 점수 (최근 30수업 · 점선 금=S 빨강=A)"), spark,
+      el("div", { class: "h", style: "margin-top:0" }, "한 마디 평균 점수 (최근 30수업 · 점선 금=S 파랑=A)"), spark,
       el("div", { class: "stats", style: "margin-top:10px" },
         el("div", { class: "stat" }, el("b", {}, S.sessions.length), el("span", {}, "수업 수")),
         el("div", { class: "stat" }, el("b", {}, `${counts.S} / ${counts.A}`), el("span", {}, "S / A 받은 수")),
@@ -1133,7 +1291,7 @@ function renderCourse() {
         return el("button", { class: "dayc" + (done ? " done" : "") + (d.n === next?.n ? " now" : "") + (d.test ? " test" : ""), disabled: !open, title: `${d.theme_ko} · ${d.pattern}`, onclick: () => openDay(d.n) },
           el("b", {}, d.n), el("span", {}, d.test ? "시험" : done ? `${done.score}점` : ""));
       })))),
-    next ? [el("div", { class: "h" }, "다음 회차 미리 보기"), el("div", { class: "card" }, el("b", { lang: "ja" }, next.pattern), el("div", { class: "note" }, next.pattern_ko + " · " + next.focus_ko))] : null,
+    next ? [el("div", { class: "h" }, "다음 회차 미리 보기"), el("div", { class: "card" }, el("b", { lang: LANG }, next.pattern), el("div", { class: "note" }, next.pattern_ko + " · " + next.focus_ko))] : null,
     el("div", { class: "row-btns" },
       el("button", { class: "secondary", onclick: () => { const box = perWeekPicker(async (n) => { try { const r = await api("/api/course/per-week", { method: "POST", body: JSON.stringify({ perWeek: n }) }); S.course = r.course; toast(`주 ${n}회로 바꿨어요`); } catch (e) { toast(e.message); } renderCourse(); }, co.perWeek); root.append(box); box.scrollIntoView({ behavior: "smooth" }); } }, `주 ${co.perWeek}회 · 바꾸기`),
       el("button", { class: "secondary", onclick: async () => { if (!confirm("코스를 그만두고 반을 다시 고를까요? (지난 기록은 남아요)")) return; await api("/api/course/quit", { method: "POST", body: "{}" }); S.course = null; CR = null; saveCR(); renderCourse(); } }, "반 바꾸기")));
@@ -1164,7 +1322,7 @@ function renderPlacement(root) {
           el("div", { class: "sub" }, ck ? (ck.prev != null ? `지난번 ${ck.prev}점 → 이번 ${ck.total}점 (${ck.total - ck.prev >= 0 ? "+" : ""}${ck.total - ck.prev})` : `이번 ${ck.total}점`) + (ck.baseline != null ? ` · 처음 ${ck.baseline}점` : "") : "60점 만점")))),
       el("div", { class: "card" }, el("div", { class: "note" }, r.comment_ko)),
       r.items.map((x, i) => el("div", { class: "card q" }, el("div", { class: "q-t" }, `${i + 1}. ${P[i]}  ·  ${x.score}/10`),
-        el("div", { class: "note", lang: "ja" }, "내 답: " + (PL.answers[i] || "(무응답)")), el("div", { class: "model", lang: "ja" }, x.natural), el("div", { class: "note tip" }, x.why_ko))),
+        el("div", { class: "note", lang: LANG }, "내 답: " + (PL.answers[i] || "(무응답)")), el("div", { class: "model", lang: LANG }, x.natural), el("div", { class: "note tip" }, x.why_ko))),
       ck
         ? [ck.up ? el("button", { class: "primary", onclick: () => { PL = null; PICK = { key: ck.up }; renderCourse(); } }, `통과! ${ck.upName}으로 올라가기`) : el("div", { class: "note tip", style: "margin-bottom:8px" }, "아직 이 반에서 다지는 게 좋아요. 약한 부분을 앞에 두고 다음 4주를 짜요."),
            el("button", { class: ck.up ? "secondary" : "primary", style: "width:100%;margin-top:8px", onclick: async () => { put(root, el("div", { class: "card" }, thinkingEl("다음 4주를 짜는 중 (20~30초)"))); try { const x = await api("/api/course/next-block", { method: "POST", body: "{}" }); S.course = x.course; } catch (e) { toast(e.message); } PL = null; renderCourse(); } }, "이 반으로 다음 4주")]
@@ -1185,9 +1343,9 @@ function renderPlacement(root) {
 
 // 말로 답하는 카드: 문제를 보여 주고, 마이크를 켜고, 다 말하면 onDone(말한 것)
 function answerCard({ prompt, sub, hint, lang = SPEECH, limit = 0, onDone, big = false, emoji = "", expect = "" }) {
-  const isJa = !lang.startsWith("ko");
-  const live = el("div", { class: "ans-live", lang: isJa ? "ja" : "ko" }, "🎤 마이크를 누르고 말하세요");
-  const typed = el("input", { class: "paste-title", placeholder: "말 대신 적어도 돼요", lang: isJa ? "ja" : "ko" });
+  const isTarget = !lang.startsWith("ko");
+  const live = el("div", { class: "ans-live", lang: isTarget ? LANG : "ko" }, "🎤 마이크를 누르고 말하세요");
+  const typed = el("input", { class: "paste-title", placeholder: "말 대신 적어도 돼요", lang: isTarget ? LANG : "ko" });
   const bar = el("i");
   const micB = el("button", { class: "mic" }, "🎤");
   const cancelB = el("button", { class: "ghost-btn" }, "취소");
@@ -1225,10 +1383,11 @@ function answerCard({ prompt, sub, hint, lang = SPEECH, limit = 0, onDone, big =
   typed.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); if (state !== "review" && typed.value.trim()) { said = typed.value; sec = t0 ? (Date.now() - t0) / 1000 : 99; } submit(); } });
   typed.addEventListener("input", () => { if (state === "idle") skipB.textContent = typed.value.trim() ? "보내기" : "모르겠어요"; });
   draw();
+  const promptLang = !/[가-힣]/.test(prompt) && (/[ぁ-んァ-ン一-龥]/.test(prompt) || /[A-Za-z]/.test(prompt)) ? LANG : "ko";
   return el("div", { class: "card ans" },
     pill,
     emoji ? el("div", { class: "ans-emoji" }, emoji) : null,
-    el("div", { class: "ans-q" + (big ? " big" : ""), lang: /[ぁ-んァ-ン一-龥]/.test(prompt) && !/[가-힣]/.test(prompt) ? "ja" : "ko" }, prompt),
+    el("div", { class: "ans-q" + (big ? " big" : ""), lang: promptLang }, prompt),
     sub ? el("div", { class: "note tip", style: "text-align:center" }, sub) : null,
     limit ? el("div", { class: "limit" }, bar) : null,
     live, row, submitB,
@@ -1270,14 +1429,14 @@ function renderDay(root) {
 function stepPattern(body) {
   const p = CR.pkg.pattern;
   put(body,
-    el("div", { class: "card pattern" }, el("div", { class: "lab blue" }, "오늘의 문형"), el("div", { class: "pt-form", lang: "ja" }, p.form), el("div", { class: "pt-mean" }, p.meaning_ko), el("p", { class: "note" }, p.explain_ko)),
+    el("div", { class: "card pattern" }, el("div", { class: "lab blue" }, "오늘의 문형"), el("div", { class: "pt-form", lang: LANG }, p.form), el("div", { class: "pt-mean" }, p.meaning_ko), el("p", { class: "note" }, p.explain_ko)),
     el("div", { class: "h" }, "예문을 듣고 따라 말하기 (80% 넘으면 +5)"),
     p.examples.map((x) => {
       const sp = el("button", { class: "tool" }, "🔊"); sp.onclick = () => speak(x.ja, { btn: sp });
       const out = el("span", { class: "match" });
       let got = false;
       const sh = el("button", { class: "tool", onclick: () => shadowing(x.ja, sh, out, (pct) => { if (pct >= 80 && !got) { got = true; addScore(5); } }) }, "🎙 따라 말하기");
-      return el("div", { class: "card" }, el("div", { class: "model", lang: "ja" }, x.ja), el("div", { class: "note" }, x.ko), el("div", { class: "model-tools" }, sp, sh, starBtn({ text: x.ja, meaning_ko: x.ko, kind: "sentence" }), out));
+      return el("div", { class: "card" }, el("div", { class: "model", lang: LANG }, x.ja), el("div", { class: "note" }, x.ko), el("div", { class: "model-tools" }, sp, sh, starBtn({ text: x.ja, meaning_ko: x.ko, kind: "sentence" }), out));
     }),
     el("button", { class: "primary", onclick: nextStep }, "다음: 바꿔 말하기"));
 }
@@ -1292,8 +1451,8 @@ function stepDrills(body, key) {
       answerCard({ prompt: d.ko, limit: 5, big: true, expect: d.ja, onDone: (said, sec) => {
         CR.answers[CR.i] = { said, sec };
         CR.i++; saveCR();
-        put(body, el("div", { class: "card ans" }, el("div", { class: "note" }, "모범 답"), el("div", { class: "model", lang: "ja" }, d.ja),
-          el("div", { class: "note", lang: "ja" }, "내 답: " + (said || "(무응답)")),
+        put(body, el("div", { class: "card ans" }, el("div", { class: "note" }, "모범 답"), el("div", { class: "model", lang: LANG }, d.ja),
+          el("div", { class: "note", lang: LANG }, "내 답: " + (said || "(무응답)")),
           el("button", { class: "primary", onclick: () => { speechSynthesis.cancel(); renderCourse(); } }, CR.i < list.length ? "다음 문제" : "채점하기")));
         speak(d.ja);
       } }));
@@ -1331,8 +1490,8 @@ function showGraded(body, items, isTest) {
       const x = g[i] || {};
       const sp = el("button", { class: "mini" }, "🔊"); sp.onclick = () => speak(x.fix || it.expected, { btn: sp });
       return el("div", { class: "card q" }, el("div", { class: "q-t" }, `${(V[x.verdict] || ["?"])[0]}${redone[i] ? " → 🔁⭕" : ""} ${it.prompt}`),
-        el("div", { class: "note", lang: "ja" }, "내 답: " + (CR.answers[i]?.said || "(무응답)")),
-        el("div", { class: "model", lang: "ja" }, x.fix || it.expected, " ", sp), x.why_ko ? el("div", { class: "note tip" }, x.why_ko) : null);
+        el("div", { class: "note", lang: LANG }, "내 답: " + (CR.answers[i]?.said || "(무응답)")),
+        el("div", { class: "model", lang: LANG }, x.fix || it.expected, " ", sp), x.why_ko ? el("div", { class: "note tip" }, x.why_ko) : null);
     }),
     isTest && !pass
       ? el("button", { class: left.length ? "secondary" : "primary", style: "width:100%;margin-top:8px", onclick: () => { CR.i = 0; CR.answers = []; CR.graded = null; CR.redo = null; saveCR(); renderCourse(); } }, "시험 다시 보기")
@@ -1348,7 +1507,7 @@ function redoCard(body, items) {
   const tries = R2.tries[i] || 0;
   const sp = el("button", { class: "tool" }, "🔊 모범 답 듣기"); sp.onclick = () => speak(model, { btn: sp });
   put(body, el("div", { class: "h" }, `🔁 다시 말하기 · 남은 ${R2.q.length - R2.i}개${tries ? ` · ${tries + 1}번째` : ""}`),
-    tries ? el("div", { class: "card" }, el("div", { class: "note" }, "모범 답을 듣고 그대로 말해 보세요"), el("div", { class: "model", lang: "ja" }, model), el("div", { class: "model-tools" }, sp)) : null,
+    tries ? el("div", { class: "card" }, el("div", { class: "note" }, "모범 답을 듣고 그대로 말해 보세요"), el("div", { class: "model", lang: LANG }, model), el("div", { class: "model-tools" }, sp)) : null,
     answerCard({ prompt: it.prompt, big: true, expect: model, hint: tries ? "" : "이번엔 고친 문장을 떠올리며 말해 보세요", onDone: (said) => {
       const pct = similarity(model, said);
       const ok = pct >= 75;
@@ -1358,8 +1517,8 @@ function redoCard(body, items) {
       R2.i++; saveCR();
       const sp2 = el("button", { class: "tool" }, "🔊"); sp2.onclick = () => speak(model, { btn: sp2 });
       put(body, el("div", { class: "card ans" }, el("div", { class: "ans-emoji" }, ok ? "⭕" : "❌"),
-        el("div", { class: "note", lang: "ja" }, "내 말: " + (said || "(무응답)") + ` · 일치 ${pct}%`),
-        el("div", { class: "model", lang: "ja" }, model), el("div", { class: "model-tools", style: "justify-content:center" }, sp2),
+        el("div", { class: "note", lang: LANG }, "내 말: " + (said || "(무응답)") + ` · 일치 ${pct}%`),
+        el("div", { class: "model", lang: LANG }, model), el("div", { class: "model-tools", style: "justify-content:center" }, sp2),
         !ok && tries + 1 < 3 ? el("div", { class: "note tip" }, "이 문장은 끝에서 모범 답을 보며 한 번 더 해요.") : null,
         el("button", { class: "primary", onclick: () => { speechSynthesis.cancel(); renderCourse(); } }, R2.i < R2.q.length ? "다음" : "결과로")));
       if (!ok) speak(model);
@@ -1378,7 +1537,7 @@ function stepCards(body, key) {
     const fixed = list.filter((_, i) => CR.answers[i]?.fixed).length;
     put(body, el("div", { class: "card" }, el("div", { class: "big", style: "font-size:26px;font-weight:800" }, `한 번에 ${first} / ${list.length}`),
         el("div", { class: "note" }, `다시 해서 맞힌 것 ${fixed}개 · 3초 안에 맞힌 것 ${list.filter((_, i) => CR.answers[i]?.ok && CR.answers[i].sec <= 3).length}개`)),
-      list.map((w, i) => { const a = CR.answers[i] || {}; return el("div", { class: "hard-item" }, el("span", {}, a.ok ? "⭕" : a.fixed ? "🔁" : "❌"), el("b", { lang: "ja" }, w.ja), el("span", { class: "rd" }, w.reading), el("span", { class: "mn" }, w.meaning_ko)); }),
+      list.map((w, i) => { const a = CR.answers[i] || {}; return el("div", { class: "hard-item" }, el("span", {}, a.ok ? "⭕" : a.fixed ? "🔁" : "❌"), el("b", { lang: LANG }, w.ja), el("span", { class: "rd" }, w.reading), el("span", { class: "mn" }, w.meaning_ko)); }),
       el("button", { class: "primary", style: "margin-top:12px", onclick: nextStep }, "다음"));
     return;
   }
@@ -1397,10 +1556,10 @@ function stepCards(body, key) {
       CR.i++; saveCR();
       const sp = el("button", { class: "tool" }, "🔊"); sp.onclick = () => speak(w.example_ja || w.ja, { btn: sp });
       put(body, el("div", { class: "card ans" }, el("div", { class: "ans-emoji" }, ok ? "⭕" : "❌"),
-        el("div", { class: "ans-q big", lang: "ja" }, w.ja), el("div", { class: "note", style: "text-align:center" }, w.reading),
-        el("div", { class: "note", lang: "ja", style: "text-align:center" }, "내 말: " + (said || "(무응답)") + ` · 일치 ${pct}%`),
+        el("div", { class: "ans-q big", lang: LANG }, w.ja), el("div", { class: "note", style: "text-align:center" }, w.reading),
+        el("div", { class: "note", lang: LANG, style: "text-align:center" }, "내 말: " + (said || "(무응답)") + ` · 일치 ${pct}%`),
         !ok && tries + 1 < 3 ? el("div", { class: "note tip", style: "text-align:center" }, "이 낱말은 끝에서 한 번 더 나와요. 소리 내어 두세 번 따라 해 두세요.") : null,
-        w.example_ja ? el("div", { class: "model", lang: "ja" }, w.example_ja, el("div", { class: "note" }, w.example_ko)) : null,
+        w.example_ja ? el("div", { class: "model", lang: LANG }, w.example_ja, el("div", { class: "note" }, w.example_ko)) : null,
         el("div", { class: "model-tools", style: "justify-content:center" }, sp, starBtn({ text: w.ja, reading: w.reading, meaning_ko: w.meaning_ko, ex_ja: w.example_ja || "", ex_ko: w.example_ko || "" })),
         el("button", { class: "primary", onclick: () => { speechSynthesis.cancel(); renderCourse(); } }, "다음")));
       speak(w.ja);
@@ -1506,7 +1665,7 @@ function voiceFor(gender) {
   const v = voices.find((x) => re.test(x.name));
   return v || bestVoice();
 }
-const LS = { phase: "idle", item: null, plays: 0, answers: [], result: null, genre: "random", sub: "random", more: {}, custom: "", moreLoading: false, gen: 0, loading: false, length: localStorage.getItem("listenLen") || "short" };
+const LS = { phase: "idle", item: null, plays: 0, answers: [], result: null, genre: "random", sub: "random", more: {}, custom: "", moreLoading: false, gen: 0, loading: false, length: getPref("listenLen", "short") };
 // 듣기는 진짜 음성 파일(MP3)로 튼다: 폰 화면이 꺼져도 계속 나옴. 못 받으면 브라우저 음성으로
 const LA = { id: null, url: null, marks: null, loading: null, failed: null, el: null, timer: null, stopAt: null, onLine: null };
 const audioEl = () => (LA.el ||= Object.assign(new Audio(), { preload: "auto" }));
@@ -1626,7 +1785,7 @@ function renderListen(root) {
     el("div", { class: "card" }, el("div", { class: "read-best" },
       el("div", {}, el("span", {}, "들은 것"), el("b", {}, `${hist.length}편`)),
       el("div", {}, el("span", {}, "정답률"), el("b", {}, okRate == null ? "-" : `${okRate}%`))),
-      el("div", { class: "level-desc" }, "자막 없이 듣고 문제를 푼 뒤 대본을 봐요. 적게 듣고 맞힐수록 점수가 높아요. 속도·배경 소리는 홈의 설정과 말풍선 속도를 따라가요.")),
+      el("div", { class: "level-desc" }, "자막 없이 듣고 문제를 푼 뒤 대본을 봐요. 적게 듣고 맞힐수록 점수가 높아요. 속도·배경 소리는 상단 ⚙️ 설정에서 언제든 바꿀 수 있어요.")),
     el("div", { class: "h" }, "들을 거리"),
     el("div", { class: "gen-grid pick-grid" }, [{ key: "random", name: "아무거나" }, ...(S.listenGenres || [])].map((g) =>
       el("button", { class: "gen tile" + (LS.genre === g.key ? " picked" : ""), onclick: () => { LS.genre = g.key; LS.sub = "random"; renderRead(); } }, el("b", {}, g.name), el("span", {}, LS.genre === g.key ? "✓ 골랐어요" : ""), el("i", { class: "tile-emoji" }, { random: "🎲", talk2: "🗣️", phone: "📞", announce: "📢", news: "📺", interview: "🎙️", chat: "☕" }[g.key] || "🎧")))),
@@ -1650,14 +1809,14 @@ function renderListen(root) {
         picked ? el("div", { class: "level-desc" }, picked.hint || "") : null];
     })(),
     el("div", { class: "h" }, "길이"),
-    el("div", { class: "chips" }, Object.entries(S.listenLengths || {}).map(([k, v]) => el("button", { class: "chip" + (LS.length === k ? " on" : ""), onclick: () => { LS.length = k; localStorage.setItem("listenLen", k); renderRead(); } }, v.name))),
+    el("div", { class: "chips" }, Object.entries(S.listenLengths || {}).map(([k, v]) => el("button", { class: "chip" + (LS.length === k ? " on" : ""), onclick: () => { LS.length = k; setPref("listenLen", k); renderRead(); } }, v.name))),
     ["long", "xl"].includes(LS.length) ? el("div", { class: "level-desc" }, "긴 것은 만드는 데 1분쯤 걸려요. 들을 때 인물 이름을 누르면 그 줄부터 다시 들을 수 있어요.") : null,
     el("div", { class: "h" }, "단계 (홈과 같음)"),
     el("div", { class: "levels" }, M.LEVELS.map((l) => el("button", { class: pick.level === l.n ? "on" : "", onclick: () => { setLevel(l.n); renderRead(); } }, l.n))),
     el("div", { class: "level-desc" }, M.LEVELS[pick.level - 1].name),
     LS.phase === "ready" && LS.item
       ? el("div", { class: "ready-pair" },
-          el("button", { class: "primary", onclick: () => { LS.phase = "play"; LS.plays = 0; LS.answers = []; renderRead(); } }, `이어서 듣기: ${LS.item.title_ko}`),
+          el("button", { class: "primary", onclick: () => { LS.phase = "play"; LS.plays = 0; LS.answers = []; LS.revealed = new Set(); renderRead(); } }, `이어서 듣기: ${LS.item.title_ko}`),
           el("button", { class: "ghost", disabled: LS.loading, onclick: fetchListening }, LS.loading ? "새로 만드는 중…" : "위에서 고른 대로 새로 만들기"),
           el("div", { class: "hint-line" }, `지난번에 만들어 두고 아직 안 푼 듣기예요 (${LS.item.genreName || ""}). 새로 만들어도 아래 「만들어 둔 듣기」에 남아요.`))
       : el("button", { class: "primary", disabled: LS.loading, onclick: fetchListening }, LS.loading ? `들을 거리를 만드는 중… (${{ short: "15초", mid: "30초", long: "1분", xl: "1~2분" }[LS.length] || "15초"}쯤)` : "새 듣기 받기"),
@@ -1690,7 +1849,7 @@ async function openLib(id) {
   LS.opening = true;
   try {
     const r = await api("/api/listen/open", { method: "POST", body: JSON.stringify({ id }) });
-    LS.item = r.listening; S.listening = r.listening; LS.phase = "play"; LS.plays = 0; LS.answers = []; if (r.listenLib) S.listenLib = r.listenLib; LS.result = null;
+    LS.item = r.listening; S.listening = r.listening; LS.phase = "play"; LS.plays = 0; LS.answers = []; LS.revealed = new Set(); if (r.listenLib) S.listenLib = r.listenLib; LS.result = null;
   } catch (e) { toast(e.message); }
   LS.opening = false;
   if (currentView === "read") renderRead();
@@ -1700,16 +1859,17 @@ async function fetchListening() {
   try {
     const r = await api("/api/listen/new", { method: "POST", body: JSON.stringify({ level: pick.level, genre: LS.genre, length: LS.length, sub: LS.sub,
       custom: LS.sub === "custom" && LS.custom.trim() ? { name: LS.custom.trim(), hint: "" } : (LS.more[LS.genre] || []).find((x) => x.key === LS.sub) || null }) });
-    LS.item = r.listening; S.listening = r.listening; LS.phase = "play"; LS.plays = 0; LS.answers = []; if (r.listenLib) S.listenLib = r.listenLib;
+    LS.item = r.listening; S.listening = r.listening; LS.phase = "play"; LS.plays = 0; LS.answers = []; LS.revealed = new Set(); if (r.listenLib) S.listenLib = r.listenLib;
   } catch (e) { toast(e.message); }
   LS.loading = false;
   if (currentView === "read") renderRead();
 }
 function listenPlay(root) {
   const x = LS.item;
+  LS.revealed ||= new Set();
   const rows = x.lines.map((l, i) => el("div", { class: "ls-line " + (l.gender === "m" ? "m" : "f") },
     el("span", { class: "ls-who", title: "여기부터 듣기", onclick: () => { if (!LS.plays) LS.plays = 1; playItem(x, i, mark); } }, "▸ " + l.speaker),
-    el("span", { class: "ls-text hidden", lang: "ja", onclick: (e) => e.target.classList.remove("hidden") }, l.text)));
+    el("span", { class: "ls-text" + (LS.revealed.has(i) ? "" : " hidden"), lang: LANG, onclick: (e) => { LS.revealed.add(i); e.target.classList.remove("hidden"); } }, l.text)));
   const prog = el("div", { class: "note" }, `${x.lines.length}줄`);
   const mark = (k) => { rows.forEach((r, i) => r.classList.toggle("now", i === k)); if (k >= 0) { prog.textContent = `${k + 1} / ${x.lines.length}줄`; if (x.lines.length > 12) rows[k].scrollIntoView({ block: "center", behavior: "smooth" }); } };
   const playB = el("button", { class: "primary big-play" }, LS.plays ? `▶ 다시 듣기 (${LS.plays + 1}번째)` : "▶ 듣기 시작");
@@ -1717,18 +1877,35 @@ function listenPlay(root) {
   loadListenAudio(x); // 미리 받아 둠
   const stopB = el("button", { class: "secondary" }, "⏹ 멈춤"); stopB.onclick = () => { stopLines(); mark(-1); };
   const quiz = LS.phase === "quiz";
+  let quizNodes = null;
+  if (quiz) {
+    const submitB = el("button", { class: "primary", disabled: LS.answers.filter((a) => a != null).length < x.questions.length }, "채점하기");
+    submitB.onclick = () => submitListenUI(submitB);
+    const qCards = x.questions.map((q, qi) => {
+      const btns = q.choices.map((c, ci) => el("button", { class: "choice" + (LS.answers[qi] === ci ? " on" : "") }, `${"①②③④"[ci]} ${c}`));
+      btns.forEach((b, ci) => {
+        b.onclick = () => {
+          LS.answers[qi] = ci;
+          btns.forEach((x2, j) => x2.classList.toggle("on", j === ci));
+          submitB.disabled = LS.answers.filter((a) => a != null).length < x.questions.length;
+        };
+      });
+      return el("div", { class: "card q" }, el("div", { class: "q-t" }, `${qi + 1}. ${q.q_ko}`), btns);
+    });
+    quizNodes = [qCards, submitB];
+  }
   put(root, rmSwitch(),
     el("div", { class: "read-head" }, el("div", {}, el("span", { class: "rd-genre" }, `${x.genreName} · ${x.level}단계`), el("h2", {}, x.title_ko))),
     el("div", { class: "task", style: "margin-left:0" }, "상황: " + x.situation_ko),
     el("div", { class: "row-btns" }, playB, stopB), prog,
     el("div", { class: "card ls-box" }, el("div", { class: "note", style: "margin-bottom:6px" }, "자막은 가려져 있어요. 정 모르겠으면 줄을 눌러 보세요."), rows),
     !quiz ? el("button", { class: "primary", disabled: false, onclick: () => { if (!LS.plays) { toast("먼저 한 번 들어 보세요"); return; } stopLines(); LS.phase = "quiz"; renderRead(); } }, "다 들었어요 → 문제 풀기") : null,
-    quiz ? [x.questions.map((q, qi) => el("div", { class: "card q" },
-      el("div", { class: "q-t" }, `${qi + 1}. ${q.q_ko}`),
-      q.choices.map((c, ci) => el("button", { class: "choice" + (LS.answers[qi] === ci ? " on" : ""), onclick: () => { LS.answers[qi] = ci; renderRead(); } }, `${"①②③④"[ci]} ${c}`)))),
-      el("button", { class: "primary", disabled: LS.answers.filter((a) => a != null).length < x.questions.length, onclick: submitListenUI }, "채점하기")] : null);
+    quizNodes);
 }
-async function submitListenUI() {
+async function submitListenUI(btn) {
+  if (LS.submitting) return;
+  LS.submitting = true;
+  if (btn) btn.disabled = true;
   stopLines();
   try {
     const r = await api("/api/listen/submit", { method: "POST", body: JSON.stringify({ id: LS.item.id, answers: LS.answers, plays: LS.plays }) });
@@ -1736,7 +1913,12 @@ async function submitListenUI() {
     if (r.listenLib) S.listenLib = r.listenLib;
     S.listenings = [...(S.listenings || []), r.result]; S.xp = r.xp; S.todayXp = r.todayXp; renderTop();
     renderRead();
-  } catch (e) { toast(e.message); }
+  } catch (e) {
+    toast(e.message);
+    if (btn) btn.disabled = false;
+  } finally {
+    LS.submitting = false;
+  }
 }
 function listenResult(root) {
   const x = LS.item, R2 = LS.result, res = R2.result;
@@ -1745,7 +1927,7 @@ function listenResult(root) {
     const out = el("span", { class: "match" });
     const sh = el("button", { class: "mini", onclick: () => shadowing(l.text, sh, out) }, "🎙");
     return el("div", { class: "ls-line open " + (l.gender === "m" ? "m" : "f") }, el("span", { class: "ls-who" }, l.speaker),
-      el("div", { class: "ls-body" }, el("span", { class: "ls-text", lang: "ja" }, l.text), el("div", { class: "model-tools" }, sp, sh, starBtn({ text: l.text, kind: "sentence" }), out)));
+      el("div", { class: "ls-body" }, el("span", { class: "ls-text", lang: LANG }, l.text), el("div", { class: "model-tools" }, sp, sh, starBtn({ text: l.text, kind: "sentence" }), out)));
   });
   const allB = el("button", { class: "secondary" }, "▶ 대본 보며 전체 듣기"); allB.onclick = () => playItem(x, 0, (k) => rows.forEach((r, i) => r.classList.toggle("now", i === k)), false, allB);
   put(root, rmSwitch(),
@@ -1801,7 +1983,7 @@ function renderRead() {
       : el("button", { class: "primary", disabled: R.loading, onclick: fetchReading }, R.loading ? "글을 만드는 중… (20초쯤)" : "새 글 받기"),
     last.length ? [el("div", { class: "h" }, "최근 기록"), el("div", { class: "rec-list" }, last.map((r) =>
       el("div", { class: "rec" }, el("div", { class: `stamp sm g-${r.acc >= 1 ? "S" : r.acc >= 0.8 ? "A" : r.acc >= 0.6 ? "B" : "C"}` }, `${r.correct}`),
-        el("div", { class: "mid" }, el("b", { lang: "ja" }, r.title), el("span", {}, `${r.date} · ${r.genreName} · ${r.chars}${UNIT} · ${fmtTime(r.seconds)}${r.pace === "aloud" ? " · 소리 내어" : r.pace ? " · 페이스" : ""}`)),
+        el("div", { class: "mid" }, el("b", { lang: LANG }, r.title), el("span", {}, `${r.date} · ${r.genreName} · ${r.chars}${UNIT} · ${fmtTime(r.seconds)}${r.pace === "aloud" ? " · 소리 내어" : r.pace ? " · 페이스" : ""}`)),
         el("div", { class: "sc" }, `${r.cpm}${UNIT}/분`))))] : null);
 }
 async function fetchReading() {
@@ -1825,11 +2007,11 @@ function renderReading(root) {
   const r = R.reading;
   const paras = splitSentences(r.text_ja);
   const spans = [];
-  const body = el("div", { class: "read-text" + (R.pace ? " paced" : ""), lang: "ja" }, paras.map((ss) =>
+  const body = el("div", { class: "read-text" + (R.pace ? " paced" : ""), lang: LANG }, paras.map((ss) =>
     el("p", {}, ss.map((t) => { const sp = el("span", {}, t); spans.push({ sp, len: t.replace(/\s/g, "").length }); return sp; }))));
   const clock = el("b", { class: "clock" }, "0:00");
   put(root,
-    el("div", { class: "read-head" }, el("div", {}, el("span", { class: "rd-genre" }, r.genreName), el("h2", { lang: "ja" }, r.title_ja)), clock),
+    el("div", { class: "read-head" }, el("div", {}, el("span", { class: "rd-genre" }, r.genreName), el("h2", { lang: LANG }, r.title_ja)), clock),
     body,
     el("button", { class: "primary sticky-done", onclick: () => { R.elapsed = (Date.now() - R.t0) / 1000; R.phase = "quiz"; renderRead(); window.scrollTo(0, 0); root.scrollTop = 0; } }, "다 읽었어요 → 문제 풀기"));
   // 페이스: 누적 글자 수가 경과 시간 × 속도에 닿은 문장까지 밝힘
@@ -1898,8 +2080,8 @@ function renderAloud(root) {
     return { p, node, jaLen: normJa(p.t).length, kanaLen: normJa(LANG === "en" ? p.t : p.r || p.t).length };
   });
   const jaStr = normJa(s.ja), kanaStr = LANG === "en" ? jaStr : normJa(spans.map((x) => x.p.r || x.p.t).join(""));
-  const sentEl = el("div", { class: "al-sent" + (A.furi ? " furi" : ""), lang: "ja" }, spans.map((x) => x.node));
-  const heardEl = el("div", { class: "al-heard", lang: "ja" }, "🎤 마이크를 누르고 이 문장을 읽어 주세요");
+  const sentEl = el("div", { class: "al-sent" + (A.furi ? " furi" : ""), lang: LANG }, spans.map((x) => x.node));
+  const heardEl = el("div", { class: "al-heard", lang: LANG }, "🎤 마이크를 누르고 이 문장을 읽어 주세요");
   const bar = el("i");
   const prevS = A.i > 0 ? R.ruby[order[A.i - 1]].ja : "";
   const nextS = A.i + 1 < order.length ? R.ruby[order[A.i + 1]].ja : "";
@@ -1908,12 +2090,12 @@ function renderAloud(root) {
   const listenB = el("button", { class: "tool" }, "🔊 들어 보기"); listenB.onclick = () => { if (rec) rec.stop(); speak(s.ja, { btn: listenB }); };
   const clock = el("b", { class: "clock" }, fmtTime(A.started ? (Date.now() - A.started) / 1000 : 0));
   put(root,
-    el("div", { class: "read-head" }, el("div", {}, el("span", { class: "rd-genre" }, `${r.genreName} · 소리 내어 읽기${A.queue ? " · 막힌 문장 다시" : ""}`), el("h2", { lang: "ja" }, r.title_ja)), clock),
+    el("div", { class: "read-head" }, el("div", {}, el("span", { class: "rd-genre" }, `${r.genreName} · 소리 내어 읽기${A.queue ? " · 막힌 문장 다시" : ""}`), el("h2", { lang: LANG }, r.title_ja)), clock),
     el("div", { class: "al-progress" }, el("span", {}, `${A.i + 1} / ${order.length} 문장`), el("div", { class: "limit" }, el("i", { style: `width:${(A.i / order.length) * 100}%;background:var(--navy)` }))),
-    prevS ? el("div", { class: "al-side", lang: "ja" }, prevS) : null,
+    prevS ? el("div", { class: "al-side", lang: LANG }, prevS) : null,
     el("div", { class: "card al-card" }, sentEl, el("div", { class: "limit" }, bar), heardEl,
       el("div", { class: "model-tools", style: "justify-content:center" }, listenB, furiB)),
-    nextS ? el("div", { class: "al-side", lang: "ja" }, nextS) : null,
+    nextS ? el("div", { class: "al-side", lang: LANG }, nextS) : null,
     el("div", { class: "aloud-dock" },
       el("button", { class: "ghost-btn", disabled: A.i === 0, onclick: () => { if (rec) rec.stop(); A.i--; renderRead(); } }, "← 이전"),
       el("button", { class: "ghost-btn", onclick: () => { finishSentence(true); } }, "막힘, 넘어가기"),
@@ -2019,10 +2201,10 @@ function renderAloudSummary(root) {
       el("div", {}, el("div", { class: "big" }, "막힘 없이 읽은 문장"), el("div", { class: "sub" }, `읽은 문장 ${tried.length}/${res.length} · ${fmtTime(A.started ? (Date.now() - A.started) / 1000 : 0)} · 막힌 낱말 ${words.length}개는 약점 노트에 담았어요`)))),
     words.length ? [el("div", { class: "h" }, "막힌 낱말 읽는 법"), el("div", { class: "hard" }, words.map((w) => {
       const sp = el("button", { class: "mini" }, "🔊"); sp.onclick = () => speak(w.w, { btn: sp });
-      return el("div", { class: "hard-item" }, el("b", { lang: "ja" }, w.w), el("span", { class: "rd" }, w.r), el("span", { class: "mn" }, w.m), sp);
+      return el("div", { class: "hard-item" }, el("b", { lang: LANG }, w.w), el("span", { class: "rd" }, w.r), el("span", { class: "mn" }, w.m), sp);
     }))] : null,
     el("div", { class: "h" }, "문장별"),
-    res.map((x, i) => el("div", { class: "al-row" + (x.r.tries && !x.r.ok ? " bad" : "") + (!x.r.tries ? " skip" : "") }, el("span", {}, !x.r.tries ? "·" : x.r.ok ? "⭕" : "△"), el("span", { lang: "ja" }, x.s.ja))),
+    res.map((x, i) => el("div", { class: "al-row" + (x.r.tries && !x.r.ok ? " bad" : "") + (!x.r.tries ? " skip" : "") }, el("span", {}, !x.r.tries ? "·" : x.r.ok ? "⭕" : "△"), el("span", { lang: LANG }, x.s.ja))),
     stuckIdx.length ? el("button", { class: "primary", onclick: () => { A.queue = stuckIdx; A.i = 0; stuckIdx.forEach((i) => { A.results[i] = { ok: false, stuck: A.results[i]?.stuck || [], tries: A.results[i]?.tries || 0 }; }); renderRead(); } }, `막힌 문장 ${stuckIdx.length}개만 다시 읽기`) : null,
     el("button", { class: stuckIdx.length ? "secondary" : "primary", style: "width:100%;margin-top:8px", onclick: () => { R.elapsed = A.started ? (Date.now() - A.started) / 1000 : 1; R.phase = "quiz"; renderRead(); root.scrollTop = 0; } }, "문제 풀기"));
 }
@@ -2037,15 +2219,29 @@ function aloudReportEl() {
 
 function renderQuiz(root) {
   const r = R.reading;
+  const submitB = el("button", { class: "primary", disabled: R.answers.filter((x) => x != null).length < r.questions.length }, "채점하기");
+  submitB.onclick = () => submitReadingUI(submitB);
+  const qCards = r.questions.map((q, qi) => {
+    const btns = q.choices.map((c, ci) => el("button", { class: "choice" + (R.answers[qi] === ci ? " on" : ""), lang: LANG }, `${"①②③④"[ci]} ${c}`));
+    btns.forEach((b, ci) => {
+      b.onclick = () => {
+        R.answers[qi] = ci;
+        btns.forEach((x2, j) => x2.classList.toggle("on", j === ci));
+        submitB.disabled = R.answers.filter((x) => x != null).length < r.questions.length;
+      };
+    });
+    return el("div", { class: "card q" }, el("div", { class: "q-t", lang: LANG }, `${qi + 1}. ${q.q_ja}`), btns);
+  });
   put(root,
-    el("div", { class: "read-head" }, el("div", {}, el("span", { class: "rd-genre" }, `읽은 시간 ${fmtTime(R.elapsed)} · 본문은 가렸어요`), el("h2", { lang: "ja" }, r.title_ja))),
+    el("div", { class: "read-head" }, el("div", {}, el("span", { class: "rd-genre" }, `읽은 시간 ${fmtTime(R.elapsed)} · 본문은 가렸어요`), el("h2", { lang: LANG }, r.title_ja))),
     aloudReportEl(),
-    r.questions.map((q, qi) => el("div", { class: "card q" },
-      el("div", { class: "q-t", lang: "ja" }, `${qi + 1}. ${q.q_ja}`),
-      q.choices.map((c, ci) => el("button", { class: "choice" + (R.answers[qi] === ci ? " on" : ""), lang: "ja", onclick: () => { R.answers[qi] = ci; renderRead(); } }, `${"①②③④"[ci]} ${c}`)))),
-    el("button", { class: "primary", disabled: R.answers.filter((x) => x != null).length < r.questions.length, onclick: submitReadingUI }, "채점하기"));
+    qCards,
+    submitB);
 }
-async function submitReadingUI() {
+async function submitReadingUI(btn) {
+  if (R.submitting) return;
+  R.submitting = true;
+  if (btn) btn.disabled = true;
   try {
     const res = await api("/api/read/submit", { method: "POST", body: JSON.stringify({ id: R.reading.id, seconds: R.elapsed, answers: R.answers, pace: R.pace }) });
     R.result = res; R.phase = "result";
@@ -2053,7 +2249,12 @@ async function submitReadingUI() {
     S.readings = [...(S.readings || []), res.result];
     renderTop(); renderRead();
     if (res.result.newBest) toast(`독서 속도 신기록! ${res.result.cpm}${UNIT}/분`, "gold");
-  } catch (e) { toast(e.message); }
+  } catch (e) {
+    toast(e.message);
+    if (btn) btn.disabled = false;
+  } finally {
+    R.submitting = false;
+  }
 }
 function renderReadResult(root) {
   const { result: x, answers, vocab } = R.result;
@@ -2066,12 +2267,12 @@ function renderReadResult(root) {
           x.newBest ? el("span", { class: "newbest" }, "독서 속도 신기록") : x.bestCpm ? el("div", { class: "sub" }, `내 최고 ${x.bestCpm}${UNIT}/분`) : null))),
     el("div", { class: "h" }, "해설"),
     answers.map((a, i) => el("div", { class: "card q" },
-      el("div", { class: "q-t", lang: "ja" }, `${a.ok ? "⭕" : "❌"} ${i + 1}. ${r.questions[i].q_ja}`),
-      el("div", { class: "note", lang: "ja" }, `정답 ${"①②③④"[a.answer]} ${r.questions[i].choices[a.answer]}` + (a.ok ? "" : ` · 내 답 ${"①②③④"[a.mine] || "-"}`)),
+      el("div", { class: "q-t", lang: LANG }, `${a.ok ? "⭕" : "❌"} ${i + 1}. ${r.questions[i].q_ja}`),
+      el("div", { class: "note", lang: LANG }, `정답 ${"①②③④"[a.answer]} ${r.questions[i].choices[a.answer]}` + (a.ok ? "" : ` · 내 답 ${"①②③④"[a.mine] || "-"}`)),
       el("div", { class: "note tip" }, a.explain_ko))),
     el("div", { class: "h" }, "본문의 어려운 말"),
     el("div", { class: "hard" }, vocab.map(hardEl)),
-    el("details", { class: "card" }, el("summary", {}, "본문 다시 보기"), el("div", { class: "read-text", lang: "ja" }, r.text_ja.split(/\n{2,}/).map((p) => el("p", {}, p)))),
+    el("details", { class: "card" }, el("summary", {}, "본문 다시 보기"), el("div", { class: "read-text", lang: LANG }, r.text_ja.split(/\n{2,}/).map((p) => el("p", {}, p)))),
     el("button", { class: "primary", onclick: () => { R.phase = "idle"; R.reading = null; R.result = null; renderRead(); } }, "다음 글"));
 }
 
@@ -2102,7 +2303,7 @@ function renderWeak() {
     el("div", { class: "h" }, `⭐ 저장함 ${VB.saved.length}`),
     VB.saved.length ? el("div", { class: "weak-list" }, VB.saved.slice(0, 50).map((x) => {
       const sp = el("button", { class: "mini" }, "🔊"); sp.onclick = () => speak(x.w, { btn: sp });
-      return el("div", { class: "wk" }, el("div", { class: "wk-top" }, el("span", { class: "wk-kind k-vocab" }, x.kind === "sentence" ? "문장" : "낱말"), el("span", { class: "wk-text", lang: "ja" }, x.w), x.r ? el("span", { class: "wk-rd" }, x.r) : null),
+      return el("div", { class: "wk" }, el("div", { class: "wk-top" }, el("span", { class: "wk-kind k-vocab" }, x.kind === "sentence" ? "문장" : "낱말"), el("span", { class: "wk-text", lang: LANG }, x.w), x.r ? el("span", { class: "wk-rd" }, x.r) : null),
         x.m ? el("div", { class: "wk-mn" }, x.m) : null,
         el("div", { class: "wk-foot" }, el("span", {}, `다음 복습 ${x.due.slice(5)}`), el("span", { class: "sp" }), sp,
           el("button", { class: "mini", onclick: async () => { const r = await api("/api/vocab/unsave", { method: "POST", body: JSON.stringify({ id: x.id }) }); VB.vocab = r.vocab; VB.saved = VB.saved.filter((y) => y.id !== x.id); SAVED.delete(x.w); renderWeak(); } }, "지우기")));
@@ -2134,9 +2335,9 @@ function vocabLearn(root) {
   const sp2 = el("button", { class: "tool" }, "🔊 예문"); sp2.onclick = () => speak(w.ex_ja, { btn: sp2 });
   put(root, el("div", { class: "step-name" }, `새 단어 익히기 ${VS.li + 1} / ${VS.fresh.length} · ${w.level}`),
     el("div", { class: "stepdots" }, VS.fresh.map((_, i) => el("span", { class: i < VS.li ? "ok" : i === VS.li ? "now" : "" }))),
-    el("div", { class: "card ans" }, el("div", { class: "ans-emoji" }, w.emoji), el("div", { class: "ans-q big", lang: "ja" }, w.w), el("div", { class: "note", style: "text-align:center" }, w.r),
+    el("div", { class: "card ans" }, el("div", { class: "ans-emoji" }, w.emoji), el("div", { class: "ans-q big", lang: LANG }, w.w), el("div", { class: "note", style: "text-align:center" }, w.r),
       el("div", { class: "pt-mean", style: "text-align:center;margin:6px 0 10px" }, w.m),
-      el("div", { class: "model", lang: "ja", style: "text-align:left" }, w.ex_ja, el("div", { class: "note" }, w.ex_ko)),
+      el("div", { class: "model", lang: LANG, style: "text-align:left" }, w.ex_ja, el("div", { class: "note" }, w.ex_ko)),
       el("div", { class: "model-tools", style: "justify-content:center" }, sp, sp2, starBtn({ text: w.w, reading: w.r, meaning_ko: w.m, ex_ja: w.ex_ja, ex_ko: w.ex_ko }))),
     el("button", { class: "primary", onclick: () => { VS.li++; speechSynthesis.cancel(); renderWeak(); } }, VS.li + 1 < VS.fresh.length ? "다음 단어" : "이제 시험 보기"),
     el("button", { class: "secondary", style: "width:100%;margin-top:8px", onclick: () => { VS.phase = "quiz"; renderWeak(); } }, "익히기 건너뛰고 바로 시험"));
@@ -2158,10 +2359,10 @@ function vocabQuiz(root) {
   };
   const recall = (w.box >= 2 && !w.isNew) || w.kind === "sentence";
   if (recall) {
-    const ans = el("div", { hidden: true }, el("div", { class: "note", style: "text-align:center" }, w.r), el("div", { class: "pt-mean", style: "text-align:center;margin:6px 0" }, w.m), w.ex_ja ? el("div", { class: "model", lang: "ja" }, w.ex_ja, el("div", { class: "note" }, w.ex_ko)) : null,
+    const ans = el("div", { hidden: true }, el("div", { class: "note", style: "text-align:center" }, w.r), el("div", { class: "pt-mean", style: "text-align:center;margin:6px 0" }, w.m), w.ex_ja ? el("div", { class: "model", lang: LANG }, w.ex_ja, el("div", { class: "note" }, w.ex_ko)) : null,
       el("div", { class: "row-btns" }, el("button", { class: "secondary", onclick: () => { record(false); renderWeak(); } }, "❌ 몰랐어요"), el("button", { class: "primary", onclick: () => { record(true); renderWeak(); } }, "⭕ 알았어요")));
     const showB = el("button", { class: "primary", onclick: () => { ans.hidden = false; showB.hidden = true; speak(w.w); } }, "뜻 보기");
-    put(root, head, el("div", { class: "card ans" }, el("span", { class: "speak-pill rv" }, "뜻을 떠올려 보세요"), el("div", { class: "ans-q big", lang: "ja" }, w.w), ans), showB);
+    put(root, head, el("div", { class: "card ans" }, el("span", { class: "speak-pill rv" }, "뜻을 떠올려 보세요"), el("div", { class: "ans-q big", lang: LANG }, w.w), ans), showB);
     return;
   }
   put(root, head, answerCard({ prompt: w.m, emoji: w.emoji, limit: 3, big: true, expect: w.w, onDone: (said, sec) => {
@@ -2169,9 +2370,9 @@ function vocabQuiz(root) {
     const ok = pct >= 70;
     record(ok);
     const sp = el("button", { class: "tool" }, "🔊"); sp.onclick = () => speak(w.ex_ja || w.w, { btn: sp });
-    put(root, head, el("div", { class: "card ans" }, el("div", { class: "ans-emoji" }, ok ? "⭕" : "❌"), el("div", { class: "ans-q big", lang: "ja" }, w.w), el("div", { class: "note", style: "text-align:center" }, `${w.r} · ${w.m}`),
-      el("div", { class: "note", lang: "ja", style: "text-align:center" }, `내 말: ${said || "(무응답)"} · 일치 ${pct}%${sec <= 3 && ok ? " · ⚡빠름" : ""}`),
-      w.ex_ja ? el("div", { class: "model", lang: "ja" }, w.ex_ja, el("div", { class: "note" }, w.ex_ko)) : null,
+    put(root, head, el("div", { class: "card ans" }, el("div", { class: "ans-emoji" }, ok ? "⭕" : "❌"), el("div", { class: "ans-q big", lang: LANG }, w.w), el("div", { class: "note", style: "text-align:center" }, `${w.r} · ${w.m}`),
+      el("div", { class: "note", lang: LANG, style: "text-align:center" }, `내 말: ${said || "(무응답)"} · 일치 ${pct}%${sec <= 3 && ok ? " · ⚡빠름" : ""}`),
+      w.ex_ja ? el("div", { class: "model", lang: LANG }, w.ex_ja, el("div", { class: "note" }, w.ex_ko)) : null,
       el("div", { class: "model-tools", style: "justify-content:center" }, sp, starBtn({ text: w.w, reading: w.r, meaning_ko: w.m, ex_ja: w.ex_ja, ex_ko: w.ex_ko }))),
       el("button", { class: "primary", onclick: () => { speechSynthesis.cancel(); renderWeak(); } }, "다음"));
     speak(w.w);
@@ -2188,7 +2389,7 @@ async function vocabDone(root) {
   const wrong = ids.filter((k) => !VS.res[k]).map((k) => VS.items[k]);
   put(root, el("div", { class: "card" }, el("div", { class: "report-top" }, el("div", { class: `stamp txt ${ok === ids.length ? "g-S" : "g-A"}` }, `${ok}/${ids.length}`),
       el("div", {}, el("div", { class: "big" }, "오늘의 단어 끝"), el("div", { class: "sub" }, "맞힌 건 다음 간격으로, 틀린 건 내일 다시 나와요")))),
-    wrong.length ? [el("div", { class: "h" }, "내일 다시 볼 단어"), el("div", { class: "hard" }, wrong.map((w) => el("div", { class: "hard-item" }, el("span", {}, w.emoji), el("b", { lang: "ja" }, w.w), el("span", { class: "rd" }, w.r), el("span", { class: "mn" }, w.m))))] : null,
+    wrong.length ? [el("div", { class: "h" }, "내일 다시 볼 단어"), el("div", { class: "hard" }, wrong.map((w) => el("div", { class: "hard-item" }, el("span", {}, w.emoji), el("b", { lang: LANG }, w.w), el("span", { class: "rd" }, w.r), el("span", { class: "mn" }, w.m))))] : null,
     el("button", { class: "primary", style: "margin-top:12px", onclick: () => startCombo(10) }, "🧩 이 단어들로 문형 × 단어 10문장"),
     el("button", { class: "secondary", style: "width:100%;margin-top:8px", onclick: () => { VS = { phase: "hub" }; renderWeak(); } }, "단어장으로"));
 }
@@ -2215,7 +2416,7 @@ function comboRun(root) {
         const out = el("span", { class: "match" });
         const sh = el("button", { class: "tool", onclick: () => shadowing(model, sh, out) }, "🎙 다시 말하기");
         return el("div", { class: "card q" }, el("div", { class: "note" }, it.situation_ko + " · " + it.pattern), el("div", { class: "q-t" }, `${V2[g.verdict] || "?"} ${it.ko}`),
-          el("div", { class: "note", lang: "ja" }, "내 답: " + (VS.answers[i] || "(무응답)")), el("div", { class: "model", lang: "ja" }, model),
+          el("div", { class: "note", lang: LANG }, "내 답: " + (VS.answers[i] || "(무응답)")), el("div", { class: "model", lang: LANG }, model),
           g.why_ko ? el("div", { class: "note tip" }, g.why_ko) : null, el("div", { class: "model-tools" }, sp, sh, starBtn({ text: model, meaning_ko: it.ko, kind: "sentence" }), out));
       }),
       el("button", { class: "primary", onclick: () => startCombo(10) }, "10문장 더"),
@@ -2236,7 +2437,7 @@ function comboRun(root) {
     answerCard({ prompt: it.ko, big: true, expect: it.ja, onDone: (said) => {
       VS.answers[VS.i] = said; VS.i++;
       const sp = el("button", { class: "tool" }, "🔊"); sp.onclick = () => speak(it.ja, { btn: sp });
-      put(root, el("div", { class: "card ans" }, el("div", { class: "note" }, "모범 문장"), el("div", { class: "model", lang: "ja" }, it.ja), el("div", { class: "note", lang: "ja" }, "내 답: " + (said || "(무응답)")),
+      put(root, el("div", { class: "card ans" }, el("div", { class: "note" }, "모범 문장"), el("div", { class: "model", lang: LANG }, it.ja), el("div", { class: "note", lang: LANG }, "내 답: " + (said || "(무응답)")),
         el("div", { class: "model-tools", style: "justify-content:center" }, sp, starBtn({ text: it.ja, meaning_ko: it.ko, kind: "sentence" }))),
         el("button", { class: "primary", onclick: () => { speechSynthesis.cancel(); renderWeak(); } }, VS.i < list.length ? "다음 문장" : "채점하기"));
       speak(it.ja);
@@ -2257,7 +2458,7 @@ function renderWeakList(root) {
     list.length ? el("div", { class: "weak-list" }, list.map((w) => {
       const sp = el("button", { class: "mini", onclick: () => speak(w.text, { btn: sp }) }, "🔊");
       return el("div", { class: "wk" + (w.mastered ? " mastered" : "") },
-        el("div", { class: "wk-top" }, el("span", { class: `wk-kind k-${w.kind}` }, K[w.kind]), el("span", { class: "wk-text", lang: "ja" }, w.text), w.reading ? el("span", { class: "wk-rd" }, w.reading) : null),
+        el("div", { class: "wk-top" }, el("span", { class: `wk-kind k-${w.kind}` }, K[w.kind]), el("span", { class: "wk-text", lang: LANG }, w.text), w.reading ? el("span", { class: "wk-rd" }, w.reading) : null),
         w.meaning_ko ? el("div", { class: "wk-mn" }, w.meaning_ko) : null,
         w.wrong || w.note_ko ? el("div", { class: "wk-wrong" }, w.wrong ? [el("s", {}, w.wrong), " 대신 · "] : null, w.note_ko) : null,
         el("div", { class: "wk-foot" },
@@ -2273,10 +2474,16 @@ async function weakAct(id, action) {
 
 // ---------- 마이크 ----------
 // 말하는 중 취소, 확인 단계 단추
+function blockIfRetry() {
+  if (!retryTarget) return false;
+  toast("먼저 위의 ✏️ 고쳐 말하기를 통과하거나 「이번만 건너뛰기」를 눌러 주세요.");
+  document.querySelector("#feed .fix-row")?.scrollIntoView({ block: "center", behavior: "smooth" });
+  return true;
+}
 $("#liveCancel").addEventListener("click", (e) => { e.stopPropagation(); if (rec) rec.abort(); $("#input").value = ""; toast("취소했어요. 다시 마이크를 누르세요"); });
 $("#rvRetry").addEventListener("click", () => { $("#input").value = ""; showReview(false); $("#micBtn").click(); });
 $("#rvCancel").addEventListener("click", () => { $("#input").value = ""; autoGrow(); showReview(false); });
-$("#rvSend").addEventListener("click", () => { const t = $("#input").value.trim(); showReview(false); if (t) say(t); });
+$("#rvSend").addEventListener("click", () => { if (blockIfRetry()) return; const t = $("#input").value.trim(); showReview(false); if (t) say(t); });
 let koOnce = false; // 다음 한 번은 한국어로 듣기(영어 수업)
 if (LANG === "en") {
   const kb = el("button", { type: "button", id: "koBtn", class: "ghost-btn", title: "막히면 한국어로 말하기", onclick: () => { koOnce = !koOnce; kb.classList.toggle("on", koOnce); toast(koOnce ? "다음 한 번은 한국어로 들어요" : "다시 영어로 들어요"); } }, "한국어로");
@@ -2365,13 +2572,13 @@ $("#micBtn").addEventListener("click", () => {
   if (rec) { rec.stop(); return; }
   if (!SR) { toast("이 브라우저는 음성 인식이 안 돼요. 크롬이나 엣지를 써 주세요."); return; }
   if (busy || !S.current) return;
-  if (retryTarget) {
-    toast("먼저 위의 ✏️ 고쳐 말하기를 통과하거나 「이번만 건너뛰기」를 눌러 주세요.");
-    document.querySelector("#feed .fix-row")?.scrollIntoView({ block: "center", behavior: "smooth" });
-    return;
-  }
+  if (blockIfRetry()) return;
   const koNow = koOnce; koOnce = false; $("#koBtn")?.classList.remove("on");
-  $("#liveText").textContent = koNow ? "한국어로 말하세요. 영어로 바꿔 알려 줄게요" : "듣고 있어요. 멈춰 생각해도 안 끊겨요. 다 말하면 다시 누르세요";
+  $("#liveText").textContent = koNow
+    ? "한국어로 말하세요. 영어로 바꿔 알려 줄게요"
+    : autoSend
+      ? "듣고 있어요. 다 말하고 다시 누르면 바로 보내요 (자동 전송)"
+      : "듣고 있어요. 멈춰 생각해도 안 끊겨요. 다 말하면 다시 누르세요";
   $("#liveText").dataset.text = "";
   setMicUI(true);
   const expect = koNow ? "" : lastNext()?.model || "";
@@ -2381,8 +2588,10 @@ $("#micBtn").addEventListener("click", () => {
     onLive: (t) => { $("#liveText").textContent = t || "듣고 있어요…"; $("#liveText").dataset.text = t; },
     onFinal: (t) => {
       if (!t) { toast("잘 못 들었어요. 다시 말해 주세요."); return; }
+      const txt = koNow ? `(한국어로 말함) ${t}` : t;
+      if (autoSend) { showReview(false); say(txt); return; }
       // 바로 보내지 않고 확인: 입력칸에 넣어 두고 다시 말하기 / 고쳐 적기 / 보내기
-      $("#input").value = koNow ? `(한국어로 말함) ${t}` : t;
+      $("#input").value = txt;
       autoGrow();
       showReview(true);
     },
@@ -2431,7 +2640,7 @@ function similarity(a, b) {
 function autoGrow() { const t = $("#input"); t.style.height = "auto"; t.style.height = Math.min(120, t.scrollHeight) + "px"; }
 $("#input").addEventListener("input", autoGrow);
 $("#input").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("#composer").requestSubmit(); } });
-$("#composer").addEventListener("submit", (e) => { e.preventDefault(); const t = $("#input").value.trim(); showReview(false); if (t) say(t); });
+$("#composer").addEventListener("submit", (e) => { e.preventDefault(); if (blockIfRetry()) return; const t = $("#input").value.trim(); showReview(false); if (t) say(t); });
 $("#endBtn").addEventListener("click", () => {
   if (!S.current) return;
   if (!S.current.turns) { if (confirm("아직 한 마디도 안 했어요. 그냥 끝낼까요?")) endLesson(); return; }
